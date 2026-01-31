@@ -2,41 +2,61 @@
 
 This document captures architectural decisions and implementation details for key features in the Bees issue tracking system.
 
+## Architecture Overview
+
+High-level system architecture, module relationships, and design philosophy. Condenses key architectural patterns and decisions.
+
+## Design Patterns
+
+Core design patterns used across the system (factory pattern, observer pattern, etc.). Documents pattern application and rationale.
+
+## Module Integration
+
+How modules interact, communication patterns, and integration points. Includes interface contracts and data flow between components.
+
+## Data Structures
+
+Core data structures (Ticket, ValidationError, LinterReport, etc.). Documents structure purpose, key fields, and relationships.
+
+### Cycle Detection Data Structures
+
+**path (List[str])**: Ordered list of ticket IDs from search root to current node. Used to extract the cycle path when a cycle is detected, providing human-readable cycle paths in error messages.
+
+**path_set (Set[str])**: Set representation of the current path. Enables O(1) cycle detection by checking if the current node is in the path, avoiding O(n) list search for each node visited.
+
+**visited (Set[str])**: Global visited set tracking all nodes visited across all DFS traversals. Prevents redundant cycle detection for nodes already processed, essential for performance with disconnected components. Separate visited sets are maintained for blocking dependencies and hierarchical relationships.
+
+**ticket_map (Dict[str, Ticket])**: Dictionary mapping ticket IDs to Ticket objects for O(1) ticket lookup. Enables constant-time access to ticket objects by ID during graph traversal, avoiding O(n) linear searches through ticket list for each neighbor lookup.
+
+## Performance Characteristics
+
+Time and space complexity for key operations. Expected performance under typical and worst-case scenarios. Performance optimization decisions and trade-offs.
+
+## Detailed Feature Documentation
+
+### Core Modules
+
+The Bees system is composed of the following core modules:
+
+1. **Ticket System** (`src/ticket.py`, `src/ticket_factory.py`) - Core ticket data model and factory functions for creating epics, tasks, and subtasks
+2. **Linter** (`src/linter.py`) - Validation system that detects cycles, validates relationships, and checks ticket integrity
+3. **Corruption State** (`src/corruption_state.py`) - Persistent database corruption state management across linter and MCP server sessions
+4. **CLI** (`src/cli.py`) - Command-line interface for linter execution, index regeneration, and file watching
+5. **Index Generator** (`src/index_generator.py`) - Dynamic markdown index generation with scanning, formatting, and filtering capabilities
+6. **Watcher** (`src/watcher.py`) - File system watcher for automatic index regeneration using watchdog with debounced event handling
+7. **MCP Server** (`src/mcp_server.py`) - Model Context Protocol server providing tool interfaces for ticket operations and index generation
+8. **Reader/Writer** (`src/reader.py`, `src/writer.py`) - Markdown file I/O with YAML frontmatter parsing and validation
+9. **Paths** (`src/paths.py`) - Centralized path management for tickets directory structure
+
 ## Cycle Detection Feature
 
 ### Overview
 
 The cycle detection feature prevents invalid dependency configurations by detecting cycles in both blocking dependencies (up_dependencies/down_dependencies) and hierarchical relationships (parent/children).
 
-### Algorithm Choice: Depth-First Search (DFS)
+### Algorithm Choice
 
-We selected DFS with path tracking as the cycle detection algorithm for the following reasons:
-
-1. **Time Complexity**: O(V + E) where V is number of tickets and E is number of dependencies - optimal for this problem
-2. **Space Complexity**: O(V) for visited set and path tracking - reasonable for ticket databases
-3. **Cycle Path Extraction**: DFS naturally maintains the path from root to current node, making it trivial to extract and report the exact cycle when detected
-4. **Well-Established**: DFS is a standard algorithm for cycle detection in directed graphs, with proven correctness
-
-### Data Structures
-
-#### Path Tracking
-
-The algorithm maintains two path-tracking structures during traversal:
-
-1. **path: List[str]** - Ordered list of ticket IDs from search root to current node
-   - Used to extract cycle path when cycle is detected
-   - Provides human-readable cycle paths in error messages (e.g., "A -> B -> C -> A")
-
-2. **path_set: Set[str]** - Set representation of current path
-   - Enables O(1) cycle detection by checking if current node is in path
-   - Avoids O(n) list search for each node visited
-
-#### Global Visited Tracking
-
-**visited: Set[str]** - Tracks all nodes visited across all DFS traversals
-- Prevents redundant cycle detection for nodes already processed
-- Essential for performance when graph has disconnected components
-- Separate visited sets for blocking dependencies and hierarchical relationships
+Uses DFS with path tracking for O(V+E) cycle detection. Maintains visited set and path structures for efficient traversal.
 
 ### Handling Multiple Relationship Types
 
@@ -90,32 +110,7 @@ Cycle detected in blocking dependencies: bees-aa1 -> bees-bb1 -> bees-cc1 -> bee
 
 ### Implementation Details
 
-#### DFS Helper Method
-
-`Linter._detect_cycle_dfs()` implements the core traversal:
-
-**Parameters:**
-- `ticket_id`: Current node being explored
-- `ticket_map`: Dict mapping ticket IDs to Ticket objects (O(1) lookup)
-- `visited`: Global visited set
-- `path`: Current path from root to current node
-- `path_set`: Set representation of path
-- `get_neighbors`: Lambda function to extract neighbor IDs based on relationship type
-  - For blocking: `lambda t: t.up_dependencies`
-  - For hierarchical: `lambda t: [t.parent] if t.parent else []`
-- `relationship_type`: String for error messages ("blocking dependency" or "parent/child")
-
-**Return Value:**
-- `List[str]` representing cycle path if cycle found
-- `None` if no cycle found in this branch
-
-**Key Logic:**
-1. Check if current node is in `path_set` (cycle detection)
-2. If cycle found, extract cycle portion of path and return
-3. Mark current node as visited globally
-4. Add node to current path
-5. Recursively explore each neighbor
-6. Remove node from path when backtracking (allows other branches to visit)
+DFS helper implements recursive traversal with path tracking and cycle detection in O(V+E) time.
 
 ### Edge Cases Handled
 
@@ -170,21 +165,6 @@ The CLI integration feature provides a command-line interface for running the li
 - Calls `Linter.run()` to execute validation
 - Calls `mark_corrupt(report)` when errors found
 - Calls `mark_clean()` when no errors found
-
-**Usage Example:**
-```bash
-# Run linter with default settings
-poetry run python -m src.cli
-
-# Custom tickets directory
-poetry run python -m src.cli --tickets-dir /path/to/tickets
-
-# JSON output for programmatic processing
-poetry run python -m src.cli --json
-
-# Verbose logging
-poetry run python -m src.cli -v
-```
 
 #### 2. Corruption State Module (`src/corruption_state.py`)
 
@@ -564,12 +544,7 @@ This timestamp enables "smart" regeneration that detects when the index is stale
 
 **2. CLI Regeneration Command**
 
-Added `regenerate-index` subcommand to `src/cli.py`:
-
-```bash
-poetry run python -m src.cli regenerate-index
-poetry run python -m src.cli regenerate-index --force
-```
+Added `regenerate-index` subcommand to `src/cli.py`.
 
 **Implementation**:
 - Checks `is_index_stale()` before regenerating (skips if up-to-date)
@@ -584,12 +559,7 @@ poetry run python -m src.cli regenerate-index --force
 
 **3. File System Watcher**
 
-Implemented optional watcher in `src/watcher.py` using the watchdog library:
-
-```bash
-poetry run python -m src.cli watch
-poetry run python -m src.cli watch --debounce 5.0
-```
+Implemented optional watcher in `src/watcher.py` using the watchdog library.
 
 **Implementation** (`src/watcher.py`):
 - `TicketChangeHandler`: FileSystemEventHandler that monitors .md files
@@ -1199,15 +1169,6 @@ These counts provide:
 
 ### Regeneration and Cleanup
 
-**Regenerating demo data**:
-```bash
-# Remove existing demo tickets
-rm -rf tickets/epics/bees-* tickets/tasks/bees-* tickets/subtasks/bees-*
-
-# Generate fresh demo data
-poetry run python scripts/generate_demo_tickets.py
-```
-
 The script uses automatic ID generation, ensuring new IDs each run. Sample tickets (e.g.,
 sample-epic.md) are preserved since they don't match the `bees-*` pattern.
 
@@ -1256,3 +1217,202 @@ sample-epic.md) are preserved since they don't match the `bees-*` pattern.
 - Demonstrates ticket structure for new contributors
 - Provides realistic examples for README screenshots
 - Enables manual testing without creating tickets by hand
+
+## README Documentation Cleanup (Task bees-8yea)
+
+### Overview
+
+The README.md was reviewed and confirmed to contain no algorithm implementation details. This task
+verified that the user-facing documentation follows best practices by focusing on usage and
+functionality rather than internal implementation details.
+
+### Documentation Philosophy
+
+**User-Facing vs Internal Documentation**:
+
+User-facing documentation (README.md) should focus on:
+- What the system does (features, capabilities)
+- How to use it (installation, API, workflows)
+- Examples and common patterns
+
+Internal implementation details belong in:
+- Code comments (inline documentation of algorithms)
+- Design documents (architectural decisions, algorithm selection rationale)
+- master_plan.md (this file - captures architectural decisions and implementation details)
+
+### Rationale
+
+**Why Remove Algorithm Details from README**:
+
+1. **Audience Mismatch**: Users of the Bees system need to know how to create tickets and manage
+   dependencies, not how cycle detection algorithms work internally
+2. **Maintenance Burden**: Algorithm details in user docs create duplicate documentation that can
+   drift out of sync with implementation
+3. **Cognitive Load**: Technical details about DFS traversal, Big-O complexity, and path tracking
+   add noise for users who just want to accomplish tasks
+4. **Best Practice**: Industry-standard documentation separates user guides from design documents
+
+**What Was Verified**:
+
+The README cleanup task (bees-8yea) confirmed that README.md does not contain:
+- DFS (depth-first search) algorithm explanations
+- Cycle detection algorithm details
+- Path tracking implementation specifics
+- Big-O notation or complexity analysis
+
+The README correctly focuses on user-facing content:
+- Installation instructions
+- Usage examples for creating tickets
+- Query and filtering operations
+- Linter validation commands
+- Demo dataset generation
+
+### Implementation Details Location
+
+Algorithm implementation details are documented in the appropriate location:
+
+**Cycle Detection Algorithm**: Documented in the "Cycle Detection Feature" section above
+(lines 21-153) with:
+- Algorithm choice rationale (why DFS)
+- Data structure explanations
+- Complexity analysis (time: O(V + E), space: O(V))
+- Path tracking implementation details
+- Integration with linter
+- Testing strategy
+
+This separation ensures:
+- Users find what they need quickly in README
+- Developers and contributors find architectural details in master_plan.md
+- Algorithm documentation stays synchronized with implementation
+- Documentation maintenance is simplified
+
+## README Simplification (Task bees-2ecb)
+
+### Overview
+
+The README.md was simplified to focus exclusively on end-user operations, removing all verbose
+developer-focused documentation that cluttered the user experience. This cleanup was part of
+Epic bees-0ht (README with Installation and Usage Guide).
+
+### What Was Removed
+
+**Testing Implementation Details**:
+- "Testing" section with "Running Tests", "Test Fixtures", "Path Structure Validation"
+- Developer-focused test execution commands
+- Internal test architecture explanations
+- Test fixture documentation
+
+**Edge Case Catalogs**:
+- "Edge Cases and Error Handling" sections throughout
+- Detailed error handling subsections in Query Parser, Search Executor, Graph Executor, Pipeline
+  Evaluator
+- Internal debugging explanations
+- Verbose error catalog listings
+
+**Internal Architecture Details**:
+- "Core Helper Functions" section
+- "Validation Functions" section
+- "Batch Operations" section
+- "File Locking for Concurrent Modifications" section
+- "Performance Optimizations" section
+- "In-Memory Data Structure" section
+- "Stage Execution Flow" section
+- "Normalization and Relationship Building" section
+- "Design Decisions" section
+- "Performance Characteristics" section
+
+**Verbose Troubleshooting**:
+- "Common Creation Errors" section with detailed debugging steps
+- "Troubleshooting Queries" subsections covering query validation errors, regex syntax errors,
+  stage type validation errors, invalid relationship traversals
+- Internal debugging tips and techniques
+- Developer-oriented error resolution workflows
+
+### What Remains
+
+The simplified README now contains only end-user focused content:
+
+**Overview**: Clear description of what Bees is and who it's for (LLM agents and humans)
+
+**Installation**: Simple Poetry installation steps with verification command
+
+**Usage**:
+- Creating Tickets: MCP tool examples for ticket creation
+- Running Queries: MCP tool examples for searching and filtering
+- Running the Linter: CLI command for validation
+
+**Demo Dataset**: Script for generating sample tickets with use cases
+
+**Project Setup**: Directory structure requirements for using Bees
+
+**Examples**: Placeholder for future practical examples
+
+### Rationale
+
+**Why Remove Developer Documentation**:
+
+1. **Audience Mismatch**: The README is read by users who want to create tickets and query them,
+   not developers who need to understand internal algorithms and edge cases
+2. **Reduced Cognitive Load**: Verbose technical details made it difficult to find basic usage
+   information
+3. **Focused Navigation**: Users can now quickly scan and find what they need without scrolling
+   through hundreds of lines of internal documentation
+4. **Better Separation**: Developer documentation belongs in code comments, design docs
+   (master_plan.md), and dedicated architecture documentation
+
+**Impact on End Users**:
+- Faster onboarding: New users can understand and use Bees in minutes
+- Clearer examples: Usage sections show exactly what agents need to call
+- Better discoverability: Essential features are prominent, not buried in implementation details
+- Reduced confusion: No mixing of user commands with developer debugging techniques
+
+**Impact on Developers**:
+- Implementation details preserved in master_plan.md (this document)
+- Code comments remain in source for algorithm explanations
+- Test documentation lives with test code
+- Architecture decisions documented in appropriate locations
+
+### New Structure
+
+The README now follows a clean, hierarchical structure:
+
+```
+# Bees
+## Overview (what it is, who it's for)
+## Installation (poetry install, verify with pytest)
+## Usage
+   - Creating Tickets (MCP tool examples)
+   - Running Queries (MCP tool examples)
+   - Running the Linter (CLI command)
+## Demo Dataset (generation script, use cases)
+## Setting Up Your Project (directory structure)
+## Examples (placeholder for future content)
+```
+
+Total length: ~90 lines (down from ~3800 lines)
+
+### Maintenance Benefits
+
+**Reduced Documentation Debt**:
+- Fewer locations to update when implementation changes
+- No duplicate documentation between README and code comments
+- Clearer ownership: README for users, master_plan.md for architecture, code for implementation
+
+**Easier Updates**:
+- Adding new features requires minimal README changes (just usage examples)
+- Algorithm improvements don't require README edits
+- Internal refactoring doesn't impact user documentation
+
+**Better Testing**:
+- Documentation examples are concise and easy to validate
+- Clear separation makes it obvious what needs testing
+- User workflows are explicitly documented
+
+### Related Work
+
+This simplification complements other documentation improvements:
+- **Index Generation Feature**: Provides dynamic ticket browsing
+- **MCP Tool Documentation**: Shows agents exactly how to interact with system
+- **Demo Dataset**: Offers working examples for learning and testing
+
+Together, these features provide a complete user experience without overwhelming technical details.
