@@ -1,0 +1,4 @@
+- A simple tool for determining the dependency order of a set of tickets
+- Similar to bd-prime. How to let agents know about features
+- Hives: container feature docs and all the bees to build them
+- Bees all live in one hive, no need to breakdown by /epic, /task and /subtask

@@ -1,0 +1,18 @@
+# Named Queries for Bees Query System
+# Each query is a list of stages for the pipeline evaluator
+---
+beta_work:
+- - type=epic
+  - label~beta
+- - children
+high_priority_beta_work:
+- - type=task
+  - label~beta
+my_beta_children:
+- - type=epic
+  - label~beta
+- - children
+my_beta_epic_tasks:
+- - type=epic
+  - label~beta
+- - children

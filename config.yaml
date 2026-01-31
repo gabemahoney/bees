@@ -1,0 +1,18 @@
+# MCP Server Configuration
+# Configuration settings for the Bees Ticket Management MCP Server
+
+# Server host address
+# Default: localhost (only accessible from this machine)
+# Set to 0.0.0.0 to allow external connections
+host: localhost
+
+# Server port
+# Default: 8000
+# Choose a port that's not in use by other services
+port: 8000
+
+# Ticket directory path
+# Directory where ticket markdown files are stored
+# Default: ./tickets (relative to project root)
+# Can be absolute path or relative to working directory
+ticket_directory: ./tickets

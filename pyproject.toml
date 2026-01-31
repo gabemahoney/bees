@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "bees"
+version = "0.1.0"
+description = "A markdown-based ticket management system designed for LLMs"
+authors = ["Gabe Mahoney <gmahoney@gmail.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pyyaml = "^6.0"
+fastmcp = "^2.14.4"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.1.0"
+
+[tool.poetry.scripts]
+start-mcp = "src.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
