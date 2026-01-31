@@ -88,14 +88,49 @@ The generated index follows this markdown structure:
 
 ### Usage
 
-The index generation functionality is implemented in `src/index_generator.py` with three main
-functions:
+The index generation functionality is available through both a Python API and an MCP tool.
+**For LLM agents, the MCP tool is the recommended approach** as it ensures data consistency
+and follows the Model Context Protocol standard.
+
+**Python API** (implemented in `src/index_generator.py`):
 
 - `scan_tickets()`: Scans the tickets directory and returns grouped ticket data
-- `format_index_markdown()`: Formats ticket data into structured markdown
+- `format_index_markdown()`: Formats ticket data into structured markdown with clickable links
 - `generate_index()`: High-level API that orchestrates scanning and formatting
 
-In future tasks, this functionality will be exposed as an MCP tool for agent access.
+**MCP Tool**: See the [MCP Server](#mcp-server) section below for details on the `generate_index`
+tool, which provides the same functionality through the Model Context Protocol interface.
+
+The generated index includes clickable markdown links to individual ticket files using relative
+paths. Each ticket entry is formatted as:
+
+```markdown
+- [ticket-id: title](tickets/{type}s/ticket-id.md) (status)
+```
+
+**Example index output:**
+
+```markdown
+# Ticket Index
+
+## Epics
+- [bees-abc: Authentication System](tickets/epics/bees-abc.md) (open)
+- [bees-def: Data Export Feature](tickets/epics/bees-def.md) (in_progress)
+
+## Tasks
+- [bees-123: Build Login API](tickets/tasks/bees-123.md) (open) (parent: bees-abc)
+- [bees-456: Create Export Endpoint](tickets/tasks/bees-456.md) (completed) (parent: bees-def)
+
+## Subtasks
+- [bees-xyz: Write API tests](tickets/subtasks/bees-xyz.md) (open) (parent: bees-123)
+```
+
+**Navigation:**
+- Clicking on any ticket link opens the corresponding ticket file in your markdown viewer
+- Relative paths ensure links work regardless of where the repository is located
+- Links are formatted as `tickets/{type}s/{ticket-id}.md` (e.g., `tickets/epics/bees-abc.md`)
+  matching the actual directory structure (tickets/epics/, tickets/tasks/, tickets/subtasks/)
+- This ensures clickable links work correctly in markdown viewers (Task: bees-3fh9)
 
 ## MCP Server
 
@@ -3643,6 +3678,20 @@ Test ticket content.
 
 The `temp_tickets_dir` pytest fixture (in `tests/test_pipeline.py`) creates this structure
 automatically for each test, ensuring isolation and repeatability.
+
+### Path Structure Validation
+
+Test assertions validate the hierarchical ticket path structure used by Bees:
+
+- **Epics**: `tickets/epics/bees-XXX.md`
+- **Tasks**: `tickets/tasks/bees-XXX.md`
+- **Subtasks**: `tickets/subtasks/bees-XXX.md`
+
+This hierarchical organization (instead of flat `tickets/bees-XXX.md` paths) provides
+better organization and scalability as the ticket system grows. Tests in
+`tests/test_index_generator.py` verify that generated index links use these correct
+paths for all ticket types, ensuring consistency between the file system structure
+and the navigation interface.
 
 ## Documentation
 

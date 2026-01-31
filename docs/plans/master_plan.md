@@ -152,6 +152,28 @@ Bees is a markdown-based ticket management system with four core modules:
 - `get_ticket_path(ticket_id, ticket_type)` - Full file path for ticket
 - `infer_ticket_type_from_id(ticket_id)` - Lightweight type inference from file location
 
+**Hierarchical Path Structure**:
+Bees uses a hierarchical directory structure for organizing tickets by type:
+- **Epics**: `tickets/epics/bees-XXX.md`
+- **Tasks**: `tickets/tasks/bees-XXX.md`
+- **Subtasks**: `tickets/subtasks/bees-XXX.md`
+
+**Design Rationale**:
+- **Scalability**: Separating ticket types into subdirectories prevents overcrowding
+  as projects grow to hundreds or thousands of tickets
+- **Organization**: Clear visual separation makes repository navigation easier
+- **Type Safety**: Directory structure reinforces type constraints and makes invalid
+  file locations immediately obvious
+- **Consistency**: Links in generated index.md use these hierarchical paths,
+  ensuring alignment between file system and navigation interface
+
+**Test Coverage**:
+The test suite (`tests/test_index_generator.py`) validates that:
+- Index generation uses correct hierarchical paths for all ticket types
+- Links work correctly with the subdirectory structure
+- Path structure remains consistent across different ticket statuses
+- Edge cases (empty sections, mixed types) handle paths correctly
+
 **Type Inference Function**:
 - **Purpose**: Determine ticket type without loading full ticket object
 - **Implementation**: Checks file existence in each type directory (epic → task → subtask)

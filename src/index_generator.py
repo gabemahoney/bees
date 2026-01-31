@@ -121,9 +121,9 @@ def format_index_markdown(tickets: dict[str, list[Ticket]]) -> str:
             sorted_tickets = sorted(ticket_list, key=lambda t: t.id)
 
             for ticket in sorted_tickets:
-                # Format: - [ID] Title (status)
+                # Format: - [ticket-id: title](tickets/{type}s/ticket-id.md) (status)
                 status = ticket.status or "unknown"
-                line = f"- [{ticket.id}] {ticket.title} ({status})"
+                line = f"- [{ticket.id}: {ticket.title}](tickets/{ticket.type}s/{ticket.id}.md) ({status})"
 
                 # Add parent info for subtasks
                 if ticket.parent:

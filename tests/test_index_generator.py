@@ -333,14 +333,14 @@ class TestFormatIndexMarkdown:
         assert "## Tasks" in result
         assert "## Subtasks" in result
 
-        # Check epic formatting
-        assert "[bees-ep1] Test Epic (open)" in result
+        # Check epic formatting with clickable link
+        assert "[bees-ep1: Test Epic](tickets/epics/bees-ep1.md) (open)" in result
 
-        # Check task formatting
-        assert "[bees-ts1] Test Task (in_progress)" in result
+        # Check task formatting with clickable link
+        assert "[bees-ts1: Test Task](tickets/tasks/bees-ts1.md) (in_progress)" in result
 
-        # Check subtask formatting (includes parent)
-        assert "[bees-sb1] Test Subtask (closed) (parent: bees-ts1)" in result
+        # Check subtask formatting (includes parent and clickable link)
+        assert "[bees-sb1: Test Subtask](tickets/subtasks/bees-sb1.md) (closed) (parent: bees-ts1)" in result
 
     def test_format_sorts_by_id(self):
         """Should sort tickets by ID within each section."""
@@ -381,7 +381,89 @@ class TestFormatIndexMarkdown:
 
         result = format_index_markdown(tickets)
 
-        assert "[bees-ep1] No Status (unknown)" in result
+        assert "[bees-ep1: No Status](tickets/epics/bees-ep1.md) (unknown)" in result
+
+    def test_format_with_special_characters_in_title(self):
+        """Should handle special characters in title for markdown links."""
+        epic1 = Epic(
+            id="bees-ep1",
+            type="epic",
+            title="Test [Special] Characters: & Symbols",
+            status="open"
+        )
+
+        tickets = {
+            "epic": [epic1],
+            "task": [],
+            "subtask": []
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Markdown link should preserve special characters in link text
+        assert "[bees-ep1: Test [Special] Characters: & Symbols](tickets/epics/bees-ep1.md) (open)" in result
+
+    def test_format_link_paths_are_relative(self):
+        """Should use relative paths for ticket links."""
+        epic1 = Epic(id="bees-abc", type="epic", title="Test", status="open")
+        task1 = Task(id="bees-xyz", type="task", title="Test", status="open")
+        subtask1 = Subtask(id="bees-123", type="subtask", title="Test", parent="bees-xyz", status="open")
+
+        tickets = {
+            "epic": [epic1],
+            "task": [task1],
+            "subtask": [subtask1]
+        }
+
+        result = format_index_markdown(tickets)
+
+        # All links should use tickets/{type}s/ relative path with type subdirectories
+        assert "(tickets/epics/bees-abc.md)" in result
+        assert "(tickets/tasks/bees-xyz.md)" in result
+        assert "(tickets/subtasks/bees-123.md)" in result
+
+    def test_format_link_includes_id_and_title(self):
+        """Should include both ID and title in link text."""
+        epic1 = Epic(
+            id="bees-test",
+            type="epic",
+            title="My Epic Title",
+            status="open"
+        )
+
+        tickets = {
+            "epic": [epic1],
+            "task": [],
+            "subtask": []
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Link text should be "ID: Title"
+        assert "[bees-test: My Epic Title]" in result
+
+    def test_format_link_path_includes_type_subdirectory(self):
+        """Should generate link paths with type subdirectories (tickets/{type}s/{id}.md)."""
+        epic1 = Epic(id="bees-abc", type="epic", title="Test Epic", status="open")
+        task1 = Task(id="bees-xyz", type="task", title="Test Task", status="open")
+        subtask1 = Subtask(id="bees-123", type="subtask", title="Test Subtask", parent="bees-xyz", status="open")
+
+        tickets = {
+            "epic": [epic1],
+            "task": [task1],
+            "subtask": [subtask1]
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Epic link should use tickets/epics/ subdirectory
+        assert "[bees-abc: Test Epic](tickets/epics/bees-abc.md)" in result
+
+        # Task link should use tickets/tasks/ subdirectory
+        assert "[bees-xyz: Test Task](tickets/tasks/bees-xyz.md)" in result
+
+        # Subtask link should use tickets/subtasks/ subdirectory
+        assert "[bees-123: Test Subtask](tickets/subtasks/bees-123.md)" in result
 
 
 class TestGenerateIndex:
@@ -430,9 +512,9 @@ Task body.""")
         assert "## Tasks" in result
         assert "## Subtasks" in result
 
-        # Verify content
-        assert "[bees-ep1] Sample Epic (open)" in result
-        assert "[bees-ts1] Sample Task (open)" in result
+        # Verify content with clickable links
+        assert "[bees-ep1: Sample Epic](tickets/epics/bees-ep1.md) (open)" in result
+        assert "[bees-ts1: Sample Task](tickets/tasks/bees-ts1.md) (open)" in result
         assert "*No tickets found*" in result  # For subtasks section
 
     def test_generate_index_empty_directory(self, tmp_path, monkeypatch):
@@ -480,7 +562,7 @@ Completed.""")
         monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index(status_filter='open')
-        assert "[bees-ep1] Open Epic (open)" in result
+        assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
         assert "bees-ep2" not in result
 
     def test_generate_index_with_type_filter(self, tmp_path, monkeypatch):
@@ -516,7 +598,7 @@ Task.""")
         monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index(type_filter='epic')
-        assert "[bees-ep1] Test Epic (open)" in result
+        assert "[bees-ep1: Test Epic](tickets/epics/bees-ep1.md) (open)" in result
         assert "bees-ts1" not in result
 
     def test_generate_index_with_combined_filters(self, tmp_path, monkeypatch):
@@ -563,6 +645,199 @@ Open task.""")
         monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index(status_filter='open', type_filter='epic')
-        assert "[bees-ep1] Open Epic (open)" in result
+        assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
         assert "bees-ep2" not in result
         assert "bees-ts1" not in result
+
+    def test_hierarchical_paths_for_all_types(self, tmp_path, monkeypatch):
+        """Should generate hierarchical paths (tickets/{type}s/) for all ticket types."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        subtasks_dir = tickets_dir / "subtasks"
+
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+        subtasks_dir.mkdir(parents=True)
+
+        # Create one ticket of each type
+        (epics_dir / "bees-ep9.md").write_text("""---
+id: bees-ep9
+type: epic
+title: Test Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Epic.""")
+
+        (tasks_dir / "bees-ts9.md").write_text("""---
+id: bees-ts9
+type: task
+title: Test Task
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Task.""")
+
+        (subtasks_dir / "bees-sb9.md").write_text("""---
+id: bees-sb9
+type: subtask
+title: Test Subtask
+parent: bees-ts9
+status: open
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Subtask.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index()
+
+        # Verify hierarchical paths for all types
+        assert "tickets/epics/bees-ep9.md" in result
+        assert "tickets/tasks/bees-ts9.md" in result
+        assert "tickets/subtasks/bees-sb9.md" in result
+
+        # Verify flat paths are NOT used
+        assert "tickets/bees-ep9.md" not in result
+        assert "tickets/bees-ts9.md" not in result
+        assert "tickets/bees-sb9.md" not in result
+
+    def test_hierarchical_paths_with_empty_sections(self, tmp_path, monkeypatch):
+        """Should handle empty sections correctly with hierarchical structure."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        subtasks_dir = tickets_dir / "subtasks"
+
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+        subtasks_dir.mkdir(parents=True)
+
+        # Only create epic, leave tasks and subtasks empty
+        (epics_dir / "bees-on1.md").write_text("""---
+id: bees-on1
+type: epic
+title: Only Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Solo epic.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index()
+
+        # Should have hierarchical path for epic
+        assert "tickets/epics/bees-on1.md" in result
+
+        # Should have "No tickets found" for empty sections
+        assert result.count("*No tickets found*") == 2
+
+    def test_hierarchical_paths_with_mixed_statuses(self, tmp_path, monkeypatch):
+        """Should use hierarchical paths regardless of ticket status."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+
+        epics_dir.mkdir(parents=True)
+
+        # Create tickets with various statuses
+        (epics_dir / "bees-op1.md").write_text("""---
+id: bees-op1
+type: epic
+title: Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open.""")
+
+        (epics_dir / "bees-pr1.md").write_text("""---
+id: bees-pr1
+type: epic
+title: In Progress Epic
+status: in_progress
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+In progress.""")
+
+        (epics_dir / "bees-cl1.md").write_text("""---
+id: bees-cl1
+type: epic
+title: Closed Epic
+status: closed
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Closed.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index()
+
+        # All should use hierarchical paths regardless of status
+        assert "tickets/epics/bees-op1.md" in result
+        assert "tickets/epics/bees-pr1.md" in result
+        assert "tickets/epics/bees-cl1.md" in result
+
+    def test_hierarchical_paths_with_invalid_ids(self, tmp_path, monkeypatch):
+        """Should handle tickets with various ID formats using hierarchical paths."""
+        tickets_dir = tmp_path / "tickets"
+        tasks_dir = tickets_dir / "tasks"
+
+        tasks_dir.mkdir(parents=True)
+
+        # Create tickets with different ID formats
+        (tasks_dir / "bees-abc.md").write_text("""---
+id: bees-abc
+type: task
+title: Alpha ID
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Alpha.""")
+
+        (tasks_dir / "bees-123.md").write_text("""---
+id: bees-123
+type: task
+title: Numeric ID
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Numeric.""")
+
+        (tasks_dir / "bees-x9z.md").write_text("""---
+id: bees-x9z
+type: task
+title: Mixed ID
+status: open
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Mixed.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index()
+
+        # All should use hierarchical paths with correct type subdirectory
+        assert "tickets/tasks/bees-abc.md" in result
+        assert "tickets/tasks/bees-123.md" in result
+        assert "tickets/tasks/bees-x9z.md" in result
