@@ -10,8 +10,11 @@ import sys
 from pathlib import Path
 import uvicorn
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
 from .config import Config, load_config
-from .mcp_server import mcp, start_server, stop_server
+from .mcp_server import mcp, start_server, stop_server, _health_check
 from .corruption_state import is_corrupt, get_report
 
 # Ensure log directory exists
@@ -27,6 +30,44 @@ logging.basicConfig(
     filemode='a'
 )
 logger = logging.getLogger(__name__)
+
+
+async def health_endpoint(request: Request) -> JSONResponse:
+    """
+    HTTP endpoint handler for /health route.
+
+    Returns JSON health status from the MCP server's health check function.
+    Supports both GET and POST methods.
+
+    Returns:
+        JSONResponse: Health status with 200 OK
+    """
+    try:
+        health_data = _health_check()
+        return JSONResponse(content=health_data, status_code=200)
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=500
+        )
+
+
+def setup_http_routes(app):
+    """
+    Configure HTTP endpoint routes on the Starlette application.
+
+    Adds custom route for /health endpoint. The /mcp endpoint is already
+    provided by FastMCP's http_app and handles MCP JSON-RPC protocol.
+
+    Args:
+        app: Starlette application instance
+    """
+    # Add /health endpoint (supports GET and POST)
+    app.add_route("/health", health_endpoint, methods=["GET", "POST"])
+
+    logger.info("HTTP routes configured: /health")
+    logger.info("MCP endpoint /mcp provided by FastMCP")
 
 
 def setup_signal_handlers(shutdown_callback):
@@ -113,6 +154,12 @@ def main():
         # Start the server
         start_server()
 
+        # Get the Starlette app from FastMCP
+        http_app = mcp.http_app()
+
+        # Set up HTTP routes on FastMCP's Starlette app
+        setup_http_routes(http_app)
+
         # Set up signal handlers for graceful shutdown (after server initialization)
         setup_signal_handlers(stop_server)
 
@@ -121,7 +168,7 @@ def main():
 
         # Run the FastMCP server with HTTP transport via uvicorn
         uvicorn.run(
-            mcp.http_app,
+            http_app,
             host=host,
             port=port,
             log_level="info"

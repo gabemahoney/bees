@@ -44,6 +44,12 @@ The server runs independently in its own process, staying available for multiple
 sessions. This HTTP transport eliminates stdio interference issues that can occur with
 stdio-based MCP servers.
 
+**Code Quality Note**: The HTTP server implementation (`src/main.py`) maintains minimal,
+necessary imports for clean code. Only `JSONResponse` is imported from `starlette.responses`,
+as the server leverages FastMCP's built-in HTTP application without requiring direct use of
+Starlette's `Response`, `Route`, or `Starlette` application classes. This reduces dependencies
+and improves maintainability.
+
 ### Configuration
 
 Bees runs as an MCP server, so you need to configure it for Claude Code to access it. The `cwd`
@@ -188,6 +194,67 @@ Reattach later with: `tmux attach -t bees-mcp`
 All server output is logged to `~/.bees/mcp.log`. Check this file for startup messages, errors, and
 operational details.
 
+**HTTP Endpoints:**
+
+The server exposes the following HTTP endpoints:
+
+- **`/mcp`** (POST) - MCP JSON-RPC protocol endpoint
+  - Handles MCP tool execution via JSON-RPC 2.0 protocol
+  - Provided by FastMCP framework
+  - Example request:
+    ```bash
+    curl -X POST http://127.0.0.1:8000/mcp \
+      -H "Content-Type: application/json" \
+      -d '{
+        "jsonrpc": "2.0",
+        "method": "health_check",
+        "params": {},
+        "id": 1
+      }'
+    ```
+
+- **`/health`** (GET, POST) - Health check endpoint
+  - Returns server health status and readiness information
+  - Supports both GET and POST methods
+  - Example request:
+    ```bash
+    curl http://127.0.0.1:8000/health
+    ```
+  - Example response:
+    ```json
+    {
+      "status": "healthy",
+      "server_running": true,
+      "name": "Bees Ticket Management Server",
+      "version": "0.1.0",
+      "ready": true
+    }
+    ```
+
+**Error Responses:**
+
+All endpoints return JSON-formatted error responses with appropriate HTTP status codes:
+
+- **400 Bad Request** - Invalid JSON or malformed request
+  ```json
+  {
+    "jsonrpc": "2.0",
+    "error": {
+      "code": -32700,
+      "message": "Parse error: Invalid JSON"
+    },
+    "id": null
+  }
+  ```
+
+- **500 Internal Server Error** - Server-side error
+  ```json
+  {
+    "status": "error",
+    "message": "Error details here"
+  }
+  ```
+
 **Monitoring the Server:**
 ```bash
 # Watch log output in real-time
@@ -195,6 +262,9 @@ tail -f ~/.bees/mcp.log
 
 # Check if server process is running
 ps aux | grep start-mcp
+
+# Test health endpoint
+curl http://127.0.0.1:8000/health
 
 # Check if port is in use (server is listening)
 lsof -i :8000   # macOS/Linux

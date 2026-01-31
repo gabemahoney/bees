@@ -695,8 +695,15 @@ import uvicorn
 from .mcp_server import mcp
 
 # In main() after loading config:
+# Get Starlette app from FastMCP
+http_app = mcp.http_app()
+
+# Set up custom HTTP routes
+setup_http_routes(http_app)
+
+# Run uvicorn with configured app
 uvicorn.run(
-    mcp.http_app,        # Property access (not get_asgi_app() method)
+    http_app,            # Starlette ASGI application from FastMCP
     host=host,           # From config.yaml: http.host (default: 127.0.0.1)
     port=port,           # From config.yaml: http.port (default: 8000)
     log_level="info"
@@ -705,10 +712,12 @@ uvicorn.run(
 
 **Code Style Notes**:
 - **Import Organization**: Follows PEP 8 with standard library imports (logging, signal, sys,
-  pathlib, uvicorn) grouped together, followed by a blank line, then local imports (.config,
-  .mcp_server, .corruption_state)
-- **Property Access**: The FastMCP instance exposes `http_app` as a property, not a method. Use
-  `mcp.http_app` directly (not `mcp.get_asgi_app()`)
+  pathlib, uvicorn) grouped together, followed by a blank line, then minimal Starlette imports
+  (starlette.requests, starlette.responses.JSONResponse only), followed by local imports
+  (.config, .mcp_server, .corruption_state). Unused Starlette imports (Starlette, Response, Route)
+  removed in favor of leveraging FastMCP's built-in HTTP app, maintaining code cleanliness
+- **Method Call**: The FastMCP instance exposes `http_app` as a method that returns a Starlette
+  ASGI application. Call `mcp.http_app()` to get the application instance
 - **Log Message Timing**: The startup log message "Launching HTTP server on {host}:{port}..."
   appears before `uvicorn.run()` is called, indicating startup intention rather than completion.
   This accurately reflects the server state - if uvicorn.run() fails, the "Launching" message was
@@ -716,13 +725,65 @@ uvicorn.run(
 - **Blocking Call**: `uvicorn.run()` is a blocking call that doesn't return until server shutdown.
   Any code after this line only executes during cleanup
 
+**HTTP Endpoint Routing** (Task bees-q5g7):
+
+The server provides custom HTTP endpoints alongside FastMCP's built-in MCP protocol endpoints:
+
+**Endpoint Architecture**:
+- `/mcp` - FastMCP's MCP JSON-RPC endpoint (handles MCP tool execution)
+- `/health` - Custom health check endpoint (GET/POST)
+
+**Implementation** (`src/main.py`):
+```python
+async def health_endpoint(request: Request) -> JSONResponse:
+    """HTTP endpoint handler for /health route."""
+    try:
+        health_data = _health_check()
+        return JSONResponse(content=health_data, status_code=200)
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            content={"status": "error", "message": str(e)},
+            status_code=500
+        )
+
+def setup_http_routes(app):
+    """Configure HTTP endpoint routes on the Starlette application."""
+    app.add_route("/health", health_endpoint, methods=["GET", "POST"])
+    logger.info("HTTP routes configured: /health")
+    logger.info("MCP endpoint /mcp provided by FastMCP")
+```
+
+**Routing Design Decisions**:
+- **Separation of Concerns**: Custom endpoints (health) are added via `setup_http_routes()` while
+  MCP protocol endpoints are handled by FastMCP's internal routing
+- **Starlette Integration**: Uses Starlette's `add_route()` method to register custom endpoints on
+  FastMCP's Starlette app
+- **Error Handling**: Each endpoint implements comprehensive error handling with appropriate HTTP
+  status codes (200 for success, 500 for server errors)
+- **Method Support**: Health endpoint supports both GET and POST methods for flexibility
+
+**Error Handling Strategy**:
+- **JSON Responses**: All endpoints return JSON-formatted responses for consistency
+- **HTTP Status Codes**: Proper status codes used (200 OK, 500 Internal Server Error)
+- **Error Logging**: All errors logged with `logger.error()` before returning error response
+- **Graceful Degradation**: Errors don't crash server, appropriate error responses returned
+
+**JSON-RPC Protocol**:
+The `/mcp` endpoint is provided by FastMCP and handles MCP JSON-RPC protocol automatically:
+- Request format: `{"jsonrpc": "2.0", "method": "tool_name", "params": {...}, "id": 1}`
+- Response format: `{"jsonrpc": "2.0", "result": {...}, "id": 1}` or error object
+- Error codes follow JSON-RPC 2.0 specification (-32700 parse error, -32600 invalid request, etc.)
+
 **Startup Flow**:
 1. Load configuration from `config.yaml` (host, port, ticket_directory)
 2. Validate ticket database for corruption (fail-fast if corrupt)
 3. Call `start_server()` to set internal running flag
-4. Initialize uvicorn with FastMCP's ASGI app
-5. Bind to configured host:port
-6. Accept HTTP connections with MCP JSON-RPC protocol
+4. Get Starlette app from `mcp.http_app()`
+5. Configure custom HTTP routes via `setup_http_routes(app)`
+6. Initialize uvicorn with configured Starlette app
+7. Bind to configured host:port
+8. Accept HTTP connections with MCP JSON-RPC protocol and custom endpoints
 
 **Shutdown Handling** (Task bees-kf30):
 - Signal handlers (SIGINT/SIGTERM) registered *after* successful server initialization

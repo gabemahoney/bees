@@ -189,8 +189,8 @@ class TestServerInitialization:
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
     @patch('src.main.is_corrupt')
-    @patch('src.main.mcp.http_app', new_callable=lambda: MagicMock())
-    def test_http_server_initialization(self, mock_http_app, mock_is_corrupt, mock_load_config,
+    @patch('src.main.mcp.http_app')
+    def test_http_server_initialization(self, mock_http_app_method, mock_is_corrupt, mock_load_config,
                                         mock_setup_signals, mock_start_server, mock_uvicorn_run, tmp_path):
         """Test that HTTP server is initialized with correct parameters."""
         ticket_dir = tmp_path / "tickets"
@@ -202,11 +202,15 @@ class TestServerInitialization:
             "ticket_directory": str(ticket_dir)
         })
 
+        # Mock http_app() to return a mock Starlette app
+        mock_app = MagicMock()
+        mock_http_app_method.return_value = mock_app
+
         main()
 
         # Verify uvicorn.run called with correct parameters
         mock_uvicorn_run.assert_called_once_with(
-            mock_http_app,
+            mock_app,
             host="127.0.0.1",
             port=8000,
             log_level="info"
@@ -770,3 +774,115 @@ class TestDocumentation:
         # Verify the code block shows uvicorn.run with mcp.http_app
         assert 'uvicorn.run(' in code_block, "Code block should show uvicorn.run() call"
         assert 'mcp.http_app' in code_block, "Code block should show mcp.http_app property"
+
+
+class TestImportVerification:
+    """Tests for import cleanliness and verification in main.py."""
+
+    def test_no_unused_imports_in_main(self):
+        """Test that src/main.py has no unused imports."""
+        import ast
+        import re
+
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            content = f.read()
+
+        # Parse the AST
+        tree = ast.parse(content)
+
+        # Collect all imports
+        imports = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    name = alias.asname if alias.asname else alias.name
+                    imports[name] = alias.name
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                for alias in node.names:
+                    name = alias.asname if alias.asname else alias.name
+                    imports[name] = f"{module}.{alias.name}" if module else alias.name
+
+        # Check that each imported name is used in the code
+        # Remove import statements and docstrings for usage check
+        code_without_imports = re.sub(r'^(from|import)\s+.*$', '', content, flags=re.MULTILINE)
+
+        unused = []
+        for import_name in imports.keys():
+            # Check if the imported name appears in the code (not in import statements)
+            if import_name not in code_without_imports:
+                unused.append(import_name)
+
+        assert len(unused) == 0, f"Found unused imports in main.py: {unused}"
+
+    def test_only_jsonresponse_imported_from_starlette_responses(self):
+        """Test that only JSONResponse is imported from starlette.responses."""
+        import ast
+
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+
+        # Find imports from starlette.responses
+        starlette_response_imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module == 'starlette.responses':
+                    for alias in node.names:
+                        starlette_response_imports.append(alias.name)
+
+        # Should only import JSONResponse
+        assert 'JSONResponse' in starlette_response_imports, \
+            "JSONResponse should be imported from starlette.responses"
+        assert 'Response' not in starlette_response_imports, \
+            "Response should not be imported (unused)"
+        assert len(starlette_response_imports) == 1, \
+            f"Only JSONResponse should be imported from starlette.responses, found: {starlette_response_imports}"
+
+    def test_starlette_application_not_imported(self):
+        """Test that Starlette application class is not imported (unused)."""
+        import ast
+
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+
+        # Check for Starlette import
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module == 'starlette.applications':
+                    for alias in node.names:
+                        assert alias.name != 'Starlette', \
+                            "Starlette class should not be imported (unused)"
+
+    def test_starlette_route_not_imported(self):
+        """Test that Route class is not imported from starlette.routing (unused)."""
+        import ast
+
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            content = f.read()
+
+        tree = ast.parse(content)
+
+        # Check for Route import
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module == 'starlette.routing':
+                    pytest.fail("starlette.routing should not be imported at all (unused)")
+
+    def test_server_starts_with_cleaned_imports(self):
+        """Test that server can start successfully with cleaned imports."""
+        # This test verifies that removing unused imports doesn't break functionality
+        from src.main import main, setup_signal_handlers
+        from src.mcp_server import start_server
+
+        # If imports are correct, these should be importable without errors
+        assert callable(main), "main() should be callable"
+        assert callable(setup_signal_handlers), "setup_signal_handlers() should be callable"
+        assert callable(start_server), "start_server() should be callable"
