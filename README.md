@@ -76,10 +76,6 @@ instructions.
 
 ### Configuration
 
-Bees runs as an MCP server, so you need to configure it for Claude Code to access it. The `cwd`
-(working directory) field is **required** because the server needs to find the bees project's
-`config.yaml` and `tickets/` directory.
-
 #### Configuration Management
 
 Bees loads its configuration from `config.yaml` at server startup. Edit this file to customize server settings like HTTP host, port, and ticket directory location.
