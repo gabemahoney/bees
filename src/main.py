@@ -8,63 +8,24 @@ import logging
 import signal
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
-import yaml
-
+from .config import Config, load_config
 from .mcp_server import mcp, start_server, stop_server
 from .corruption_state import is_corrupt, get_report
 
-# Configure logging
+# Ensure log directory exists
+log_dir = Path.home() / '.bees'
+log_dir.mkdir(exist_ok=True)
+
+# Configure logging to file for MCP stdio compatibility
+# Note: This may not take effect if mcp_server is imported first
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename=log_dir / 'mcp.log',
+    filemode='a'
 )
 logger = logging.getLogger(__name__)
-
-
-def load_config(config_path: str = "config.yaml") -> Dict[str, Any]:
-    """
-    Load configuration from YAML file.
-
-    Args:
-        config_path: Path to configuration file (default: config.yaml)
-
-    Returns:
-        dict: Configuration settings
-
-    Raises:
-        FileNotFoundError: If config file doesn't exist
-        yaml.YAMLError: If config file is malformed
-    """
-    config_file = Path(config_path)
-
-    if not config_file.exists():
-        raise FileNotFoundError(
-            f"Configuration file not found: {config_path}\n"
-            f"Please create a config.yaml file with server settings."
-        )
-
-    try:
-        with open(config_file, 'r') as f:
-            config = yaml.safe_load(f)
-
-        if not config:
-            raise ValueError("Configuration file is empty")
-
-        # Validate required fields
-        required_fields = ['host', 'port', 'ticket_directory']
-        missing_fields = [field for field in required_fields if field not in config]
-
-        if missing_fields:
-            raise ValueError(
-                f"Missing required configuration fields: {', '.join(missing_fields)}"
-            )
-
-        return config
-
-    except yaml.YAMLError as e:
-        raise yaml.YAMLError(f"Failed to parse configuration file: {e}")
 
 
 def setup_signal_handlers(shutdown_callback):
@@ -126,9 +87,9 @@ def main():
         logger.info("Loading configuration...")
         config = load_config()
 
-        host = config.get('host', 'localhost')
-        port = config.get('port', 8000)
-        ticket_directory = config.get('ticket_directory', './tickets')
+        host = config.http_host
+        port = config.http_port
+        ticket_directory = config.ticket_directory
 
         # Validate ticket directory exists
         ticket_dir_path = Path(ticket_directory)
@@ -161,9 +122,6 @@ def main():
 
     except FileNotFoundError as e:
         logger.error(f"Configuration error: {e}")
-        sys.exit(1)
-    except yaml.YAMLError as e:
-        logger.error(f"Configuration parsing error: {e}")
         sys.exit(1)
     except ValueError as e:
         logger.error(f"Configuration validation error: {e}")

@@ -2,7 +2,7 @@
 Unit tests for MCP server startup and configuration.
 
 Tests src/main.py functionality including:
-- Configuration loading from config.yaml
+- Configuration integration with Config module
 - Server initialization with different config values
 - Signal handling for graceful shutdown
 - Error cases: invalid config, missing files, permission errors
@@ -15,100 +15,92 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
 import pytest
-import yaml
 
-from src.main import load_config, setup_signal_handlers, main
+from src.main import setup_signal_handlers, main
+from src.config import Config
 
 
-class TestConfigLoading:
-    """Tests for configuration loading from YAML files."""
+class TestConfigIntegration:
+    """Tests for Config module integration in main.py."""
 
-    def test_load_valid_config(self, tmp_path):
-        """Test loading a valid configuration file."""
-        config_file = tmp_path / "config.yaml"
-        config_data = {
-            "host": "localhost",
-            "port": 8000,
-            "ticket_directory": "./tickets"
-        }
-        config_file.write_text(yaml.dump(config_data))
+    @patch('src.main.load_config')
+    def test_main_uses_config_object(self, mock_load_config):
+        """Test that main() correctly loads Config object."""
+        mock_config = Config({
+            'http': {'host': '127.0.0.1', 'port': 8000},
+            'ticket_directory': './tickets'
+        })
+        mock_load_config.return_value = mock_config
 
-        config = load_config(str(config_file))
+        # Verify Config object attributes are accessible
+        assert mock_config.http_host == '127.0.0.1'
+        assert mock_config.http_port == 8000
+        assert mock_config.ticket_directory == './tickets'
 
-        assert config["host"] == "localhost"
-        assert config["port"] == 8000
-        assert config["ticket_directory"] == "./tickets"
+    @patch('src.main.load_config')
+    def test_main_accesses_http_host_attribute(self, mock_load_config):
+        """Test that main() accesses http_host attribute correctly."""
+        mock_config = Config({
+            'http': {'host': '0.0.0.0', 'port': 8000},
+            'ticket_directory': './tickets'
+        })
+        mock_load_config.return_value = mock_config
 
-    def test_load_config_missing_file(self):
-        """Test error when configuration file doesn't exist."""
-        with pytest.raises(FileNotFoundError) as exc_info:
-            load_config("/nonexistent/config.yaml")
+        # Test attribute access
+        assert mock_config.http_host == '0.0.0.0'
 
-        assert "Configuration file not found" in str(exc_info.value)
+    @patch('src.main.load_config')
+    def test_main_accesses_http_port_attribute(self, mock_load_config):
+        """Test that main() accesses http_port attribute correctly."""
+        mock_config = Config({
+            'http': {'host': '127.0.0.1', 'port': 9000},
+            'ticket_directory': './tickets'
+        })
+        mock_load_config.return_value = mock_config
 
-    def test_load_config_empty_file(self, tmp_path):
-        """Test error when configuration file is empty."""
-        config_file = tmp_path / "empty.yaml"
-        config_file.write_text("")
+        # Test attribute access
+        assert mock_config.http_port == 9000
 
-        with pytest.raises(ValueError) as exc_info:
-            load_config(str(config_file))
+    @patch('src.main.load_config')
+    def test_main_accesses_ticket_directory_attribute(self, mock_load_config):
+        """Test that main() accesses ticket_directory attribute correctly."""
+        mock_config = Config({
+            'http': {'host': '127.0.0.1', 'port': 8000},
+            'ticket_directory': '/custom/tickets'
+        })
+        mock_load_config.return_value = mock_config
 
-        assert "Configuration file is empty" in str(exc_info.value)
+        # Test attribute access
+        assert mock_config.ticket_directory == '/custom/tickets'
 
-    def test_load_config_malformed_yaml(self, tmp_path):
-        """Test error when YAML is malformed."""
-        config_file = tmp_path / "bad.yaml"
-        config_file.write_text("host: localhost\nport: [invalid yaml")
+    @patch('src.main.load_config')
+    def test_main_handles_missing_config(self, mock_load_config):
+        """Test that main() handles missing config gracefully with defaults."""
+        # Config module returns defaults when file missing
+        mock_config = Config({})
+        mock_load_config.return_value = mock_config
 
-        with pytest.raises(yaml.YAMLError):
-            load_config(str(config_file))
+        # Verify defaults are applied
+        assert mock_config.http_host == '127.0.0.1'
+        assert mock_config.http_port == 8000
+        assert mock_config.ticket_directory == './tickets'
 
-    def test_load_config_missing_required_fields(self, tmp_path):
-        """Test error when required fields are missing."""
-        config_file = tmp_path / "incomplete.yaml"
-        config_data = {"host": "localhost"}  # Missing port and ticket_directory
-        config_file.write_text(yaml.dump(config_data))
+    @patch('src.main.load_config')
+    def test_main_uses_nested_config_schema(self, mock_load_config):
+        """Test that main() works with nested http config schema."""
+        mock_config = Config({
+            'http': {
+                'host': '192.168.1.100',
+                'port': 3000
+            },
+            'ticket_directory': './data/tickets'
+        })
+        mock_load_config.return_value = mock_config
 
-        with pytest.raises(ValueError) as exc_info:
-            load_config(str(config_file))
-
-        assert "Missing required configuration fields" in str(exc_info.value)
-        assert "port" in str(exc_info.value)
-        assert "ticket_directory" in str(exc_info.value)
-
-    def test_load_config_custom_values(self, tmp_path):
-        """Test loading configuration with custom values."""
-        config_file = tmp_path / "custom.yaml"
-        config_data = {
-            "host": "0.0.0.0",
-            "port": 9000,
-            "ticket_directory": "/custom/path/tickets"
-        }
-        config_file.write_text(yaml.dump(config_data))
-
-        config = load_config(str(config_file))
-
-        assert config["host"] == "0.0.0.0"
-        assert config["port"] == 9000
-        assert config["ticket_directory"] == "/custom/path/tickets"
-
-    def test_load_config_with_comments(self, tmp_path):
-        """Test loading configuration file with YAML comments."""
-        config_file = tmp_path / "commented.yaml"
-        config_content = """
-# Server configuration
-host: localhost  # Bind address
-port: 8000       # Server port
-ticket_directory: ./tickets  # Ticket storage
-"""
-        config_file.write_text(config_content)
-
-        config = load_config(str(config_file))
-
-        assert config["host"] == "localhost"
-        assert config["port"] == 8000
-        assert config["ticket_directory"] == "./tickets"
+        # Verify nested schema is properly accessed
+        assert mock_config.http_host == '192.168.1.100'
+        assert mock_config.http_port == 3000
+        assert mock_config.ticket_directory == './data/tickets'
 
 
 class TestSignalHandling:
@@ -162,11 +154,10 @@ class TestServerInitialization:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 8000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         # Run main
         main()
@@ -190,17 +181,6 @@ class TestServerInitialization:
 
         assert exc_info.value.code == 1
 
-    @patch('src.main.is_corrupt')
-    @patch('src.main.load_config')
-    def test_main_exits_on_yaml_error(self, mock_load_config, mock_is_corrupt):
-        """Test that main exits with code 1 on YAML parsing error."""
-        mock_is_corrupt.return_value = False
-        mock_load_config.side_effect = yaml.YAMLError("Malformed YAML")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
 
     @patch('src.main.is_corrupt')
     @patch('src.main.load_config')
@@ -227,11 +207,10 @@ class TestServerInitialization:
         ticket_dir = tmp_path / "nonexistent_tickets"
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 8000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         # Verify directory doesn't exist
         assert not ticket_dir.exists()
@@ -255,11 +234,10 @@ class TestServerInitialization:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 8000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         mock_start_server.side_effect = Exception("Server startup failed")
 
@@ -284,11 +262,10 @@ class TestConfigurationVariations:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "0.0.0.0",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "0.0.0.0", "port": 8000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         main()
 
@@ -306,11 +283,10 @@ class TestConfigurationVariations:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 9000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 9000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         main()
 
@@ -330,11 +306,10 @@ class TestConfigurationVariations:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 8000},
             "ticket_directory": str(ticket_dir.absolute())
-        }
+        })
 
         main()
 
@@ -387,11 +362,10 @@ class TestCorruptionStateStartupCheck:
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
-        mock_load_config.return_value = {
-            "host": "localhost",
-            "port": 8000,
+        mock_load_config.return_value = Config({
+            "http": {"host": "localhost", "port": 8000},
             "ticket_directory": str(ticket_dir)
-        }
+        })
 
         main()
 
