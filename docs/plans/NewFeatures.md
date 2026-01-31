@@ -1,8 +1,18 @@
+- Bug: MCP does not start if DB is corrupt. It should start but refuse to respond to commands with a friendly message
+- Add a Feature Reviewer subagent who validates the work conforms to the docs
+- Egg: An unhatched bee. .eggs/feature/PRD.md SRD.md etc
+  - hatch egg == docs-to-epics
+- do-epic skill: if I have suggestions make them Tasks dont just do them!
 - Hives: container feature docs and all the bees to build them
+  - Colonize: Establish hive
+    - How does MCP server know about them? Config? .hive file in each folder?
+    - Checks for docs, if docs dont exist this writes them with the user
+  - Swarm: Do everything as one big workflow
+    - docs-to-epics, make-epic, do-epic, show
+    - But has to show more clear status
   - Hive state. Provides summary of where we are and whats done. I am getting lost
-  - Hive list
-  - Dont delete tickets, just archive the hive
-  - How does MCP server know about them? Config? .hive file in each folder?
+    - Hive list
+    - Dont delete tickets, just archive the hive
 - A simple tool (or MCP command) for determining the dependency order of a set of tickets
 - Similar to bd-prime. How to let agents know about features?
   1. Hook Configuration (~/.claude/settings.json):                                                                                       

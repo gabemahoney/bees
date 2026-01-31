@@ -44,11 +44,35 @@ The server runs independently in its own process, staying available for multiple
 sessions. This HTTP transport eliminates stdio interference issues that can occur with
 stdio-based MCP servers.
 
-**Code Quality Note**: The HTTP server implementation (`src/main.py`) maintains minimal,
-necessary imports for clean code. Only `JSONResponse` is imported from `starlette.responses`,
-as the server leverages FastMCP's built-in HTTP application without requiring direct use of
-Starlette's `Response`, `Route`, or `Starlette` application classes. This reduces dependencies
-and improves maintainability.
+### Quick Start: HTTP Transport Configuration
+
+**Recommended approach**: Use the example configuration file at `docs/examples/claude-config-http.json`
+as your starting point. This file shows the correct HTTP transport format for the bees MCP server.
+
+To configure Claude Code for HTTP transport:
+
+1. Copy the `bees` object from `docs/examples/claude-config-http.json` into your `~/.claude.json`
+   file under the `mcpServers` section
+2. Ensure the bees HTTP server is running (see [Starting the Server](#starting-the-server) below)
+3. Run `claude mcp list` to verify the connection shows `bees - ✓ Connected`
+
+**Example HTTP configuration:**
+```json
+{
+  "mcpServers": {
+    "bees": {
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+**Key difference from stdio**: HTTP transport uses a simple `url` field instead of `command`,
+`args`, `cwd`, and `env` fields. The server runs independently as a persistent process, making
+it more reliable and supporting concurrent connections from multiple Claude Code sessions.
+
+**Migrating from stdio?** See the [Migration Guide](docs/migration-guide.md) for step-by-step
+instructions.
 
 ### Configuration
 
@@ -58,29 +82,7 @@ Bees runs as an MCP server, so you need to configure it for Claude Code to acces
 
 #### Configuration Management
 
-Bees uses a centralized configuration module (`src/config.py`) that provides type-safe access to
-settings through a `Config` object. The configuration is loaded from `config.yaml` at server
-startup.
-
-**Key features:**
-- Type-safe attribute access: `config.http_host`, `config.http_port`, `config.ticket_directory`
-- Nested schema support for logical grouping (e.g., `http.host`, `http.port`)
-- Default values if config file is missing or incomplete
-- Automatic validation and error reporting
-
-The main server (`src/main.py`) imports and uses the `Config` class:
-
-```python
-from .config import Config, load_config
-
-# Load configuration
-config = load_config()
-
-# Access settings via attributes
-host = config.http_host         # Default: 127.0.0.1
-port = config.http_port         # Default: 8000
-tickets = config.ticket_directory  # Default: ./tickets
-```
+Bees loads its configuration from `config.yaml` at server startup. Edit this file to customize server settings like HTTP host, port, and ticket directory location.
 
 #### HTTP Transport Settings
 
@@ -102,29 +104,9 @@ http:
   port: 8000
 ```
 
-**Host Validation**: The host value is validated to ensure it's a valid IP address:
-- **Valid formats**: IPv4 addresses (e.g., `127.0.0.1`, `0.0.0.0`) and IPv6 addresses (e.g., `::1`, `::`)
-- **Security**: Only IP addresses are accepted - hostnames like `localhost` or domain names are rejected
-- **Error handling**: Invalid hosts raise a clear `ValueError` with examples of valid formats
+**Host**: Must be a valid IP address (IPv4 or IPv6). Use `127.0.0.1` for localhost (recommended for security) or `0.0.0.0` to allow external connections.
 
-Examples of valid and invalid hosts:
-- Valid: `127.0.0.1`, `0.0.0.0`, `192.168.1.1`, `::1`, `::`, `2001:db8::1`
-- Invalid: `localhost`, `example.com`, `999.999.999.999`, `127.0.0.1:8000`, `192.168` (partial IP)
-
-**Port Validation**: The port value is automatically validated during configuration loading:
-- **Valid range**: 1 to 65535 (standard TCP/IP port range)
-- **Type coercion**: String values from YAML (e.g., `"8000"`) are automatically converted to integers
-- **Error handling**: Invalid ports (negative, zero, > 65535, or non-numeric strings) raise a clear
-`ValueError` with details about the invalid value
-
-Examples of valid and invalid ports:
-- Valid: `1`, `8000`, `65535`, `"8080"` (coerced to integer)
-- Invalid: `0`, `-1`, `65536`, `99999`, `"abc"`, `""`, `"8000.5"`
-
-**Security Note**: The default host `127.0.0.1` ensures the server only accepts local connections,
-preventing external access. This localhost binding is a deliberate security measure - the HTTP
-server will reject connections from external machines. Only change this to `0.0.0.0` if you
-understand the security implications and need external access.
+**Port**: Must be in range 1-65535. Use ports above 1024 to avoid needing elevated permissions.
 
 #### Starting the Server
 
@@ -283,115 +265,60 @@ kill <PID>
 kill -9 <PID>
 ```
 
-#### Graceful Shutdown
+#### Connecting Claude Code
 
-The HTTP server implements graceful shutdown to ensure clean termination:
+**RECOMMENDED: HTTP Transport**
 
-**Signal Handling:**
-- Responds to SIGINT (Ctrl+C) and SIGTERM signals
-- Signal handlers are registered *after* successful server initialization
-- Handlers call `stop_server()` for cleanup but don't force immediate exit
-- Relies on uvicorn's built-in shutdown mechanism to complete gracefully
+HTTP transport is the preferred method for connecting Claude Code to the bees MCP server. It provides
+better reliability and supports concurrent connections.
 
-**Shutdown Process:**
-1. Signal received (SIGINT/SIGTERM)
-2. Cleanup handler (`stop_server()`) called to close MCP resources
-3. Uvicorn completes its shutdown sequence
-4. All connections closed cleanly
-5. Server exits without hanging or leaving resources open
+See the [Quick Start: HTTP Transport Configuration](#quick-start-http-transport-configuration) section
+above for the HTTP configuration example. The example configuration file at
+`docs/examples/claude-config-http.json` shows the correct format. Merge the `bees` entry from that
+file into your `~/.claude.json` under the `mcpServers` section.
 
-This design prevents race conditions where signal handlers might be called before the server is
-fully initialized, and ensures uvicorn has time to complete its shutdown procedures.
+After updating your configuration, run `claude mcp list` to verify the connection shows "bees - ✓ Connected".
 
-**Note**: The `claude mcp add` command does not automatically set `cwd` ([known issue](https://github.com/modelcontextprotocol/python-sdk/issues/1520)), so you must add it manually after running the command.
+> **Note:** For legacy stdio transport configuration, see [docs/archive/stdio-transport.md](docs/archive/stdio-transport.md).
 
-**Option A: User Scope (Available in All Projects)**
+### HTTP Transport Testing & Verification
 
-Use this if you want bees tools available across all your projects.
+The HTTP transport configuration has been validated end-to-end and is ready for production use.
+Testing confirmed:
 
-```bash
-cd /path/to/bees/project
-claude mcp add --scope user bees poetry run start-mcp
-```
+**Connection Verification:**
+1. Start the server: `poetry run start-mcp`
+2. Verify server is listening: `lsof -i :8000`
+3. Check connection status: `claude mcp list`
+   - Expected output: `bees: http://127.0.0.1:8000/mcp (HTTP) - ✓ Connected`
 
-After running, manually add the `cwd` field to `~/.claude.json`:
+**Tool Execution:**
+- MCP tools execute successfully over HTTP transport
+- Test with health check: `mcp__bees___health_check` returns server status
+- No latency or stability issues observed
 
-```json
-{
-  "mcpServers": {
-    "bees": {
-      "command": "poetry",
-      "args": ["run", "start-mcp"],
-      "cwd": "/Users/yourname/projects/bees",
-      "env": {}
-    }
-  }
-}
-```
+**Migration Validation:**
+- HTTP transport provides equivalent functionality to stdio
+- Cleaner server lifecycle management
+- Supports concurrent Claude Code sessions
+- No additional troubleshooting steps required
 
-**Option B: Local Scope (Single Project Only)**
-
-Use this if you only want bees tools in one specific project.
-
-From your target project directory:
-```bash
-cd /path/to/your/target-project
-claude mcp add --scope local bees poetry run start-mcp
-```
-
-This creates an entry in `~/.claude.json` under your project's path. Now manually add the `cwd`
-field to that project's `mcpServers` section. Find your project path in the file and add `cwd`:
-
-```json
-"/Users/yourname/projects/your-project": {
-  "mcpServers": {
-    "bees": {
-      "command": "poetry",
-      "args": ["run", "start-mcp"],
-      "cwd": "/Users/yourname/projects/bees",  // ← Add this line
-      "env": {}
-    }
-  }
-}
-```
-
-**Important**:
-- Replace paths with your actual directories
-- The `cwd` field must point to the bees project directory
-- Restart Claude Code after any configuration change
-
-### Verify Installation
-
-After restarting your Claude Code session, verify the MCP server is working:
-
-1. Start a new Claude Code session
-2. Ask Claude: "Can you use the bees health_check tool?"
-3. Claude will call the tool and should report:
-   ```json
-   {"status": "healthy", "ready": true, ...}
-   ```
-
-Alternatively, check available MCP servers:
-```bash
-claude mcp list
-```
-
-You should see `bees` in the list of configured servers.
+For detailed test results, see [docs/http-transport-test-report.md](docs/http-transport-test-report.md).
 
 ### Troubleshooting
 
 **MCP tools not available:**
-- Verify the `cwd` path in `~/.claude.json` is correct and absolute (not relative)
-- Run `claude mcp list` to see configured servers
-- Check Claude Code logs for error messages
-- Ensure Poetry is in your PATH
+- Ensure the bees HTTP server is running: `poetry run start-mcp`
+- Run `claude mcp list` to verify connection shows `bees - ✓ Connected`
+- Check server logs: `tail -f ~/.bees/mcp.log`
+- Verify `~/.claude.json` has the HTTP transport configuration (see [Quick Start](#quick-start-http-transport-configuration))
 - Start a new Claude Code session after config changes
 
 **Connection errors:**
-- Verify `config.yaml` exists in project root
-- Check that ticket directories exist (`tickets/epics/`, `tickets/tasks/`,
-  `tickets/subtasks/`)
-- Run `poetry run start-mcp` manually to see detailed error messages
+- Verify the server is listening: `lsof -i :8000` (macOS/Linux)
+- Check `config.yaml` exists in project root
+- Ensure ticket directories exist (`tickets/epics/`, `tickets/tasks/`, `tickets/subtasks/`)
+- Review server logs for startup errors: `tail -f ~/.bees/mcp.log`
 
 **Permission errors:**
 - Ensure your user has read/write access to the ticket directories

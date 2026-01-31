@@ -689,6 +689,43 @@ MCP communication.
   lifecycle
 - **Security**: Localhost binding (127.0.0.1) prevents external access by default
 
+**Configuration**: See the README.md Quick Start section for HTTP transport configuration
+details and the example configuration file at `docs/examples/claude-config-http.json`.
+
+**Documentation Structure**: stdio transport documentation has been archived to
+`docs/archive/stdio-transport.md`. This separation keeps the main README focused on the recommended
+HTTP transport approach while preserving legacy stdio instructions for users who need them. The
+README now includes only a brief note about stdio as a legacy option with a link to the archived
+documentation.
+
+**HTTP Transport Testing & Validation** (Task bees-1u88):
+
+End-to-end testing confirmed HTTP transport is production-ready. The testing process validated:
+
+1. **Configuration Migration**: Successfully updated `~/.claude.json` from stdio transport (command,
+   args, cwd, env fields) to HTTP transport (url field only)
+2. **Server Startup**: `poetry run start-mcp` launches cleanly, binds to configured port (8000),
+   accepts connections without errors
+3. **Connection Verification**: `claude mcp list` command confirms successful connection with output:
+   `bees: http://127.0.0.1:8000/mcp (HTTP) - ✓ Connected`
+4. **Tool Execution**: MCP tools execute successfully over HTTP transport, including `health_check`
+   tool returning proper server status
+5. **Stability**: No latency issues, clean connection lifecycle, stable throughout testing
+
+**Testing Methodology**:
+- Sequential validation of each migration step (config → server → connection → tools)
+- Automated verification using system commands (`lsof`, `claude mcp list`)
+- Direct tool execution testing via Claude Code MCP integration
+- Performance observation (startup time, response latency, stability)
+
+**Test Results**: All tests passed. No issues encountered. HTTP transport provides equivalent
+functionality to stdio with improved reliability and cleaner lifecycle management. Detailed test
+report available at `docs/http-transport-test-report.md`.
+
+**Migration Recommendation**: Users can safely migrate to HTTP transport. No additional
+troubleshooting steps required beyond standard configuration. HTTP transport is now the recommended
+and default approach for connecting Claude Code to the bees MCP server.
+
 **Implementation Details** (`src/main.py`):
 ```python
 import uvicorn

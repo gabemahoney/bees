@@ -1,0 +1,20 @@
+{
+  "_comment": "Bees MCP Server - HTTP Transport Configuration",
+  "_instructions": [
+    "This example shows how to configure the bees MCP server using HTTP transport.",
+    "To use this configuration:",
+    "1. Merge this 'mcpServers.bees' object into your ~/.claude.json file under the 'mcpServers' section",
+    "2. Ensure the bees HTTP server is running on http://127.0.0.1:8000",
+    "3. Run 'claude mcp list' to verify connection shows 'bees - ✓ Connected'",
+    "",
+    "Migration from stdio:",
+    "- Remove 'command', 'args', 'cwd', and 'env' fields from your old bees config",
+    "- Replace with 'url' field pointing to HTTP endpoint",
+    "- The HTTP transport is more reliable and supports concurrent connections"
+  ],
+  "mcpServers": {
+    "bees": {
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}

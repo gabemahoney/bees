@@ -2,7 +2,7 @@
 
 ## Overview
 
-epic.md is a ticket management system designed for LLMs.
+Bees is a ticket management system designed for LLMs.
 Persistence is entirely in markdown files.
 An MCP server is used to edit and query the md files.
 A linter ensures manual edits to the md files conform to the schema.
