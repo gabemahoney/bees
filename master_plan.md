@@ -525,6 +525,168 @@ Tests are implemented in `tests/test_index_generator.py` with three test classes
 All tests use pytest fixtures with `tmp_path` and `monkeypatch` to create isolated test
 environments and avoid filesystem pollution.
 
+### Index Regeneration Workflow (Task bees-cdun)
+
+#### Overview
+
+The index regeneration workflow provides mechanisms for updating `tickets/index.md` when tickets
+change. It supports both manual regeneration via CLI commands and automatic regeneration via file
+watching.
+
+#### Architecture Components
+
+**1. Timestamp Tracking**
+
+The index generation now includes timestamp metadata in the header:
+
+```markdown
+# Ticket Index
+
+*Generated: 2026-01-30 22:44:59*
+
+## Epics
+...
+```
+
+This timestamp enables "smart" regeneration that detects when the index is stale.
+
+**Implementation** (`src/index_generator.py`):
+- `format_index_markdown()` accepts `include_timestamp` parameter (default: True)
+- Uses `datetime.now().strftime()` to format timestamp
+- `is_index_stale()` compares index modification time against all ticket files
+- Returns True if index.md doesn't exist or is older than any ticket file
+
+**Design Decisions**:
+- Uses filesystem mtimes, not parsing timestamp from index content - more reliable and efficient
+- Timestamp is for human reference only - programmatic staleness checking uses file modification
+  times
+- `is_index_stale()` returns False if no tickets exist - empty directory means index is current
+
+**2. CLI Regeneration Command**
+
+Added `regenerate-index` subcommand to `src/cli.py`:
+
+```bash
+poetry run python -m src.cli regenerate-index
+poetry run python -m src.cli regenerate-index --force
+```
+
+**Implementation**:
+- Checks `is_index_stale()` before regenerating (skips if up-to-date)
+- `--force` flag bypasses staleness check
+- Writes generated markdown to `tickets/index.md` using `get_index_path()`
+- Returns exit code 0 on success, 2 on exception
+
+**Design Decisions**:
+- Manual regeneration is the primary workflow - watching is opt-in
+- Smart regeneration avoids unnecessary work when index is current
+- Force flag allows regeneration for debugging or after manual index.md deletion
+
+**3. File System Watcher**
+
+Implemented optional watcher in `src/watcher.py` using the watchdog library:
+
+```bash
+poetry run python -m src.cli watch
+poetry run python -m src.cli watch --debounce 5.0
+```
+
+**Implementation** (`src/watcher.py`):
+- `TicketChangeHandler`: FileSystemEventHandler that monitors .md files
+- Debouncing: Waits configurable seconds (default: 2.0) after last change before regenerating
+- Monitors create, modify, delete events
+- Filters: Ignores directories, non-.md files, and index.md itself (avoids regeneration loops)
+- Uses watchdog's Observer to monitor tickets directory recursively
+
+**Threading Architecture**:
+
+The watcher uses `threading.Timer` for non-blocking debounced regeneration instead of blocking
+`time.sleep()`. This architectural decision ensures the watchdog event handler thread remains
+responsive and can process multiple file system events without blocking.
+
+- **Non-blocking Design**: `threading.Timer` schedules delayed execution in a separate thread,
+  allowing the event handler to immediately return and process additional file system events
+  during the debounce period.
+
+- **Timer Management**: The handler stores a reference to the active timer (`self._timer`) and
+  cancels it when new file changes occur. This ensures only the most recent change triggers
+  regeneration after the debounce period expires.
+
+- **Thread Safety**: A `threading.Lock` (`self._timer_lock`) protects timer operations,
+  preventing race conditions when multiple file events arrive simultaneously from different
+  watchdog threads. Type annotations are used consistently for all threading primitives:
+  `_timer: threading.Timer | None` and `_timer_lock: threading.Lock`, maintaining type
+  safety and code consistency throughout the `TicketChangeHandler` class.
+
+- **Integration with Watchdog**: The watchdog library's `Observer` runs event handlers in
+  dedicated threads. Blocking these threads with `time.sleep()` would prevent other file system
+  events from being processed, potentially causing event queue buildup and missed changes during
+  rapid file operations.
+
+**Process Flow**:
+1. Ticket file changes detected (create/modify/delete)
+2. Handler checks if event should be processed (is .md file, not index.md)
+3. Acquires timer lock and cancels any existing timer
+4. Sets pending regeneration flag and records timestamp
+5. Creates new `threading.Timer` scheduled for debounce period
+6. Releases lock and starts timer (non-blocking)
+7. Handler returns immediately, ready for next event
+8. After debounce period expires (if no cancellation), timer callback fires
+9. Calls `generate_index()` and writes to index.md
+10. Logs success/failure and cleans up timer state
+
+**Design Decisions**:
+- Opt-in via CLI command - most users will use manual regeneration
+- Debouncing prevents excessive regeneration when multiple files change
+- Recursive monitoring catches changes in all subdirectories (epics/, tasks/, subtasks/)
+- Graceful error handling - watcher continues running even if regeneration fails
+- KeyboardInterrupt (Ctrl+C) cleanly stops observer
+
+**4. CLI Integration**
+
+The CLI now has three modes:
+- `lint`: Run ticket linter (default for backward compatibility)
+- `regenerate-index`: Manual index regeneration with staleness detection
+- `watch`: Start file system watcher for automatic regeneration
+
+**Implementation** (`src/cli.py`):
+- Converted to subcommand-based argument parser using `argparse.subparsers`
+- Added imports for `start_watcher`, `is_index_stale`, `TICKETS_DIR`
+- Each subcommand has its own parser with specific arguments
+- Global `-v/--verbose` flag applies to all commands
+
+#### Integration Points
+
+**With Index Generation** (Task bees-ckbh):
+- Regeneration calls `generate_index()` which includes timestamp
+- Uses `is_index_stale()` to optimize regeneration decisions
+- Writes to path from `get_index_path()` in `src/paths.py`
+
+**With MCP Server** (Future Task bees-drfx):
+- MCP tool will call `generate_index()` and write to index.md
+- Could expose `is_index_stale()` to let agents check before regenerating
+- Watcher is CLI-only - MCP agents use manual regeneration
+
+#### Design Decisions: Manual vs Automatic Regeneration
+
+**Manual Regeneration** (Recommended):
+- Predictable - regenerates exactly when user requests
+- Efficient - uses staleness detection to avoid unnecessary work
+- Simple - no background processes or resource usage
+- Best for: CI/CD pipelines, agent workflows, development
+
+**Automatic Regeneration** (Opt-in):
+- Convenient - index always current without explicit commands
+- Overhead - watcher process runs continuously
+- Debouncing minimizes regeneration frequency
+- Best for: Active development with frequent ticket changes, IDEs with live preview
+
+**Why Manual is Default**:
+- Most use cases are batch operations (agent creates multiple tickets, then regenerates once)
+- Automatic watching adds system overhead with minimal benefit
+- Agent workflows don't benefit from real-time updates (agents regenerate explicitly)
+- Simpler mental model - regeneration is explicit action, not hidden background process
+
 ### MCP Tool Registration (Task bees-drfx)
 
 #### Overview

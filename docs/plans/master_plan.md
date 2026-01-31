@@ -4437,3 +4437,223 @@ def _execute_query(query_name: str, params: str | None = None) -> Dict[str, Any]
 - Unit tests for parameterized queries
 - Test data fixtures for query validation
 - Expected result assertions
+
+## File System Watcher - Timer Cleanup Mechanism
+
+### Overview
+
+The file system watcher (`src/watcher.py`) monitors the tickets directory and automatically
+regenerates the index when ticket files change. It uses `threading.Timer` with a debounce
+mechanism to batch rapid file changes into a single regeneration. To prevent resource leaks
+and ensure graceful shutdown, a cleanup mechanism cancels any pending timer when the watcher
+stops.
+
+**Related Task**: bees-yzc2
+
+### Architecture
+
+**Problem Statement**:
+When `observer.stop()` is called during shutdown (e.g., Ctrl+C), any pending `threading.Timer`
+continues running until it fires or the process exits. This causes two issues:
+1. Timer thread may fire after observer is stopped, causing errors
+2. Resources (timer thread) are not properly cleaned up during graceful shutdown
+
+**Solution**: Add a `cleanup()` method to `TicketChangeHandler` that cancels any pending timer,
+and call it before `observer.stop()` in the shutdown path.
+
+### Threading Considerations
+
+**Timer Management**:
+- `self._timer: threading.Timer | None` - Active timer instance or None
+- `self._timer_lock: threading.Lock` - Protects timer state from race conditions
+- All timer operations (create, cancel, clear) must acquire the lock
+
+**Thread Creation Overhead**:
+Each `threading.Timer` creates a new daemon thread when started. The timer thread waits for
+the specified delay, then executes the callback function (`_do_regeneration`) in that thread
+context. While this adds thread creation overhead, it's acceptable for this use case because:
+- Index regeneration events are relatively infrequent (typically seconds or minutes apart)
+- Thread creation cost (~milliseconds) is negligible compared to index regeneration time
+- Daemon threads automatically terminate when the main program exits
+- Alternative approaches (asyncio, thread pools) would add complexity without meaningful benefit
+
+**Thread Safety Requirements**:
+1. Timer creation in `_trigger_regeneration()` must be atomic with timer cancellation
+2. Cleanup must safely cancel timer even if regeneration callback is executing
+3. Multiple calls to `cleanup()` must be idempotent and thread-safe
+
+**Lock Usage Pattern**:
+```python
+with self._timer_lock:
+    if self._timer is not None:
+        self._timer.cancel()  # Stops timer if not yet fired
+        self._timer = None
+    self.pending_regeneration = False
+```
+
+### Graceful Shutdown Pattern
+
+**Shutdown Sequence** (in `start_watcher()`):
+```python
+try:
+    while True:
+        time.sleep(1)
+except KeyboardInterrupt:
+    logger.info("Stopping watcher...")
+    event_handler.cleanup()      # Cancel pending timer first
+    observer.stop()              # Stop watchdog observer
+observer.join()                  # Wait for observer thread to finish
+```
+
+**Why This Order Matters**:
+1. `cleanup()` first - Ensures timer won't fire during shutdown
+2. `observer.stop()` second - Signals watchdog to stop processing events
+3. `observer.join()` last - Blocks until observer thread terminates cleanly
+
+### Integration with Watchdog Observer Lifecycle
+
+**Observer States**:
+- `observer.start()` - Starts file monitoring thread
+- `observer.stop()` - Signals observer to stop (non-blocking)
+- `observer.join()` - Waits for observer thread to finish (blocking)
+
+**Event Handler Lifecycle**:
+- Created before observer starts
+- Receives events while observer is running
+- Must cleanup resources before observer stops
+- Should not create new timers after `cleanup()` is called
+
+**Timer Lifecycle**:
+1. File event triggers `_trigger_regeneration()`
+2. Timer is created and scheduled to fire after debounce_seconds
+3. If another event arrives, old timer is cancelled and new one is created
+4. When timer fires, `_do_regeneration()` runs and clears timer reference
+5. On shutdown, `cleanup()` cancels any pending timer before it fires
+
+### Design Decisions
+
+**Why `threading.Timer` instead of blocking sleep**:
+- Using `time.sleep()` in the watchdog event handler would block the watchdog thread
+- Blocked watchdog thread cannot process subsequent file system events until sleep completes
+- `threading.Timer` allows non-blocking event handling by scheduling regeneration in a separate thread
+- Trade-off: Thread creation overhead vs responsive event handling
+
+**Thread creation overhead**:
+- `threading.Timer` creates a new thread for each scheduled regeneration
+- Cancelled timers don't execute their callback, but the thread is still created
+- Thread creation cost: ~10-50ms per timer on typical systems
+- For typical usage (occasional ticket edits), overhead is negligible
+- For batch operations (100+ rapid file changes), expect ~1-5 seconds total overhead
+- Acceptable trade-off for maintaining watchdog responsiveness and preventing event blocking
+
+**Why `cleanup()` instead of destructor**:
+- Explicit cleanup allows deterministic resource release
+- Can be called at precise point in shutdown sequence
+- Avoids relying on Python garbage collection timing
+
+**Why cancel before observer.stop()**:
+- Prevents timer from firing while observer is shutting down
+- Avoids potential errors from regeneration during shutdown
+- Ensures clean separation of shutdown phases
+
+### Error Handling and Failure Modes
+
+**Timer Execution Failures**:
+When `_do_regeneration()` encounters an exception during index regeneration (e.g., file I/O
+errors, parsing failures), the error is caught and logged at line 72 in `src/watcher.py`:
+```python
+except Exception as e:
+    logger.error(f"Failed to regenerate index: {e}", exc_info=True)
+finally:
+    with self._timer_lock:
+        self.pending_regeneration = False
+        self._timer = None
+```
+
+The `finally` block ensures that even if regeneration fails, the pending state is reset and
+the timer reference is cleared. This prevents the system from getting stuck in a "pending"
+state and allows subsequent file changes to trigger new regeneration attempts.
+
+**Lock Acquisition Behavior**:
+The `threading.Lock` used for timer state protection (`self._timer_lock`) operates with
+indefinite blocking by default. When a thread calls `with self._timer_lock:`, it will wait
+indefinitely until the lock becomes available. This is acceptable because:
+- Lock hold times are extremely brief (nanoseconds to microseconds)
+- Lock is only held during timer state mutations (create, cancel, clear)
+- Multiple threads queuing for the lock indicates rapid file changes, which is handled by
+  the debounce mechanism cancelling and replacing timers
+
+No explicit timeout is configured because lock contention is minimal and indefinite blocking
+ensures no regeneration events are dropped due to lock unavailability.
+
+**Why thread lock is necessary**:
+- `_trigger_regeneration()` can be called from watchdog thread
+- `cleanup()` is called from main thread during shutdown
+- Without lock, race conditions could cause:
+  - Timer cancelled after being checked for None
+  - New timer created after cleanup completes
+  - Double-cancel attempts on same timer
+
+**Why cleanup is idempotent**:
+- Can be called multiple times safely
+- Handles case where no timer is pending
+- Simplifies cleanup logic in complex shutdown scenarios
+
+### Exception Handling Architecture
+
+**Related Task**: bees-5oyn
+
+**Problem Statement**:
+In the `_do_regeneration()` method, timer state cleanup (lines 71-73 in the original implementation)
+only executed on success. If `generate_index()` or `write_text()` raised an exception, the
+`pending_regeneration` flag and `_timer` reference remained set, causing incorrect state that would
+block future regenerations.
+
+**Solution**: Move timer state cleanup into a `finally` block to ensure it always executes, even when
+regeneration fails.
+
+**Implementation Pattern**:
+```python
+def _do_regeneration(self):
+    """Perform the actual index regeneration."""
+    try:
+        logger.info("Regenerating index due to ticket changes...")
+        index_content = generate_index()
+        index_path = get_index_path()
+        index_path.write_text(index_content)
+        logger.info(f"Index regenerated: {index_path}")
+    except Exception as e:
+        logger.error(f"Failed to regenerate index: {e}", exc_info=True)
+    finally:
+        with self._timer_lock:
+            self.pending_regeneration = False
+            self._timer = None
+```
+
+**Design Decision Rationale**:
+
+**Why `finally` block instead of wrapping entire method in lock**:
+- The original issue suggested wrapping the entire method with `self._timer_lock`, but this would
+  hold the lock during potentially slow I/O operations (`generate_index()` scans files,
+  `write_text()` writes to disk)
+- Holding locks during I/O can cause performance degradation and increase lock contention
+- The `finally` block approach ensures state cleanup without holding the lock during I/O
+- Only the state update needs synchronization, not the actual regeneration work
+
+**Exception Safety Guarantees**:
+- `pending_regeneration` flag is always reset, even if regeneration fails
+- `_timer` reference is always cleared, preventing memory leaks
+- Future regenerations can proceed normally after a failed regeneration
+- The timer can still be cancelled or replaced by new events, even after a failure
+
+**Thread Safety**:
+- The `finally` block still acquires `_timer_lock` before updating state
+- This ensures that state updates are synchronized with timer creation/cancellation in
+  `_trigger_regeneration()` and cleanup in `cleanup()`
+- Lock is only held for the brief state update, not during the regeneration work
+
+**Testing**:
+- Added `test_do_regeneration_cleans_up_state_on_exception` to verify that state is cleaned up
+  even when `generate_index()` raises an exception
+- This test ensures the `finally` block is working correctly by mocking `generate_index` to raise
+  an error and verifying that `pending_regeneration` becomes False and `_timer` becomes None

@@ -10,6 +10,7 @@ packages = [{include = "src"}]
 python = "^3.10"
 pyyaml = "^6.0"
 fastmcp = "^2.14.4"
+watchdog = "^6.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

@@ -1,6 +1,8 @@
 - Hives: container feature docs and all the bees to build them
   - Hive state. Provides summary of where we are and whats done. I am getting lost
   - Hive list
+  - Dont delete tickets, just archive the hive
+  - How does MCP server know about them? Config? .hive file in each folder?
 - A simple tool (or MCP command) for determining the dependency order of a set of tickets
 - Similar to bd-prime. How to let agents know about features?
   1. Hook Configuration (~/.claude/settings.json):                                                                                       

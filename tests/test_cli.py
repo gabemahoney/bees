@@ -214,7 +214,7 @@ class TestMain:
         mock_run_linter.assert_called_once_with(tickets_dir="tickets", json_output=False)
 
     @patch('src.cli.run_linter')
-    @patch('sys.argv', ['cli.py', '--tickets-dir', '/custom/path'])
+    @patch('sys.argv', ['cli.py', 'lint', '--tickets-dir', '/custom/path'])
     def test_main_custom_tickets_dir(self, mock_run_linter):
         """Test main with custom tickets directory."""
         mock_run_linter.return_value = 0
@@ -226,7 +226,7 @@ class TestMain:
         mock_run_linter.assert_called_once_with(tickets_dir="/custom/path", json_output=False)
 
     @patch('src.cli.run_linter')
-    @patch('sys.argv', ['cli.py', '--json'])
+    @patch('sys.argv', ['cli.py', 'lint', '--json'])
     def test_main_json_output(self, mock_run_linter):
         """Test main with JSON output flag."""
         mock_run_linter.return_value = 0

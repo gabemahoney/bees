@@ -113,6 +113,20 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
     return None
 
 
+def get_index_path() -> Path:
+    """
+    Get the path to the index.md file.
+
+    Returns:
+        Path object pointing to index.md in the tickets directory
+
+    Examples:
+        >>> get_index_path()
+        PosixPath('/path/to/tickets/index.md')
+    """
+    return TICKETS_DIR / "index.md"
+
+
 def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
     """
     List all ticket files, optionally filtered by type.

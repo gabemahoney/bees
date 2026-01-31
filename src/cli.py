@@ -12,6 +12,9 @@ from pathlib import Path
 
 from src.linter import Linter
 from src.corruption_state import mark_corrupt, mark_clean
+from src.index_generator import generate_index, is_index_stale
+from src.paths import get_index_path, TICKETS_DIR
+from src.watcher import start_watcher
 
 # Configure logging
 logging.basicConfig(
@@ -51,6 +54,44 @@ def format_error_output(report) -> str:
             lines.append(f"  [{severity_marker}] {error.error_type}: {error.message}")
 
     return "\n".join(lines)
+
+
+def regenerate_index(force: bool = False) -> int:
+    """Regenerate the index.md file.
+
+    Scans all tickets and regenerates index.md with current state.
+
+    Args:
+        force: If True, regenerate even if index is up-to-date
+
+    Returns:
+        Exit code: 0 if successful, 2 if exception
+    """
+    try:
+        # Check if regeneration is needed
+        if not force and not is_index_stale():
+            logger.info("Index is up-to-date, skipping regeneration (use --force to regenerate anyway)")
+            print("Index is already up-to-date")
+            return 0
+
+        # Generate index markdown
+        logger.info("Generating index...")
+        index_content = generate_index()
+
+        # Get index path
+        index_path = get_index_path()
+
+        # Write index file
+        logger.info(f"Writing index to {index_path}")
+        index_path.write_text(index_content)
+
+        print(f"Index regenerated successfully: {index_path}")
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error regenerating index: {e}", exc_info=True)
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
 
 
 def run_linter(tickets_dir: str = "tickets", json_output: bool = False) -> int:
@@ -99,18 +140,52 @@ def run_linter(tickets_dir: str = "tickets", json_output: bool = False) -> int:
 def main():
     """Main entry point for CLI."""
     parser = argparse.ArgumentParser(
-        description="Run ticket linter to validate ticket database"
+        description="Bees ticket system CLI"
     )
-    parser.add_argument(
+
+    # Add subcommands
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Linter subcommand (default)
+    linter_parser = subparsers.add_parser(
+        "lint",
+        help="Run ticket linter to validate ticket database"
+    )
+    linter_parser.add_argument(
         "--tickets-dir",
         default="tickets",
         help="Path to tickets directory (default: tickets)"
     )
-    parser.add_argument(
+    linter_parser.add_argument(
         "--json",
         action="store_true",
         help="Output results as JSON"
     )
+
+    # Regenerate index subcommand
+    regen_parser = subparsers.add_parser(
+        "regenerate-index",
+        help="Regenerate the index.md file"
+    )
+    regen_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force regeneration even if index is up-to-date"
+    )
+
+    # Watch subcommand
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="Watch tickets directory and auto-regenerate index on changes"
+    )
+    watch_parser.add_argument(
+        "--debounce",
+        type=float,
+        default=2.0,
+        help="Seconds to wait after last change before regenerating (default: 2.0)"
+    )
+
+    # Global arguments
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
@@ -123,8 +198,30 @@ def main():
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    # Run linter
-    exit_code = run_linter(tickets_dir=args.tickets_dir, json_output=args.json)
+    # Execute command
+    if args.command == "regenerate-index":
+        force = getattr(args, "force", False)
+        exit_code = regenerate_index(force=force)
+    elif args.command == "watch":
+        debounce = getattr(args, "debounce", 2.0)
+        try:
+            start_watcher(tickets_dir=TICKETS_DIR, debounce_seconds=debounce)
+            exit_code = 0
+        except KeyboardInterrupt:
+            exit_code = 0
+        except Exception as e:
+            logger.error(f"Watcher error: {e}", exc_info=True)
+            print(f"Error: {e}", file=sys.stderr)
+            exit_code = 2
+    elif args.command == "lint" or args.command is None:
+        # Default to lint for backward compatibility
+        tickets_dir = getattr(args, "tickets_dir", "tickets")
+        json_output = getattr(args, "json", False)
+        exit_code = run_linter(tickets_dir=tickets_dir, json_output=json_output)
+    else:
+        parser.print_help()
+        exit_code = 1
+
     sys.exit(exit_code)
 
 

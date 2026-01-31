@@ -145,23 +145,88 @@ The generated index follows this markdown structure:
 
 ### Usage
 
-The index generation functionality is available through both a Python API and an MCP tool.
+The index generation functionality is available through the CLI, Python API, and MCP tool.
 **For LLM agents, the MCP tool is the recommended approach** as it ensures data consistency
 and follows the Model Context Protocol standard.
+
+**CLI Commands**:
+
+```bash
+# Regenerate index manually
+poetry run python -m src.cli regenerate-index
+
+# Force regeneration even if index is up-to-date
+poetry run python -m src.cli regenerate-index --force
+
+# Watch tickets directory and auto-regenerate on changes
+poetry run python -m src.cli watch
+
+# Watch with custom debounce time (default: 2.0 seconds)
+poetry run python -m src.cli watch --debounce 5.0
+```
+
+The `regenerate-index` command creates or updates `tickets/index.md` with a timestamp header
+showing when it was generated. It automatically detects if the index is stale (older than
+ticket files) and skips regeneration if the index is up-to-date (use `--force` to override).
+
+The `watch` command monitors the tickets directory for changes (new/modified/deleted `.md` files)
+and automatically regenerates the index. It uses debouncing to avoid excessive regeneration
+when multiple files change in quick succession.
+
+**Implementation Details**:
+
+The file system watcher (implemented in `src/watcher.py`) uses a non-blocking threading
+architecture to ensure responsive event processing:
+
+- **Non-blocking Debouncing**: Uses `threading.Timer` instead of blocking `time.sleep()` to
+  schedule delayed index regeneration. This allows the watchdog event handler thread to remain
+  responsive and process multiple file system events without blocking. Note that each `Timer`
+  creates a new daemon thread for the callback execution. While this adds some thread creation
+  overhead, it's acceptable given that index regeneration events are relatively infrequent
+  (typically seconds or minutes apart rather than milliseconds).
+
+- **Timer Cancellation**: When new file changes occur during the debounce period, the existing
+  timer is cancelled and a new one is scheduled. This ensures that rapid successive changes
+  (like bulk ticket edits) result in only a single index regeneration after the activity stops.
+
+- **Thread Safety**: Timer management is protected by a `threading.Lock` to ensure safe
+  concurrent access when multiple file events arrive simultaneously. The `TicketChangeHandler`
+  class uses proper type annotations for all threading primitives, with `_timer_lock` annotated
+  as `threading.Lock` for consistency with the `_timer: threading.Timer | None` annotation,
+  maintaining type safety throughout the implementation.
+
+- **Graceful Shutdown with Cleanup**: The watcher implements a `cleanup()` method that cancels
+  any pending timer when the watcher is stopped (e.g., when pressing Ctrl+C). This prevents
+  resource leaks and ensures the timer doesn't fire after the observer has stopped. The cleanup
+  is called before `observer.stop()` to guarantee clean shutdown of all background threads.
+
+- **Exception Safety**: The `_do_regeneration` method uses a `try-except-finally` block to
+  ensure timer state cleanup (`pending_regeneration` flag and `_timer` reference) occurs even
+  when index regeneration fails. The `finally` block guarantees that state is always cleaned up,
+  preventing the watcher from getting stuck in a dirty state if an exception occurs during
+  index generation or file writing.
+
+This design allows the watcher to queue and process multiple file system events efficiently during
+rapid changes.
 
 **Python API** (implemented in `src/index_generator.py`):
 
 - `scan_tickets()`: Scans the tickets directory and returns grouped ticket data
 - `format_index_markdown()`: Formats ticket data into structured markdown with clickable links
 - `generate_index()`: High-level API that orchestrates scanning and formatting
+- `is_index_stale()`: Checks if index.md is older than ticket files
 
 **MCP Tool**: See the [MCP Server](#mcp-server) section below for details on the `generate_index`
 tool, which provides the same functionality through the Model Context Protocol interface.
 
-The generated index includes clickable markdown links to individual ticket files using relative
-paths. Each ticket entry is formatted as:
+The generated index includes a timestamp header and clickable markdown links to individual ticket
+files using relative paths. Each ticket entry is formatted as:
 
 ```markdown
+# Ticket Index
+
+*Generated: 2026-01-30 22:44:59*
+
 - [ticket-id: title](tickets/{type}s/ticket-id.md) (status)
 ```
 
@@ -2119,6 +2184,31 @@ for ticket_type in ["epic", "task", "subtask"]:
 ```
 
 This optimization is especially beneficial for operations that load many tickets, such as dependency validation and batch relationship updates.
+
+#### Threading.Timer for Watchdog Debouncing
+
+The file system watcher (`src/watcher.py`) uses `threading.Timer` to debounce rapid file changes and prevent index regeneration thrashing.
+
+**How it works**:
+- Each file change schedules a timer to regenerate the index after a debounce period (default: 2 seconds)
+- If another file change occurs before the timer fires, the pending timer is cancelled and a new one is scheduled
+- This prevents regenerating the index multiple times during burst writes (e.g., creating 10 tickets rapidly)
+
+**Performance characteristics**:
+- `threading.Timer` creates a new thread for each scheduled regeneration
+- Cancelled timers don't execute their callback, but the thread is still created
+- Thread creation has overhead (~10-50ms per timer on typical systems)
+- Trade-off: Non-blocking watchdog event handling vs thread creation overhead per file change
+- For typical usage (occasional ticket edits), the overhead is negligible
+- For batch operations (100+ rapid file changes), expect ~1-5 seconds of thread creation overhead
+
+**Why this approach**:
+- Prevents blocking the watchdog thread, which must remain responsive to file system events
+- Simpler than async/await patterns while providing good debouncing behavior
+- Ensures the watchdog can continue processing events even during index regeneration
+- Thread overhead is acceptable for the typical usage pattern of infrequent ticket modifications
+
+**Alternative considered**: Using `time.sleep()` in the event handler would block the watchdog thread and prevent it from receiving subsequent file system events until the sleep completed.
 
 ## Query Parser
 
