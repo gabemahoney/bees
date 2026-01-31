@@ -1095,28 +1095,47 @@ def _substitute_query_params(stages: list, params: Dict[str, str]) -> list:
 execute_query = mcp.tool()(_execute_query)
 
 
-def _generate_index_internal() -> str:
+def _generate_index(
+    status: str | None = None,
+    type: str | None = None
+) -> Dict[str, Any]:
     """
-    Generate markdown index of all tickets.
+    Generate markdown index of all tickets with optional filters.
 
-    Internal function that will be exposed as an MCP tool in a later task.
-    Calls generate_index() to scan tickets and create formatted markdown.
+    Scans the tickets directory and creates a formatted markdown index.
+    Optionally filters tickets by status and/or type.
+
+    Args:
+        status: Optional status filter (e.g., 'open', 'completed')
+        type: Optional type filter (e.g., 'epic', 'task', 'subtask')
 
     Returns:
-        str: Formatted markdown index with all tickets grouped by type
+        dict: Response with status and generated markdown index
 
     Example:
-        index_md = _generate_index_internal()
-        print(index_md)
+        result = _generate_index()
+        result = _generate_index(status='open')
+        result = _generate_index(type='epic')
+        result = _generate_index(status='open', type='task')
     """
     try:
-        index_markdown = generate_index()
-        logger.info("Successfully generated ticket index")
-        return index_markdown
+        index_markdown = generate_index(
+            status_filter=status,
+            type_filter=type
+        )
+        logger.info(f"Successfully generated ticket index (status={status}, type={type})")
+        return {
+            "status": "success",
+            "markdown": index_markdown
+        }
     except Exception as e:
         error_msg = f"Failed to generate index: {e}"
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+
+# Register the generate_index tool with FastMCP
+generate_index_tool = mcp.tool()(_generate_index)
 
 
 if __name__ == "__main__":

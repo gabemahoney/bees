@@ -138,6 +138,145 @@ Invalid ticket missing id.""")
         assert len(result["epic"]) == 1
         assert result["epic"][0].id == "bees-ep1"
 
+    def test_scan_tickets_filter_by_status(self, tmp_path, monkeypatch):
+        """Should filter tickets by status."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        # Create tickets with different statuses
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open.""")
+
+        (epics_dir / "bees-ep2.md").write_text("""---
+id: bees-ep2
+type: epic
+title: Completed Epic
+status: completed
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Completed.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filter for open only
+        result = scan_tickets(status_filter='open')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "bees-ep1"
+
+        # Filter for completed only
+        result = scan_tickets(status_filter='completed')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "bees-ep2"
+
+    def test_scan_tickets_filter_by_type(self, tmp_path, monkeypatch):
+        """Should filter tickets by type."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+
+        # Create tickets of different types
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Test Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Epic.""")
+
+        (tasks_dir / "bees-ts1.md").write_text("""---
+id: bees-ts1
+type: task
+title: Test Task
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Task.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filter for epics only
+        result = scan_tickets(type_filter='epic')
+        assert len(result["epic"]) == 1
+        assert len(result["task"]) == 0
+
+        # Filter for tasks only
+        result = scan_tickets(type_filter='task')
+        assert len(result["epic"]) == 0
+        assert len(result["task"]) == 1
+
+    def test_scan_tickets_combined_filters(self, tmp_path, monkeypatch):
+        """Should apply both status and type filters."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+
+        # Create diverse tickets
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open epic.""")
+
+        (epics_dir / "bees-ep2.md").write_text("""---
+id: bees-ep2
+type: epic
+title: Completed Epic
+status: completed
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Completed epic.""")
+
+        (tasks_dir / "bees-ts1.md").write_text("""---
+id: bees-ts1
+type: task
+title: Open Task
+status: open
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Open task.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filter for open epics only
+        result = scan_tickets(status_filter='open', type_filter='epic')
+        assert len(result["epic"]) == 1
+        assert len(result["task"]) == 0
+        assert result["epic"][0].id == "bees-ep1"
+
+        # Filter for completed tasks (should be empty)
+        result = scan_tickets(status_filter='completed', type_filter='task')
+        assert len(result["epic"]) == 0
+        assert len(result["task"]) == 0
+
 
 class TestFormatIndexMarkdown:
     """Tests for format_index_markdown function."""
@@ -309,3 +448,121 @@ Task body.""")
 
         assert "# Ticket Index" in result
         assert result.count("*No tickets found*") == 3
+
+    def test_generate_index_with_status_filter(self, tmp_path, monkeypatch):
+        """Should filter index by status."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open.""")
+
+        (epics_dir / "bees-ep2.md").write_text("""---
+id: bees-ep2
+type: epic
+title: Completed Epic
+status: completed
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Completed.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index(status_filter='open')
+        assert "[bees-ep1] Open Epic (open)" in result
+        assert "bees-ep2" not in result
+
+    def test_generate_index_with_type_filter(self, tmp_path, monkeypatch):
+        """Should filter index by type."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Test Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Epic.""")
+
+        (tasks_dir / "bees-ts1.md").write_text("""---
+id: bees-ts1
+type: task
+title: Test Task
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Task.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index(type_filter='epic')
+        assert "[bees-ep1] Test Epic (open)" in result
+        assert "bees-ts1" not in result
+
+    def test_generate_index_with_combined_filters(self, tmp_path, monkeypatch):
+        """Should filter index by both status and type."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        tasks_dir = tickets_dir / "tasks"
+        epics_dir.mkdir(parents=True)
+        tasks_dir.mkdir(parents=True)
+
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open epic.""")
+
+        (epics_dir / "bees-ep2.md").write_text("""---
+id: bees-ep2
+type: epic
+title: Completed Epic
+status: completed
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Completed epic.""")
+
+        (tasks_dir / "bees-ts1.md").write_text("""---
+id: bees-ts1
+type: task
+title: Open Task
+status: open
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Open task.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        result = generate_index(status_filter='open', type_filter='epic')
+        assert "[bees-ep1] Open Epic (open)" in result
+        assert "bees-ep2" not in result
+        assert "bees-ts1" not in result

@@ -9,23 +9,33 @@ from .reader import read_ticket
 __all__ = ["scan_tickets", "format_index_markdown", "generate_index"]
 
 
-def scan_tickets() -> dict[str, list[Ticket]]:
+def scan_tickets(
+    status_filter: str | None = None,
+    type_filter: str | None = None
+) -> dict[str, list[Ticket]]:
     """
     Scan tickets/ directory and load all ticket metadata.
 
     Recursively scans the tickets directory structure (epics/, tasks/, subtasks/)
-    and loads all ticket files, grouping them by type.
+    and loads all ticket files, grouping them by type. Optionally filters results
+    by status and/or type.
+
+    Args:
+        status_filter: Optional status to filter by (e.g., 'open', 'completed')
+        type_filter: Optional type to filter by (e.g., 'epic', 'task', 'subtask')
 
     Returns:
         Dictionary with keys 'epic', 'task', 'subtask' containing lists of
-        corresponding Ticket objects. Empty lists if no tickets of that type exist.
+        corresponding Ticket objects. Empty lists if no tickets of that type exist
+        or if filtered out.
 
     Examples:
         >>> tickets = scan_tickets()
         >>> len(tickets['epic'])
         5
-        >>> tickets['task'][0].title
-        'Implement authentication'
+        >>> tickets = scan_tickets(status_filter='open')
+        >>> tickets = scan_tickets(type_filter='epic')
+        >>> tickets = scan_tickets(status_filter='completed', type_filter='task')
     """
     # Initialize result dictionary with empty lists for each type
     result: dict[str, list[Ticket]] = {
@@ -41,6 +51,13 @@ def scan_tickets() -> dict[str, list[Ticket]]:
     for ticket_path in all_ticket_paths:
         try:
             ticket = read_ticket(ticket_path)
+
+            # Apply filters
+            if status_filter and ticket.status != status_filter:
+                continue
+            if type_filter and ticket.type != type_filter:
+                continue
+
             result[ticket.type].append(ticket)
         except Exception as e:
             # Log warning but continue processing other tickets
@@ -119,14 +136,20 @@ def format_index_markdown(tickets: dict[str, list[Ticket]]) -> str:
     return "\n".join(lines)
 
 
-def generate_index() -> str:
+def generate_index(
+    status_filter: str | None = None,
+    type_filter: str | None = None
+) -> str:
     """
     Generate complete markdown index for all tickets.
 
     High-level orchestration function that scans the tickets directory,
-    loads all tickets, and formats them into a markdown index.
+    loads all tickets, and formats them into a markdown index. Optionally
+    filters results by status and/or type.
 
-    This is the main public API for index generation.
+    Args:
+        status_filter: Optional status to filter by (e.g., 'open', 'completed')
+        type_filter: Optional type to filter by (e.g., 'epic', 'task', 'subtask')
 
     Returns:
         Complete markdown index as a string
@@ -137,6 +160,8 @@ def generate_index() -> str:
         # Ticket Index
         ## Epics
         ...
+        >>> open_tickets = generate_index(status_filter='open')
+        >>> epics_only = generate_index(type_filter='epic')
     """
-    tickets = scan_tickets()
+    tickets = scan_tickets(status_filter, type_filter)
     return format_index_markdown(tickets)
