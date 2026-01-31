@@ -1,6 +1,6 @@
 # Ticket Index
 
-*Generated: 2026-01-30 22:44:59*
+*Generated: 2026-01-31 07:12:59*
 
 ## Epics
 
@@ -19,6 +19,7 @@
 - [bees-qsy: Developer Documentation Portal](tickets/epics/bees-qsy.md) (open)
 - [bees-uef: Mobile Application](tickets/epics/bees-uef.md) (in progress)
 - [bees-vpz: Preview Feature Epic](tickets/epics/bees-vpz.md) (open)
+- [bees-xyz: New Demo Epic for Index Regeneration](tickets/epics/bees-xyz.md) (open)
 - [bees-y7p: Core API Infrastructure](tickets/epics/bees-y7p.md) (completed)
 
 ## Tasks
