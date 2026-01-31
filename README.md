@@ -29,6 +29,63 @@ poetry install
 poetry run pytest
 ```
 
+## Demo Ticket Dataset
+
+For testing and development, Bees includes a demo ticket generation script that creates a
+representative set of sample tickets with diverse statuses, priorities, labels, and
+relationships.
+
+### What's Generated
+
+The demo script creates:
+- **5 Epics**: Various statuses (open, in progress, completed) with different priorities
+- **8 Tasks**: Linked to epics with parent relationships and blocking dependencies
+- **15 Subtasks**: Distributed across tasks with various statuses (open, in progress,
+  completed)
+
+All tickets include:
+- Realistic titles and descriptions
+- Multiple labels (backend, frontend, security, etc.)
+- Parent-child relationships (tasks → epics, subtasks → tasks)
+- Dependency chains (some tasks block other tasks)
+- Various statuses and priority levels (0-4)
+- Owner assignments
+
+### Usage
+
+To generate the demo ticket dataset:
+
+```bash
+poetry run python scripts/generate_demo_tickets.py
+```
+
+This will populate your `tickets/` directory with sample epics, tasks, and subtasks. The
+generated tickets have valid YAML frontmatter and proper bidirectional relationships.
+
+### Regenerating Demo Data
+
+You can regenerate the demo dataset at any time:
+
+```bash
+# Clear existing demo tickets (if needed)
+rm -rf tickets/epics/bees-* tickets/tasks/bees-* tickets/subtasks/bees-*
+
+# Generate fresh demo data
+poetry run python scripts/generate_demo_tickets.py
+```
+
+The script uses the same ticket factory functions as the MCP server, ensuring demo tickets
+have the same structure as real tickets created through the API.
+
+### Use Cases
+
+Demo tickets are useful for:
+- Testing index generation functionality
+- Demonstrating the query system with realistic data
+- Validating linter functionality with complex relationship graphs
+- Exploring the ticket structure without creating tickets manually
+- Development and debugging of new features
+
 ## Project Structure
 
 ```

@@ -911,3 +911,186 @@ No code changes means no new tests required. The documentation update:
 - Accurately reflects the existing MCP tool implementation
 - Maintains accurate Python API documentation
 - Cross-reference link points to correct section header
+
+## Demo Ticket Dataset Feature
+
+### Overview
+
+The demo ticket dataset provides representative sample data for testing index generation, query
+system validation, and development workflows. A Python script generates diverse tickets with
+realistic relationships, statuses, and metadata.
+
+### Script Architecture
+
+**Location**: `scripts/generate_demo_tickets.py`
+
+**Design Pattern**: Factory-based generation using modular generator functions
+
+The script is organized into three generator functions:
+1. `generate_demo_epics()` - Creates 5 diverse epic tickets
+2. `generate_demo_tasks()` - Creates 8 task tickets linked to epics
+3. `generate_demo_subtasks()` - Creates 15 subtask tickets linked to tasks
+
+Each generator returns a dictionary mapping semantic names to ticket IDs, enabling later
+generators to reference earlier tickets when creating relationships.
+
+### Implementation Details
+
+#### Ticket Factory Integration
+
+The script uses the existing `ticket_factory` module functions:
+- `create_epic(title, description, labels, status, priority, owner)`
+- `create_task(title, description, parent, labels, up_dependencies, status, priority, owner)`
+- `create_subtask(title, parent, description, labels, status, priority, owner)`
+
+This ensures demo tickets have identical structure to real tickets created via MCP server,
+providing authentic test data.
+
+#### Relationship Types Generated
+
+**Parent-Child Relationships**:
+- All tasks have `parent` field referencing an epic ID
+- All subtasks have `parent` field referencing a task ID
+- Bidirectional synchronization handled automatically by ticket factory
+
+**Blocking Dependencies**:
+- Some tasks have `up_dependencies` referencing other tasks
+- Demonstrates dependency chains (e.g., Task B blocked by Task A, Task C blocked by Task B)
+- Creates realistic "blocked work" scenarios for query testing
+
+**Example Dependency Chain**:
+```
+auth_db_schema (completed)
+  ↓ blocks
+auth_api (in progress)
+  ↓ blocks
+auth_jwt (open)
+```
+
+This chain demonstrates:
+- Completed tasks unblocking dependent work
+- In-progress tasks with downstream dependencies
+- Open tasks waiting for upstream completion
+
+### Ticket Diversity
+
+#### Status Variety
+
+Generated tickets include three status values:
+- **open**: Unstarted work items
+- **in progress**: Active work items
+- **completed**: Finished work items
+
+Status distribution reflects realistic project state:
+- ~40% open (future work)
+- ~35% in progress (active work)
+- ~25% completed (historical data)
+
+#### Priority Levels
+
+Tickets span all five priority levels (0-4):
+- **Priority 0**: Critical work (epics: auth_system, api_core; tasks: auth_db_schema,
+  auth_api)
+- **Priority 1**: High priority (epic: dashboard, mobile_app; tasks: dashboard_layout,
+  auth_jwt)
+- **Priority 2**: Medium priority (subtasks: bar charts, pie charts)
+- **Priority 3**: Low priority (epic: docs; task: docs_setup)
+- **Priority 4**: Not used in demo (could represent backlog items)
+
+This distribution enables testing priority-based queries and filtering.
+
+#### Label Taxonomy
+
+Labels follow consistent patterns by domain:
+- **Backend**: backend, api, database, security, error-handling, logging
+- **Frontend**: frontend, ui, react, charts, analytics
+- **Infrastructure**: devops, infrastructure, monitoring
+- **Documentation**: documentation, developer-experience
+- **Mobile**: mobile, ios, android
+
+Each ticket has 2-4 labels, creating rich data for label-based queries (e.g., "find all
+backend + security work items").
+
+#### Owner Assignment
+
+Owners represent realistic team/individual assignments:
+- **Team owners**: backend-team, frontend-team, platform-team, docs-team, mobile-team
+- **Individual owners**: alice@example.com, bob@example.com, carol@example.com,
+  dave@example.com, eve@example.com, frank@example.com, grace@example.com
+
+This enables testing owner-based queries and team workload analysis.
+
+### Ticket Counts
+
+The demo generates:
+- **5 Epics**: Representing major features across different domains
+- **8 Tasks**: Distributed across epics (auth: 3, dashboard: 2, api_core: 2, docs: 1)
+- **15 Subtasks**: Distributed across tasks (varying from 1-5 subtasks per task)
+
+**Total**: 28 tickets with diverse relationships
+
+These counts provide:
+- Sufficient data for meaningful index generation
+- Realistic variety for query testing
+- Manageable size for manual inspection
+- Examples of all relationship types (parent-child, blocking dependencies)
+
+### Regeneration and Cleanup
+
+**Regenerating demo data**:
+```bash
+# Remove existing demo tickets
+rm -rf tickets/epics/bees-* tickets/tasks/bees-* tickets/subtasks/bees-*
+
+# Generate fresh demo data
+poetry run python scripts/generate_demo_tickets.py
+```
+
+The script uses automatic ID generation, ensuring new IDs each run. Sample tickets (e.g.,
+sample-epic.md) are preserved since they don't match the `bees-*` pattern.
+
+### Design Decisions
+
+**Why three separate generator functions?**
+- Enables dependency ordering (epics → tasks → subtasks)
+- Each generator can reference IDs from previous generators
+- Modular structure makes it easy to add/modify ticket generation logic
+
+**Why use semantic names in dictionaries?**
+- Makes relationship creation readable (e.g., `parent=epics["auth_system"]`)
+- Documents purpose of each ticket
+- Easier to maintain and extend than raw ID lists
+
+**Why realistic data instead of toy examples?**
+- Validates system with production-like complexity
+- Demonstrates real-world ticket patterns
+- Useful for demos and documentation screenshots
+- Tests edge cases (e.g., completed tasks with open subtasks)
+
+**Why use ticket_factory functions?**
+- Guarantees consistency with production ticket creation
+- Leverages existing validation and relationship sync logic
+- Ensures demo tickets pass linter validation
+- Any schema changes automatically apply to demo generation
+
+### Use Cases
+
+**Index Generation Testing**:
+- Verifies index correctly groups tickets by type
+- Tests parent display for tasks and subtasks
+- Validates sorting and link generation
+
+**Query System Validation**:
+- Tests label-based queries (e.g., "backend + security")
+- Tests status-based queries (e.g., "open + in progress")
+- Tests graph traversal (e.g., "find all subtasks of auth epic")
+
+**Linter Testing**:
+- Provides complex relationship graph for cycle detection
+- Tests bidirectional consistency validation
+- Validates handling of various status/priority combinations
+
+**Development and Documentation**:
+- Demonstrates ticket structure for new contributors
+- Provides realistic examples for README screenshots
+- Enables manual testing without creating tickets by hand

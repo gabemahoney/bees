@@ -1,3 +1,6 @@
+- Hives: container feature docs and all the bees to build them
+  - Hive state. Provides summary of where we are and whats done. I am getting lost
+  - Hive list
 - A simple tool (or MCP command) for determining the dependency order of a set of tickets
 - Similar to bd-prime. How to let agents know about features?
   1. Hook Configuration (~/.claude/settings.json):                                                                                       
@@ -19,11 +22,10 @@
   - PreCompact - Before context gets compressed  
 
 
-- Hives: container feature docs and all the bees to build them
+
 - Bees all live in one hive, no need to breakdown by /epic, /task and /subtask
 - Modify tickets via MCP (add labels, remove labels)
 - Cli wrapper for humans?
-- Hive list
 - Todos: https://keep.google.com/u/0/#LIST/1Mjqmh-vPTueDoza_LvPuhjDUsLAD32gkLgM_-DQWxvgWYmfpT6mVbfmZFkU-R9c
 - Custom verbs:
   - Yes, Claude Code supports project-level configuration. Instead of --global, you'd use:
@@ -33,3 +35,9 @@
 
   - Project settings (.claude/settings.json) override
   - Global settings (~/.claude/settings.json)
+- remove owner, priority and status from tickets
+- Add state but it can only contain on string (unlike labels)
+- do-epic: SHow user acceptance criteria better (hidden behind the fold)
+- Maybe do-task should be calling code-review and docs-review instead of do-epic for seperation of concerns
+- do-epic: clear guidance on how to find next epic when user does not specify
+- do-epic pause and restart (will it pickup previous work?)
