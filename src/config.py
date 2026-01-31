@@ -4,6 +4,7 @@ Loads and parses config.yaml to provide HTTP transport settings
 and other configuration options for the MCP server.
 """
 
+import ipaddress
 import os
 from pathlib import Path
 from typing import Dict, Any
@@ -23,7 +24,8 @@ class Config:
 
         # Parse HTTP configuration with defaults
         http_config = config_data.get('http', {})
-        self.http_host = http_config.get('host', '127.0.0.1')
+        raw_host = http_config.get('host', '127.0.0.1')
+        self.http_host = self._validate_host(raw_host)
 
         # Port type coercion and validation
         port_value = http_config.get('port', 8000)
@@ -38,6 +40,31 @@ class Config:
 
         # Parse ticket directory configuration
         self.ticket_directory = config_data.get('ticket_directory', './tickets')
+
+    def _validate_host(self, host: str) -> str:
+        """Validate that host is a valid IPv4 or IPv6 address.
+
+        Args:
+            host: Host string to validate
+
+        Returns:
+            The validated host string
+
+        Raises:
+            ValueError: If host is not a valid IP address
+        """
+        if not host:
+            raise ValueError("Host cannot be empty")
+
+        try:
+            # Try to parse as IP address (IPv4 or IPv6)
+            ipaddress.ip_address(host)
+            return host
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid host '{host}': must be a valid IPv4 or IPv6 address. "
+                f"Examples: '127.0.0.1', '0.0.0.0', '::1', '::'"
+            ) from e
 
     def __repr__(self) -> str:
         return f"Config(http_host='{self.http_host}', http_port={self.http_port}, ticket_directory='{self.ticket_directory}')"

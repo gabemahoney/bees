@@ -31,6 +31,140 @@ Bees is a markdown-based ticket management system with four core modules:
    - In-memory ticket filtering with AND/OR semantics
    - Regex-based pattern matching
 
+5. **Configuration Module** (`src/config.py`)
+   - Centralized configuration management
+   - Type-safe Config object with attribute access
+   - Nested schema support (e.g., http.host, http.port)
+   - Default values for missing settings
+
+### Configuration Architecture
+
+**Design Decision**: Centralized configuration module with typed Config object instead of
+scattered dict-based config handling.
+
+**Rationale**:
+- Type safety: Accessing `config.http_host` instead of `config.get('host')` prevents typos and
+  provides IDE autocomplete
+- Nested schema: Logical grouping (http settings, database settings) improves clarity
+- Single source of truth: All config parsing happens in `src/config.py`, not duplicated across
+  modules
+- Graceful defaults: Missing config files return safe defaults instead of raising exceptions
+
+**Integration**:
+- `src/main.py` imports Config and load_config from config module
+- Removed duplicate load_config() function that expected flat schema (host/port at root)
+- Updated from flat schema to nested schema (http.host, http.port) in config.yaml
+- All config access uses attribute access: `config.http_host`, `config.http_port`,
+  `config.ticket_directory`
+
+**Migration**: Previously main.py had its own load_config() expecting flat YAML structure. This
+was refactored to use the centralized Config class with nested structure, eliminating schema
+inconsistencies and improving maintainability.
+
+**Port Validation Implementation**: Added input validation layer to Config class to ensure port
+numbers are valid before server startup.
+
+**Design Decision**: Validate port values during Config initialization (fail-fast approach) rather
+than at server bind time.
+
+**Rationale**:
+- Early error detection: Configuration errors are caught immediately at startup with clear error
+  messages, before the server attempts to bind
+- Type coercion: Port values from YAML can be strings (e.g., `"8000"`); automatic conversion to
+  integers improves config flexibility
+- Clear error messages: ValueError with detailed message indicates exact problem (range violation,
+  non-numeric string, etc.)
+- Standard validation: Enforces TCP/IP port range (1-65535) at configuration layer, preventing
+  invalid values from propagating through the system
+
+**Implementation Details** (`src/config.py`):
+1. **Type Coercion**: Port value is wrapped in `int()` constructor to handle string inputs from YAML
+   - Catches `TypeError` and `ValueError` exceptions and re-raises as descriptive `ValueError`
+   - Error message format: `"Port must be a valid integer, got: {value}"`
+2. **Range Validation**: After type coercion, validates port is in range 1-65535
+   - Validation: `if not (1 <= self.http_port <= 65535)`
+   - Error message format: `"Port must be an integer between 1 and 65535, got: {value}"`
+3. **Exception Chaining**: Uses `raise ... from e` to preserve original exception context for
+   debugging
+
+**Testing Strategy** (`tests/test_config.py`):
+- Valid ports: 1 (minimum), 8000 (typical), 65535 (maximum)
+- Invalid range: 0, -1, 65536, 99999
+- String coercion: `"8000"` → `8000`, `"1"` → `1`, `"65535"` → `65535`
+- Invalid strings: `"abc"`, `""`, `"8000.5"`
+- Edge cases: `None`, floats
+- Existing tests updated to expect validation errors instead of accepting invalid values
+
+**Host Validation Implementation**: Added IP address validation to Config class to ensure host values
+are valid IPv4 or IPv6 addresses before passing to uvicorn.
+
+**Design Decision**: Validate host as IP address format during Config initialization, rejecting hostnames
+and domain names.
+
+**Rationale**:
+- Early validation: Malformed IPs caught at config load time instead of at bind time with cryptic
+  network errors
+- Clear error messages: ValueError provides helpful examples of valid IP formats (127.0.0.1, ::1)
+- Security clarity: Explicit IP requirement makes network binding behavior transparent - no DNS
+  resolution or unexpected binding
+- ipaddress module: Python standard library provides robust IPv4/IPv6 validation
+
+**Implementation Details** (`src/config.py`):
+1. **Validation Method**: Added `_validate_host()` method to Config class
+   - Uses `ipaddress.ip_address()` from Python standard library
+   - Accepts both IPv4 (127.0.0.1, 0.0.0.0) and IPv6 (::1, ::) formats
+   - Raises ValueError for invalid formats with helpful examples
+2. **Early Validation**: Host validation occurs in `Config.__init__` before assignment
+   - Raw host value from YAML passed to `_validate_host()`
+   - Empty string check before IP parsing
+3. **Error Messaging**: Clear format with examples of valid IPs
+   - Format: `"Invalid host '{host}': must be a valid IPv4 or IPv6 address. Examples: ..."`
+   - Includes both IPv4 and IPv6 examples in error message
+
+**Testing Strategy** (`tests/test_config.py::TestHostValidation`):
+- Valid IPv4: `127.0.0.1`, `0.0.0.0`, `192.168.1.1`, `10.0.0.1`
+- Valid IPv6: `::1`, `::`, `2001:0db8:85a3:0000:0000:8a2e:0370:7334`, `2001:db8::1`
+- Invalid formats: `999.999.999.999`, `not-an-ip`, `localhost`, `example.com`
+- Edge cases: empty string, partial IP (`192.168`), IP with port (`127.0.0.1:8000`), spaces
+- Error messages verified to include helpful examples
+- All tests achieve 100% branch coverage for validation logic
+
+**Integration Testing Strategy** (`tests/integration/test_http_server.py`):
+Integration tests verify real uvicorn behavior without mocking, catching issues that unit tests miss.
+
+**Design Decision**: Add integration tests that start real uvicorn server to verify mcp.http_app
+integration and graceful shutdown.
+
+**Rationale**:
+- Mocking limitations: Unit tests mock `uvicorn.run()`, missing real integration issues like
+  `mcp.http_app` not existing or incorrect ASGI app structure
+- Signal handling verification: Need to verify actual uvicorn blocking behavior and signal response
+- Subprocess testing: Real server startup in subprocess validates full integration path
+- Acceptance testing: Integration tests match acceptance criteria (server starts, binds, shuts down
+  gracefully)
+
+**Implementation Details**:
+1. **http_app Integration Test** (`test_http_app_exists_and_binds_with_uvicorn`):
+   - Starts uvicorn in subprocess with real mcp.http_app
+   - Uses non-standard port (9999) to avoid conflicts
+   - Retries connection with exponential backoff (handles slow startup)
+   - Verifies server responds to HTTP requests (any status code accepted)
+   - Key assertion: server binds and accepts connections, proving real integration works
+2. **Graceful Shutdown Tests** (`test_graceful_shutdown_with_sigterm/sigint`):
+   - Starts uvicorn in subprocess
+   - Sends SIGTERM or SIGINT signal
+   - Verifies server shuts down within 5-second timeout
+   - Checks for zombie processes
+   - Tests both SIGTERM (production) and SIGINT (Ctrl+C) scenarios
+3. **Error Handling**: Tests check process exit codes and capture stdout/stderr on failure
+4. **Cleanup**: Finally blocks ensure subprocess termination even on test failure
+
+**Trade-offs**:
+- Slower execution: Integration tests take ~2 seconds per test vs milliseconds for unit tests
+- Flakiness risk: Network operations and timing can introduce intermittent failures
+- Port conflicts: Tests use unique ports but conflicts possible if ports already in use
+- Benefit: Catches real integration bugs that unit tests miss (e.g., missing http_app attribute)
+
 ## Design Patterns
 
 Core architectural patterns that guide Bees implementation:
@@ -539,6 +673,154 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 4. **Tool-Based Interface**: Standard MCP tool schemas for interoperability
 5. **Health Monitoring**: Server lifecycle management and readiness checks
 
+### HTTP Transport Architecture
+
+**Design Decision**: Use HTTP transport with uvicorn ASGI server instead of stdio transport for
+MCP communication.
+
+**Rationale**:
+- **Process Independence**: HTTP server runs independently, avoiding stdio stream contention and
+  interference from print statements, logging, or subprocess output
+- **Multi-Client Support**: Multiple Claude Code sessions can connect simultaneously to one server
+  instance
+- **Standard Protocol**: HTTP transport is well-understood, debuggable with standard tools (curl,
+  browser, Postman)
+- **Graceful Lifecycle**: Server can be started/stopped independently without coupling to client
+  lifecycle
+- **Security**: Localhost binding (127.0.0.1) prevents external access by default
+
+**Implementation Details** (`src/main.py`):
+```python
+import uvicorn
+from .mcp_server import mcp
+
+# In main() after loading config:
+uvicorn.run(
+    mcp.http_app,        # Property access (not get_asgi_app() method)
+    host=host,           # From config.yaml: http.host (default: 127.0.0.1)
+    port=port,           # From config.yaml: http.port (default: 8000)
+    log_level="info"
+)
+```
+
+**Code Style Notes**:
+- **Import Organization**: Follows PEP 8 with standard library imports (logging, signal, sys,
+  pathlib, uvicorn) grouped together, followed by a blank line, then local imports (.config,
+  .mcp_server, .corruption_state)
+- **Property Access**: The FastMCP instance exposes `http_app` as a property, not a method. Use
+  `mcp.http_app` directly (not `mcp.get_asgi_app()`)
+- **Log Message Timing**: The startup log message "Launching HTTP server on {host}:{port}..."
+  appears before `uvicorn.run()` is called, indicating startup intention rather than completion.
+  This accurately reflects the server state - if uvicorn.run() fails, the "Launching" message was
+  truthful
+- **Blocking Call**: `uvicorn.run()` is a blocking call that doesn't return until server shutdown.
+  Any code after this line only executes during cleanup
+
+**Startup Flow**:
+1. Load configuration from `config.yaml` (host, port, ticket_directory)
+2. Validate ticket database for corruption (fail-fast if corrupt)
+3. Call `start_server()` to set internal running flag
+4. Initialize uvicorn with FastMCP's ASGI app
+5. Bind to configured host:port
+6. Accept HTTP connections with MCP JSON-RPC protocol
+
+**Shutdown Handling** (Task bees-kf30):
+- Signal handlers (SIGINT/SIGTERM) registered *after* successful server initialization
+- Handlers call `stop_server()` for cleanup but do NOT call `sys.exit(0)`
+- Uvicorn's built-in signal handling completes graceful shutdown
+- All connections closed cleanly, no resources leaked
+
+**Design Decision - Signal Handler Initialization Order**:
+Signal handlers are set up after `start_server()` completes and before `uvicorn.run()` executes:
+```python
+# Start the server
+start_server()
+
+# Set up signal handlers for graceful shutdown (after server initialization)
+setup_signal_handlers(stop_server)
+
+# Run the FastMCP server with HTTP transport via uvicorn
+uvicorn.run(...)
+```
+
+**Rationale**:
+- Prevents race condition where signal handler is called before server is initialized
+- If server initialization fails, signal handlers are never registered
+- Ensures `stop_server()` callback has a valid server state to clean up
+- Follows fail-fast principle: don't register cleanup handlers for resources that don't exist
+
+**Design Decision - No sys.exit() in Signal Handlers**:
+Signal handlers no longer call `sys.exit(0)` after calling `stop_server()`:
+```python
+def signal_handler(signum, frame):
+    logger.info(f"Received signal {signum}, shutting down gracefully...")
+    shutdown_callback()
+    # Don't call sys.exit(0) - let uvicorn complete its graceful shutdown
+```
+
+**Rationale**:
+- `uvicorn.run()` is a blocking call that handles SIGINT/SIGTERM internally
+- Calling `sys.exit(0)` immediately after `stop_server()` doesn't give uvicorn time to shut down
+- Uvicorn has sophisticated shutdown logic (close connections, flush buffers, cleanup resources)
+- Relying on uvicorn's built-in signal handling is the recommended practice
+- Our signal handler provides cleanup (`stop_server()`) without forcing immediate exit
+
+**Security Considerations**:
+- **Localhost Binding**: Default `127.0.0.1` restricts connections to local machine only
+- **No Authentication**: Assumes local-only access; external binding (0.0.0.0) requires additional
+  security layers (not implemented)
+- **Port Configuration**: User-configurable port prevents conflicts with other services
+
+**HTTP-Specific Error Handling** (Task bees-kf30):
+The server provides specific exception handlers for common HTTP errors with actionable guidance:
+
+```python
+except OSError as e:
+    # Handle HTTP server errors (port in use, permission denied, etc.)
+    if "Address already in use" in str(e) or e.errno == 48:
+        logger.error(f"Failed to start server: Port {port} is already in use")
+        logger.error(f"Please stop the other service using port {port} or change the port in config.yaml")
+    elif "Permission denied" in str(e) or e.errno == 13:
+        logger.error(f"Failed to start server: Permission denied for {host}:{port}")
+        logger.error(f"Try using a port number above 1024 or run with appropriate permissions")
+    else:
+        logger.error(f"Failed to start server: Network error - {e}")
+        logger.error(f"Check that {host}:{port} is a valid address")
+except ImportError as e:
+    logger.error(f"Failed to start server: Missing dependency - {e}")
+    logger.error("Please install required dependencies with: poetry install")
+except RuntimeError as e:
+    logger.error(f"Failed to start server: Runtime error - {e}")
+    logger.error("Check server configuration and logs for details")
+except Exception as e:
+    # Generic fallback for unexpected errors
+    logger.error(f"Failed to start server: {e}", exc_info=True)
+```
+
+**Error Handling Hierarchy**:
+Specific exceptions are caught before the generic `Exception` handler to provide clear,
+actionable error messages:
+
+1. **OSError** - Network-related errors (port conflicts, permission issues, invalid addresses)
+2. **ImportError** - Missing dependencies (uvicorn not installed)
+3. **RuntimeError** - Server initialization failures
+4. **Exception** - Catch-all for unexpected errors with full traceback
+
+**Design Rationale**:
+- Users get clear error messages explaining the problem and how to fix it
+- Common errors (port in use, permission denied) have specific handlers
+- Error messages include contextual information (port number, host address)
+- Generic handler still catches unexpected errors with full traceback
+- Follows fail-fast principle: server exits immediately on startup errors
+
+**Alternatives Considered**:
+- **Stdio Transport** (rejected: print/logging interference, single-client limitation, complex
+  lifecycle management)
+- **WebSocket Transport** (deferred: HTTP sufficient for current use case, WebSocket adds
+  complexity)
+- **gRPC** (rejected: overkill for simple request/response pattern, HTTP more universally
+  accessible)
+
 ### FastMCP Library Choice
 
 **Selected**: FastMCP 2.14.4
@@ -547,7 +829,7 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 - Production-ready framework (v2.0) with stable API
 - Clean decorator-based tool registration
 - Built-in validation and type checking
-- Standard I/O transport support
+- HTTP and stdio transport support via ASGI
 - Active maintenance and community support
 
 **Integration Approach**:
@@ -639,7 +921,7 @@ def health_check() -> Dict[str, Any]:
 - Debugging server state issues
 
 **Alternatives Considered**:
-- HTTP endpoint (rejected: MCP stdio transport doesn't support HTTP)
+- HTTP-only health endpoint (rejected: MCP tool provides broader integration, works via Claude Code)
 - Separate health check mechanism (rejected: MCP tool standard is sufficient)
 - Dependency checks (deferred: current implementation has no external deps)
 
@@ -984,6 +1266,41 @@ mcp = FastMCP("Bees Ticket Management Server")
 - Lifecycle testing ensures state management works
 - Error path testing prevents production failures
 
+### HTTP Configuration Architecture
+
+**Configuration Schema**:
+The MCP server uses a nested YAML configuration schema in `config.yaml`:
+
+```yaml
+http:
+  host: 127.0.0.1  # Server bind address
+  port: 8000       # Server port
+
+ticket_directory: ./tickets  # Ticket storage location
+```
+
+**Config Class Design** (`src/config.py`):
+- Parses nested YAML structure with `http.*` fields
+- Provides attribute-based access: `config.http_host`, `config.http_port`
+- Type coercion and validation for port (must be integer 1-65535)
+- Default values: host=127.0.0.1, port=8000, ticket_directory=./tickets
+
+**Configuration Loading Strategy** (`get_config()`):
+Search order for `config.yaml`:
+1. Current working directory
+2. Project root (parent of src/ if running from src/)
+3. Return default Config object if not found
+
+**Dependencies**:
+- `httpx ^0.28.1` - HTTP client library for MCP transport
+- `uvicorn[standard] ^0.35.0` - ASGI server for HTTP transport
+- `pyyaml ^6.0` - YAML parsing for configuration
+
+**Integration**:
+- `src/main.py` calls `load_config()` on startup
+- Passes `host` and `port` to FastMCP server initialization
+- Server binds to configured address (default localhost-only for security)
+
 ### Deployment Considerations
 
 **Running the Server**:
@@ -998,13 +1315,16 @@ mcp.run()
 ```
 
 **Transport Options**:
-- Default: stdio (standard input/output)
-- Future: HTTP transport for web clients
+- Default: HTTP transport (localhost:8000)
+- Dependencies: httpx (client), uvicorn with standard extras (server)
+- Configuration: host and port via config.yaml http section
+- Deprecated: stdio (standard input/output) - removed due to interference issues
 - Future: WebSocket for persistent connections
 
 **Logging**:
 - Python logging module with INFO level
 - Timestamps and module names in format
+- Logs written to ~/.bees/mcp.log (HTTP transport doesn't use stdout)
 - Critical for debugging tool calls
 - Future: Structured logging for log aggregation
 
@@ -1015,8 +1335,10 @@ mcp.run()
 - Future: OpenTelemetry integration
 
 **Design Rationale**:
-- stdio transport simplest for agent integration
-- Logging essential for operational visibility
+- HTTP transport eliminates stdio interference with Claude Code
+- Server runs independently as background process
+- Configurable binding (default 127.0.0.1) ensures security
+- Logging to file essential for operational visibility without stdout conflicts
 - Health check enables automated monitoring
 - Extensibility for future production needs
 

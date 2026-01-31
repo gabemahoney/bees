@@ -8,6 +8,7 @@ import logging
 import signal
 import sys
 from pathlib import Path
+import uvicorn
 
 from .config import Config, load_config
 from .mcp_server import mcp, start_server, stop_server
@@ -38,7 +39,7 @@ def setup_signal_handlers(shutdown_callback):
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
         shutdown_callback()
-        sys.exit(0)
+        # Don't call sys.exit(0) - let uvicorn complete its graceful shutdown
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -100,9 +101,6 @@ def main():
             )
             ticket_dir_path.mkdir(parents=True, exist_ok=True)
 
-        # Set up signal handlers for graceful shutdown
-        setup_signal_handlers(stop_server)
-
         # Display startup information
         logger.info("=" * 60)
         logger.info("Bees MCP Server")
@@ -115,16 +113,45 @@ def main():
         # Start the server
         start_server()
 
+        # Set up signal handlers for graceful shutdown (after server initialization)
+        setup_signal_handlers(stop_server)
+
+        logger.info(f"Launching HTTP server on {host}:{port}...")
         logger.info("MCP Server is running. Press Ctrl+C to stop.")
 
-        # Run the FastMCP server
-        mcp.run()
+        # Run the FastMCP server with HTTP transport via uvicorn
+        uvicorn.run(
+            mcp.http_app,
+            host=host,
+            port=port,
+            log_level="info"
+        )
 
     except FileNotFoundError as e:
         logger.error(f"Configuration error: {e}")
         sys.exit(1)
     except ValueError as e:
         logger.error(f"Configuration validation error: {e}")
+        sys.exit(1)
+    except OSError as e:
+        # Handle HTTP server errors (port in use, permission denied, etc.)
+        if "Address already in use" in str(e) or e.errno == 48:
+            logger.error(f"Failed to start server: Port {port} is already in use")
+            logger.error(f"Please stop the other service using port {port} or change the port in config.yaml")
+        elif "Permission denied" in str(e) or e.errno == 13:
+            logger.error(f"Failed to start server: Permission denied for {host}:{port}")
+            logger.error(f"Try using a port number above 1024 or run with appropriate permissions")
+        else:
+            logger.error(f"Failed to start server: Network error - {e}")
+            logger.error(f"Check that {host}:{port} is a valid address")
+        sys.exit(1)
+    except ImportError as e:
+        logger.error(f"Failed to start server: Missing dependency - {e}")
+        logger.error("Please install required dependencies with: poetry install")
+        sys.exit(1)
+    except RuntimeError as e:
+        logger.error(f"Failed to start server: Runtime error - {e}")
+        logger.error("Check server configuration and logs for details")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Failed to start server: {e}", exc_info=True)

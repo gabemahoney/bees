@@ -127,6 +127,20 @@ class TestSignalHandling:
         callback = MagicMock()
 
         with patch('signal.signal') as mock_signal:
+            setup_signal_handlers(callback)
+
+            # Get the registered handler and call it
+            signal_handler = mock_signal.call_args_list[0][0][1]
+            signal_handler(signal.SIGINT, None)
+
+            callback.assert_called_once()
+            # Should NOT call sys.exit(0) to allow uvicorn graceful shutdown
+
+    def test_signal_handler_does_not_force_exit(self):
+        """Test that signal handlers do not force immediate exit, allowing uvicorn shutdown."""
+        callback = MagicMock()
+
+        with patch('signal.signal') as mock_signal:
             with patch('sys.exit') as mock_exit:
                 setup_signal_handlers(callback)
 
@@ -135,19 +149,20 @@ class TestSignalHandling:
                 signal_handler(signal.SIGINT, None)
 
                 callback.assert_called_once()
-                mock_exit.assert_called_once_with(0)
+                # sys.exit should NOT be called - let uvicorn handle shutdown
+                mock_exit.assert_not_called()
 
 
 class TestServerInitialization:
     """Tests for server initialization and startup."""
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
     @patch('src.main.is_corrupt')
     def test_main_successful_startup(self, mock_is_corrupt, mock_load_config, mock_setup_signals,
-                                     mock_start_server, mock_mcp_run, tmp_path):
+                                     mock_start_server, mock_uvicorn_run, tmp_path):
         """Test successful server startup with valid configuration."""
         # Setup mock config
         ticket_dir = tmp_path / "tickets"
@@ -155,7 +170,7 @@ class TestServerInitialization:
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 8000},
+            "http": {"host": "127.0.0.1", "port": 8000},
             "ticket_directory": str(ticket_dir)
         })
 
@@ -167,7 +182,81 @@ class TestServerInitialization:
         mock_load_config.assert_called_once()
         mock_setup_signals.assert_called_once()
         mock_start_server.assert_called_once()
-        mock_mcp_run.assert_called_once()
+        mock_uvicorn_run.assert_called_once()
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    @patch('src.main.mcp.http_app', new_callable=lambda: MagicMock())
+    def test_http_server_initialization(self, mock_http_app, mock_is_corrupt, mock_load_config,
+                                        mock_setup_signals, mock_start_server, mock_uvicorn_run, tmp_path):
+        """Test that HTTP server is initialized with correct parameters."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        main()
+
+        # Verify uvicorn.run called with correct parameters
+        mock_uvicorn_run.assert_called_once_with(
+            mock_http_app,
+            host="127.0.0.1",
+            port=8000,
+            log_level="info"
+        )
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_http_server_localhost_binding(self, mock_is_corrupt, mock_load_config,
+                                           mock_setup_signals, mock_start_server, mock_uvicorn_run, tmp_path):
+        """Test that HTTP server binds to 127.0.0.1 by default for security."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        main()
+
+        # Verify 127.0.0.1 binding
+        call_args = mock_uvicorn_run.call_args
+        assert call_args[1]['host'] == "127.0.0.1"
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_http_server_custom_port(self, mock_is_corrupt, mock_load_config,
+                                     mock_setup_signals, mock_start_server, mock_uvicorn_run, tmp_path):
+        """Test that HTTP server uses configured port."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 9000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        main()
+
+        # Verify custom port
+        call_args = mock_uvicorn_run.call_args
+        assert call_args[1]['port'] == 9000
 
     @patch('src.main.is_corrupt')
     @patch('src.main.load_config')
@@ -194,7 +283,7 @@ class TestServerInitialization:
 
         assert exc_info.value.code == 1
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
@@ -202,13 +291,13 @@ class TestServerInitialization:
     def test_main_creates_missing_ticket_directory(self, mock_is_corrupt, mock_load_config,
                                                    mock_setup_signals,
                                                    mock_start_server,
-                                                   mock_mcp_run, tmp_path):
+                                                   mock_uvicorn_run, tmp_path):
         """Test that main creates ticket directory if it doesn't exist."""
         ticket_dir = tmp_path / "nonexistent_tickets"
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 8000},
+            "http": {"host": "127.0.0.1", "port": 8000},
             "ticket_directory": str(ticket_dir)
         })
 
@@ -235,7 +324,7 @@ class TestServerInitialization:
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 8000},
+            "http": {"host": "127.0.0.1", "port": 8000},
             "ticket_directory": str(ticket_dir)
         })
 
@@ -250,13 +339,13 @@ class TestServerInitialization:
 class TestConfigurationVariations:
     """Tests for different configuration scenarios."""
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
     @patch('src.main.is_corrupt')
     def test_main_with_custom_host(self, mock_is_corrupt, mock_load_config, mock_setup_signals,
-                                   mock_start_server, mock_mcp_run, tmp_path):
+                                   mock_start_server, mock_uvicorn_run, tmp_path):
         """Test server starts with custom host configuration."""
         ticket_dir = tmp_path / "tickets"
         ticket_dir.mkdir()
@@ -271,20 +360,20 @@ class TestConfigurationVariations:
 
         mock_start_server.assert_called_once()
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
     @patch('src.main.is_corrupt')
     def test_main_with_custom_port(self, mock_is_corrupt, mock_load_config, mock_setup_signals,
-                                   mock_start_server, mock_mcp_run, tmp_path):
+                                   mock_start_server, mock_uvicorn_run, tmp_path):
         """Test server starts with custom port configuration."""
         ticket_dir = tmp_path / "tickets"
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 9000},
+            "http": {"host": "127.0.0.1", "port": 9000},
             "ticket_directory": str(ticket_dir)
         })
 
@@ -292,7 +381,7 @@ class TestConfigurationVariations:
 
         mock_start_server.assert_called_once()
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
@@ -300,14 +389,14 @@ class TestConfigurationVariations:
     def test_main_with_absolute_ticket_directory(self, mock_is_corrupt, mock_load_config,
                                                  mock_setup_signals,
                                                  mock_start_server,
-                                                 mock_mcp_run, tmp_path):
+                                                 mock_uvicorn_run, tmp_path):
         """Test server starts with absolute ticket directory path."""
         ticket_dir = tmp_path / "absolute_tickets"
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 8000},
+            "http": {"host": "127.0.0.1", "port": 8000},
             "ticket_directory": str(ticket_dir.absolute())
         })
 
@@ -349,21 +438,21 @@ class TestCorruptionStateStartupCheck:
         mock_is_corrupt.assert_called_once()
         mock_get_report.assert_called_once()
 
-    @patch('src.main.mcp.run')
+    @patch('src.main.uvicorn.run')
     @patch('src.main.start_server')
     @patch('src.main.setup_signal_handlers')
     @patch('src.main.load_config')
     @patch('src.main.is_corrupt')
     def test_main_starts_normally_when_clean(self, mock_is_corrupt, mock_load_config,
                                             mock_setup_signals, mock_start_server,
-                                            mock_mcp_run, tmp_path):
+                                            mock_uvicorn_run, tmp_path):
         """Test that main starts normally when database is clean."""
         ticket_dir = tmp_path / "tickets"
         ticket_dir.mkdir()
 
         mock_is_corrupt.return_value = False
         mock_load_config.return_value = Config({
-            "http": {"host": "localhost", "port": 8000},
+            "http": {"host": "127.0.0.1", "port": 8000},
             "ticket_directory": str(ticket_dir)
         })
 
@@ -403,3 +492,281 @@ class TestCorruptionStateStartupCheck:
 
         assert exc_info.value.code == 1
         # Should show first 5 errors and indicate there are more
+
+
+class TestHTTPErrorHandling:
+    """Tests for HTTP-specific error handling."""
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_port_in_use_error(self, mock_is_corrupt, mock_load_config,
+                               mock_setup_signals, mock_start_server,
+                               mock_uvicorn_run, tmp_path):
+        """Test OSError for port in use returns specific error message."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        # Simulate port in use error
+        error = OSError("Address already in use")
+        error.errno = 48
+        mock_uvicorn_run.side_effect = error
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_permission_denied_error(self, mock_is_corrupt, mock_load_config,
+                                     mock_setup_signals, mock_start_server,
+                                     mock_uvicorn_run, tmp_path):
+        """Test OSError for permission denied returns specific error message."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 80},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        # Simulate permission denied error
+        error = OSError("Permission denied")
+        error.errno = 13
+        mock_uvicorn_run.side_effect = error
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_import_error_handling(self, mock_is_corrupt, mock_load_config,
+                                   mock_setup_signals, mock_start_server,
+                                   mock_uvicorn_run, tmp_path):
+        """Test ImportError for missing uvicorn."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        mock_uvicorn_run.side_effect = ImportError("No module named 'uvicorn'")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_runtime_error_handling(self, mock_is_corrupt, mock_load_config,
+                                    mock_setup_signals, mock_start_server,
+                                    mock_uvicorn_run, tmp_path):
+        """Test RuntimeError for server initialization failures."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        mock_uvicorn_run.side_effect = RuntimeError("Server initialization failed")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_generic_error_fallback(self, mock_is_corrupt, mock_load_config,
+                                    mock_setup_signals, mock_start_server,
+                                    mock_uvicorn_run, tmp_path):
+        """Test that generic errors still caught with fallback handler."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        mock_uvicorn_run.side_effect = Exception("Unknown error")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+
+class TestSignalHandlerInitializationOrder:
+    """Tests for signal handler initialization after server startup."""
+
+    @patch('src.main.uvicorn.run')
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_signal_handlers_registered_after_server_init(self, mock_is_corrupt, mock_load_config,
+                                                          mock_setup_signals, mock_start_server,
+                                                          mock_uvicorn_run, tmp_path):
+        """Test that signal handlers are registered after start_server() completes."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        main()
+
+        # Verify call order: start_server must be called before setup_signal_handlers
+        calls = [c for c in [mock_start_server, mock_setup_signals, mock_uvicorn_run]]
+        assert mock_start_server.call_count == 1
+        assert mock_setup_signals.call_count == 1
+        assert mock_uvicorn_run.call_count == 1
+
+    @patch('src.main.start_server')
+    @patch('src.main.setup_signal_handlers')
+    @patch('src.main.load_config')
+    @patch('src.main.is_corrupt')
+    def test_signal_handlers_not_registered_on_init_failure(self, mock_is_corrupt, mock_load_config,
+                                                            mock_setup_signals, mock_start_server,
+                                                            tmp_path):
+        """Test that signal handlers are not registered if server initialization fails."""
+        ticket_dir = tmp_path / "tickets"
+        ticket_dir.mkdir()
+
+        mock_is_corrupt.return_value = False
+        mock_load_config.return_value = Config({
+            "http": {"host": "127.0.0.1", "port": 8000},
+            "ticket_directory": str(ticket_dir)
+        })
+
+        # Simulate server initialization failure
+        mock_start_server.side_effect = Exception("Server init failed")
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+        # Signal handlers should not be set up if server init fails
+        mock_setup_signals.assert_not_called()
+
+
+class TestCodeStyle:
+    """Tests for code style and organization in main.py."""
+
+    def test_main_imports_follow_pep8(self):
+        """Test that imports in main.py follow PEP 8 grouping."""
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            lines = f.readlines()
+
+        # Find import lines (skip docstring and blank lines)
+        import_lines = []
+        in_docstring = False
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith('"""') or stripped.startswith("'''"):
+                in_docstring = not in_docstring
+            elif not in_docstring and (stripped.startswith('import ') or stripped.startswith('from ')):
+                import_lines.append((i, line))
+
+        # Group imports: stdlib vs local (starts with .)
+        stdlib_imports = []
+        local_imports = []
+        for line_num, line in import_lines:
+            if line.strip().startswith('from .'):
+                local_imports.append((line_num, line))
+            else:
+                stdlib_imports.append((line_num, line))
+
+        # Verify stdlib imports come before local imports
+        if stdlib_imports and local_imports:
+            last_stdlib_line = stdlib_imports[-1][0]
+            first_local_line = local_imports[0][0]
+            assert last_stdlib_line < first_local_line, \
+                f"Local imports should come after stdlib imports. Last stdlib: {last_stdlib_line}, First local: {first_local_line}"
+
+            # Verify single blank line separator (line numbers should differ by 2: one for blank, one for next line)
+            assert first_local_line - last_stdlib_line == 2, \
+                f"Should be exactly one blank line between stdlib and local imports. Stdlib ends at {last_stdlib_line}, local starts at {first_local_line}"
+
+    def test_log_message_appears_before_uvicorn(self):
+        """Test that 'Launching HTTP server' log message appears before uvicorn.run() call."""
+        main_file = Path(__file__).parent.parent / "src" / "main.py"
+        with open(main_file, 'r') as f:
+            lines = f.readlines()
+
+        launching_line = None
+        uvicorn_line = None
+
+        for i, line in enumerate(lines, 1):
+            if 'Launching HTTP server' in line:
+                launching_line = i
+            if 'uvicorn.run(' in line:
+                uvicorn_line = i
+
+        assert launching_line is not None, "Could not find 'Launching HTTP server' log message"
+        assert uvicorn_line is not None, "Could not find 'uvicorn.run()' call"
+        assert launching_line < uvicorn_line, \
+            f"'Launching' message at line {launching_line} should appear before uvicorn.run() at line {uvicorn_line}"
+
+
+class TestDocumentation:
+    """Tests for documentation accuracy."""
+
+    def test_master_plan_documents_http_app_property(self):
+        """Test that master_plan.md correctly documents mcp.http_app property."""
+        master_plan_file = Path(__file__).parent.parent / "docs" / "plans" / "master_plan.md"
+        with open(master_plan_file, 'r') as f:
+            content = f.read()
+
+        # Verify mcp.http_app is documented
+        assert 'mcp.http_app' in content, "master_plan.md should document mcp.http_app property"
+
+        # Find HTTP server implementation section code block
+        http_section_start = content.find('**Implementation Details** (`src/main.py`)')
+        assert http_section_start != -1, "Could not find Implementation Details section"
+
+        # Extract the code block (between ```python and ```)
+        code_block_start = content.find('```python', http_section_start)
+        code_block_end = content.find('```', code_block_start + 10)
+        code_block = content[code_block_start:code_block_end]
+
+        # Verify the code block shows uvicorn.run with mcp.http_app
+        assert 'uvicorn.run(' in code_block, "Code block should show uvicorn.run() call"
+        assert 'mcp.http_app' in code_block, "Code block should show mcp.http_app property"

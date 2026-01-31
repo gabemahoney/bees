@@ -302,3 +302,98 @@ class TestGetConfig:
 
         # Should use CWD config (port 2222), not parent (port 1111)
         assert config.http_port == 2222
+
+
+class TestHostValidation:
+    """Test host IP validation logic."""
+
+    def test_valid_ipv4_localhost(self):
+        """Test valid IPv4 localhost address."""
+        config = Config({'http': {'host': '127.0.0.1'}})
+        assert config.http_host == '127.0.0.1'
+
+    def test_valid_ipv4_all_interfaces(self):
+        """Test valid IPv4 all interfaces address."""
+        config = Config({'http': {'host': '0.0.0.0'}})
+        assert config.http_host == '0.0.0.0'
+
+    def test_valid_ipv4_typical(self):
+        """Test valid typical IPv4 address."""
+        config = Config({'http': {'host': '192.168.1.1'}})
+        assert config.http_host == '192.168.1.1'
+
+    def test_valid_ipv4_another(self):
+        """Test valid IPv4 address."""
+        config = Config({'http': {'host': '10.0.0.1'}})
+        assert config.http_host == '10.0.0.1'
+
+    def test_valid_ipv6_localhost(self):
+        """Test valid IPv6 localhost address."""
+        config = Config({'http': {'host': '::1'}})
+        assert config.http_host == '::1'
+
+    def test_valid_ipv6_all_interfaces(self):
+        """Test valid IPv6 all interfaces address."""
+        config = Config({'http': {'host': '::'}})
+        assert config.http_host == '::'
+
+    def test_valid_ipv6_full(self):
+        """Test valid full IPv6 address."""
+        config = Config({'http': {'host': '2001:0db8:85a3:0000:0000:8a2e:0370:7334'}})
+        assert config.http_host == '2001:0db8:85a3:0000:0000:8a2e:0370:7334'
+
+    def test_valid_ipv6_compressed(self):
+        """Test valid compressed IPv6 address."""
+        config = Config({'http': {'host': '2001:db8::1'}})
+        assert config.http_host == '2001:db8::1'
+
+    def test_invalid_host_malformed_ip(self):
+        """Test malformed IP address raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host '999.999.999.999'"):
+            Config({'http': {'host': '999.999.999.999'}})
+
+    def test_invalid_host_not_an_ip(self):
+        """Test non-IP string raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host 'not-an-ip'"):
+            Config({'http': {'host': 'not-an-ip'}})
+
+    def test_invalid_host_hostname(self):
+        """Test hostname raises ValueError (only IP addresses allowed)."""
+        with pytest.raises(ValueError, match="Invalid host 'localhost'"):
+            Config({'http': {'host': 'localhost'}})
+
+    def test_invalid_host_domain(self):
+        """Test domain name raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host 'example.com'"):
+            Config({'http': {'host': 'example.com'}})
+
+    def test_invalid_host_empty_string(self):
+        """Test empty host string raises ValueError."""
+        with pytest.raises(ValueError, match="Host cannot be empty"):
+            Config({'http': {'host': ''}})
+
+    def test_invalid_host_partial_ip(self):
+        """Test partial IP address raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host '192.168'"):
+            Config({'http': {'host': '192.168'}})
+
+    def test_invalid_host_ip_with_port(self):
+        """Test IP with port suffix raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host '127.0.0.1:8000'"):
+            Config({'http': {'host': '127.0.0.1:8000'}})
+
+    def test_invalid_host_spaces(self):
+        """Test host with spaces raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid host ' 127.0.0.1 '"):
+            Config({'http': {'host': ' 127.0.0.1 '}})
+
+    def test_host_validation_error_message_includes_examples(self):
+        """Test error message includes helpful examples."""
+        with pytest.raises(ValueError) as exc_info:
+            Config({'http': {'host': 'invalid'}})
+
+        error_msg = str(exc_info.value)
+        assert "127.0.0.1" in error_msg
+        assert "0.0.0.0" in error_msg
+        assert "::1" in error_msg
+        assert "::" in error_msg
