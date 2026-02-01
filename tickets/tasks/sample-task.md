@@ -11,7 +11,8 @@ labels:
 up_dependencies: []
 down_dependencies:
   - bees-dp1
-children: []
+children:
+  - bees-sb1
 status: in progress
 priority: 1
 owner: backend-team

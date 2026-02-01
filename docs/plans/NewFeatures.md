@@ -1,3 +1,4 @@
+- Is there a watcher? Remove it. Add design requirement of no daemons
 - Bug: MCP does not start if DB is corrupt. It should start but refuse to respond to commands with a friendly message
 - Add a Feature Reviewer subagent who validates the work conforms to the docs
 - Egg: An unhatched bee. .eggs/feature/PRD.md SRD.md etc

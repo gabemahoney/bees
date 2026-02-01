@@ -9,7 +9,8 @@ labels:
   - frontend
 up_dependencies: []
 down_dependencies: []
-children: []
+children:
+  - bees-tk1
 status: open
 priority: 2
 owner: engineering-team

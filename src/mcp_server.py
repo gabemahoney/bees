@@ -19,10 +19,16 @@ from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
 
-# Configure logging
+# Ensure log directory exists
+log_dir = Path.home() / '.bees'
+log_dir.mkdir(exist_ok=True)
+
+# Configure logging to file for MCP stdio compatibility
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename=log_dir / 'mcp.log',
+    filemode='a'
 )
 logger = logging.getLogger(__name__)
 

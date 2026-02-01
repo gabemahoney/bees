@@ -4,6 +4,12 @@ Technical architecture and implementation decisions for the Bees ticket manageme
 
 _This document was consolidated in January 2026 to serve as a concise architectural reference for LLMs, removing code examples, performance metrics, and duplicated explanations while maintaining complete technical accuracy._
 
+## Design Constraints
+- No database
+- No daemons
+- No caches
+- Limit: scales to only tens of directories and 1000s of tickets
+
 ## Architecture Overview
 
 Bees is a markdown-based ticket management system with four core modules:
