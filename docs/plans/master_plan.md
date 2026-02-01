@@ -95,6 +95,7 @@ Centralized configuration module with typed Config object.
 - Example: blocks 'Back End' and 'back end' (both normalize to 'back_end')
 - Raises ValueError with existing hive's display name if collision detected
 - Called during hive registration flow before saving config
+- **Refactoring Note (Task bees-e81r3)**: Duplicate implementation removed from `src/mcp_server.py`. Single source of truth is now `src/config.py`. MCP server imports function via `from .config import validate_unique_hive_name`.
 
 **Storage Architecture**:
 - Hives dictionary uses normalized names as keys: `config.hives['back_end']`
@@ -125,12 +126,60 @@ Centralized configuration module with typed Config object.
 - **Directory Structure**:
   - `/eggs` - Reserved for future feature storage (currently stubbed)
   - `/evicted` - Storage for completed and archived tickets
+  - `/.hive` - Hidden marker directory containing hive identity for recovery
 - **Implementation Details**:
   - Uses `Path.mkdir(parents=True, exist_ok=True)` for idempotent directory creation
   - Creates both subdirectories atomically during hive setup
+  - Creates `.hive` marker with identity data (see Hive Recovery System below)
   - Returns normalized hive name and path in response dict
 - **Integration**: Called during hive registration flow to ensure directory structure exists before tickets are created
 - **Future Enhancements**: /eggs directory will store feature-specific data structures in later iterations
+
+**Hive Recovery System** (Task bees-hzgw):
+- **Purpose**: Enable automatic hive recovery when paths change due to directory moves/renames
+- **Marker Structure**: Each hive contains `/.hive/identity.json` with:
+  - `normalized_name`: Normalized hive name (e.g., 'back_end')
+  - `display_name`: Original display name (e.g., 'Back End')
+- **Marker Creation**: `colonize_hive()` automatically creates `.hive` marker during hive setup
+  - Marker created atomically with `/eggs` and `/evicted` directories
+  - Identity data written as formatted JSON with indent=2
+  - Marker is hidden directory (starts with dot) to avoid clutter
+- **Recovery Function**: `scan_for_hive(name: str, config: dict | None = None) -> Path | None` in `src/mcp_server.py`
+  - Recursively scans repository directories for `.hive` markers matching normalized name
+  - Called when MCP commands cannot find hive at configured path in config.json
+  - Returns Path to hive directory if found, None otherwise
+  - **Security: Depth Limiting** (implemented in Task bees-s1gpp):
+    - Scans limited to MAX_SCAN_DEPTH (10 directory levels) from repository root
+    - Prevents filesystem-wide traversal if repo_root is `/` or high-level directory
+    - Depth calculated as relative path from repo_root using `Path.relative_to()`
+    - Markers beyond depth limit are skipped with debug log message
+    - Security rationale: Bounds computation time/resource usage on misconfigured systems
+  - **Performance: Config Parameter Optimization** (implemented in Task bees-s1gpp):
+    - Accepts optional `config` dict parameter to avoid redundant disk reads
+    - If config provided, extracts registered hive names directly without loading from disk
+    - If config not provided, loads from `.bees/config.json` as before
+    - Enables N+1 query optimization when scanning multiple hives in sequence
+    - Performance benefit: Single config load + multiple scans instead of load-per-scan
+  - **Automatically updates config.json with recovered path** (implemented in Task bees-uzyha):
+    - Loads current config using `load_bees_config()`
+    - Updates hive path in `config.hives[name]`
+    - Saves config using `save_bees_config()`
+    - Logs successful update operation
+    - Gracefully handles errors (missing/corrupt config, write failures)
+- **Orphaned Marker Detection**: `scan_for_hive()` logs warnings for .hive markers not in config.json
+  - Helps identify stale markers from deleted/unregistered hives
+  - Enables manual cleanup of orphaned markers
+- **Error Handling**:
+  - Gracefully handles missing identity.json files (logs warning, continues scan)
+  - Handles corrupted JSON in identity.json (logs warning, continues scan)
+  - Handles missing normalized_name field (logs warning, continues scan)
+  - Raises ValueError if not in a git repository (uses `get_repo_root()`)
+- **Design Rationale**:
+  - File-based markers survive directory moves (travel with hive contents)
+  - JSON format is human-readable and easily parsed
+  - Hidden directory prevents user confusion (not a ticket storage location)
+  - Recursive scan handles arbitrary directory nesting within repository
+  - Single-hop recovery (scan once, update config) avoids repeated scans
 
 
 
@@ -172,6 +221,12 @@ tickets back into typed objects, enabling both read and write operations.
 ### Overview
 
 The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket write operations (create, update, delete) while maintaining relationship consistency. Built with FastMCP 2.14.4, the server exposes tools that AI agents and clients can use to manipulate tickets safely.
+
+**Code Organization (Task bees-e81r3)**:
+- All module-level imports consolidated at top of `src/mcp_server.py`
+- `import json` moved from function bodies to module level for consistency with Python best practices
+- Config module functions imported via `from .config import validate_unique_hive_name`
+- Eliminates redundant function-level imports in `scan_for_hive()`, `colonize_hive()`, and `_execute_query()`
 
 ### Design Goals
 

@@ -64,11 +64,42 @@ result = colonize_hive(name='Back End', path='/Users/username/projects/myrepo/ti
 This creates the following directory structure:
 - `/eggs` - Reserved for future feature storage (currently stubbed)
 - `/evicted` - Storage for completed and archived tickets
+- `/.hive` - Hidden marker directory containing hive identity for recovery
 
 The function automatically:
 - Creates both subdirectories with `parents=True, exist_ok=True` for idempotent operations
+- Creates a `.hive` marker containing hive identity (normalized name and display name)
 - Normalizes the hive name (e.g., 'Back End' → 'back_end')
 - Returns status information including the normalized name and hive path
+
+**Hive Recovery:**
+
+The `.hive` marker enables automatic hive recovery when paths change. If a hive is moved or renamed, Bees can scan for its `.hive` marker to locate it:
+
+- Each hive contains a `/.hive/identity.json` file with its normalized name and display name
+- When a hive cannot be found at its configured path, Bees recursively scans the repository for `.hive` markers
+- If a matching marker is found, the config is automatically updated with the new path
+- Orphaned `.hive` markers (not registered in config) trigger warning logs for cleanup
+
+**Scan Security & Performance:**
+
+The `scan_for_hive()` function includes security and performance optimizations:
+
+- **Depth Limiting**: Scanning is limited to 10 directory levels from the repository root to prevent excessive filesystem traversal if the repo root is `/` or a high-level directory
+- **Config Optimization**: Accepts an optional `config` parameter to avoid redundant disk reads when scanning multiple hives
+
+Usage example with config parameter:
+```python
+from src.mcp_server import scan_for_hive
+from src.config import load_bees_config
+
+# Load config once for multiple scans
+config_dict = load_bees_config().dict()
+
+# Scan for multiple hives without reloading config
+hive1_path = scan_for_hive('backend', config=config_dict)
+hive2_path = scan_for_hive('frontend', config=config_dict)
+```
 
 **Configuration Schema:**
 

@@ -4,6 +4,7 @@ MCP Server for Bees Ticket Management System
 Provides FastMCP server infrastructure with tool registration for ticket operations.
 """
 
+import json
 import logging
 from dataclasses import asdict
 from datetime import datetime
@@ -18,6 +19,7 @@ from .query_storage import save_query, load_query, list_queries, validate_query
 from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
+from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig
 
 # Ensure log directory exists
 log_dir = Path.home() / '.bees'
@@ -154,12 +156,119 @@ def normalize_name(name: str) -> str:
     return name.replace(' ', '_').lower()
 
 
+def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
+    """
+    Recursively scan repository directories for a .hive marker matching a hive name.
+
+    When a hive cannot be found in config.json, this function scans the repository
+    for .hive markers to recover the hive's new location. It also logs warnings
+    for any orphaned .hive markers not registered in config.
+
+    Args:
+        name: Normalized hive name to search for (e.g., 'back_end')
+        config: Optional config dict to avoid reloading from disk. If provided,
+                should contain 'hives' key with registered hive names.
+
+    Returns:
+        Path to the hive directory if found, None otherwise
+
+    Raises:
+        ValueError: If not in a git repository
+
+    Example:
+        >>> scan_for_hive('back_end')
+        PosixPath('/Users/user/projects/myrepo/tickets')
+        >>> scan_for_hive('back_end', config={'hives': {'back_end': {...}}})
+        PosixPath('/Users/user/projects/myrepo/tickets')
+    """
+    try:
+        repo_root = get_repo_root()
+    except ValueError as e:
+        logger.error(f"Cannot scan for hive: {e}")
+        raise
+
+    # Load config to check for registered hives
+    # Use provided config if available to avoid redundant disk reads
+    registered_hives = set()
+    if config is not None:
+        # Config was provided, use it directly
+        registered_hives = set(config.get('hives', {}).keys())
+    else:
+        # Load config from disk
+        config_path = Path('.bees/config.json')
+        if config_path.exists():
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    registered_hives = set(config.get('hives', {}).keys())
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Could not read config.json: {e}")
+
+    # Recursively search for .hive markers with depth limit
+    # Limit depth to prevent excessive scanning if repo_root is '/' or a high-level directory
+    MAX_SCAN_DEPTH = 10
+    found_hive_path = None
+    for hive_marker_path in repo_root.rglob('.hive'):
+        if not hive_marker_path.is_dir():
+            continue
+
+        # Check depth relative to repo_root
+        try:
+            relative_path = hive_marker_path.relative_to(repo_root)
+            depth = len(relative_path.parts)
+            if depth > MAX_SCAN_DEPTH:
+                logger.debug(f"Skipping .hive marker beyond depth limit: {hive_marker_path}")
+                continue
+        except ValueError:
+            # Path is not relative to repo_root, skip it
+            continue
+
+        identity_file = hive_marker_path / 'identity.json'
+        if not identity_file.exists():
+            logger.warning(f"Found .hive marker without identity.json: {hive_marker_path}")
+            continue
+
+        try:
+            with open(identity_file, 'r') as f:
+                identity_data = json.load(f)
+                marker_name = identity_data.get('normalized_name')
+
+                if marker_name == name:
+                    # Found the hive we're looking for
+                    found_hive_path = hive_marker_path.parent
+                    logger.info(f"Found hive '{name}' at {found_hive_path}")
+
+                    # Update config.json with the recovered path
+                    try:
+                        config = load_bees_config()
+                        if name in config.hives:
+                            config.hives[name].path = str(found_hive_path)
+                            save_bees_config(config)
+                            logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
+                        else:
+                            logger.warning(f"Hive '{name}' not found in config, cannot update path")
+                    except Exception as e:
+                        logger.error(f"Failed to update config.json for hive '{name}': {e}")
+                elif marker_name not in registered_hives:
+                    # Found an orphaned .hive marker
+                    logger.warning(
+                        f"Found orphaned .hive marker for '{marker_name}' at {hive_marker_path.parent}. "
+                        f"Not registered in config.json."
+                    )
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            logger.warning(f"Could not read identity from {identity_file}: {e}")
+            continue
+
+    return found_hive_path
+
+
 def colonize_hive(name: str, path: str) -> Dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
 
     Sets up the necessary directories for a hive, including subdirectories
     for ticket organization (/eggs for future features, /evicted for completed tickets).
+    Creates a .hive marker folder containing identity data for hive recovery.
 
     Args:
         name: Display name for the hive (e.g., 'Back End')
@@ -176,6 +285,7 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
         {'status': 'success', 'hive_name': 'back_end', 'hive_path': '/Users/user/projects/myrepo/tickets'}
     """
     hive_path = Path(path)
+    normalized_name = normalize_name(name)
 
     # Create /eggs subdirectory for future feature storage
     eggs_path = hive_path / "eggs"
@@ -187,56 +297,25 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
     evicted_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Created /evicted directory at {evicted_path}")
 
+    # Create .hive marker folder with identity data
+    hive_marker_path = hive_path / ".hive"
+    hive_marker_path.mkdir(exist_ok=True)
+
+    # Store hive identity in marker file
+    identity_data = {
+        "normalized_name": normalized_name,
+        "display_name": name
+    }
+    identity_file = hive_marker_path / "identity.json"
+    with open(identity_file, 'w') as f:
+        json.dump(identity_data, f, indent=2)
+    logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
+
     return {
         "status": "success",
-        "hive_name": normalize_name(name),
+        "hive_name": normalized_name,
         "hive_path": str(hive_path)
     }
-
-
-def validate_unique_hive_name(normalized_name: str, config_path: Path | None = None) -> None:
-    """
-    Validate that a normalized hive name is unique in the config.
-
-    Checks if the normalized name already exists as a key in the hives section
-    of config.json. This prevents different display names that normalize to the
-    same key from being registered (e.g., 'Back End' and 'back end').
-
-    Args:
-        normalized_name: The normalized hive name to check (e.g., 'back_end')
-        config_path: Optional path to config.json (defaults to .bees/config.json)
-
-    Raises:
-        ValueError: If the normalized name already exists in the config
-
-    Example:
-        >>> validate_unique_hive_name('back_end')  # OK if not exists
-        >>> validate_unique_hive_name('back_end')  # Raises ValueError if exists
-    """
-    import json
-
-    if config_path is None:
-        config_path = Path('.bees/config.json')
-
-    # If config doesn't exist yet, name is unique
-    if not config_path.exists():
-        return
-
-    # Read existing config
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        logger.warning(f"Could not read config.json: {e}")
-        return
-
-    # Check if hive name already exists
-    hives = config.get('hives', {})
-    if normalized_name in hives:
-        raise ValueError(
-            f"Hive name '{normalized_name}' already exists in configuration. "
-            f"Choose a different name that doesn't conflict when normalized."
-        )
 
 
 def _update_bidirectional_relationships(
@@ -1220,7 +1299,6 @@ def _execute_query(
 
     # Perform parameter substitution if params provided
     if params:
-        import json
         try:
             params_dict = json.loads(params)
         except json.JSONDecodeError as e:

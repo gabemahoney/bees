@@ -785,3 +785,415 @@ class TestValidateHivePath:
             validate_hive_path(str(outside), repo_root)
         except ValueError as e:
             assert "within repository root" in str(e).lower()
+
+
+class TestScanForHiveConfigAutoUpdate:
+    """Tests for scan_for_hive() config auto-update behavior."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_updates_config_with_stale_path(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive updates config.json when hive is found at new location."""
+        from src.mcp_server import scan_for_hive
+        from src.config import load_bees_config, save_bees_config, BeesConfig, HiveConfig
+        import json
+
+        # Create initial config with stale path
+        old_path = temp_repo / "old_location"
+        new_path = temp_repo / "new_location"
+        new_path.mkdir(parents=True)
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(
+                display_name="Test Hive",
+                path=str(old_path)
+            )
+        })
+        save_bees_config(config)
+
+        # Create .hive marker at new location
+        hive_marker = new_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Scan for hive - should find it and update config
+        result = scan_for_hive("test_hive")
+
+        assert result == new_path
+
+        # Verify config was updated with new path
+        updated_config = load_bees_config()
+        assert updated_config.hives["test_hive"].path == str(new_path)
+
+    def test_scan_for_hive_handles_missing_config(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive handles case where hive not in config yet."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive without config entry
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "unregistered_hive",
+            "display_name": "Unregistered Hive"
+        }))
+
+        # Scan should find hive but log warning (not update config)
+        result = scan_for_hive("unregistered_hive")
+
+        assert result == hive_path
+        # Config should remain empty or unchanged (no crash)
+
+    def test_scan_for_hive_updates_only_target_hive(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive only updates the target hive in config with multiple hives."""
+        from src.mcp_server import scan_for_hive
+        from src.config import load_bees_config, save_bees_config, BeesConfig, HiveConfig
+        import json
+
+        # Create config with multiple hives
+        hive1_path = temp_repo / "hive1"
+        hive2_old = temp_repo / "hive2_old"
+        hive2_new = temp_repo / "hive2_new"
+        hive2_new.mkdir(parents=True)
+
+        config = BeesConfig(hives={
+            "hive1": HiveConfig(display_name="Hive 1", path=str(hive1_path)),
+            "hive2": HiveConfig(display_name="Hive 2", path=str(hive2_old))
+        })
+        save_bees_config(config)
+
+        # Create .hive marker for hive2 at new location
+        hive_marker = hive2_new / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "hive2",
+            "display_name": "Hive 2"
+        }))
+
+        # Scan for hive2
+        result = scan_for_hive("hive2")
+
+        assert result == hive2_new
+
+        # Verify only hive2 was updated
+        updated_config = load_bees_config()
+        assert updated_config.hives["hive1"].path == str(hive1_path)  # Unchanged
+        assert updated_config.hives["hive2"].path == str(hive2_new)   # Updated
+
+    def test_scan_for_hive_logs_config_update(self, temp_repo, monkeypatch, caplog):
+        """Test that scan_for_hive logs when config is updated."""
+        from src.mcp_server import scan_for_hive
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        import json
+        import logging
+
+        caplog.set_level(logging.INFO)
+
+        # Create config and hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+        })
+        save_bees_config(config)
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Scan for hive
+        scan_for_hive("test_hive")
+
+        # Verify logging
+        assert any("Updated config.json with new path" in record.message for record in caplog.records)
+
+    def test_scan_for_hive_handles_config_write_failure(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive handles config write errors gracefully."""
+        from src.mcp_server import scan_for_hive
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        import json
+
+        # Create config and hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+        })
+        save_bees_config(config)
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Mock save_bees_config to raise an exception
+        def mock_save_error(cfg):
+            raise IOError("Disk full")
+
+        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_error)
+
+        # Should still find hive even if config update fails
+        result = scan_for_hive("test_hive")
+        assert result == hive_path  # Hive found despite config error
+
+
+class TestScanForHiveSecurity:
+    """Tests for scan_for_hive() depth limit security feature."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_respects_depth_limit(self, temp_repo):
+        """Test that scan_for_hive skips .hive markers beyond MAX_SCAN_DEPTH."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create deeply nested hive (depth > 10)
+        deep_path = temp_repo
+        for i in range(12):  # Create 12 levels deep
+            deep_path = deep_path / f"level{i}"
+            deep_path.mkdir()
+
+        hive_marker = deep_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "deep_hive",
+            "display_name": "Deep Hive"
+        }))
+
+        # Scan should not find hive beyond depth limit
+        result = scan_for_hive("deep_hive")
+        assert result is None
+
+    def test_scan_for_hive_finds_hive_within_depth_limit(self, temp_repo):
+        """Test that scan_for_hive finds .hive markers within MAX_SCAN_DEPTH."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive at depth 5 (well within limit)
+        hive_path = temp_repo
+        for i in range(5):
+            hive_path = hive_path / f"level{i}"
+            hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "shallow_hive",
+            "display_name": "Shallow Hive"
+        }))
+
+        # Scan should find hive within depth limit
+        result = scan_for_hive("shallow_hive")
+        assert result == hive_path
+
+    def test_scan_for_hive_depth_limit_boundary(self, temp_repo):
+        """Test scan_for_hive at exact MAX_SCAN_DEPTH boundary (depth 10)."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive at exactly depth 10 for the .hive marker
+        # This means 9 levels of directories, then .hive at depth 10
+        hive_path = temp_repo
+        for i in range(9):
+            hive_path = hive_path / f"level{i}"
+            hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "boundary_hive",
+            "display_name": "Boundary Hive"
+        }))
+
+        # Scan should find hive with .hive at depth 10 (inclusive)
+        result = scan_for_hive("boundary_hive")
+        assert result == hive_path
+
+
+class TestScanForHiveConfigOptimization:
+    """Tests for scan_for_hive() config parameter optimization."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_accepts_config_parameter(self, temp_repo):
+        """Test that scan_for_hive accepts optional config dict parameter."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call with config parameter
+        config = {"hives": {"test_hive": {"path": str(hive_path)}}}
+        result = scan_for_hive("test_hive", config=config)
+
+        assert result == hive_path
+
+    def test_scan_for_hive_uses_provided_config(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive uses provided config instead of loading from disk."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "orphan_hive",
+            "display_name": "Orphan Hive"
+        }))
+
+        # Provide config with registered hive
+        config = {"hives": {"registered_hive": {"path": str(hive_path)}}}
+
+        # Mock file open to ensure config not loaded from disk
+        original_open = open
+        def mock_open(*args, **kwargs):
+            # If trying to open config.json, fail
+            if args and "config.json" in str(args[0]):
+                raise AssertionError("Should not load config from disk when provided")
+            return original_open(*args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", mock_open)
+
+        # Scan with provided config - should NOT trigger disk read
+        result = scan_for_hive("orphan_hive", config=config)
+        # Hive found but not in registered list from provided config
+        assert result == hive_path
+
+    def test_scan_for_hive_empty_config_parameter(self, temp_repo):
+        """Test that scan_for_hive handles empty config dict."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call with empty config
+        result = scan_for_hive("test_hive", config={})
+        assert result == hive_path
+
+    def test_scan_for_hive_config_with_missing_hives_key(self, temp_repo):
+        """Test that scan_for_hive handles config without 'hives' key."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call with config missing 'hives' key
+        result = scan_for_hive("test_hive", config={"other_key": "value"})
+        assert result == hive_path
+
+    def test_scan_for_hive_loads_from_disk_when_config_not_provided(self, temp_repo):
+        """Test that scan_for_hive loads config from disk when not provided."""
+        from src.mcp_server import scan_for_hive
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        import json
+
+        # Create config on disk
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+        })
+        save_bees_config(config)
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call without config parameter - should load from disk
+        result = scan_for_hive("test_hive")
+        assert result == hive_path
