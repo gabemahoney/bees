@@ -195,6 +195,79 @@ Centralized configuration module with typed Config object.
 - `src/mcp_server.py`:
   - `_create_ticket()` - Accepts optional `hive_name` parameter, passes to factory functions
 
+### MCP Commands with Hive Support (Task bees-oljn)
+
+**Purpose**: Update MCP command interfaces to support hive-based ticket management with automatic hive inference from ticket IDs.
+
+**Architecture Decision**: Create vs Update/Delete Asymmetry
+- **create_ticket()**: Requires explicit `hive_name` parameter to generate prefixed IDs
+- **update_ticket() / delete_ticket()**: No hive parameter needed; automatically infer from ticket_id
+- Rationale: Ticket IDs are self-routing (contain hive prefix), so update/delete operations extract hive from the ID itself
+- Benefits: Simpler API (fewer parameters), impossible to specify mismatched hive+ID, consistent with ID-based routing architecture
+
+**Implementation Details**:
+
+1. **_create_ticket() MCP tool** (`src/mcp_server.py`):
+   - Added optional `hive_name: str | None` parameter to function signature (line 753)
+   - Parameter accepts both display names and normalized forms
+   - Validation ensures hive_name contains at least one alphanumeric character (lines 790-804)
+   - Passes hive_name to factory functions: `create_epic()`, `create_task()`, `create_subtask()` (lines 871, 884, 897)
+   - Factory functions pass hive_name to `generate_unique_ticket_id()` for prefixed ID generation
+
+2. **_update_ticket() MCP tool** (`src/mcp_server.py`):
+   - No hive_name parameter added (intentional design choice)
+   - Uses `infer_ticket_type_from_id(ticket_id)` to determine ticket type (line 973)
+   - Calls `get_ticket_path(ticket_id, ticket_type)` which internally parses hive from ID (line 980)
+   - Path resolution automatically routes to correct hive directory based on ID prefix
+   - Backward compatible with legacy unprefixed IDs (routes to default tickets directory)
+
+3. **_delete_ticket() MCP tool** (`src/mcp_server.py`):
+   - No hive_name parameter added (intentional design choice)
+   - Uses same pattern as update_ticket: `infer_ticket_type_from_id()` + `get_ticket_path()` (lines 1173, 1180)
+   - Automatic hive inference from ticket_id for path resolution
+   - Cascade delete recursively uses same pattern for child tickets
+
+4. **Bidirectional Relationship Helpers** (`src/mcp_server.py`):
+   - All helper functions updated to handle hive-prefixed IDs:
+     - `_update_bidirectional_relationships()` - Uses `infer_ticket_type_from_id()` for all ticket lookups (line 369)
+     - `_remove_child_from_parent()`, `_add_child_to_parent()` - Hive-aware path resolution (lines 474, 498)
+     - `_remove_from_down_dependencies()`, `_add_to_down_dependencies()` - Hive-aware lookups (lines 575, 599)
+     - `_remove_from_up_dependencies()`, `_add_to_up_dependencies()` - Hive-aware lookups (lines 624, 648)
+   - No explicit hive handling needed; path utilities handle it transparently
+
+**Integration with Path Resolution** (`src/paths.py`):
+- `infer_ticket_type_from_id()` internally calls `_parse_ticket_id_for_path()` to extract hive (line 174)
+- `get_ticket_path()` uses parsed hive name to construct correct file paths (lines 106, 109-115)
+- Hive-prefixed IDs: `/{hive_name}/epics/{hive_name}.bees-abc1.md`
+- Legacy IDs: `/tickets/epics/bees-abc1.md`
+
+**ID Normalization Flow**:
+```
+User provides hive_name: "Back End"
+  ↓
+_create_ticket() validates hive_name (lines 790-804)
+  ↓
+Passes to factory function: create_epic(..., hive_name="Back End")
+  ↓
+Factory calls generate_unique_ticket_id(existing_ids, hive_name="Back End")
+  ↓
+normalize_hive_name("Back End") → "back_end"
+  ↓
+generate_ticket_id(hive_name="back_end") → "back_end.bees-abc"
+```
+
+**Backward Compatibility**:
+- `hive_name` parameter is optional in all functions (defaults to None)
+- When None or empty string provided, generates unprefixed IDs in legacy format
+- Existing tickets without hive prefixes continue to work
+- Mixed usage supported: some tickets with hive prefixes, some without
+- Path resolution detects format automatically and routes correctly
+
+**Documentation Updates**:
+- README.md updated with hive_name parameter examples and automatic inference notes
+- MCP command list explicitly notes which commands infer hive vs require hive parameter
+- ID format section documents both prefixed and legacy formats with examples
+
 ### Ticket ID Parsing and Routing (Task bees-3zqk)
 
 **Purpose**: Extract hive name from ticket IDs for internal routing to correct hive directories, enabling self-routing IDs in multi-hive systems.

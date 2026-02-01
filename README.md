@@ -140,8 +140,11 @@ Internal routing uses the parsed hive name to construct file paths:
 ## MCP Commands
 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
+  - `hive_name` is optional; when provided, generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
+  - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **delete_ticket** - `ticket_id, cascade`
+  - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **add_named_query** - `name, query_yaml, validate`
 - **execute_query** - `query_name, params`
 - **generate_index** - `status, type`
