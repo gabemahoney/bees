@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .models import Ticket
-from .paths import list_tickets, get_index_path
+from .paths import list_tickets
 from .reader import read_ticket
 
 __all__ = ["scan_tickets", "format_index_markdown", "generate_index", "is_index_stale"]
@@ -160,39 +160,67 @@ def format_index_markdown(tickets: dict[str, list[Ticket]], include_timestamp: b
     return "\n".join(lines)
 
 
-def is_index_stale() -> bool:
+def is_index_stale(hive_name: str | None = None) -> bool:
     """
-    Check if index.md is stale (older than ticket files).
+    Check if index.md files are stale (older than ticket files).
+
+    If hive_name is provided, checks only that hive's index.
+    If hive_name is None, checks all hive indexes.
+
+    Args:
+        hive_name: Optional hive name to check. If None, checks all hives.
 
     Returns:
-        True if index needs regeneration, False if index is up-to-date
+        True if any index needs regeneration, False if all indexes are up-to-date
 
     Examples:
         >>> is_index_stale()
         True
+        >>> is_index_stale("backend")
+        False
     """
-    from .paths import TICKETS_DIR
+    from .config import load_bees_config
+    from pathlib import Path
 
-    index_path = get_index_path()
+    config = load_bees_config()
 
-    # If index doesn't exist, it's stale
-    if not index_path.exists():
-        return True
-
-    # Get index modification time
-    index_mtime = index_path.stat().st_mtime
-
-    # Check all ticket files
-    all_tickets = list_tickets()
-
-    # If no tickets exist, index is not stale
-    if not all_tickets:
+    if not config or not config.hives:
+        # No hives configured - nothing to check
         return False
 
-    # Check if any ticket is newer than index
-    for ticket_path in all_tickets:
-        if ticket_path.stat().st_mtime > index_mtime:
+    # Determine which hives to check
+    if hive_name:
+        if hive_name not in config.hives:
+            return True  # Hive doesn't exist, treat as stale
+        hives_to_check = [(hive_name, config.hives[hive_name])]
+    else:
+        hives_to_check = list(config.hives.items())
+
+    # Check each hive's index
+    for hive_key, hive_config in hives_to_check:
+        hive_path = Path(hive_config.path)
+
+        if not hive_path.exists():
+            continue
+
+        index_path = hive_path / "index.md"
+
+        # If index doesn't exist, it's stale
+        if not index_path.exists():
             return True
+
+        # Get index modification time
+        index_mtime = index_path.stat().st_mtime
+
+        # Check ticket files in this hive
+        for ticket_type in ["epic", "task", "subtask"]:
+            type_dir = hive_path / f"{ticket_type}s"
+            if not type_dir.exists():
+                continue
+
+            for ticket_path in type_dir.glob("*.md"):
+                if ticket_path.stat().st_mtime > index_mtime:
+                    return True
 
     return False
 

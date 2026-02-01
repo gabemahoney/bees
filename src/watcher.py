@@ -9,7 +9,6 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
 
 from .index_generator import generate_index
-from .paths import get_index_path, TICKETS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +60,14 @@ class TicketChangeHandler(FileSystemEventHandler):
         return True
 
     def _do_regeneration(self):
-        """Perform the actual index regeneration."""
+        """Perform the actual index regeneration for all hives."""
         try:
-            logger.info("Regenerating index due to ticket changes...")
-            index_content = generate_index()
-            index_path = get_index_path()
-            index_path.write_text(index_content)
-            logger.info(f"Index regenerated: {index_path}")
+            logger.info("Regenerating indexes due to ticket changes...")
+            # generate_index() now handles all hives and writes to their respective index.md files
+            generate_index()
+            logger.info("Indexes regenerated for all hives")
         except Exception as e:
-            logger.error(f"Failed to regenerate index: {e}", exc_info=True)
+            logger.error(f"Failed to regenerate indexes: {e}", exc_info=True)
         finally:
             with self._timer_lock:
                 self.pending_regeneration = False
@@ -122,32 +120,51 @@ class TicketChangeHandler(FileSystemEventHandler):
             self.pending_regeneration = False
 
 
-def start_watcher(tickets_dir: Path = TICKETS_DIR, debounce_seconds: float = 2.0):
+def start_watcher(debounce_seconds: float = 2.0):
     """
-    Start file system watcher for tickets directory.
+    Start file system watcher for all hive directories.
 
-    Monitors the tickets directory and automatically regenerates index.md
-    when .md files are created, modified, or deleted.
+    Monitors all configured hive directories and automatically regenerates index.md
+    files when .md files are created, modified, or deleted.
 
     Args:
-        tickets_dir: Path to tickets directory to watch
         debounce_seconds: Time to wait before regenerating after last change
 
     Examples:
         >>> start_watcher()  # Blocks until interrupted
-        Watching /path/to/tickets for changes...
+        Watching hive directories for changes...
         ^C
+
+    Raises:
+        ValueError: If no hives are configured
     """
-    if not tickets_dir.exists():
-        raise FileNotFoundError(f"Tickets directory not found: {tickets_dir}")
+    from .config import load_bees_config
+
+    # Load hive configuration
+    config = load_bees_config()
+
+    if not config or not config.hives:
+        raise ValueError("No hives configured in .bees/config.json. Cannot start watcher.")
 
     event_handler = TicketChangeHandler(debounce_seconds=debounce_seconds)
     observer = Observer()
-    observer.schedule(event_handler, str(tickets_dir), recursive=True)
+
+    # Watch all hive directories
+    watched_dirs = []
+    for hive_name, hive_config in config.hives.items():
+        hive_path = Path(hive_config.path)
+        if hive_path.exists():
+            observer.schedule(event_handler, str(hive_path), recursive=True)
+            watched_dirs.append(str(hive_path))
+            logger.info(f"Watching hive: {hive_name} at {hive_path}")
+
+    if not watched_dirs:
+        raise ValueError("No valid hive directories found to watch")
+
     observer.start()
 
-    logger.info(f"Watching {tickets_dir} for changes (Ctrl+C to stop)...")
-    print(f"Watching {tickets_dir} for changes...")
+    logger.info(f"Watching {len(watched_dirs)} hive directories for changes (Ctrl+C to stop)...")
+    print(f"Watching {len(watched_dirs)} hive directories for changes...")
     print("Press Ctrl+C to stop")
 
     try:

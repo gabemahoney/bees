@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from src.mcp_server import _delete_ticket, _create_ticket
 from src.reader import read_ticket
-from src.paths import TICKETS_DIR, get_ticket_path
+from src.paths import get_ticket_path
 
 
 @pytest.fixture

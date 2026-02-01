@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 import pytest
 from watchdog.events import FileSystemEvent, FileCreatedEvent, FileModifiedEvent, FileDeletedEvent
 
-from src.watcher import TicketChangeHandler
+from src.watcher import TicketChangeHandler, start_watcher
 
 
 class TestTicketChangeHandler:
@@ -131,30 +131,25 @@ class TestTicketChangeHandler:
         assert handler._timer == second_timer
 
     @patch('src.watcher.generate_index')
-    @patch('src.watcher.get_index_path')
-    def test_do_regeneration_writes_index(self, mock_get_path, mock_generate):
-        """Should generate and write index when timer fires."""
+    def test_do_regeneration_writes_index(self, mock_generate):
+        """Should generate indexes when timer fires."""
         handler = TicketChangeHandler()
 
-        # Setup mocks
-        mock_generate.return_value = "# Generated Index\n"
-        mock_index_path = Mock(spec=Path)
-        mock_get_path.return_value = mock_index_path
+        # Setup mock - generate_index now handles writing internally
+        mock_generate.return_value = None
 
         # Trigger regeneration
         handler._do_regeneration()
 
-        # Verify index was generated and written
+        # Verify index was generated (writing happens internally)
         mock_generate.assert_called_once()
-        mock_index_path.write_text.assert_called_once_with("# Generated Index\n")
 
         # Verify state was cleaned up
         assert handler.pending_regeneration is False
         assert handler._timer is None
 
     @patch('src.watcher.generate_index')
-    @patch('src.watcher.get_index_path')
-    def test_do_regeneration_handles_errors(self, mock_get_path, mock_generate):
+    def test_do_regeneration_handles_errors(self, mock_generate):
         """Should log errors during regeneration without crashing."""
         handler = TicketChangeHandler()
 
@@ -168,8 +163,7 @@ class TestTicketChangeHandler:
         mock_generate.assert_called_once()
 
     @patch('src.watcher.generate_index')
-    @patch('src.watcher.get_index_path')
-    def test_do_regeneration_cleans_up_state_on_exception(self, mock_get_path, mock_generate):
+    def test_do_regeneration_cleans_up_state_on_exception(self, mock_generate):
         """Should clean up timer state even when regeneration raises exception."""
         handler = TicketChangeHandler()
 
@@ -272,17 +266,14 @@ class TestTicketChangeHandler:
         mock_timer_class.assert_not_called()
 
     @patch('src.watcher.generate_index')
-    @patch('src.watcher.get_index_path')
     def test_debounce_only_regenerates_after_quiet_period(
-        self, mock_get_path, mock_generate
+        self, mock_generate
     ):
         """Should only regenerate once after debounce period with no new changes."""
         handler = TicketChangeHandler(debounce_seconds=0.1)
 
-        # Setup mocks
-        mock_generate.return_value = "# Index\n"
-        mock_index_path = Mock(spec=Path)
-        mock_get_path.return_value = mock_index_path
+        # Setup mock
+        mock_generate.return_value = None
 
         # Use real Timer for this integration test (no mocking)
         # Trigger multiple rapid changes
@@ -358,15 +349,12 @@ class TestTicketChangeHandler:
         assert handler._timer is None
 
     @patch('src.watcher.generate_index')
-    @patch('src.watcher.get_index_path')
-    def test_timer_does_not_fire_after_cleanup(self, mock_get_path, mock_generate):
+    def test_timer_does_not_fire_after_cleanup(self, mock_generate):
         """Should ensure timer does not fire after cleanup is called."""
         handler = TicketChangeHandler(debounce_seconds=0.1)
 
-        # Setup mocks
-        mock_generate.return_value = "# Index\n"
-        mock_index_path = Mock(spec=Path)
-        mock_get_path.return_value = mock_index_path
+        # Setup mock
+        mock_generate.return_value = None
 
         # Trigger regeneration with real timer
         handler._trigger_regeneration()
@@ -435,3 +423,107 @@ class TestTicketChangeHandler:
 
         # 4. Verify the active timer is the one stored in handler
         assert handler._timer.cancel.call_count == 0
+
+
+class TestStartWatcherWithHives:
+    """Tests for start_watcher() function with hive support."""
+
+    def test_start_watcher_raises_when_no_hives_configured(self, tmp_path, monkeypatch):
+        """Should raise ValueError when no hives are configured."""
+        monkeypatch.chdir(tmp_path)
+
+        # No .bees/config.json - no hives configured
+        with pytest.raises(ValueError, match="No hives configured"):
+            start_watcher(debounce_seconds=2.0)
+
+    @patch('src.watcher.Observer')
+    def test_start_watcher_watches_all_hive_directories(self, mock_observer_class, tmp_path, monkeypatch):
+        """Should watch all configured hive directories."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create hive directories
+        backend_dir = tmp_path / "backend"
+        frontend_dir = tmp_path / "frontend"
+        backend_dir.mkdir()
+        frontend_dir.mkdir()
+
+        # Configure hives
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
+                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend"),
+            }
+        )
+        save_bees_config(config)
+
+        # Mock observer
+        mock_observer = Mock()
+        mock_observer_class.return_value = mock_observer
+
+        # Mock start() to raise KeyboardInterrupt immediately (to exit the while loop)
+        mock_observer.start.side_effect = KeyboardInterrupt()
+
+        # Call start_watcher
+        try:
+            start_watcher(debounce_seconds=2.0)
+        except KeyboardInterrupt:
+            pass
+
+        # Verify observer.schedule was called for each hive
+        assert mock_observer.schedule.call_count == 2
+
+    @patch('src.watcher.Observer')
+    def test_start_watcher_skips_nonexistent_hive_paths(self, mock_observer_class, tmp_path, monkeypatch):
+        """Should skip hives with nonexistent paths."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create only one hive directory
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir()
+
+        # Configure hives - frontend path doesn't exist
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend"),
+            }
+        )
+        save_bees_config(config)
+
+        # Mock observer
+        mock_observer = Mock()
+        mock_observer_class.return_value = mock_observer
+        mock_observer.start.side_effect = KeyboardInterrupt()
+
+        # Call start_watcher
+        try:
+            start_watcher(debounce_seconds=2.0)
+        except KeyboardInterrupt:
+            pass
+
+        # Verify observer.schedule was called only once (for backend)
+        assert mock_observer.schedule.call_count == 1
+
+    @patch('src.watcher.Observer')
+    def test_start_watcher_raises_when_no_valid_hive_paths(self, mock_observer_class, tmp_path, monkeypatch):
+        """Should raise ValueError when no valid hive directories exist."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Configure hives with nonexistent paths
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(path=str(tmp_path / "nonexistent1"), display_name="Backend"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent2"), display_name="Frontend"),
+            }
+        )
+        save_bees_config(config)
+
+        # Should raise ValueError
+        with pytest.raises(ValueError, match="No valid hive directories found"):
+            start_watcher(debounce_seconds=2.0)

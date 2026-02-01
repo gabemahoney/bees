@@ -10,25 +10,15 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 from src.mcp_server import _create_ticket
 from src.reader import read_ticket
-from src.paths import TICKETS_DIR, get_ticket_path
+from src.paths import get_ticket_path
 
 
 @pytest.fixture
 def setup_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary tickets directory structure."""
-    tickets_dir = tmp_path / "tickets"
-    tickets_dir.mkdir()
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
-
-    # Monkeypatch TICKETS_DIR in paths module
-    # This will affect all modules that import from paths
-    monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
-    # Also patch in ticket_factory which imports it directly
-    import src.ticket_factory
-    monkeypatch.setattr(src.ticket_factory, "TICKETS_DIR", tickets_dir)
+    """Create temporary hive directory structure for testing."""
+    # TICKETS_DIR has been removed - tests now use hive-based structure
+    # This fixture is kept for backward compatibility but does minimal setup
+    monkeypatch.chdir(tmp_path)
 
     yield tickets_dir
 

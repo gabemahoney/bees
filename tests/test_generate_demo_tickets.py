@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.reader import read_ticket
-from src.paths import TICKETS_DIR, get_ticket_path
+from src.paths import get_ticket_path
 
 
 def read_ticket_by_id(ticket_id: str, ticket_type: str):

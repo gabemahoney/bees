@@ -88,7 +88,7 @@ Example configuration:
 {
   "hives": {
     "backend": {
-      "path": "/path/to/tickets/backend",
+      "path": "/path/to/backend",
       "display_name": "Backend"
     }
   },
@@ -96,6 +96,8 @@ Example configuration:
   "schema_version": "1.0"
 }
 ```
+
+**Note:** All tickets are stored in hive-specific directories. The legacy `tickets/` directory is no longer supported.
 
 ### Ticket ID Format
 
@@ -106,22 +108,21 @@ All new tickets use the hive-prefixed format: `hive_name.bees-abc1`
 - **REQUIRED:** The `hive_name` parameter is mandatory for all `create_ticket()` calls
 - Omitting `hive_name` will result in a `ValueError`
 
-**Legacy Format:** `bees-abc1` (backward compatible - READ-ONLY)
-- Legacy unprefixed IDs (e.g., `bees-abc1`) are supported ONLY for reading and updating existing tickets
-- **Creating new tickets with legacy format is NOT supported**
-- The `hive_name` parameter is REQUIRED for all new ticket creation operations
-- All newly created tickets will have hive-prefixed IDs (e.g., `backend.bees-abc1`)
-- Example legacy IDs: `bees-abc1`, `bees-xyz9`
+**Legacy Format Removed (Feb 2026):** `bees-abc1` is NO LONGER SUPPORTED
+- Legacy unprefixed IDs (e.g., `bees-abc1`) are no longer supported
+- All tickets must have hive-prefixed IDs (e.g., `backend.bees-abc1`)
+- The `hive_name` parameter is REQUIRED for all ticket creation operations
+- Path resolution rejects legacy IDs without hive prefix
 
 **ID Parsing:**
 
 The `parse_ticket_id()` utility function splits ticket IDs to extract the hive name and base ID:
 
 ```python
-# Hive-prefixed ID
+# Hive-prefixed ID (REQUIRED)
 parse_ticket_id("backend.bees-abc1")  # Returns: ("backend", "bees-abc1")
 
-# Legacy ID
+# Legacy ID (NO LONGER SUPPORTED - returns empty hive, will fail path resolution)
 parse_ticket_id("bees-abc1")  # Returns: ("", "bees-abc1")
 
 # Multiple dots (splits on first dot only)
@@ -129,15 +130,15 @@ parse_ticket_id("multi.dot.bees-xyz")  # Returns: ("multi", "dot.bees-xyz")
 ```
 
 The parser handles edge cases:
-- Returns empty string `""` for hive name in legacy IDs (not `None`)
+- Returns empty string `""` for hive name when no dot present (legacy format)
 - Splits on the first dot only, preserving dots in base ID
 - Raises `ValueError` for `None` or empty string inputs
 
 **Path Resolution:**
 
-Internal routing uses the parsed hive name to construct file paths:
+All path resolution requires hive-prefixed IDs:
 - Hive-prefixed IDs: `/path/to/{hive_name}/epics/{hive_name}.bees-abc1.md`
-- Legacy IDs: `/path/to/tickets/epics/bees-abc1.md`
+- Legacy IDs without hive prefix are REJECTED with ValueError
 
 ## MCP Commands
 

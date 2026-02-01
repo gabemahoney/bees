@@ -5,7 +5,8 @@ from src.id_utils import (
     normalize_hive_name,
     generate_ticket_id,
     is_valid_ticket_id,
-    generate_unique_ticket_id
+    generate_unique_ticket_id,
+    extract_existing_ids_from_all_hives,
 )
 
 
@@ -327,3 +328,104 @@ class TestGenerateUniqueTicketIdWithHive:
         with patch('src.id_utils.generate_ticket_id', return_value="backend.bees-abc"):
             with pytest.raises(RuntimeError, match="Failed to generate unique ticket ID"):
                 generate_unique_ticket_id(existing, hive_name="backend", max_attempts=10)
+
+
+class TestExtractExistingIdsFromAllHives:
+    """Tests for extract_existing_ids_from_all_hives() function."""
+
+    def test_extract_ids_from_multiple_hives(self, tmp_path, monkeypatch):
+        """Should extract IDs from all configured hives."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create hive directories with tickets
+        backend_dir = tmp_path / "backend"
+        frontend_dir = tmp_path / "frontend"
+
+        backend_epics = backend_dir / "epics"
+        frontend_tasks = frontend_dir / "tasks"
+        backend_epics.mkdir(parents=True)
+        frontend_tasks.mkdir(parents=True)
+
+        # Create ticket files
+        (backend_epics / "backend.bees-abc.md").touch()
+        (backend_epics / "backend.bees-xyz.md").touch()
+        (frontend_tasks / "frontend.bees-123.md").touch()
+
+        # Configure hives
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
+                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend"),
+            }
+        )
+        save_bees_config(config)
+
+        # Extract all IDs
+        ids = extract_existing_ids_from_all_hives()
+        assert len(ids) == 3
+        assert "backend.bees-abc" in ids
+        assert "backend.bees-xyz" in ids
+        assert "frontend.bees-123" in ids
+
+    def test_extract_ids_returns_empty_when_no_hives(self, tmp_path, monkeypatch):
+        """Should return empty set when no hives configured."""
+        monkeypatch.chdir(tmp_path)
+
+        # No hives configured
+        ids = extract_existing_ids_from_all_hives()
+        assert ids == set()
+
+    def test_extract_ids_skips_invalid_ids(self, tmp_path, monkeypatch):
+        """Should skip files with invalid ticket IDs."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create hive directory
+        backend_dir = tmp_path / "backend"
+        backend_epics = backend_dir / "epics"
+        backend_epics.mkdir(parents=True)
+
+        # Create valid and invalid ticket files
+        (backend_epics / "backend.bees-abc.md").touch()
+        (backend_epics / "invalid-id.md").touch()
+        (backend_epics / "README.md").touch()
+
+        # Configure hives
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend")}
+        )
+        save_bees_config(config)
+
+        # Extract IDs - should only get valid one
+        ids = extract_existing_ids_from_all_hives()
+        assert len(ids) == 1
+        assert "backend.bees-abc" in ids
+
+    def test_extract_ids_handles_nonexistent_hive_path(self, tmp_path, monkeypatch):
+        """Should skip hives with nonexistent paths."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create one valid hive, one with nonexistent path
+        backend_dir = tmp_path / "backend"
+        backend_epics = backend_dir / "epics"
+        backend_epics.mkdir(parents=True)
+        (backend_epics / "backend.bees-abc.md").touch()
+
+        # Configure hives - frontend path doesn't exist
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend"),
+            }
+        )
+        save_bees_config(config)
+
+        # Extract IDs - should only get backend ticket
+        ids = extract_existing_ids_from_all_hives()
+        assert len(ids) == 1
+        assert "backend.bees-abc" in ids

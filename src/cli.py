@@ -13,7 +13,6 @@ from pathlib import Path
 from src.linter import Linter
 from src.corruption_state import mark_corrupt, mark_clean
 from src.index_generator import generate_index, is_index_stale
-from src.paths import get_index_path, TICKETS_DIR
 from src.watcher import start_watcher
 
 # Configure logging
@@ -74,18 +73,11 @@ def regenerate_index(force: bool = False) -> int:
             print("Index is already up-to-date")
             return 0
 
-        # Generate index markdown
-        logger.info("Generating index...")
-        index_content = generate_index()
+        # Generate indexes for all hives
+        logger.info("Generating indexes...")
+        generate_index()  # Now handles writing to all hive index.md files
 
-        # Get index path
-        index_path = get_index_path()
-
-        # Write index file
-        logger.info(f"Writing index to {index_path}")
-        index_path.write_text(index_content)
-
-        print(f"Index regenerated successfully: {index_path}")
+        print("Indexes regenerated successfully for all hives")
         return 0
 
     except Exception as e:
@@ -205,7 +197,7 @@ def main():
     elif args.command == "watch":
         debounce = getattr(args, "debounce", 2.0)
         try:
-            start_watcher(tickets_dir=TICKETS_DIR, debounce_seconds=debounce)
+            start_watcher(debounce_seconds=debounce)
             exit_code = 0
         except KeyboardInterrupt:
             exit_code = 0

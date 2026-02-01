@@ -15,7 +15,7 @@ from typing import Any, Set
 
 from .models import Ticket
 from .parser import parse_frontmatter
-from .paths import get_ticket_path, infer_ticket_type_from_id, TICKETS_DIR
+from .paths import get_ticket_path, infer_ticket_type_from_id
 from .reader import read_ticket
 from .writer import write_ticket_file
 

@@ -25,8 +25,10 @@ Bees is a markdown-based ticket management system with four core modules:
    - ID generation and collision detection
 
 3. **Path Management** (`src/paths.py`)
-   - Resolves file paths for ticket types
-   - Manages directory structure
+   - Resolves file paths for ticket types (hive-based only)
+   - **Legacy Removed (Feb 2026)**: TICKETS_DIR constant and tickets/ directory support removed
+   - All tickets must reside in hive-specific directories
+   - Functions require hive-prefixed IDs (e.g., "backend.bees-abc") or hive_name parameter
 
 4. **Query System** (`src/query_parser.py`, `src/search_executor.py`)
    - Multi-stage query pipeline with search and graph terms
@@ -487,6 +489,36 @@ The MCP Server uses `ticket_factory` functions (`create_epic`, `create_task`,
 `create_subtask`) to write YAML frontmatter and markdown content to the
 `tickets/` filesystem. For reading, it calls `reader.read_ticket()` to parse
 tickets back into typed objects, enabling both read and write operations.
+
+
+## Legacy Removal: TICKETS_DIR and tickets/ Directory (Feb 2026)
+
+**Removed Components**:
+- `TICKETS_DIR` constant from `src/paths.py`
+- Legacy unprefixed ticket ID support (e.g., "bees-abc")
+- `tickets/` default directory routing
+- `get_index_path()` function (replaced with per-hive indexes)
+
+**Affected Modules**:
+- `src/paths.py`: Removed TICKETS_DIR constant, updated functions to require hive_name or hive-prefixed IDs
+- `src/watcher.py`: Updated to watch all configured hive directories
+- `src/cli.py`: Removed TICKETS_DIR parameter from start_watcher()
+- `src/ticket_factory.py`: Updated to scan all hives via extract_existing_ids_from_all_hives()
+- `src/relationship_sync.py`: Removed TICKETS_DIR import
+- `src/index_generator.py`: Updated to generate per-hive indexes, removed get_index_path()
+
+**Migration Impact**:
+- All tickets must have hive-prefixed IDs (e.g., "backend.bees-abc")
+- Path resolution only works with hive-prefixed IDs
+- ID generation scans all configured hives for uniqueness
+- Index files are per-hive (e.g., `backend/index.md`, `frontend/index.md`)
+- Watcher monitors all hive directories simultaneously
+
+**Breaking Changes**:
+- `get_ticket_path("bees-abc", "epic")` now raises ValueError (requires "hive.bees-abc")
+- `get_ticket_directory("epic")` now requires hive_name parameter
+- `list_tickets()` returns empty list if no hives configured
+- `infer_ticket_type_from_id("bees-abc")` returns None (requires hive prefix)
 
 
 ## Design Principles

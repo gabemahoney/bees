@@ -5,9 +5,6 @@ from pathlib import Path
 
 from .types import TicketType
 
-# Base directory for all tickets - points to consuming project's /tickets directory
-# This assumes the consuming project has a /tickets directory in its root
-TICKETS_DIR = Path.cwd() / "tickets"
 
 
 def _parse_ticket_id_for_path(ticket_id: str) -> tuple[str, str]:
@@ -41,28 +38,37 @@ def _parse_ticket_id_for_path(ticket_id: str) -> tuple[str, str]:
         return ('', ticket_id)
 
 
-def get_ticket_directory(ticket_type: TicketType) -> Path:
+def get_ticket_directory(ticket_type: TicketType, hive_name: str | None = None) -> Path:
     """
-    Get the directory path for a given ticket type.
+    Get the directory path for a given ticket type within a hive.
+
+    NOTE: This function is deprecated for most use cases. Use get_ticket_path()
+    with a hive-prefixed ticket ID instead.
 
     Args:
         ticket_type: The type of ticket ("epic", "task", or "subtask")
+        hive_name: Name of the hive (required)
 
     Returns:
-        Path object pointing to the appropriate subdirectory
+        Path object pointing to the appropriate subdirectory in the hive
 
     Raises:
-        ValueError: If ticket_type is not one of the valid types
+        ValueError: If ticket_type is not valid or hive_name is not provided
 
     Examples:
-        >>> get_ticket_directory("epic")
-        PosixPath('/path/to/tickets/epics')
+        >>> get_ticket_directory("epic", "backend")
+        PosixPath('/path/to/backend/epics')
     """
     valid_types = {"epic", "task", "subtask"}
 
     if ticket_type not in valid_types:
         raise ValueError(
             f"Invalid ticket type: {ticket_type}. Must be one of {valid_types}"
+        )
+
+    if not hive_name:
+        raise ValueError(
+            "hive_name is required. Legacy tickets/ directory is no longer supported."
         )
 
     # Map ticket type to subdirectory (plural form)
@@ -72,7 +78,7 @@ def get_ticket_directory(ticket_type: TicketType) -> Path:
         "subtask": "subtasks"
     }
 
-    return TICKETS_DIR / type_to_dir[ticket_type]
+    return Path.cwd() / hive_name / type_to_dir[ticket_type]
 
 
 def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
@@ -105,14 +111,16 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
     # Parse ticket ID to extract hive name
     hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
 
-    # Determine base directory based on whether this is a hive-prefixed ID
-    if hive_name:
-        # Hive-prefixed ID: use hive-specific directory
-        # Path structure: /path/to/{hive_name}/epics/{hive_name}.bees-abc1.md
-        base_dir = Path.cwd() / hive_name
-    else:
-        # Legacy ID: use default tickets directory
-        base_dir = TICKETS_DIR
+    # Require hive-prefixed ID
+    if not hive_name:
+        raise ValueError(
+            f"Invalid ticket ID '{ticket_id}': must have hive prefix (e.g., 'hive_name.bees-abc'). "
+            f"Legacy unprefixed IDs are no longer supported."
+        )
+
+    # Hive-prefixed ID: use hive-specific directory
+    # Path structure: /path/to/{hive_name}/epics/{hive_name}.bees-abc1.md
+    base_dir = Path.cwd() / hive_name
 
     # Map ticket type to subdirectory (plural form)
     type_to_dir = {
@@ -130,17 +138,21 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
     return directory / f"{ticket_id}.md"
 
 
-def ensure_ticket_directory_exists(ticket_type: TicketType) -> None:
+def ensure_ticket_directory_exists(ticket_type: TicketType, hive_name: str | None = None) -> None:
     """
-    Ensure the directory for a ticket type exists, creating it if necessary.
+    Ensure the directory for a ticket type exists within a hive, creating it if necessary.
+
+    NOTE: This function is deprecated. The write_ticket_file() function in writer.py
+    automatically creates directories as needed using target_path.parent.mkdir().
 
     Args:
         ticket_type: The type of ticket ("epic", "task", or "subtask")
+        hive_name: Name of the hive (required)
 
     Raises:
-        ValueError: If ticket_type is not valid
+        ValueError: If ticket_type is not valid or hive_name is not provided
     """
-    directory = get_ticket_directory(ticket_type)
+    directory = get_ticket_directory(ticket_type, hive_name)
     directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -173,13 +185,12 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
     # Parse ticket ID to extract hive name
     hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
 
-    # Determine base directory based on whether this is a hive-prefixed ID
-    if hive_name:
-        # Hive-prefixed ID: check hive-specific directories
-        base_dir = Path.cwd() / hive_name
-    else:
-        # Legacy ID: check default tickets directory
-        base_dir = TICKETS_DIR
+    # Require hive-prefixed ID
+    if not hive_name:
+        return None
+
+    # Hive-prefixed ID: check hive-specific directories
+    base_dir = Path.cwd() / hive_name
 
     # Map ticket type to subdirectory (plural form)
     type_to_dir = {
@@ -198,46 +209,62 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
     return None
 
 
-def get_index_path() -> Path:
-    """
-    Get the path to the index.md file.
-
-    Returns:
-        Path object pointing to index.md in the tickets directory
-
-    Examples:
-        >>> get_index_path()
-        PosixPath('/path/to/tickets/index.md')
-    """
-    return TICKETS_DIR / "index.md"
 
 
 def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
     """
-    List all ticket files, optionally filtered by type.
+    List all ticket files from all configured hives, optionally filtered by type.
+
+    Scans all hive directories defined in .bees/config.json for ticket files.
 
     Args:
         ticket_type: Optional ticket type to filter by. If None, returns all tickets.
 
     Returns:
-        List of Path objects pointing to ticket markdown files
+        List of Path objects pointing to ticket markdown files across all hives
 
     Examples:
         >>> list_tickets("epic")
-        [PosixPath('/path/to/tickets/epics/bees-250.md'), ...]
+        [PosixPath('/path/to/backend/epics/backend.bees-250.md'), ...]
 
-        >>> list_tickets()  # All tickets from all types
-        [PosixPath('tickets/epics/bees-250.md'), PosixPath('tickets/tasks/bees-jty.md'), ...]
+        >>> list_tickets()  # All tickets from all hives
+        [PosixPath('backend/epics/backend.bees-250.md'), ...]
     """
-    if ticket_type:
-        directory = get_ticket_directory(ticket_type)
-        return sorted(directory.glob("*.md"))
+    from .config import load_bees_config
 
-    # Return all tickets from all types
     all_tickets = []
-    for ttype in ["epic", "task", "subtask"]:
-        directory = get_ticket_directory(ttype)
-        if directory.exists():
-            all_tickets.extend(directory.glob("*.md"))
+
+    # Load hive configuration
+    config = load_bees_config()
+
+    if not config or not config.hives:
+        # No hives configured - return empty list
+        return []
+
+    # Map ticket type to subdirectory (plural form)
+    type_to_dir = {
+        "epic": "epics",
+        "task": "tasks",
+        "subtask": "subtasks"
+    }
+
+    # Iterate all hives
+    for hive_name, hive_config in config.hives.items():
+        hive_path = Path(hive_config.path)
+
+        if not hive_path.exists():
+            continue
+
+        # Determine which ticket types to scan
+        if ticket_type:
+            types_to_scan = [ticket_type]
+        else:
+            types_to_scan = ["epic", "task", "subtask"]
+
+        # Scan each ticket type directory
+        for ttype in types_to_scan:
+            ticket_dir = hive_path / type_to_dir[ttype]
+            if ticket_dir.exists():
+                all_tickets.extend(ticket_dir.glob("*.md"))
 
     return sorted(all_tickets)

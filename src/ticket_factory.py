@@ -3,8 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from .id_utils import generate_unique_ticket_id, extract_existing_ids_from_directory
-from .paths import TICKETS_DIR
+from .id_utils import generate_unique_ticket_id, extract_existing_ids_from_all_hives
 from .types import TicketType
 from .writer import write_ticket_file
 
@@ -62,7 +61,7 @@ def create_epic(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data
@@ -151,7 +150,7 @@ def create_task(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data
@@ -245,7 +244,7 @@ def create_subtask(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data

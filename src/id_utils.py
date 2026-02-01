@@ -161,3 +161,49 @@ def extract_existing_ids_from_directory(tickets_dir: Path) -> set[str]:
                     existing_ids.add(filename)
 
     return existing_ids
+
+
+def extract_existing_ids_from_all_hives() -> set[str]:
+    """
+    Extract all existing ticket IDs from all configured hives.
+
+    Scans all hive directories defined in .bees/config.json and collects
+    all ticket IDs across all hives.
+
+    Returns:
+        Set of existing ticket IDs found across all hives
+
+    Examples:
+        >>> extract_existing_ids_from_all_hives()
+        {'backend.bees-250', 'frontend.bees-abc', 'backend.bees-9pw'}
+    """
+    from pathlib import Path
+
+    existing_ids = set()
+
+    # Import here to avoid circular dependency
+    try:
+        from .config import load_bees_config
+    except ImportError:
+        # If config module not available, return empty set
+        return existing_ids
+
+    # Load hive configuration
+    config = load_bees_config()
+
+    if not config or not config.hives:
+        # No hives configured - return empty set
+        return existing_ids
+
+    # Scan each hive directory
+    for hive_name, hive_config in config.hives.items():
+        hive_path = Path(hive_config.path)
+
+        if not hive_path.exists():
+            continue
+
+        # Extract IDs from this hive's directory
+        hive_ids = extract_existing_ids_from_directory(hive_path)
+        existing_ids.update(hive_ids)
+
+    return existing_ids
