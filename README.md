@@ -146,7 +146,10 @@ Internal routing uses the parsed hive name to construct file paths:
 - **delete_ticket** - `ticket_id, cascade`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **add_named_query** - `name, query_yaml, validate`
-- **execute_query** - `query_name, params`
+- **execute_query** - `query_name, params, hive_names`
+  - `hive_names` is optional; when provided, filters results to only tickets from specified hives
+  - Default behavior: all hives included when `hive_names` is omitted
+  - Validates that all specified hives exist; returns error if any hive not found
 - **generate_index** - `status, type`
 - **health_check** - No parameters
 
@@ -180,8 +183,18 @@ delete_ticket(ticket_id="epic-001", cascade=True)
 # Register query
 add_named_query(name="open_tasks", query_yaml="- - type=task\n  - status=open")
 
-# Execute query
+# Execute query (all hives)
 execute_query(query_name="open_tasks")
+
+# Execute query filtered to single hive
+execute_query(query_name="open_tasks", hive_names=["backend"])
+
+# Execute query filtered to multiple hives
+execute_query(query_name="open_tasks", hive_names=["backend", "frontend"])
+
+# Error handling: nonexistent hive
+# execute_query(query_name="open_tasks", hive_names=["nonexistent"])
+# Returns: ValueError: Hive not found: nonexistent. Available hives: backend, frontend
 
 # Generate index
 generate_index(status="open", type="task")

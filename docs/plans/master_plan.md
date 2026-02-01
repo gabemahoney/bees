@@ -808,10 +808,103 @@ Allows registration of reusable query templates with parameter substitution. Que
 **MCP Tools**: `add_named_query()` registers queries with optional validation bypass. `execute_query()` executes by name with JSON parameter substitution using regex pattern matching.
     - result_count: Number of matching tickets
     - ticket_ids: Sorted list of matching ticket IDs
-    
+
     Raises:
     - ValueError: If query not found or execution fails
     """
+
+### Multi-Hive Query Filtering (Task bees-062t)
+
+**Purpose**: Enable filtering query results to only tickets from specified hives, supporting multi-hive repository setups where different teams or projects maintain separate ticket collections.
+
+**Architecture Decision**: Filter at Pipeline Entry Point
+- Design choice: Apply hive filter at the start of pipeline execution, before any stage processing
+- Rationale: Reduces work for all subsequent stages, provides consistent semantics across search/graph operations
+- Alternative rejected: Per-stage filtering would complicate executor logic and create inconsistent behavior
+
+**Implementation Flow**:
+```
+execute_query(query_name, params, hive_names)
+  ↓
+Load query stages from .bees/queries.yaml
+  ↓
+Validate hive existence in .bees/config.json
+  ↓
+PipelineEvaluator.execute_query(stages, hive_names)
+  ↓
+Filter initial ticket set by hive prefix
+  ↓
+Execute stages on filtered set
+  ↓
+Return results
+```
+
+**Hive Validation** (`src/mcp_server.py`):
+- Validates hive_names parameter before query execution
+- Checks each hive exists in `.bees/config.json` using `load_bees_config()`
+- Returns error listing available hives if specified hive not found
+- Error format: `"Hive not found: {hive_name}. Available hives: {list}"`
+- Handles edge case where no config exists (returns "Available hives: none")
+- Validation occurs after query loading but before pipeline execution
+
+**Hive Filtering Logic** (`src/pipeline.py`):
+- `execute_query()` method accepts optional `hive_names: list[str] | None` parameter
+- Default behavior when `hive_names=None`: include all tickets (no filtering)
+- Filtering extracts hive prefix from ticket IDs using split on first dot
+- Format: `backend.bees-abc1` → hive prefix is `backend`
+- Legacy tickets without dots are excluded from filtered results
+- Applied to initial result set before stage execution begins
+
+**Integration with PipelineEvaluator**:
+- Parameter passed from MCP tool through to PipelineEvaluator.execute_query()
+- Filter applied once at pipeline initialization, not re-applied per stage
+- Uses same ticket ID parsing logic as path resolution (split on first dot)
+- Maintains backward compatibility: omitting hive_names includes all tickets
+
+**Default Behavior**:
+- When `hive_names` parameter omitted: all hives included (no filtering)
+- When `hive_names` is empty list: filters to tickets without hive prefix
+- When `hive_names` has values: filters to only tickets from specified hives
+- Multi-hive support: can specify multiple hives in single query
+
+**Performance Characteristics**:
+- Validation: O(h) where h = number of hives in hive_names parameter
+- Filtering: O(n) where n = total number of tickets in memory
+- One-time cost at pipeline start, not repeated per stage
+- No disk I/O (operates on pre-loaded ticket data)
+
+**Error Handling**:
+- Invalid hive name → ValueError with available hives listed
+- No config exists → ValueError with "Available hives: none"
+- Missing ticket IDs → gracefully handled (partial results)
+- Malformed ticket IDs → gracefully excluded from results
+
+**Example Usage**:
+```python
+# Query all hives
+execute_query("open_tasks")
+
+# Query single hive
+execute_query("open_tasks", hive_names=["backend"])
+
+# Query multiple hives
+execute_query("open_tasks", hive_names=["backend", "frontend"])
+
+# Error case
+execute_query("open_tasks", hive_names=["nonexistent"])
+# Raises: ValueError: Hive not found: nonexistent. Available hives: backend, frontend
+```
+
+**MCP Tool Signature**:
+- `_execute_query(query_name: str, params: str | None = None, hive_names: list[str] | None = None)`
+- Parameter order: query_name (required), params (optional JSON), hive_names (optional list)
+- Returns: Dict with status, query_name, result_count, ticket_ids (filtered by hive if specified)
+
+**Documentation Updates**:
+- README.md includes hive_names parameter documentation with examples
+- Shows default behavior (all hives), single hive, and multi-hive usage
+- Documents error handling when hive not found
+- Examples demonstrate practical use cases
 
 
 **Why This Order Matters**:

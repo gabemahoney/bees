@@ -1304,7 +1304,8 @@ add_named_query = mcp.tool()(_add_named_query)
 
 def _execute_query(
     query_name: str,
-    params: str | None = None
+    params: str | None = None,
+    hive_names: list[str] | None = None
 ) -> Dict[str, Any]:
     """
     Execute a named query with optional parameter substitution.
@@ -1312,16 +1313,18 @@ def _execute_query(
     Args:
         query_name: Name of the registered query to execute
         params: JSON string of parameters for variable substitution (e.g., '{"status": "open", "label": "beta"}')
+        hive_names: Optional list of hive names to filter results (default: None = all hives)
 
     Returns:
         dict: Query results with list of matching ticket IDs and metadata
 
     Raises:
-        ValueError: If query name not found or execution fails
+        ValueError: If query name not found, hive not found, or execution fails
 
     Example:
         execute_query("open_tasks", '{"status": "open"}')
         execute_query("beta_work_items", '{"label": "beta"}')
+        execute_query("open_tasks", '{"status": "open"}', ["backend", "frontend"])
     """
     # Load query by name
     try:
@@ -1340,6 +1343,22 @@ def _execute_query(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    # Validate hive existence if hive_names provided
+    if hive_names:
+        config = load_bees_config()
+        if config is None:
+            error_msg = "No hives configured. Available hives: none"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Check each hive exists
+        for hive_name in hive_names:
+            if hive_name not in config.hives:
+                available_hives = sorted(config.hives.keys())
+                error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
     # Perform parameter substitution if params provided
     if params:
         try:
@@ -1353,7 +1372,7 @@ def _execute_query(
     # Execute query using pipeline evaluator
     try:
         evaluator = PipelineEvaluator()
-        result_ids = evaluator.execute_query(stages)
+        result_ids = evaluator.execute_query(stages, hive_names=hive_names)
 
         logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
 

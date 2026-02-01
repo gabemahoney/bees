@@ -219,7 +219,7 @@ class PipelineEvaluator:
         else:
             raise ValueError(f"Stage has no recognized search or graph terms: {stage}")
 
-    def execute_query(self, stages: List[List[str]]) -> Set[str]:
+    def execute_query(self, stages: List[List[str]], hive_names: list[str] | None = None) -> Set[str]:
         """Execute multi-stage query pipeline with sequential evaluation.
 
         Executes stages in order, passing result set from stage N to stage N+1.
@@ -228,6 +228,7 @@ class PipelineEvaluator:
 
         Args:
             stages: List of stages from QueryParser.parse()
+            hive_names: Optional list of hive names to filter results by (default: None = all hives)
 
         Returns:
             Set of ticket IDs that passed through all stages
@@ -237,6 +238,21 @@ class PipelineEvaluator:
         """
         # Start with all ticket IDs for first stage
         current_results = set(self.tickets.keys())
+
+        # Apply hive filter if specified
+        if hive_names is not None:
+            # Filter tickets to only those from specified hives
+            # Empty list means "no hives" = empty result set
+            filtered_results = set()
+            for ticket_id in current_results:
+                # Extract hive prefix from ticket ID (format: hive_name.bees-abc1)
+                if '.' in ticket_id:
+                    hive_prefix = ticket_id.split('.', 1)[0]
+                    if hive_prefix in hive_names:
+                        filtered_results.add(ticket_id)
+                # Skip tickets without hive prefix (legacy format)
+            current_results = filtered_results
+            logger.info(f"Applied hive filter: {hive_names}, filtered to {len(current_results)} tickets")
 
         logger.info(f"Starting query execution with {len(stages)} stages")
         logger.info(f"Initial ticket count: {len(current_results)}")
@@ -250,8 +266,10 @@ class PipelineEvaluator:
 
             if stage_type == 'search':
                 # Search stage: filter current results
+                # Build filtered ticket dict with only current_results tickets
+                filtered_tickets = {tid: self.tickets[tid] for tid in current_results if tid in self.tickets}
                 current_results = self.search_executor.execute(
-                    self.tickets,
+                    filtered_tickets,
                     stage
                 )
             else:  # graph
