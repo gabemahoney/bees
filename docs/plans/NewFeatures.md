@@ -6,7 +6,6 @@
 - Hives: container feature docs and all the bees to build them
   - Colonize: Establish hive
     - How does MCP server know about them? Config? .hive file in each folder?
-    - Checks for docs, if docs dont exist this writes them with the user
   - Swarm: Do everything as one big workflow
     - docs-to-epics, make-epic, do-epic, show
     - But has to show more clear status
