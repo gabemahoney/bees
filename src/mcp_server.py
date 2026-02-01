@@ -20,6 +20,7 @@ from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
 from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig, BeesConfig
+from .id_utils import normalize_hive_name
 
 # Ensure log directory exists
 log_dir = Path.home() / '.bees'
@@ -131,29 +132,6 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
 
     # Return normalized path (resolve() already removes trailing slashes)
     return resolved_hive
-
-
-def normalize_name(name: str) -> str:
-    """
-    Normalize a hive name for use as a config key.
-
-    Converts spaces to underscores and lowercases the input.
-
-    Args:
-        name: Display name to normalize (e.g., 'Back End')
-
-    Returns:
-        Normalized name suitable for use as config key (e.g., 'back_end')
-
-    Example:
-        >>> normalize_name('Back End')
-        'back_end'
-        >>> normalize_name('UPPERCASE')
-        'uppercase'
-        >>> normalize_name('Multi Word Name')
-        'multi_word_name'
-    """
-    return name.replace(' ', '_').lower()
 
 
 def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
@@ -288,7 +266,7 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
         {'status': 'success', 'hive_name': 'back_end', 'hive_path': '/Users/user/projects/myrepo/tickets'}
     """
     hive_path = Path(path)
-    normalized_name = normalize_name(name)
+    normalized_name = normalize_hive_name(name)
 
     # Create /eggs subdirectory for future feature storage
     eggs_path = hive_path / "eggs"
@@ -730,7 +708,8 @@ def _create_ticket(
     labels: list[str] | None = None,
     owner: str | None = None,
     priority: int | None = None,
-    status: str | None = None
+    status: str | None = None,
+    hive_name: str | None = None
 ) -> Dict[str, Any]:
     """
     Create a new ticket (epic, task, or subtask).
@@ -747,6 +726,7 @@ def _create_ticket(
         owner: Owner/assignee of the ticket
         priority: Priority level (typically 0-4)
         status: Status of the ticket (e.g., 'open', 'in_progress', 'completed')
+        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         dict: Created ticket information including ticket_id
@@ -765,6 +745,22 @@ def _create_ticket(
         error_msg = "Ticket title cannot be empty"
         logger.error(error_msg)
         raise ValueError(error_msg)
+
+    # Validate hive_name if provided
+    if hive_name is not None and hive_name != "":
+        # Check if hive_name contains at least one alphanumeric character
+        import re
+        if not re.search(r'[a-zA-Z0-9]', hive_name):
+            error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Additional check: normalized name should not be empty
+        normalized_hive = normalize_hive_name(hive_name)
+        if not normalized_hive:
+            error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
     # Validate parent requirements
     if ticket_type == "epic" and parent:
@@ -830,7 +826,8 @@ def _create_ticket(
                 down_dependencies=down_dependencies,
                 owner=owner,
                 priority=priority,
-                status=status or "open"
+                status=status or "open",
+                hive_name=hive_name
             )
         elif ticket_type == "task":
             ticket_id = create_task(
@@ -842,7 +839,8 @@ def _create_ticket(
                 down_dependencies=down_dependencies,
                 owner=owner,
                 priority=priority,
-                status=status or "open"
+                status=status or "open",
+                hive_name=hive_name
             )
         elif ticket_type == "subtask":
             ticket_id = create_subtask(
@@ -854,7 +852,8 @@ def _create_ticket(
                 down_dependencies=down_dependencies,
                 owner=owner,
                 priority=priority,
-                status=status or "open"
+                status=status or "open",
+                hive_name=hive_name
             )
         else:
             # Should never reach here due to earlier validation

@@ -59,7 +59,29 @@ Each hive contains:
 
 **Configuration:**
 
-Hives are registered with a display name and path. Names are normalized automatically (e.g., 'Back End' → 'back_end'). Paths must be absolute and within the repository root.
+Hives are registered with a display name and path. Names are normalized automatically using `normalize_hive_name()` from `id_utils.py`. Normalization rules:
+
+1. **Converted to lowercase** - All uppercase letters become lowercase
+2. **Spaces and hyphens become underscores** - Whitespace and `-` characters are replaced with `_`
+3. **Special characters removed** - Only `a-z`, `0-9`, and `_` are allowed; all other characters are stripped
+4. **Must start with letter or underscore** - If name starts with a digit after normalization, `_` is prepended
+
+Examples:
+- `'Back End'` → `'back_end'`
+- `'front-end'` → `'front_end'`
+- `'BackEnd'` → `'backend'`
+- `'123project'` → `'_123project'`
+
+Paths must be absolute and within the repository root.
+
+**Hive Name Validation:**
+
+Hive names must contain at least one alphanumeric character (a-z, A-Z, 0-9). The system validates hive names before creating tickets and rejects invalid names:
+
+- **Valid:** `"backend"`, `"Back End"` (normalizes to `back_end`), `"front-end"` (normalizes to `front_end`)
+- **Invalid:** `"   "` (whitespace only), `"@#$%"` (special characters only), `"---"` (no alphanumeric)
+
+Empty strings (`""`) and `None` are allowed - they create tickets without hive prefixes (standard format: `bees-abc`).
 
 Example configuration:
 ```json
@@ -77,7 +99,7 @@ Example configuration:
 
 ## MCP Commands
 
-- **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
+- **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
 - **delete_ticket** - `ticket_id, cascade`
 - **add_named_query** - `name, query_yaml, validate`
@@ -93,6 +115,12 @@ create_ticket(ticket_type="epic", title="Add user authentication", description="
 
 # Create a task under an epic
 create_ticket(ticket_type="task", title="Build login API", parent="epic-001")
+
+# Create a ticket with hive prefix (generates ID like "backend.bees-abc")
+create_ticket(ticket_type="epic", title="Backend API", hive_name="backend")
+
+# Create a ticket in a multi-word hive (generates ID like "my_hive.bees-123")
+create_ticket(ticket_type="task", title="Setup database", hive_name="My Hive")
 
 # Update ticket status
 update_ticket(ticket_id="task-001", status="in_progress")

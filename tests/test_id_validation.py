@@ -72,6 +72,46 @@ title: {title}"""
         format_errors = report.get_errors(error_type="id_format")
         assert len(format_errors) == 0
 
+    def test_valid_hive_prefixed_id(self, tmp_path):
+        """Should pass validation for hive-prefixed IDs."""
+        self._create_ticket_file(tmp_path, "epic", "backend.bees-abc", "Hive Prefixed")
+
+        linter = Linter(str(tmp_path))
+        report = linter.run()
+
+        format_errors = report.get_errors(error_type="id_format")
+        assert len(format_errors) == 0
+
+    def test_valid_multi_word_hive_id(self, tmp_path):
+        """Should pass validation for multi-word hive names with underscores."""
+        self._create_ticket_file(tmp_path, "epic", "my_hive.bees-123", "Multi-word Hive")
+
+        linter = Linter(str(tmp_path))
+        report = linter.run()
+
+        format_errors = report.get_errors(error_type="id_format")
+        assert len(format_errors) == 0
+
+    def test_valid_hive_with_numbers_id(self, tmp_path):
+        """Should pass validation for hive names with numbers."""
+        self._create_ticket_file(tmp_path, "epic", "hive_v2.bees-abc", "Hive with Numbers")
+
+        linter = Linter(str(tmp_path))
+        report = linter.run()
+
+        format_errors = report.get_errors(error_type="id_format")
+        assert len(format_errors) == 0
+
+    def test_valid_hive_starting_with_underscore(self, tmp_path):
+        """Should pass validation for hive names starting with underscore."""
+        self._create_ticket_file(tmp_path, "epic", "_private.bees-abc", "Underscore Hive")
+
+        linter = Linter(str(tmp_path))
+        report = linter.run()
+
+        format_errors = report.get_errors(error_type="id_format")
+        assert len(format_errors) == 0
+
     def test_invalid_uppercase_id_caught_by_reader(self):
         """Invalid uppercase IDs are caught by reader, not linter.
 

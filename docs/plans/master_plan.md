@@ -10,20 +10,6 @@ _This document was consolidated in January 2026 to serve as a concise architectu
 - No caches
 - Limit: scales to only tens of directories and 1000s of tickets
 
-## Documentation Philosophy
-
-**README Documentation Standards** (Task bees-5bz2t):
-
-README.md serves end users who need to quickly understand installation and basic usage. Documentation should be:
-- **User-focused**: Describe what users can do, not how the system implements it
-- **Concise**: Users should read and understand it in under a minute, get running in 5 minutes
-- **Conceptual**: High-level descriptions instead of implementation details
-- **Code-free**: No Python code examples - those belong in API documentation or tests
-
-**Rationale**: Python code examples in README create maintenance burden (must stay synced with implementation), expose internal APIs that may change, and distract from user-facing concepts. Implementation details belong in master_plan.md, API documentation, or inline code comments.
-
-**Applied to Hive Configuration**: Removed Python function call examples (colonize_hive, scan_for_hive), removed technical implementation details (directory creation flags, type safety internals, performance optimizations), removed verbose validation error examples. Replaced with simple conceptual description of what hives are, how they're structured, and what users need to know to use them.
-
 ## Architecture Overview
 
 Bees is a markdown-based ticket management system with four core modules:
@@ -97,11 +83,13 @@ Centralized configuration module with typed Config object.
 - File write errors raise IOError
 
 **Name Normalization**:
-- `normalize_name(name: str) -> str` function in `src/mcp_server.py` converts display names to normalized keys
-- Normalization rules: spaces → underscores, convert to lowercase
-- Example: 'Back End' → 'back_end', 'Multi Word Name' → 'multi_word_name'
+- `normalize_hive_name(name: str) -> str` function in `src/id_utils.py` is the single source of truth for hive name normalization
+- Normalization rules: spaces → underscores, hyphens → underscores, special chars removed, convert to lowercase
+- Ensures names start with letter or underscore (prefixes with underscore if starts with digit)
+- Example: 'Back End' → 'back_end', 'front-end' → 'front_end', 'Multi Word Name' → 'multi_word_name'
 - Normalized names serve as dictionary keys in config['hives']
 - Original user input preserved in HiveConfig.display_name field
+- **Consolidation Note**: Previously had duplicate `normalize_name()` function in `src/mcp_server.py` with simpler normalization (only spaces/lowercase). This was removed to prevent inconsistent behavior. The robust `normalize_hive_name()` function handles hyphens, special characters, and leading numbers correctly, ensuring consistency across ID generation and config management.
 
 **Collision Prevention**:
 - `validate_unique_hive_name(normalized_name, config)` in `src/config.py` checks for duplicate normalized names
@@ -109,7 +97,6 @@ Centralized configuration module with typed Config object.
 - Example: blocks 'Back End' and 'back end' (both normalize to 'back_end')
 - Raises ValueError with existing hive's display name if collision detected
 - Called during hive registration flow before saving config
-- **Refactoring Note (Task bees-e81r3)**: Duplicate implementation removed from `src/mcp_server.py`. Single source of truth is now `src/config.py`. MCP server imports function via `from .config import validate_unique_hive_name`.
 
 **Storage Architecture**:
 - Hives dictionary uses normalized names as keys: `config.hives['back_end']`
@@ -118,101 +105,117 @@ Centralized configuration module with typed Config object.
 - This design enables case-insensitive, whitespace-normalized lookups while preserving user intent
 - Display names shown in UI/reports, normalized names used for internal operations
 
+### Hive ID System
+
+**Purpose**: Namespace ticket IDs by hive to prevent collisions and enable multi-hive support within a single repository.
+
+**ID Format**:
+- Without hive: `bees-abc` (3 alphanumeric characters)
+- With hive: `{normalized_hive}.bees-abc` (hive prefix + dot + base ID)
+- Examples: `backend.bees-abc`, `my_hive.bees-123`, `bees-xyz`
+
+**Normalization Rules**:
+- Hive names normalized to lowercase with underscores
+- Spaces → underscores, hyphens → underscores
+- Non-alphanumeric characters removed (except underscore)
+- Must start with letter or underscore
+- Examples: "BackEnd" → "backend", "My Hive" → "my_hive", "front-end" → "front_end"
+
+**ID Pattern Validation**:
+- Regex: `^([a-z_][a-z0-9_]*\.)?bees-[a-z0-9]{3}$`
+- Supports both formats: with and without hive prefix
+- Hive prefix must start with lowercase letter or underscore
+- Base ID always follows `bees-` prefix with 3 alphanumeric chars
+
+**Implementation Flow**:
+1. MCP tool `_create_ticket()` accepts optional `hive_name` parameter
+2. Passes `hive_name` to factory functions (`create_epic`, `create_task`, `create_subtask`)
+3. Factory functions pass `hive_name` to `generate_unique_ticket_id()`
+4. `generate_unique_ticket_id()` passes to `generate_ticket_id()`
+5. `generate_ticket_id()` calls `normalize_hive_name()` if hive provided
+6. Returns prefixed ID: `{normalized_hive}.bees-{random_suffix}` or `bees-{random_suffix}`
+
+**Empty Hive Name Validation**:
+- Design decision: `generate_ticket_id()` checks if normalized hive name is empty string
+- Empty check prevents invalid dot-prefixed IDs (e.g., `.bees-abc`)
+- Maintains backward compatibility with unprefixed ID format
+- Integration with `normalize_hive_name()`: When hive_name contains only special characters (e.g., '@#$%'),
+  normalization returns empty string after stripping all non-alphanumeric characters
+- Validation logic: If `normalize_hive_name(hive_name)` returns empty string, treated as `None`
+  (generates unprefixed ID in `bees-abc` format)
+- Examples: `generate_ticket_id('@#$%')` → `bees-abc`, `generate_ticket_id('')` → `bees-xyz`
+- Security rationale: Prevents creation of invalid IDs that would fail validation regex check
+- Implementation location: `src/id_utils.py` lines 63-65 in `generate_ticket_id()`
+
+**Hive Name Validation in MCP Create Ticket** (Task bees-x97h4):
+- **Why validation is needed**: The `_create_ticket()` MCP tool accepts `hive_name` parameter but previously
+  did not validate it before passing to factory functions. Malformed hive names (whitespace-only, special
+  characters only) could lead to confusing behavior or invalid ticket IDs.
+- **Where validation occurs**: `_create_ticket()` in `src/mcp_server.py` validates `hive_name` parameter
+  before calling `create_epic()`, `create_task()`, or `create_subtask()` factory functions
+- **What is validated**:
+  - Checks if `hive_name` contains at least one alphanumeric character using `re.search(r'[a-zA-Z0-9]', hive_name)`
+  - Verifies that `normalize_hive_name()` does not return empty string
+  - Raises `ValueError` with descriptive message if validation fails
+- **Validation rules**:
+  - `None` and empty string (`""`) are allowed (treated as no hive prefix)
+  - Whitespace-only strings (e.g., `"   "`) are rejected (would normalize to underscores)
+  - Special characters only (e.g., `"@#$%"`) are rejected (would normalize to empty)
+  - Valid names must have at least one alphanumeric character after normalization
+- **Error messages**: Include the original invalid hive name in error message for debugging:
+  `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
+- **Integration with normalize_hive_name()**: Validation occurs before normalization is used for ID generation,
+  preventing edge cases where normalized names become empty or invalid
+- **Test coverage**: Unit tests in `tests/test_mcp_create_ticket_hive.py` verify validation behavior:
+  - Valid hive names pass through successfully
+  - Whitespace-only names raise ValueError
+  - Special characters only raise ValueError
+  - None and empty string are allowed (no validation error)
+  - Error messages include original invalid name
+
+**Backward Compatibility**:
+- IDs without hive prefix remain valid
+- All existing tickets continue to work
+- `hive_name` parameter is optional in all functions
+- Default behavior (no hive_name) generates unprefixed IDs
+
+**Functions Modified**:
+- `src/id_utils.py`:
+  - `normalize_hive_name()` - Normalizes hive names to standard format
+  - `generate_ticket_id()` - Accepts optional `hive_name`, generates prefixed IDs
+  - `generate_unique_ticket_id()` - Passes `hive_name` through to ID generation
+  - `is_valid_ticket_id()` - Updated regex to validate both ID formats
+  - `ID_PATTERN` - Updated to support optional hive prefix
+
+- `src/ticket_factory.py`:
+  - `create_epic()` - Accepts optional `hive_name` parameter
+  - `create_task()` - Accepts optional `hive_name` parameter
+  - `create_subtask()` - Accepts optional `hive_name` parameter
+
+- `src/mcp_server.py`:
+  - `_create_ticket()` - Accepts optional `hive_name` parameter, passes to factory functions
+
 **Path Validation**:
 - `validate_hive_path(path: str, repo_root: Path) -> Path` in `src/mcp_server.py` validates and normalizes hive paths
 - Validation rules enforce security and consistency:
-  - **Absolute path requirement**: Rejects relative paths like `tickets/backend`
+  - **Absolute path requirement**: Rejects relative paths like `tickets/backend` using `Path.is_absolute()`
   - **Existence check**: Verifies path exists using `Path.exists()` before accepting registration
-  - **Repository boundary check**: Ensures path is within repo root
+  - **Repository boundary check**: Uses `Path.resolve()` and `relative_to()` to ensure path is within repo root
   - **Trailing slash normalization**: `Path.resolve()` automatically removes trailing slashes
 - Returns normalized absolute Path object on success
 - Raises ValueError with descriptive error messages for validation failures
+- Security rationale: Repository boundary check prevents hives from pointing outside the git repository,
+  which could lead to unintended file modifications or security vulnerabilities
+- Design decision: Trailing slash normalization ensures consistent path comparisons and prevents duplicate
+  hive registrations that differ only by trailing slash
+- Integration: Called during hive colonization via `colonize_hive()` before config updates
 
 **Repository Root Detection**:
 - `get_repo_root() -> Path` in `src/mcp_server.py` finds git repository root for boundary validation
+- Algorithm: Walks up directory tree from `Path.cwd()` using `.parent` until `.git` directory found
 - Returns absolute Path to repository root
 - Raises ValueError if not in a git repository (no .git directory found)
 - Used by `validate_hive_path()` to determine allowed path boundaries
-
-**Hive Directory Structure**:
-- `colonize_hive(name: str, path: str) -> Dict[str, Any]` in `src/mcp_server.py` creates hive directory structure
-- **Design Decision**: Subdirectories created during colonization rather than on-demand for predictable setup
-- **Directory Structure**:
-  - `/eggs` - Reserved for future feature storage (currently stubbed)
-  - `/evicted` - Storage for completed and archived tickets
-  - `/.hive` - Hidden marker directory containing hive identity for recovery
-- **Implementation Details**:
-  - Uses `Path.mkdir(parents=True, exist_ok=True)` for idempotent directory creation
-  - Creates both subdirectories atomically during hive setup
-  - Creates `.hive` marker with identity data (see Hive Recovery System below)
-  - Returns normalized hive name and path in response dict
-- **Integration**: Called during hive registration flow to ensure directory structure exists before tickets are created
-- **Future Enhancements**: /eggs directory will store feature-specific data structures in later iterations
-
-**Hive Recovery System** (Task bees-hzgw):
-- **Purpose**: Enable automatic hive recovery when paths change due to directory moves/renames
-- **Marker Structure**: Each hive contains `/.hive/identity.json` with:
-  - `normalized_name`: Normalized hive name (e.g., 'back_end')
-  - `display_name`: Original display name (e.g., 'Back End')
-- **Marker Creation**: `colonize_hive()` automatically creates `.hive` marker during hive setup
-  - Marker created atomically with `/eggs` and `/evicted` directories
-  - Identity data written as formatted JSON with indent=2
-  - Marker is hidden directory (starts with dot) to avoid clutter
-- **Recovery Function**: `scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None` in `src/mcp_server.py`
-  - Recursively scans repository directories for `.hive` markers matching normalized name
-  - Called when MCP commands cannot find hive at configured path in config.json
-  - Returns Path to hive directory if found, None otherwise
-  - **Type Safety: BeesConfig Type Annotation** (implemented in Task bees-74z0q):
-    - Parameter type changed from `dict | None` to `BeesConfig | None` for type consistency
-    - Ensures proper typing with the BeesConfig dataclass used throughout codebase
-    - Added BeesConfig import to mcp_server.py imports
-    - Updated function docstring and examples to reflect BeesConfig usage
-    - Type annotation rationale: Prevents type confusion and enables proper IDE/type checker support
-  - **None-Safety: Config.hives Access** (implemented in Task bees-74z0q):
-    - Added conditional check `if config and config.hives:` before accessing config.hives
-    - Prevents AttributeError when config is None or config.hives is empty
-    - Gracefully falls back to loading config from disk when config is None
-    - None-safety rationale: Defensive programming prevents crashes on edge cases
-  - **Performance: Early Return Optimization** (implemented in Task bees-74z0q):
-    - Added `return found_hive_path` immediately after finding target hive
-    - Avoids unnecessary iteration through remaining .hive markers
-    - Short-circuits scan as soon as target is located
-    - Performance benefit: Reduces scan time proportional to target position in traversal order
-  - **Security: Depth Limiting** (implemented in Task bees-s1gpp):
-    - Scans limited to MAX_SCAN_DEPTH (10 directory levels) from repository root
-    - Prevents filesystem-wide traversal if repo_root is `/` or high-level directory
-    - Depth calculated as relative path from repo_root using `Path.relative_to()`
-    - Markers beyond depth limit are skipped with debug log message
-    - Security rationale: Bounds computation time/resource usage on misconfigured systems
-  - **Performance: Config Parameter Optimization** (implemented in Task bees-s1gpp):
-    - Accepts optional `config` BeesConfig parameter to avoid redundant disk reads
-    - If config provided with hives, extracts registered hive names from config.hives.keys()
-    - If config is None, loads from `.bees/config.json` as before
-    - Enables N+1 query optimization when scanning multiple hives in sequence
-    - Performance benefit: Single config load + multiple scans instead of load-per-scan
-  - **Automatically updates config.json with recovered path** (implemented in Task bees-uzyha):
-    - Loads current config using `load_bees_config()`
-    - Updates hive path in `config.hives[name]`
-    - Saves config using `save_bees_config()`
-    - Logs successful update operation
-    - Gracefully handles errors (missing/corrupt config, write failures)
-- **Orphaned Marker Detection**: `scan_for_hive()` logs warnings for .hive markers not in config.json
-  - Helps identify stale markers from deleted/unregistered hives
-  - Enables manual cleanup of orphaned markers
-- **Error Handling**:
-  - Gracefully handles missing identity.json files (logs warning, continues scan)
-  - Handles corrupted JSON in identity.json (logs warning, continues scan)
-  - Handles missing normalized_name field (logs warning, continues scan)
-  - Raises ValueError if not in a git repository (uses `get_repo_root()`)
-- **Design Rationale**:
-  - File-based markers survive directory moves (travel with hive contents)
-  - JSON format is human-readable and easily parsed
-  - Hidden directory prevents user confusion (not a ticket storage location)
-  - Recursive scan handles arbitrary directory nesting within repository
-  - Single-hop recovery (scan once, update config) avoids repeated scans
-
-
-
 
 ### CLI ↔ Linter
 
@@ -252,12 +255,6 @@ tickets back into typed objects, enabling both read and write operations.
 
 The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket write operations (create, update, delete) while maintaining relationship consistency. Built with FastMCP 2.14.4, the server exposes tools that AI agents and clients can use to manipulate tickets safely.
 
-**Code Organization (Task bees-e81r3)**:
-- All module-level imports consolidated at top of `src/mcp_server.py`
-- `import json` moved from function bodies to module level for consistency with Python best practices
-- Config module functions imported via `from .config import validate_unique_hive_name`
-- Eliminates redundant function-level imports in `scan_for_hive()`, `colonize_hive()`, and `_execute_query()`
-
 ### Design Goals
 
 1. **Relationship Consistency**: Automatically maintain reciprocal relationships (see Relationship Synchronization Module)
@@ -287,21 +284,6 @@ End-to-end testing confirmed HTTP transport is production-ready. The testing pro
 2. Connection verification: `claude mcp list` confirms successful connection
 3. Tool execution: MCP tools execute successfully over HTTP transport
 4. Stability: Clean connection lifecycle throughout testing
-
-**Implementation Details** (`src/main.py`):
-
-The HTTP server retrieves the Starlette application from FastMCP using the `mcp.http_app()` method. This method returns the ASGI application that uvicorn uses to handle HTTP requests for the MCP protocol.
-
-```python
-# Get the Starlette app from FastMCP
-http_app = mcp.http_app()
-
-# Set up custom HTTP routes on FastMCP's Starlette app
-setup_http_routes(http_app)
-
-# Run the FastMCP server with HTTP transport via uvicorn
-uvicorn.run(http_app, host=host, port=port, log_level="info")
-```
 
 **HTTP Endpoint Routing** (Task bees-q5g7):
 

@@ -19,6 +19,7 @@ def create_epic(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
+    hive_name: str | None = None,
 ) -> str:
     """
     Create an Epic ticket with YAML frontmatter.
@@ -33,6 +34,7 @@ def create_epic(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
+        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -48,6 +50,12 @@ def create_epic(
         ... )
         >>> epic_id.startswith("bees-")
         True
+        >>> epic_id = create_epic(
+        ...     title="Backend API",
+        ...     hive_name="backend",
+        ... )
+        >>> epic_id.startswith("backend.bees-")
+        True
     """
     if not title:
         raise ValueError("Epic title is required")
@@ -55,7 +63,7 @@ def create_epic(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
-        ticket_id = generate_unique_ticket_id(existing_ids)
+        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data
     frontmatter_data = {
@@ -99,6 +107,7 @@ def create_task(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
+    hive_name: str | None = None,
 ) -> str:
     """
     Create a Task ticket with YAML frontmatter.
@@ -114,6 +123,7 @@ def create_task(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
+        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -129,6 +139,12 @@ def create_task(
         ... )
         >>> task_id.startswith("bees-")
         True
+        >>> task_id = create_task(
+        ...     title="Create API endpoint",
+        ...     hive_name="backend",
+        ... )
+        >>> task_id.startswith("backend.bees-")
+        True
     """
     if not title:
         raise ValueError("Task title is required")
@@ -136,7 +152,7 @@ def create_task(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
-        ticket_id = generate_unique_ticket_id(existing_ids)
+        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data
     frontmatter_data = {
@@ -182,6 +198,7 @@ def create_subtask(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
+    hive_name: str | None = None,
 ) -> str:
     """
     Create a Subtask ticket with YAML frontmatter.
@@ -197,6 +214,7 @@ def create_subtask(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
+        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -212,6 +230,13 @@ def create_subtask(
         ... )
         >>> subtask_id.startswith("bees-")
         True
+        >>> subtask_id = create_subtask(
+        ...     title="Create helper function",
+        ...     parent="bees-abc",
+        ...     hive_name="backend",
+        ... )
+        >>> subtask_id.startswith("backend.bees-")
+        True
     """
     if not title:
         raise ValueError("Subtask title is required")
@@ -221,7 +246,7 @@ def create_subtask(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_directory(TICKETS_DIR)
-        ticket_id = generate_unique_ticket_id(existing_ids)
+        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
 
     # Build frontmatter data
     frontmatter_data = {

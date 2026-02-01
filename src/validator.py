@@ -11,8 +11,9 @@ class ValidationError(Exception):
     pass
 
 
-# ID format: bees-XXX where XXX is 3 alphanumeric chars (lowercase)
-ID_PATTERN = re.compile(r"^bees-[a-z0-9]{3}$")
+# ID format: bees-XXX OR {hive_name}.bees-XXX where XXX is 3 alphanumeric chars (lowercase)
+# Hive prefix must start with letter or underscore, contain only lowercase letters, numbers, and underscores
+ID_PATTERN = re.compile(r"^([a-z_][a-z0-9_]*\.)?bees-[a-z0-9]{3}$")
 
 VALID_TYPES = {"epic", "task", "subtask"}
 
@@ -52,7 +53,7 @@ def validate_ticket(data: dict[str, Any]) -> None:
 
     if not ID_PATTERN.match(ticket_id):
         raise ValidationError(
-            f"Invalid ID format: {ticket_id}. Expected format: bees-XXX "
+            f"Invalid ID format: {ticket_id}. Expected format: bees-XXX or hive.bees-XXX "
             "(3 lowercase alphanumeric characters)"
         )
 

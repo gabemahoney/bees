@@ -6,18 +6,49 @@ import string
 from pathlib import Path
 
 
-# ID format: bees-<3 alphanumeric chars>
-# Examples: bees-250, bees-abc, bees-9pw
-ID_PATTERN = re.compile(r"^bees-[a-z0-9]{3}$")
+# ID format: bees-<3 alphanumeric chars> OR {hive_name}.bees-<3 alphanumeric chars>
+# Examples: bees-250, bees-abc, bees-9pw, backend.bees-abc, my_hive.bees-123
+ID_PATTERN = re.compile(r"^([a-z_][a-z0-9_]*\.)?bees-[a-z0-9]{3}$")
 CHARSET = string.ascii_lowercase + string.digits
 
 
-def generate_ticket_id() -> str:
+def normalize_hive_name(hive_name: str) -> str:
+    """
+    Normalize hive name to lowercase with underscores.
+
+    Args:
+        hive_name: The hive name to normalize
+
+    Returns:
+        Normalized hive name (lowercase, spaces/hyphens converted to underscores)
+
+    Examples:
+        >>> normalize_hive_name("BackEnd")
+        'backend'
+        >>> normalize_hive_name("My Hive")
+        'my_hive'
+        >>> normalize_hive_name("front-end")
+        'front_end'
+    """
+    # Replace spaces and hyphens with underscores, convert to lowercase
+    normalized = hive_name.lower().replace(' ', '_').replace('-', '_')
+    # Remove any characters that aren't alphanumeric or underscore
+    normalized = re.sub(r'[^a-z0-9_]', '', normalized)
+    # Ensure it starts with a letter or underscore
+    if normalized and not normalized[0].isalpha() and normalized[0] != '_':
+        normalized = '_' + normalized
+    return normalized
+
+
+def generate_ticket_id(hive_name: str | None = None) -> str:
     """
     Generate a unique short alphanumeric ticket ID.
 
-    Format: bees-<3 random alphanumeric chars>
-    Examples: bees-250, bees-abc, bees-9pw
+    Format: bees-<3 random alphanumeric chars> OR {hive_name}.bees-<3 random alphanumeric chars>
+    Examples: bees-250, bees-abc, bees-9pw, backend.bees-abc
+
+    Args:
+        hive_name: Optional hive name to prefix the ID with
 
     Returns:
         A unique ticket ID string
@@ -25,9 +56,20 @@ def generate_ticket_id() -> str:
     Note:
         This function generates random IDs but does not check for collisions.
         Use generate_unique_ticket_id() for collision detection.
+
+        If hive_name contains only special characters, normalize_hive_name()
+        returns an empty string, which is treated as None (unprefixed ID).
     """
     suffix = ''.join(random.choices(CHARSET, k=3))
-    return f"bees-{suffix}"
+    base_id = f"bees-{suffix}"
+
+    if hive_name:
+        normalized = normalize_hive_name(hive_name)
+        # If normalized name is empty, treat as None (no prefix)
+        if normalized:
+            return f"{normalized}.{base_id}"
+
+    return base_id
 
 
 def is_valid_ticket_id(ticket_id: str) -> bool:
@@ -43,6 +85,8 @@ def is_valid_ticket_id(ticket_id: str) -> bool:
     Examples:
         >>> is_valid_ticket_id("bees-250")
         True
+        >>> is_valid_ticket_id("backend.bees-abc")
+        True
         >>> is_valid_ticket_id("bees-ABC")  # uppercase not allowed
         False
         >>> is_valid_ticket_id("bees-1234")  # too long
@@ -53,13 +97,14 @@ def is_valid_ticket_id(ticket_id: str) -> bool:
     return bool(ID_PATTERN.match(ticket_id))
 
 
-def generate_unique_ticket_id(existing_ids: set[str] | None = None, max_attempts: int = 100) -> str:
+def generate_unique_ticket_id(existing_ids: set[str] | None = None, max_attempts: int = 100, hive_name: str | None = None) -> str:
     """
     Generate a unique ticket ID with collision detection.
 
     Args:
         existing_ids: Optional set of existing IDs to check against
         max_attempts: Maximum number of generation attempts before raising error
+        hive_name: Optional hive name to prefix the ID with
 
     Returns:
         A unique ticket ID string
@@ -72,12 +117,15 @@ def generate_unique_ticket_id(existing_ids: set[str] | None = None, max_attempts
         >>> new_id = generate_unique_ticket_id(existing)
         >>> new_id not in existing
         True
+        >>> new_id = generate_unique_ticket_id(existing, hive_name="backend")
+        >>> new_id.startswith("backend.bees-")
+        True
     """
     if existing_ids is None:
         existing_ids = set()
 
     for _ in range(max_attempts):
-        ticket_id = generate_ticket_id()
+        ticket_id = generate_ticket_id(hive_name=hive_name)
         if ticket_id not in existing_ids:
             return ticket_id
 
