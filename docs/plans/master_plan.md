@@ -2,11 +2,7 @@
 
 Technical architecture and implementation decisions for the Bees ticket management system.
 
-## Documentation Philosophy
-
-This document focuses on architectural decisions and high-level design concerns. Exhaustive edge case
-catalogs and detailed test scenarios belong in test files and code comments where they provide immediate
-context to maintainers. This separation keeps architectural documentation concise and maintainable.
+_This document was consolidated in January 2026 to serve as a concise architectural reference for LLMs, removing code examples, performance metrics, and duplicated explanations while maintaining complete technical accuracy._
 
 ## Architecture Overview
 
@@ -48,9 +44,6 @@ Centralized configuration module with typed Config object.
 - All config access uses attribute access: `config.http_host`, `config.http_port`,
   `config.ticket_directory`
 
-**Migration**: Previously main.py had its own load_config() expecting flat YAML structure. This
-was refactored to use the centralized Config class with nested structure, eliminating schema
-inconsistencies and improving maintainability.
 
 
 ### CLI ↔ Linter
@@ -73,8 +66,7 @@ validation state that other tools can query.
 The MCP Server uses `ticket_factory` functions (`create_epic`, `create_task`,
 `create_subtask`) to write YAML frontmatter and markdown content to the
 `tickets/` filesystem. For reading, it calls `reader.read_ticket()` to parse
-tickets back into typed objects. This bidirectional integration allows MCP tool
-calls to create and query tickets seamlessly.
+tickets back into typed objects, enabling both read and write operations.
 
 
 ## Design Principles
@@ -90,11 +82,11 @@ calls to create and query tickets seamlessly.
 
 ### Overview
 
-The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket write operations (create, update, delete) while ensuring bidirectional consistency of all relationships. Built with FastMCP 2.14.4, the server exposes tools that AI agents and clients can use to manipulate tickets safely.
+The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket write operations (create, update, delete) while maintaining relationship consistency. Built with FastMCP 2.14.4, the server exposes tools that AI agents and clients can use to manipulate tickets safely.
 
 ### Design Goals
 
-1. **Bidirectional Consistency**: When a relationship is created/modified in one ticket, automatically update the reciprocal field in related tickets
+1. **Relationship Consistency**: Automatically maintain reciprocal relationships (see Relationship Synchronization Module)
 2. **Schema Validation**: Enforce ticket type rules (e.g., subtasks must have parent, epics cannot)
 3. **Atomic Operations**: All relationship updates succeed or fail together
 4. **Tool-Based Interface**: Standard MCP tool schemas for interoperability
@@ -117,20 +109,10 @@ documentation.
 
 End-to-end testing confirmed HTTP transport is production-ready. The testing process validated:
 
-1. **Configuration Migration**: Successfully updated `~/.claude.json` from stdio transport (command,
-   args, cwd, env fields) to HTTP transport (url field only)
-2. **Server Startup**: `poetry run start-mcp` launches cleanly, binds to configured port (8000),
-   accepts connections without errors
-3. **Connection Verification**: `claude mcp list` command confirms successful connection with output:
-   `bees: http://127.0.0.1:8000/mcp (HTTP) - ✓ Connected`
-4. **Tool Execution**: MCP tools execute successfully over HTTP transport, including `health_check`
-   tool returning proper server status
-5. **Stability**: No latency issues, clean connection lifecycle, stable throughout testing
-
-
-**Migration Recommendation**: Users can safely migrate to HTTP transport. No additional
-troubleshooting steps required beyond standard configuration. HTTP transport is now the recommended
-and default approach for connecting Claude Code to the bees MCP server.
+1. Server startup: `poetry run start-mcp` launches cleanly and binds to configured port
+2. Connection verification: `claude mcp list` confirms successful connection
+3. Tool execution: MCP tools execute successfully over HTTP transport
+4. Stability: Clean connection lifecycle throughout testing
 
 **HTTP Endpoint Routing** (Task bees-q5g7):
 
@@ -151,6 +133,12 @@ The server provides custom HTTP endpoints alongside FastMCP's built-in MCP proto
 
 The relationship synchronization module (`src/relationship_sync.py`) provides core functionality for maintaining bidirectional consistency of all ticket relationships. Shared by create/update/delete MCP tools to ensure atomicity and data integrity.
 
+**Bidirectional Relationship Management**: When a relationship is created or modified (e.g., adding a child to a parent, or setting up a dependency), both sides of the relationship must be updated. For example:
+- Adding ticket B as a child of ticket A requires updating both A's `children` list and B's `parent` field
+- Adding ticket B as dependent on ticket A requires updating both A's `down_dependencies` and B's `up_dependencies`
+
+This bidirectional synchronization prevents relationship inconsistencies and ensures graph traversal works correctly in both directions.
+
 ### Core Functions
 
 **Relationship Operations**: `add_child_to_parent()`, `remove_child_from_parent()`, `add_dependency()`, `remove_dependency()` handle bidirectional updates with idempotency guarantees.
@@ -163,7 +151,7 @@ The relationship synchronization module (`src/relationship_sync.py`) provides co
 
 ### Internal Helpers
 
-**_load_ticket_by_id()** searches ticket type directories with early return optimization (~33% reduction in filesystem operations). **_save_ticket()** uses atomic writes from writer module with file locking.
+**_load_ticket_by_id()** searches ticket type directories with early return optimization. **_save_ticket()** uses atomic writes from writer module with file locking.
 
 ### Integration Points
 
@@ -175,33 +163,17 @@ Uses `infer_ticket_type_from_id()` from paths module for lightweight type checki
 
 ### Future Enhancements
 
-**Performance Optimizations**:
-- In-memory ticket cache with LRU eviction
-- Write-behind buffer for batching synchronous writes
-- Parallel file I/O for batch operations
-- Database backend for large-scale deployments
-- WAL persistence to disk for recovery after process crash
-
 **Additional Validation**:
 - Prevent orphan tickets (parent doesn't exist)
 - Validate dependency types (same-type only)
 - Check for dependency cycles at ticket level
 - Enforce maximum children/dependencies limits
 
-**Monitoring and Metrics**:
-- Count relationship operations for debugging
-- Track sync performance (latency, throughput)
-- Log validation failures for analysis
-- Alert on high error rates
-- Track file locking contention and retry rates
-- Monitor rollback frequency and success rate
-
 **Extended Functionality**:
 - Bulk relationship import/export
 - Relationship visualization (graph rendering)
 - Automatic relationship repair (fix inconsistencies)
 - Relationship history/audit log
-- Distributed transaction coordinator for multi-process scenarios
 
 
 ## Query Parser Architecture
@@ -323,9 +295,9 @@ The Graph Executor (`src/graph_executor.py`) implements in-memory traversal of t
 - Executor just looks up fields in memory
 - Orders of magnitude faster than disk reads
 
-### Performance and Integration
+### Integration
 
-Time complexity O(n) where n is input ticket count. Zero disk I/O during traversal - 100-1000x faster than disk-based approach. Pipeline loads all tickets once and routes to appropriate executor based on stage type. Graceful error handling returns partial results for missing tickets rather than failing query.
+Pipeline loads all tickets once and routes to appropriate executor based on stage type. Graceful error handling returns partial results for missing tickets rather than failing query. Time complexity is O(n) where n is input ticket count.
 
 
 ### Overview
@@ -341,11 +313,7 @@ The Pipeline Evaluator (`src/pipeline.py`) is the central orchestrator for execu
 2. For each ticket with up_dependencies:
    - Add ticket to blocker's down_dependencies list
 
-**Why two passes**:
-- Markdown files store relationships unidirectionally (child→parent, blocked→blocker)
-- Graph traversal needs bidirectional (children, parent both directions work)
-- Building reverse during load more efficient than on-demand during queries
-- Single pass approach would require multiple file scans
+**Why two passes**: Markdown files store some relationships in one direction only (child→parent, blocked→blocker). Building the reverse relationships during load enables efficient graph traversal in both directions without multiple file scans.
 
 **Memory usage**: O(n) where n = total tickets × avg ticket size
 
@@ -386,29 +354,10 @@ Short-circuit optimization stops execution when any stage returns empty results,
 
 SearchExecutor handles type/id/title/label filtering with AND logic. GraphExecutor traverses parent/children/up_dependencies/down_dependencies relationships. Pipeline routes stages to appropriate executor and chains results.
 
-### Performance and Error Handling
+### Error Handling
 
-Initialization is O(n) for loading all tickets. Query execution is O(s × m) where s is stages and m is tickets per stage. Pipeline fails fast on structural issues while GraphExecutor handles missing tickets gracefully.
+Pipeline fails fast on structural issues while GraphExecutor handles missing tickets gracefully. Initialization is O(n) for loading all tickets. Query execution is O(s × m) where s is stages and m is tickets per stage.
 
-
-**Query optimization**:
-- Analyze stage selectivity (run most restrictive first)
-- Requires statistics on ticket data (label distributions)
-
-**Incremental updates**:
-- Watch tickets/ directory for changes
-- Update in-memory tickets incrementally
-- Avoids full reload on every change
-
-**Query caching**:
-- Cache query results keyed by query hash
-- Invalidate on ticket updates
-- Requires change detection mechanism
-
-**Distributed execution**:
-- Split ticket data across multiple processes
-- Aggregate results from parallel executors
-- Benefit for very large ticket sets (>10K tickets)
 
 ## Linter Infrastructure Architecture
 
@@ -511,7 +460,6 @@ be extensible, allowing additional validation rules to be added by other tasks.
 - MCP server delete tool implementation (Task bees-49g)
 - MCP server startup script and configuration (Task bees-nas)
 - Change tracking/audit log
-- Migration utilities for existing ticket systems
 
 ## Named Query System
 
