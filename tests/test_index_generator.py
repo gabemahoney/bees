@@ -841,3 +841,330 @@ Mixed.""")
         assert "tickets/tasks/bees-abc.md" in result
         assert "tickets/tasks/bees-123.md" in result
         assert "tickets/tasks/bees-x9z.md" in result
+
+
+class TestPerHiveIndexGeneration:
+    """Tests for per-hive index generation functionality."""
+
+    def test_scan_tickets_filter_by_hive(self, tmp_path, monkeypatch):
+        """Should filter tickets by hive prefix."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        # Create tickets with different hive prefixes
+        (epics_dir / "backend.bees-ep1.md").write_text("""---
+id: backend.bees-ep1
+type: epic
+title: Backend Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Backend epic.""")
+
+        (epics_dir / "frontend.bees-ep2.md").write_text("""---
+id: frontend.bees-ep2
+type: epic
+title: Frontend Epic
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Frontend epic.""")
+
+        (epics_dir / "bees-ep3.md").write_text("""---
+id: bees-ep3
+type: epic
+title: Legacy Epic
+status: open
+created_at: '2026-01-30T12:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Legacy epic.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filter for backend hive only
+        result = scan_tickets(hive_name='backend')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "backend.bees-ep1"
+
+        # Filter for frontend hive only
+        result = scan_tickets(hive_name='frontend')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "frontend.bees-ep2"
+
+        # No hive filter returns all tickets
+        result = scan_tickets()
+        assert len(result["epic"]) == 3
+
+    def test_scan_tickets_hive_excludes_legacy(self, tmp_path, monkeypatch):
+        """Should exclude legacy tickets when filtering by hive."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        (epics_dir / "backend.bees-ep1.md").write_text("""---
+id: backend.bees-ep1
+type: epic
+title: Backend Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Backend.""")
+
+        (epics_dir / "bees-ep2.md").write_text("""---
+id: bees-ep2
+type: epic
+title: Legacy Epic
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Legacy.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filtering by hive should exclude legacy ticket
+        result = scan_tickets(hive_name='backend')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "backend.bees-ep1"
+
+    def test_generate_index_with_hive_writes_to_hive_root(self, tmp_path, monkeypatch):
+        """Should write index to hive root directory when hive_name provided."""
+        import json
+
+        # Create hive directory
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        # Create hive-prefixed ticket
+        (epics_dir / "backend.bees-ep1.md").write_text("""---
+id: backend.bees-ep1
+type: epic
+title: Backend Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Backend epic.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+        monkeypatch.chdir(tmp_path)
+
+        # Generate index for backend hive
+        result = generate_index(hive_name='backend')
+
+        # Verify index was written to hive root
+        index_path = backend_hive / "index.md"
+        assert index_path.exists()
+
+        # Verify index content
+        index_content = index_path.read_text()
+        assert "# Ticket Index" in index_content
+        assert "backend.bees-ep1" in index_content
+        assert "Backend Epic" in index_content
+
+    def test_generate_index_all_hives_writes_multiple_indexes(self, tmp_path, monkeypatch):
+        """Should write separate indexes for all hives when hive_name omitted."""
+        import json
+
+        # Create hive directories
+        backend_hive = tmp_path / "backend"
+        frontend_hive = tmp_path / "frontend"
+        backend_hive.mkdir()
+        frontend_hive.mkdir()
+
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        # Create tickets in different hives
+        (epics_dir / "backend.bees-ep1.md").write_text("""---
+id: backend.bees-ep1
+type: epic
+title: Backend Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Backend.""")
+
+        (epics_dir / "frontend.bees-ep2.md").write_text("""---
+id: frontend.bees-ep2
+type: epic
+title: Frontend Epic
+status: open
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Frontend.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                },
+                "frontend": {
+                    "path": str(frontend_hive),
+                    "display_name": "Frontend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+        monkeypatch.chdir(tmp_path)
+
+        # Generate indexes for all hives
+        generate_index()
+
+        # Verify backend index
+        backend_index = backend_hive / "index.md"
+        assert backend_index.exists()
+        backend_content = backend_index.read_text()
+        assert "backend.bees-ep1" in backend_content
+        assert "Backend Epic" in backend_content
+        assert "frontend.bees-ep2" not in backend_content
+
+        # Verify frontend index
+        frontend_index = frontend_hive / "index.md"
+        assert frontend_index.exists()
+        frontend_content = frontend_index.read_text()
+        assert "frontend.bees-ep2" in frontend_content
+        assert "Frontend Epic" in frontend_content
+        assert "backend.bees-ep1" not in frontend_content
+
+    def test_generate_index_hive_not_in_config(self, tmp_path, monkeypatch):
+        """Should create hive directory and write index when hive not in config."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        (epics_dir / "newback.bees-ep1.md").write_text("""---
+id: newback.bees-ep1
+type: epic
+title: New Backend Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+New backend.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+        monkeypatch.chdir(tmp_path)
+
+        # Generate index for hive not in config
+        result = generate_index(hive_name='newback')
+
+        # Should create hive directory and write index
+        hive_dir = tmp_path / "newback"
+        assert hive_dir.exists()
+
+        index_path = hive_dir / "index.md"
+        assert index_path.exists()
+
+        index_content = index_path.read_text()
+        assert "newback.bees-ep1" in index_content
+
+    def test_generate_index_no_config_returns_markdown(self, tmp_path, monkeypatch):
+        """Should return markdown without writing when no config exists."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        (epics_dir / "bees-ep1.md").write_text("""---
+id: bees-ep1
+type: epic
+title: Legacy Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Legacy.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+        monkeypatch.chdir(tmp_path)
+
+        # Generate index without config - should return markdown without writing
+        result = generate_index()
+
+        # Should contain the ticket
+        assert "bees-ep1" in result
+        assert "Legacy Epic" in result
+
+        # Should NOT write to disk when no config
+        index_path = tickets_dir / "index.md"
+        assert not index_path.exists()
+
+    def test_scan_tickets_hive_with_status_filter(self, tmp_path, monkeypatch):
+        """Should combine hive and status filters."""
+        tickets_dir = tmp_path / "tickets"
+        epics_dir = tickets_dir / "epics"
+        epics_dir.mkdir(parents=True)
+
+        (epics_dir / "backend.bees-ep1.md").write_text("""---
+id: backend.bees-ep1
+type: epic
+title: Backend Open Epic
+status: open
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Open.""")
+
+        (epics_dir / "backend.bees-ep2.md").write_text("""---
+id: backend.bees-ep2
+type: epic
+title: Backend Closed Epic
+status: closed
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Closed.""")
+
+        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
+
+        # Filter for backend + open only
+        result = scan_tickets(hive_name='backend', status_filter='open')
+        assert len(result["epic"]) == 1
+        assert result["epic"][0].id == "backend.bees-ep1"

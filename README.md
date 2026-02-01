@@ -44,7 +44,7 @@ Use natural language with the LLM to:
 - add named queries the LLM can then later use
 - run named queries to find tickets that match them
 
-The auto-generated index is at `tickets/index.md` and updates automatically when tickets change.
+Each hive maintains its own auto-generated index at `{hive_path}/index.md`. Use the `generate_index` MCP tool to regenerate indexes on demand.
 
 ### Hive Configuration
 
@@ -150,7 +150,10 @@ Internal routing uses the parsed hive name to construct file paths:
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives
   - Default behavior: all hives included when `hive_names` is omitted
   - Validates that all specified hives exist; returns error if any hive not found
-- **generate_index** - `status, type`
+- **generate_index** - `status, type, hive_name`
+  - `hive_name` is optional; when provided, generates index only for that specific hive
+  - When omitted, regenerates indexes for all registered hives
+  - Each hive's index is written to `{hive_path}/index.md`
 - **health_check** - No parameters
 
 ### Examples
@@ -196,7 +199,16 @@ execute_query(query_name="open_tasks", hive_names=["backend", "frontend"])
 # execute_query(query_name="open_tasks", hive_names=["nonexistent"])
 # Returns: ValueError: Hive not found: nonexistent. Available hives: backend, frontend
 
-# Generate index
+# Generate index for all hives
+generate_index()
+
+# Generate index filtered by status and type
 generate_index(status="open", type="task")
+
+# Generate index for specific hive only
+generate_index(hive_name="backend")
+
+# Generate index for specific hive with filters
+generate_index(hive_name="backend", status="open")
 ```
 

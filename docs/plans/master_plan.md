@@ -791,6 +791,81 @@ be extensible, allowing additional validation rules to be added by other tasks.
 - Prevents propagating bad data through API
 
 
+### Per-Hive Index Generation (Task bees-26x4)
+
+**Purpose**: Enable generation of separate index.md files for each hive, providing isolated ticket indexes that live at hive roots rather than a global index.
+
+**Architecture Decision**: Index per Hive vs Global Index
+- Design choice: Each hive maintains its own index.md at hive root directory
+- Rationale: Hives represent separate ticket collections; each should have independent indexing
+- Benefits: Enables per-project ticket visibility, avoids mixing concerns across hives
+- Alternative rejected: Single global index would require filtering and complicate multi-project workflows
+
+**Implementation Flow**:
+```
+generate_index(hive_name="backend")
+  ↓
+scan_tickets(hive_name="backend")
+  ↓
+Filter tickets by hive prefix (backend.bees-*)
+  ↓
+format_index_markdown(tickets)
+  ↓
+Write to {hive_path}/index.md
+```
+
+**generate_index() Function** (`src/index_generator.py`):
+- **Signature**: `generate_index(status_filter, type_filter, hive_name) -> str`
+- **Behavior with hive_name provided**:
+  - Generates index only for specified hive
+  - Writes to `{hive_path}/index.md` where hive_path comes from `.bees/config.json`
+  - Returns markdown content as string
+- **Behavior with hive_name omitted**:
+  - Iterates all registered hives from `.bees/config.json`
+  - Generates separate index.md for each hive at its root
+  - Returns last generated markdown (for backward compatibility)
+  - Falls back to default tickets directory if no hives configured
+
+**scan_tickets() Function** (`src/index_generator.py`):
+- Added `hive_name: str | None` parameter for filtering
+- When hive_name provided: only returns tickets with matching hive prefix
+- Hive prefix extraction: splits ticket ID on first dot (e.g., `backend.bees-abc1` → `backend`)
+- Legacy tickets without dots excluded when filtering by hive
+- When hive_name omitted: returns all tickets from all hives (no filtering)
+
+**MCP Tool Integration** (`src/mcp_server.py`):
+- `_generate_index()` tool accepts optional `hive_name` parameter
+- Passes parameter through to `generate_index()` function
+- Updated tool docstring to describe hive_name behavior
+
+**Index Location Strategy**:
+- Hive-specific indexes: `{hive_path}/index.md` (e.g., `/path/to/backend/index.md`)
+- Default location (no hives): `tickets/index.md` (legacy behavior)
+- Each hive's index is independent and only contains tickets from that hive
+
+**Integration with Hive Config**:
+- Loads `.bees/config.json` to get hive paths via `load_bees_config()`
+- Looks up hive path using normalized hive name as key
+- Falls back to `{cwd}/{hive_name}/` if hive not in config
+- Creates hive directory if needed before writing index
+
+**Backward Compatibility**:
+- When no hives configured: generates index at `tickets/index.md` (unchanged behavior)
+- Existing single-hive setups continue to work without changes
+- Mixed usage supported: can have some hives with indexes, others without
+
+**Design Rationale - Per-Hive vs Global**:
+- Per-hive indexes provide isolation between independent ticket collections
+- Enables teams to view only their relevant tickets without cross-hive clutter
+- Simplifies ticket discovery within a specific project context
+- Each hive's index.md serves as entry point for that hive's documentation
+- Global index would require filtering logic in readers and complicate navigation
+
+**Use Cases**:
+- Regenerate index for specific hive after bulk ticket updates: `generate_index(hive_name="backend")`
+- Regenerate all hive indexes after configuration changes: `generate_index()`
+- Generate filtered index for single hive: `generate_index(hive_name="backend", status="open")`
+
 ## Future Considerations
 
 - MCP server delete tool implementation (Task bees-49g)

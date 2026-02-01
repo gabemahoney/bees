@@ -12,18 +12,22 @@ __all__ = ["scan_tickets", "format_index_markdown", "generate_index", "is_index_
 
 def scan_tickets(
     status_filter: str | None = None,
-    type_filter: str | None = None
+    type_filter: str | None = None,
+    hive_name: str | None = None
 ) -> dict[str, list[Ticket]]:
     """
     Scan tickets/ directory and load all ticket metadata.
 
     Recursively scans the tickets directory structure (epics/, tasks/, subtasks/)
     and loads all ticket files, grouping them by type. Optionally filters results
-    by status and/or type.
+    by status, type, and/or hive.
 
     Args:
         status_filter: Optional status to filter by (e.g., 'open', 'completed')
         type_filter: Optional type to filter by (e.g., 'epic', 'task', 'subtask')
+        hive_name: Optional hive name to filter by (e.g., 'backend'). When provided,
+                   only returns tickets belonging to that hive. When omitted, returns
+                   tickets from all hives.
 
     Returns:
         Dictionary with keys 'epic', 'task', 'subtask' containing lists of
@@ -37,6 +41,7 @@ def scan_tickets(
         >>> tickets = scan_tickets(status_filter='open')
         >>> tickets = scan_tickets(type_filter='epic')
         >>> tickets = scan_tickets(status_filter='completed', type_filter='task')
+        >>> tickets = scan_tickets(hive_name='backend')
     """
     # Initialize result dictionary with empty lists for each type
     result: dict[str, list[Ticket]] = {
@@ -58,6 +63,17 @@ def scan_tickets(
                 continue
             if type_filter and ticket.type != type_filter:
                 continue
+
+            # Apply hive filter - check if ticket ID has hive prefix matching hive_name
+            if hive_name:
+                # Extract hive prefix from ticket ID (format: hive_name.bees-abc1)
+                if '.' in ticket.id:
+                    ticket_hive = ticket.id.split('.', 1)[0]
+                    if ticket_hive != hive_name:
+                        continue
+                else:
+                    # Skip legacy tickets without hive prefix when filtering by hive
+                    continue
 
             result[ticket.type].append(ticket)
         except Exception as e:
@@ -183,21 +199,32 @@ def is_index_stale() -> bool:
 
 def generate_index(
     status_filter: str | None = None,
-    type_filter: str | None = None
+    type_filter: str | None = None,
+    hive_name: str | None = None
 ) -> str:
     """
-    Generate complete markdown index for all tickets.
+    Generate complete markdown index for all tickets and write to disk.
 
     High-level orchestration function that scans the tickets directory,
-    loads all tickets, and formats them into a markdown index. Optionally
-    filters results by status and/or type.
+    loads all tickets, formats them into a markdown index, and writes to
+    the appropriate location. Can generate per-hive indexes or indexes
+    for all hives.
+
+    When hive_name is provided, generates and writes index only for that hive
+    to {hive_path}/index.md.
+
+    When hive_name is omitted, iterates all registered hives and generates
+    separate index.md files for each hive at their respective hive roots.
 
     Args:
         status_filter: Optional status to filter by (e.g., 'open', 'completed')
         type_filter: Optional type to filter by (e.g., 'epic', 'task', 'subtask')
+        hive_name: Optional hive name to generate index for specific hive only.
+                   If provided, generates index only for that hive.
+                   If omitted, generates indexes for all hives.
 
     Returns:
-        Complete markdown index as a string
+        Complete markdown index as a string (for single hive or last hive processed)
 
     Examples:
         >>> index_md = generate_index()
@@ -207,6 +234,62 @@ def generate_index(
         ...
         >>> open_tickets = generate_index(status_filter='open')
         >>> epics_only = generate_index(type_filter='epic')
+        >>> backend_index = generate_index(hive_name='backend')
     """
-    tickets = scan_tickets(status_filter, type_filter)
-    return format_index_markdown(tickets, include_timestamp=True)
+    from .config import load_bees_config
+    from pathlib import Path
+
+    config = load_bees_config()
+
+    if hive_name:
+        # Generate index for specific hive
+        tickets = scan_tickets(status_filter, type_filter, hive_name)
+        markdown = format_index_markdown(tickets, include_timestamp=True)
+
+        # Write to hive root directory
+        if config and hive_name in config.hives:
+            hive_path = Path(config.hives[hive_name].path)
+            index_path = hive_path / "index.md"
+            index_path.write_text(markdown)
+        else:
+            # Hive not in config - write to {cwd}/{hive_name}/index.md
+            hive_path = Path.cwd() / hive_name
+            index_path = hive_path / "index.md"
+            # Create directory if needed
+            hive_path.mkdir(parents=True, exist_ok=True)
+            index_path.write_text(markdown)
+
+        return markdown
+    else:
+        # Generate indexes for all hives
+        if not config or not config.hives:
+            # No hives configured - just return markdown without writing
+            # (backward compatibility for tests and legacy usage)
+            tickets = scan_tickets(status_filter, type_filter, None)
+            markdown = format_index_markdown(tickets, include_timestamp=True)
+            return markdown
+
+        # Iterate all hives and generate separate indexes
+        last_markdown = ""
+        for hive_name_key in config.hives:
+            tickets = scan_tickets(status_filter, type_filter, hive_name_key)
+            markdown = format_index_markdown(tickets, include_timestamp=True)
+
+            # Write to hive root directory
+            hive_path = Path(config.hives[hive_name_key].path)
+
+            # Skip if hive path doesn't exist (e.g., config from different environment)
+            if not hive_path.exists():
+                continue
+
+            index_path = hive_path / "index.md"
+            index_path.write_text(markdown)
+
+            last_markdown = markdown
+
+        # If no hives were actually written (all paths invalid), return markdown for all tickets
+        if not last_markdown:
+            tickets = scan_tickets(status_filter, type_filter, None)
+            last_markdown = format_index_markdown(tickets, include_timestamp=True)
+
+        return last_markdown
