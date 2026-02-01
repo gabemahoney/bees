@@ -9,8 +9,9 @@ from src.config import (
     Config, load_config, get_config,
     BeesConfig, HiveConfig,
     load_bees_config, save_bees_config, init_bees_config_if_needed,
-    get_config_path, ensure_bees_dir
+    get_config_path, ensure_bees_dir, validate_unique_hive_name
 )
+from src.mcp_server import normalize_name
 
 
 class TestConfig:
@@ -657,3 +658,149 @@ class TestConfigPathHelpers:
         ensure_bees_dir()  # Should not raise error
 
         assert bees_dir.exists()
+
+
+class TestNormalizeName:
+    """Test normalize_name function for hive name normalization."""
+
+    def test_normalize_name_spaces_to_underscores(self):
+        """Test 'Back End' normalizes to 'back_end'."""
+        assert normalize_name('Back End') == 'back_end'
+
+    def test_normalize_name_uppercase_to_lowercase(self):
+        """Test 'UPPERCASE' normalizes to 'uppercase'."""
+        assert normalize_name('UPPERCASE') == 'uppercase'
+
+    def test_normalize_name_multi_word(self):
+        """Test 'multi word name' normalizes to 'multi_word_name'."""
+        assert normalize_name('multi word name') == 'multi_word_name'
+
+    def test_normalize_name_mixed_case_with_spaces(self):
+        """Test 'Front End Team' normalizes to 'front_end_team'."""
+        assert normalize_name('Front End Team') == 'front_end_team'
+
+    def test_normalize_name_already_normalized(self):
+        """Test 'backend' stays 'backend'."""
+        assert normalize_name('backend') == 'backend'
+
+    def test_normalize_name_single_word_uppercase(self):
+        """Test 'API' normalizes to 'api'."""
+        assert normalize_name('API') == 'api'
+
+    def test_normalize_name_multiple_spaces(self):
+        """Test 'multiple  spaces' with double space."""
+        assert normalize_name('multiple  spaces') == 'multiple__spaces'
+
+    def test_normalize_name_trailing_spaces(self):
+        """Test 'trailing ' with trailing space."""
+        assert normalize_name('trailing ') == 'trailing_'
+
+    def test_normalize_name_leading_spaces(self):
+        """Test ' leading' with leading space."""
+        assert normalize_name(' leading') == '_leading'
+
+    def test_normalize_name_empty_string(self):
+        """Test empty string returns empty string."""
+        assert normalize_name('') == ''
+
+    def test_normalize_name_underscore_preserved(self):
+        """Test 'already_normalized' stays 'already_normalized'."""
+        assert normalize_name('already_normalized') == 'already_normalized'
+
+    def test_normalize_name_special_chars_preserved(self):
+        """Test special characters (not spaces) are preserved."""
+        # Note: normalize_name only converts spaces to underscores and lowercases
+        assert normalize_name('test-name') == 'test-name'
+        assert normalize_name('test.name') == 'test.name'
+
+
+class TestValidateUniqueHiveName:
+    """Test validate_unique_hive_name function for duplicate detection."""
+
+    def test_validate_unique_hive_name_no_config(self, tmp_path, monkeypatch):
+        """Test validation passes when no config file exists."""
+        monkeypatch.chdir(tmp_path)
+        # Should not raise - no config means name is unique
+        validate_unique_hive_name('backend')
+
+    def test_validate_unique_hive_name_empty_hives(self, tmp_path, monkeypatch):
+        """Test validation passes with empty hives dict."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig(hives={})
+        save_bees_config(config)
+
+        # Should not raise - no hives registered yet
+        validate_unique_hive_name('backend')
+
+    def test_validate_unique_hive_name_new_name(self, tmp_path, monkeypatch):
+        """Test validation passes for new unique name."""
+        monkeypatch.chdir(tmp_path)
+        hive = HiveConfig(path='tickets/frontend/', display_name='Frontend')
+        config = BeesConfig(hives={'frontend': hive})
+        save_bees_config(config)
+
+        # Should not raise - 'backend' is different from 'frontend'
+        validate_unique_hive_name('backend')
+
+    def test_validate_unique_hive_name_duplicate_normalized_name(self, tmp_path, monkeypatch):
+        """Test validation raises ValueError for duplicate normalized name."""
+        monkeypatch.chdir(tmp_path)
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End')
+        config = BeesConfig(hives={'back_end': hive})
+        save_bees_config(config)
+
+        # Should raise - 'back_end' already exists
+        with pytest.raises(ValueError, match="normalized name 'back_end' already exists"):
+            validate_unique_hive_name('back_end')
+
+    def test_validate_unique_hive_name_prevents_collision(self, tmp_path, monkeypatch):
+        """Test validation prevents 'Back End' and 'back end' collision."""
+        monkeypatch.chdir(tmp_path)
+        # Register 'Back End' (normalized to 'back_end')
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End')
+        config = BeesConfig(hives={'back_end': hive})
+        save_bees_config(config)
+
+        # Trying to register 'back end' should fail (also normalizes to 'back_end')
+        normalized = normalize_name('back end')
+        with pytest.raises(ValueError, match="normalized name 'back_end' already exists"):
+            validate_unique_hive_name(normalized)
+
+    def test_validate_unique_hive_name_multiple_hives(self, tmp_path, monkeypatch):
+        """Test validation with multiple registered hives."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig(hives={
+            'frontend': HiveConfig(path='tickets/fe/', display_name='Frontend'),
+            'backend': HiveConfig(path='tickets/be/', display_name='Backend'),
+            'api': HiveConfig(path='tickets/api/', display_name='API')
+        })
+        save_bees_config(config)
+
+        # New name should pass
+        validate_unique_hive_name('mobile')
+
+        # Existing name should fail
+        with pytest.raises(ValueError, match="normalized name 'backend' already exists"):
+            validate_unique_hive_name('backend')
+
+    def test_validate_unique_hive_name_case_insensitive_collision(self, tmp_path, monkeypatch):
+        """Test 'BACKEND' and 'backend' are treated as the same."""
+        monkeypatch.chdir(tmp_path)
+        hive = HiveConfig(path='tickets/backend/', display_name='BACKEND')
+        config = BeesConfig(hives={'backend': hive})
+        save_bees_config(config)
+
+        # Normalized 'BACKEND' is 'backend', which already exists
+        normalized = normalize_name('BACKEND')
+        with pytest.raises(ValueError, match="normalized name 'backend' already exists"):
+            validate_unique_hive_name(normalized)
+
+    def test_validate_unique_hive_name_display_name_in_error(self, tmp_path, monkeypatch):
+        """Test error message includes original display name."""
+        monkeypatch.chdir(tmp_path)
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End Services')
+        config = BeesConfig(hives={'back_end_services': hive})
+        save_bees_config(config)
+
+        with pytest.raises(ValueError, match="Display name: 'Back End Services'"):
+            validate_unique_hive_name('back_end_services')

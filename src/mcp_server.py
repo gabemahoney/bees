@@ -39,6 +39,74 @@ mcp = FastMCP("Bees Ticket Management Server")
 _server_running = False
 
 
+def normalize_name(name: str) -> str:
+    """
+    Normalize a hive name for use as a config key.
+
+    Converts spaces to underscores and lowercases the input.
+
+    Args:
+        name: Display name to normalize (e.g., 'Back End')
+
+    Returns:
+        Normalized name suitable for use as config key (e.g., 'back_end')
+
+    Example:
+        >>> normalize_name('Back End')
+        'back_end'
+        >>> normalize_name('UPPERCASE')
+        'uppercase'
+        >>> normalize_name('Multi Word Name')
+        'multi_word_name'
+    """
+    return name.replace(' ', '_').lower()
+
+
+def validate_unique_hive_name(normalized_name: str, config_path: Path | None = None) -> None:
+    """
+    Validate that a normalized hive name is unique in the config.
+
+    Checks if the normalized name already exists as a key in the hives section
+    of config.json. This prevents different display names that normalize to the
+    same key from being registered (e.g., 'Back End' and 'back end').
+
+    Args:
+        normalized_name: The normalized hive name to check (e.g., 'back_end')
+        config_path: Optional path to config.json (defaults to .bees/config.json)
+
+    Raises:
+        ValueError: If the normalized name already exists in the config
+
+    Example:
+        >>> validate_unique_hive_name('back_end')  # OK if not exists
+        >>> validate_unique_hive_name('back_end')  # Raises ValueError if exists
+    """
+    import json
+
+    if config_path is None:
+        config_path = Path('.bees/config.json')
+
+    # If config doesn't exist yet, name is unique
+    if not config_path.exists():
+        return
+
+    # Read existing config
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Could not read config.json: {e}")
+        return
+
+    # Check if hive name already exists
+    hives = config.get('hives', {})
+    if normalized_name in hives:
+        raise ValueError(
+            f"Hive name '{normalized_name}' already exists in configuration. "
+            f"Choose a different name that doesn't conflict when normalized."
+        )
+
+
 def _update_bidirectional_relationships(
     new_ticket_id: str,
     parent: str | None = None,

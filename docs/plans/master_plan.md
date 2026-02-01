@@ -82,6 +82,27 @@ Centralized configuration module with typed Config object.
 - Invalid hive data type raises ValueError
 - File write errors raise IOError
 
+**Name Normalization**:
+- `normalize_name(name: str) -> str` function in `src/mcp_server.py` converts display names to normalized keys
+- Normalization rules: spaces → underscores, convert to lowercase
+- Example: 'Back End' → 'back_end', 'Multi Word Name' → 'multi_word_name'
+- Normalized names serve as dictionary keys in config['hives']
+- Original user input preserved in HiveConfig.display_name field
+
+**Collision Prevention**:
+- `validate_unique_hive_name(normalized_name, config)` in `src/config.py` checks for duplicate normalized names
+- Prevents registration of hives with different display names that normalize to same key
+- Example: blocks 'Back End' and 'back end' (both normalize to 'back_end')
+- Raises ValueError with existing hive's display name if collision detected
+- Called during hive registration flow before saving config
+
+**Storage Architecture**:
+- Hives dictionary uses normalized names as keys: `config.hives['back_end']`
+- Each HiveConfig stores both path and display_name
+- JSON structure: `{"hives": {"back_end": {"display_name": "Back End", "path": "/path/to/hive"}}}`
+- This design enables case-insensitive, whitespace-normalized lookups while preserving user intent
+- Display names shown in UI/reports, normalized names used for internal operations
+
 
 
 

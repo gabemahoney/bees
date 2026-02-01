@@ -76,6 +76,20 @@ Bees stores hive configuration in `.bees/config.json` in the client repository r
 - `allow_cross_hive_dependencies`: Whether tickets in different hives can depend on each other
 - `schema_version`: Configuration schema version (currently "1.0")
 
+**Name Normalization:**
+
+Hive names are automatically normalized for use as configuration keys:
+- Spaces are converted to underscores
+- Names are lowercased
+- Normalized names must be unique
+
+Examples:
+- 'Back End' → 'back_end'
+- 'UPPERCASE' → 'uppercase'
+- 'Multi Word Name' → 'multi_word_name'
+
+This prevents registration of hives with different display names that would collide when normalized (e.g., 'Back End' and 'back end' both normalize to 'back_end').
+
 ## MCP Commands
 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
