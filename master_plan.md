@@ -1653,3 +1653,227 @@ This configuration system complements:
 - **Task bees-lszr**: start-mcp script integration
 
 The configuration foundation enables all subsequent HTTP transport work.
+
+## Extended Documentation Structure (Task bees-hybv)
+
+### Overview
+
+To support the goal of simplifying README.md to under 100 lines (Epic bees-ivaq), the extended documentation structure establishes a framework of dedicated documentation files. This enables migration of detailed content out of README while maintaining comprehensive documentation coverage.
+
+### Documentation Files Created
+
+Six new documentation files were created in the `docs/` directory:
+
+1. **docs/http-transport.md** - HTTP Transport
+   - Overview of HTTP transport functionality
+   - Configuration details
+   - Request/Response format specifications
+   - Error handling patterns
+
+2. **docs/configuration.md** - Configuration
+   - Claude Code configuration
+   - Server configuration options
+   - Environment variables
+   - Advanced configuration options
+
+3. **docs/troubleshooting.md** - Troubleshooting
+   - Common issues and solutions
+   - Connection problem diagnosis
+   - Debugging tips and techniques
+   - Error message reference
+
+4. **docs/api-reference.md** - API Reference
+   - Complete endpoint documentation
+   - Request format specifications
+   - Response format specifications
+   - Error codes reference
+   - Usage examples
+
+5. **docs/deployment.md** - Deployment (Completed in Epic bees-ivaq, Task bees-bloa)
+   - Background process options (nohup, screen, tmux)
+   - Process management (finding processes, graceful stop, force stop)
+   - Monitoring and logs (log file location, health checks, port checking)
+   - Production considerations (systemd service, logging, security, reverse proxy)
+
+6. **docs/integration.md** - Integration
+   - Claude Code integration guide
+   - MCP protocol details
+   - Custom client integration
+   - Migration guides (stdio to HTTP)
+
+### File Structure
+
+Each documentation file follows a consistent structure:
+
+```markdown
+# [Topic Title]
+
+## [Section 1]
+
+TODO: Content will be moved from README.md during documentation reorganization.
+
+## [Section 2]
+
+TODO: Content will be moved from README.md during documentation reorganization.
+```
+
+**Design Decisions**:
+- **Placeholder content**: Files contain section headers with TODO placeholders for future content migration
+- **Clear section structure**: Headers establish logical organization for incoming content
+- **Consistent format**: All files follow same template pattern for easier maintenance
+- **Ready for migration**: Structure prepared to receive specific content from README
+
+### README Integration
+
+The README.md was updated with an "Extended Documentation" section that references all six new documentation files:
+
+```markdown
+## Extended Documentation
+
+For more detailed information, see:
+
+- [HTTP Transport](docs/http-transport.md) - HTTP transport configuration and usage
+- [Configuration](docs/configuration.md) - Server and client configuration options
+- [Troubleshooting](docs/troubleshooting.md) - Common issues and debugging
+- [API Reference](docs/api-reference.md) - Complete API documentation
+- [Deployment](docs/deployment.md) - Production deployment and process management
+- [Integration](docs/integration.md) - MCP protocol details and custom client integration
+```
+
+**Design Decisions**:
+- **Link placement**: Section added after main content, before Examples placeholder
+- **Relative links**: Uses `docs/` relative paths for portability
+- **Brief descriptions**: Each link includes short description of file contents
+- **Clear hierarchy**: Bullet list format makes documentation options scannable
+
+### Migration Strategy
+
+The placeholder structure enables a phased migration approach:
+
+**Phase 1: Structure Creation** (This task - bees-hybv):
+- Create placeholder files with section headers
+- Add Extended Documentation section to README
+- Establish documentation architecture
+
+**Phase 2: Content Migration** (Future tasks):
+- Move HTTP transport details from README to docs/http-transport.md
+- Move configuration details from README to docs/configuration.md
+- Move troubleshooting content from README to docs/troubleshooting.md
+- Move API documentation from README to docs/api-reference.md
+- Move deployment instructions from README to docs/deployment.md
+- Move integration guides from README to docs/integration.md
+
+**Phase 3: README Simplification** (Future tasks):
+- Remove migrated content from README
+- Retain only: Overview, Installation, Quick Start, Basic Usage
+- Verify README is under 100 lines
+- Verify README is readable in under 1 minute
+
+### Benefits of Extended Documentation Structure
+
+**For Users**:
+- **Focused README**: Main documentation stays concise and scannable
+- **Deep dive available**: Detailed information accessible when needed
+- **Better navigation**: Topic-specific files easier to search and reference
+- **Progressive disclosure**: Users see overview first, explore details on demand
+
+**For Maintainers**:
+- **Clear ownership**: Each file has specific responsibility
+- **Easier updates**: Changes to HTTP transport only affect http-transport.md
+- **Reduced conflicts**: Multiple contributors can work on different doc files
+- **Better organization**: Related content grouped together
+
+**For Epic bees-ivaq**:
+- **Meets goal**: Enables README to reach under 100 lines target
+- **Preserves content**: Detailed information not lost, just relocated
+- **Maintains quality**: Documentation coverage remains comprehensive
+- **Follows best practices**: Aligns with CLAUDE.md documentation guidelines
+
+### Related Work
+
+This documentation structure complements:
+- **Epic bees-ivaq**: Parent epic for README simplification
+- **docs/plans/compact_docs.md**: Plan document that identified need for extended docs
+- **CLAUDE.md best practices**: Follows guidance for concise, focused README
+
+The extended documentation framework provides the foundation for achieving the README simplification goal while maintaining comprehensive documentation coverage.
+
+## Deployment Guide Documentation (Task bees-bloa)
+
+### Overview
+
+Task bees-bloa (part of Epic bees-ivaq) completed the migration of deployment-related content from README.md to docs/deployment.md. This task transformed the placeholder deployment documentation into a comprehensive guide covering background processes, process management, monitoring, and production deployment.
+
+### Documentation Structure
+
+The deployment guide (docs/deployment.md) is organized into four main sections:
+
+#### 1. Background Process Options
+- **nohup**: Simple background process with output redirection
+- **screen**: Terminal multiplexer with session management
+- **tmux**: Advanced terminal multiplexer with detach/reattach
+
+Each option includes concrete command examples and usage instructions for Unix/Linux/macOS environments.
+
+#### 2. Process Management
+- Finding server processes (ps aux, lsof)
+- Graceful shutdown with kill (SIGTERM)
+- Force stop with kill -9 (SIGKILL)
+- Best practices for stopping the server safely
+
+#### 3. Monitoring and Logs
+- Log file location (~/.bees/mcp.log)
+- Real-time log watching (tail -f)
+- Process checking commands
+- Health endpoint testing (curl)
+- Port usage verification (lsof, netstat)
+
+#### 4. Production Considerations
+- Systemd service configuration for auto-restart
+- Logging configuration recommendations
+- Security considerations for HTTP port exposure
+- Firewall rules and network access control
+- Reverse proxy setup (nginx example with authentication)
+
+### Content Migration
+
+Content was extracted from README.md and enhanced:
+- **Lines 105-143 (README.md)**: Background process section (nohup, screen, tmux, log file location)
+- **Enhanced with**: Process management commands not previously in README
+- **Enhanced with**: Monitoring commands and health check procedures
+- **Enhanced with**: Production deployment best practices (systemd, security, reverse proxy)
+
+The README.md now contains a single line reference at line 105:
+```markdown
+See [docs/deployment.md](docs/deployment.md) for background process setup and management.
+```
+
+### Relationship to README Simplification
+
+This task directly supports Epic bees-ivaq (Simplify README) by:
+- **Removing 39 lines** from README.md (background process section)
+- **Adding deployment reference link** for users who need deployment guidance
+- **Preserving information** in dedicated deployment guide
+- **Enabling README focus** on quick start and basic usage
+
+The deployment guide is also referenced in the "Extended Documentation" section of README.md (line 243), providing discoverability for users exploring detailed documentation.
+
+### Documentation Quality
+
+The deployment guide follows documentation best practices:
+- **Progressive disclosure**: Basic options (nohup) presented before advanced (systemd)
+- **Copy-pasteable commands**: All examples can be directly copied and executed
+- **Platform-specific**: Clearly labeled Unix/Linux/macOS instructions
+- **Security-conscious**: Emphasizes localhost binding and authentication
+- **Production-ready**: Includes systemd, logging, and reverse proxy configurations
+
+### Integration with Epic bees-ivaq
+
+This task is part of the broader README simplification effort:
+- **Parent Epic**: bees-ivaq (Simplify README to follow documentation best practices)
+- **Prerequisite for**: Task bees-zxs9 (Rewrite README to minimal quick start)
+- **Content extracted**: Background processes, monitoring, process management
+- **Lines removed**: 39 lines from README.md
+- **Goal alignment**: Moves README toward <100 lines target
+
+The deployment guide provides a permanent home for deployment content, ensuring users can still access this information after README simplification is complete.
