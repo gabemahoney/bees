@@ -55,9 +55,15 @@ Bees supports multiple "hives" - separate ticket collections within your reposit
 **Hive Structure:**
 
 Each hive contains:
-- `/eggs` - Reserved for future features
-- `/evicted` - Archived/completed tickets
-- `/.hive` - Identity marker for automatic recovery if the hive is moved
+- `/eggs` - Reserved for future features (e.g., ticket templates, pre-configured workflows)
+- `/evicted` - Archived/completed tickets for historical reference
+- `/.hive/identity.json` - Identity marker file containing hive metadata for automatic recovery if the hive is moved
+
+The `.hive/identity.json` file contains:
+- `normalized_name` - The normalized hive identifier
+- `display_name` - The original display name
+- `created_at` - ISO 8601 timestamp of when the hive was created
+- `version` - Hive format version (currently "1.0.0")
 
 **Configuration:**
 
@@ -133,6 +139,33 @@ All path resolution requires hive-prefixed IDs:
 
 ## MCP Commands
 
+- **colonize_hive** - `name, path`
+  - Creates a new hive with validation and registration
+  - **Parameters:**
+    - `name` (required): Display name for the hive (e.g., 'Back End')
+    - `path` (required): Absolute path to hive directory (must exist and be within repository)
+  - **Returns:**
+    - On success: `{'status': 'success', 'normalized_name': str, 'display_name': str, 'path': str, 'message': str}`
+    - On error: `{'status': 'error', 'message': str, 'error_type': str, 'validation_details': dict}`
+  - **Validation:**
+    - Path must be absolute (not relative)
+    - Path must exist and be within git repository root
+    - Normalized hive name must be unique across all hives
+    - Name must contain at least one alphanumeric character
+  - **Hive Structure Created:**
+    - `/eggs` - Directory for future features
+    - `/evicted` - Directory for archived tickets
+    - `/.hive/identity.json` - Identity marker with hive metadata
+  - **Registration:**
+    - Automatically registers hive in `.bees/config.json`
+    - Creates config file if it doesn't exist
+  - **Error Cases:**
+    - `validation_error`: Name normalizes to empty string
+    - `path_validation_error`: Path is relative, doesn't exist, or outside repository
+    - `duplicate_name_error`: Normalized name already registered
+    - `filesystem_error`: Directory creation failed (permissions, disk full)
+    - `config_error`: Failed to update config.json
+
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
   - **`hive_name` parameter is REQUIRED for all ticket creation**
   - All new tickets must specify a hive; generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
@@ -155,6 +188,14 @@ All path resolution requires hive-prefixed IDs:
 ### Examples
 
 ```python
+# Colonize a new hive
+colonize_hive(name="Back End", path="/Users/user/projects/myrepo/tickets/backend")
+# Returns: {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', 'path': '...'}
+
+# Colonize with validation error (invalid path)
+colonize_hive(name="Frontend", path="relative/path")
+# Returns: {'status': 'error', 'error_type': 'path_validation_error', 'message': '...'}
+
 # Create an epic (hive_name is required)
 create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout", hive_name="backend")
 

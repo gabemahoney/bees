@@ -106,6 +106,177 @@ Centralized configuration module with typed Config object.
 - This design enables case-insensitive, whitespace-normalized lookups while preserving user intent
 - Display names shown in UI/reports, normalized names used for internal operations
 
+### Hive Directory Structure (Task bees-55b6)
+
+**Purpose**: Establish standardized directory layout for hive file organization and provide identity markers for hive recovery when directories are moved.
+
+**Architecture Decision**: Three-Subdirectory Layout
+- Design choice: Each hive contains `/eggs`, `/evicted`, and `/.hive` subdirectories with specific purposes
+- Rationale: Separates future features from archived tickets, provides identity tracking for resilient path management
+- Benefits: Clean organization, automatic hive recovery via markers, extensibility for future features
+- Alternative rejected: Single flat directory would mix active and archived tickets, complicate cleanup
+
+**Directory Structure**:
+```
+{hive_path}/
+  ├── eggs/           # Reserved for future features (templates, workflows)
+  ├── evicted/        # Archived/completed tickets for historical reference
+  ├── .hive/          # Identity marker directory
+  │   └── identity.json  # Hive metadata for recovery
+  ├── epics/          # Epic tickets
+  ├── tasks/          # Task tickets
+  └── subtasks/       # Subtask tickets
+```
+
+**Subdirectory Purposes**:
+- `/eggs`: Reserved namespace for future feature expansion (e.g., ticket templates, pre-configured workflows, automation scripts)
+- `/evicted`: Storage for archived or completed tickets, enabling historical reference without cluttering active ticket directories
+- `/.hive/identity.json`: Identity marker containing hive metadata for automatic path recovery if hive is moved
+
+**Identity Marker Format** (`/.hive/identity.json`):
+```json
+{
+  "normalized_name": "back_end",
+  "display_name": "Back End",
+  "created_at": "2026-02-01T13:15:30.123456",
+  "version": "1.0.0"
+}
+```
+
+**Metadata Fields**:
+- `normalized_name`: Normalized hive identifier for config lookups (e.g., "back_end")
+- `display_name`: Original user-provided display name (e.g., "Back End")
+- `created_at`: ISO 8601 timestamp of hive creation for auditing
+- `version`: Hive format version for future schema evolution (currently "1.0.0")
+
+**Implementation** (`src/mcp_server.py`):
+- `colonize_hive(name: str, path: str) -> Dict[str, Any]` creates directory structure
+- Uses `pathlib.Path.mkdir(parents=True, exist_ok=True)` for idempotent directory creation
+- Error handling: Catches and re-raises `PermissionError` and `OSError` with informative messages
+- Creates identity marker with metadata immediately after directory creation
+
+**Error Handling Strategy**:
+- Each directory creation wrapped in separate try/except blocks
+- Errors include context about which directory failed and why
+- Permission errors distinguished from general OS errors for clearer debugging
+- All errors logged via standard logging module before re-raising
+
+**Idempotency**:
+- `exist_ok=True` parameter ensures repeated colonization calls don't fail
+- Safe to call `colonize_hive()` multiple times on same path
+- Existing directories and marker files are preserved, not overwritten
+- Second call overwrites `.hive/identity.json` with fresh timestamp (acceptable design choice)
+
+**Integration with Hive Recovery** (`scan_for_hive()` in `src/mcp_server.py`):
+- Recursively scans repository for `.hive/identity.json` markers
+- Extracts `normalized_name` from marker to identify moved hives
+- Updates `.bees/config.json` with recovered hive path automatically
+- Enables automatic path recovery when hives are moved within repository
+
+**Error Handling for Config Updates** (Task bees-4rxaq):
+- When `scan_for_hive()` finds a moved hive, it attempts to update `.bees/config.json` with the new path
+- Previously: Config update failures were logged but silently suppressed, leading to config inconsistencies
+- Now: Config update failures raise exceptions after logging, ensuring callers are aware of issues
+- Exception types caught and re-raised: `IOError`, `json.JSONDecodeError`, `AttributeError`
+- Design rationale: Fail-fast approach prevents config drift when filesystem or JSON errors occur
+- Callers must handle exceptions appropriately, ensuring config consistency is maintained
+- Exception flow: log error → re-raise → caller handles (cannot continue with stale config)
+- Security benefit: Prevents silent config corruption that could lead to incorrect hive routing
+
+**Design Rationale - Directory Layout**:
+- `/eggs` provides forward compatibility without schema changes
+- `/evicted` separates completed work from active tickets, improving scan performance
+- `.hive/identity.json` enables self-describing directories independent of config.json
+- Marker file approach more resilient than relying solely on path-based configuration
+
+**Test Coverage** (`tests/test_colonize_hive.py`):
+- 25 tests passing covering directory creation, marker creation, error handling
+- Tests verify idempotent behavior, parent directory creation, metadata format
+- Error handling tests confirm `PermissionError` and `OSError` raised with informative messages
+- Marker tests validate all required metadata fields (normalized_name, display_name, created_at, version)
+
+### Hive Colonization Orchestration (Task bees-cv08)
+
+**Purpose**: Provide a single entry point for hive creation that orchestrates validation, directory structure creation, and registration in config.json.
+
+**Architecture Decision**: Orchestration Layer Pattern
+- Design choice: `colonize_hive()` acts as an orchestration function that calls config system validation rather than implementing validation inline
+- Rationale: Separation of concerns - validation logic lives in config module, orchestration coordinates the workflow
+- Benefits: Testable validation logic, reusable validation functions, clear error propagation, consistent return structure
+- Alternative rejected: Implementing all validation inline would duplicate code and mix concerns
+
+**Function Signature**:
+```python
+def colonize_hive(name: str, path: str) -> Dict[str, Any]
+```
+
+**Orchestration Flow**:
+1. **Name Normalization** - Calls `normalize_hive_name(name)` from `id_utils.py`
+   - Returns error if name normalizes to empty string
+   - Uses single source of truth for name normalization across system
+
+2. **Path Validation** - Calls `get_repo_root()` and `validate_hive_path(path, repo_root)` from `mcp_server.py`
+   - Validates path is absolute (not relative)
+   - Validates path exists on filesystem
+   - Validates path is within git repository boundaries
+   - Returns normalized path with symlinks resolved
+
+3. **Duplicate Name Check** - Calls `validate_unique_hive_name(normalized_name)` from `config.py`
+   - Checks normalized name against existing hives in config
+   - Prevents 'Back End' and 'back end' both being registered (normalize to same key)
+   - Raises ValueError with existing hive's display name if collision detected
+
+4. **Directory Structure Creation** - Creates `/eggs`, `/evicted`, and `/.hive` directories
+   - Uses `Path.mkdir(parents=True, exist_ok=True)` for idempotent creation
+   - Returns error dict (not exception) on filesystem errors
+   - Writes `identity.json` with normalized name, display name, timestamp, version
+
+5. **Config Registration** - Calls `init_bees_config_if_needed()` and `save_bees_config(config)`
+   - Creates `.bees/config.json` if first hive
+   - Adds hive entry with normalized name as key
+   - Stores HiveConfig with path and display_name
+   - Returns error dict on config save failure
+
+**Return Structure**:
+- Success: `{'status': 'success', 'message': str, 'normalized_name': str, 'display_name': str, 'path': str}`
+- Error: `{'status': 'error', 'message': str, 'error_type': str, 'validation_details': dict}`
+
+**Error Types**:
+- `validation_error`: Name normalizes to empty string (no alphanumeric characters)
+- `path_validation_error`: Path is relative, doesn't exist, or outside repository root
+- `duplicate_name_error`: Normalized name already exists in hive registry
+- `filesystem_error`: Directory creation failed (PermissionError, OSError)
+- `config_error`: Failed to write `.bees/config.json` (IOError)
+- `unexpected_error`: Catch-all for uncaught exceptions (includes exception type and message)
+
+**Design Decisions**:
+- **Error dicts instead of exceptions**: Enables consistent error handling in MCP tools, provides structured validation details to clients
+- **Orchestration not implementation**: Validation logic lives in config module where it can be tested and reused independently
+- **Explicit validation steps**: Each validation step is a separate function call with clear responsibility
+- **Try/except at orchestration level**: Catches all exceptions and wraps in consistent error dict structure
+- **Config system integration**: Uses config module functions rather than direct file manipulation
+
+**Integration with Config System** (Epic bees-gkxz):
+- `normalize_hive_name()` from `id_utils.py` - Single source of truth for name normalization
+- `validate_hive_path()` from `mcp_server.py` - Validates absolute paths within repository
+- `validate_unique_hive_name()` from `config.py` - Prevents duplicate normalized names
+- `init_bees_config_if_needed()` from `config.py` - Creates config on first use
+- `save_bees_config()` from `config.py` - Persists hive registration to disk
+
+**Test Coverage** (`tests/test_colonize_hive.py`):
+- 33 tests total passing (19 integration, 6 scan_for_hive, 8 unit tests)
+- Unit tests (TestColonizeHiveOrchestrationUnit): Mock config system calls, verify orchestration logic
+- Integration tests (TestColonizeHive): Real filesystem operations with git repo fixture
+- Test cases: successful colonization, empty name error, invalid path errors, duplicate name error, filesystem errors, config errors
+- All tests verify consistent error/success return structure with validation_details
+
+**Why Orchestration Pattern**:
+- Keeps `colonize_hive()` focused on workflow coordination
+- Validation logic testable in isolation (config module unit tests)
+- Error handling centralized at orchestration layer
+- Easy to add new validation steps (just call another function)
+- MCP tools get consistent error structure across all operations
+
 ### Hive ID System
 
 **Purpose**: Namespace ticket IDs by hive to prevent collisions and enable multi-hive support within a single repository.

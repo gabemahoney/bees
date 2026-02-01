@@ -20,7 +20,7 @@ from .query_storage import save_query, load_query, list_queries, validate_query
 from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
-from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig, BeesConfig
+from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig, BeesConfig, init_bees_config_if_needed
 from .id_utils import normalize_hive_name
 
 # Ensure log directory exists
@@ -211,7 +211,7 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
     # Load config to check for registered hives
     # Use provided config if available to avoid redundant disk reads
     registered_hives = set()
-    if config and config.hives:
+    if config:
         # Config was provided, use it directly
         registered_hives = set(config.hives.keys())
     elif config is None:
@@ -252,35 +252,37 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
         try:
             with open(identity_file, 'r') as f:
                 identity_data = json.load(f)
-                marker_name = identity_data.get('normalized_name')
-
-                if marker_name == name:
-                    # Found the hive we're looking for
-                    found_hive_path = hive_marker_path.parent
-                    logger.info(f"Found hive '{name}' at {found_hive_path}")
-
-                    # Update config.json with the recovered path
-                    try:
-                        config = load_bees_config()
-                        if name in config.hives:
-                            config.hives[name].path = str(found_hive_path)
-                            save_bees_config(config)
-                            logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
-                        else:
-                            logger.warning(f"Hive '{name}' not found in config, cannot update path")
-                    except (IOError, json.JSONDecodeError, AttributeError) as e:
-                        logger.error(f"Failed to update config.json for hive '{name}': {e}")
-
-                    return found_hive_path
-                elif marker_name not in registered_hives:
-                    # Found an orphaned .hive marker
-                    logger.warning(
-                        f"Found orphaned .hive marker for '{marker_name}' at {hive_marker_path.parent}. "
-                        f"Not registered in config.json."
-                    )
         except (json.JSONDecodeError, IOError, KeyError) as e:
             logger.warning(f"Could not read identity from {identity_file}: {e}")
             continue
+
+        marker_name = identity_data.get('normalized_name')
+
+        if marker_name == name:
+            # Found the hive we're looking for
+            found_hive_path = hive_marker_path.parent
+            logger.info(f"Found hive '{name}' at {found_hive_path}")
+
+            # Update config.json with the recovered path
+            try:
+                config = load_bees_config()
+                if config and name in config.hives:
+                    config.hives[name].path = str(found_hive_path)
+                    save_bees_config(config)
+                    logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
+                else:
+                    logger.warning(f"Hive '{name}' not found in config, cannot update path")
+            except (IOError, json.JSONDecodeError, AttributeError) as e:
+                logger.error(f"Failed to update config.json for hive '{name}': {e}")
+                raise
+
+            return found_hive_path
+        elif marker_name not in registered_hives:
+            # Found an orphaned .hive marker
+            logger.warning(
+                f"Found orphaned .hive marker for '{marker_name}' at {hive_marker_path.parent}. "
+                f"Not registered in config.json."
+            )
 
     return found_hive_path
 
@@ -289,56 +291,204 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
 
-    Sets up the necessary directories for a hive, including subdirectories
-    for ticket organization (/eggs for future features, /evicted for completed tickets).
-    Creates a .hive marker folder containing identity data for hive recovery.
+    This is an orchestration function that coordinates validation and hive setup:
+    - Normalizes the hive display name using the config system
+    - Validates the path is absolute, exists, and within the repo
+    - Checks for duplicate normalized hive names in the registry
+    - Creates the hive directory structure (/eggs, /evicted, .hive marker)
+    - Registers the hive in .bees/config.json
 
     Args:
         name: Display name for the hive (e.g., 'Back End')
         path: Absolute path where the hive should be created
 
     Returns:
-        dict: Status information including normalized name and hive path
-
-    Raises:
-        ValueError: If path is invalid or hive creation fails
+        dict: Success/error status with validation details
+            On success: {
+                'status': 'success',
+                'message': 'Hive created successfully',
+                'normalized_name': str,
+                'display_name': str,
+                'path': str
+            }
+            On error: {
+                'status': 'error',
+                'message': str,
+                'error_type': str,
+                'validation_details': dict
+            }
 
     Example:
         >>> colonize_hive('Back End', '/Users/user/projects/myrepo/tickets')
-        {'status': 'success', 'hive_name': 'back_end', 'hive_path': '/Users/user/projects/myrepo/tickets'}
+        {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', ...}
     """
-    hive_path = Path(path)
-    normalized_name = normalize_hive_name(name)
+    try:
+        # Step 1: Normalize hive name using config system
+        normalized_name = normalize_hive_name(name)
+        logger.info(f"Normalized hive name '{name}' to '{normalized_name}'")
 
-    # Create /eggs subdirectory for future feature storage
-    eggs_path = hive_path / "eggs"
-    eggs_path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Created /eggs directory at {eggs_path}")
+        if not normalized_name:
+            return {
+                "status": "error",
+                "message": "Invalid hive name: normalizes to empty string",
+                "error_type": "validation_error",
+                "validation_details": {
+                    "field": "name",
+                    "provided_value": name,
+                    "reason": "Name contains no alphanumeric characters"
+                }
+            }
 
-    # Create /evicted subdirectory for completed/archived tickets
-    evicted_path = hive_path / "evicted"
-    evicted_path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Created /evicted directory at {evicted_path}")
+        # Step 2: Validate path using config system
+        try:
+            repo_root = get_repo_root()
+            validated_path = validate_hive_path(path, repo_root)
+            logger.info(f"Validated hive path: {validated_path}")
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_type": "path_validation_error",
+                "validation_details": {
+                    "field": "path",
+                    "provided_value": path,
+                    "reason": str(e)
+                }
+            }
 
-    # Create .hive marker folder with identity data
-    hive_marker_path = hive_path / ".hive"
-    hive_marker_path.mkdir(exist_ok=True)
+        # Step 3: Check for duplicate normalized names using config system
+        try:
+            validate_unique_hive_name(normalized_name)
+            logger.info(f"Validated unique hive name: {normalized_name}")
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": str(e),
+                "error_type": "duplicate_name_error",
+                "validation_details": {
+                    "field": "name",
+                    "normalized_name": normalized_name,
+                    "display_name": name,
+                    "reason": str(e)
+                }
+            }
 
-    # Store hive identity in marker file
-    identity_data = {
-        "normalized_name": normalized_name,
-        "display_name": name
-    }
-    identity_file = hive_marker_path / "identity.json"
-    with open(identity_file, 'w') as f:
-        json.dump(identity_data, f, indent=2)
-    logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
+        # Step 4: Create hive directory structure
+        # Create /eggs subdirectory for future feature storage
+        eggs_path = validated_path / "eggs"
+        try:
+            eggs_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created /eggs directory at {eggs_path}")
+        except (PermissionError, OSError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to create /eggs directory: {e}",
+                "error_type": "filesystem_error",
+                "validation_details": {
+                    "operation": "create_eggs_dir",
+                    "path": str(eggs_path),
+                    "reason": str(e)
+                }
+            }
 
-    return {
-        "status": "success",
-        "hive_name": normalized_name,
-        "hive_path": str(hive_path)
-    }
+        # Create /evicted subdirectory for completed/archived tickets
+        evicted_path = validated_path / "evicted"
+        try:
+            evicted_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created /evicted directory at {evicted_path}")
+        except (PermissionError, OSError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to create /evicted directory: {e}",
+                "error_type": "filesystem_error",
+                "validation_details": {
+                    "operation": "create_evicted_dir",
+                    "path": str(evicted_path),
+                    "reason": str(e)
+                }
+            }
+
+        # Create .hive marker folder with identity data
+        hive_marker_path = validated_path / ".hive"
+        try:
+            hive_marker_path.mkdir(exist_ok=True)
+        except (PermissionError, OSError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to create .hive marker directory: {e}",
+                "error_type": "filesystem_error",
+                "validation_details": {
+                    "operation": "create_hive_marker",
+                    "path": str(hive_marker_path),
+                    "reason": str(e)
+                }
+            }
+
+        # Store hive identity in marker file
+        identity_data = {
+            "normalized_name": normalized_name,
+            "display_name": name,
+            "created_at": datetime.now().isoformat(),
+            "version": "1.0.0"
+        }
+        identity_file = hive_marker_path / "identity.json"
+        try:
+            with open(identity_file, 'w') as f:
+                json.dump(identity_data, f, indent=2)
+            logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
+        except (PermissionError, OSError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to write .hive identity file: {e}",
+                "error_type": "filesystem_error",
+                "validation_details": {
+                    "operation": "write_identity_file",
+                    "path": str(identity_file),
+                    "reason": str(e)
+                }
+            }
+
+        # Step 5: Register hive in config.json
+        try:
+            config = init_bees_config_if_needed()
+            config.hives[normalized_name] = HiveConfig(
+                path=str(validated_path),
+                display_name=name
+            )
+            save_bees_config(config)
+            logger.info(f"Registered hive '{normalized_name}' in config.json")
+        except (IOError, ValueError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to register hive in config: {e}",
+                "error_type": "config_error",
+                "validation_details": {
+                    "operation": "save_config",
+                    "reason": str(e)
+                }
+            }
+
+        # Success!
+        return {
+            "status": "success",
+            "message": "Hive created and registered successfully",
+            "normalized_name": normalized_name,
+            "display_name": name,
+            "path": str(validated_path)
+        }
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        logger.error(f"Unexpected error in colonize_hive: {e}")
+        return {
+            "status": "error",
+            "message": f"Unexpected error: {e}",
+            "error_type": "unexpected_error",
+            "validation_details": {
+                "exception_type": type(e).__name__,
+                "exception_message": str(e)
+            }
+        }
 
 
 def _update_bidirectional_relationships(
