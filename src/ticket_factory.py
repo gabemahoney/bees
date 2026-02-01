@@ -10,6 +10,7 @@ from .writer import write_ticket_file
 
 def create_epic(
     title: str,
+    hive_name: str,
     description: str = "",
     labels: list[str] | None = None,
     up_dependencies: list[str] | None = None,
@@ -18,7 +19,6 @@ def create_epic(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    hive_name: str | None = None,
 ) -> str:
     """
     Create an Epic ticket with YAML frontmatter.
@@ -33,7 +33,7 @@ def create_epic(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
-        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
+        hive_name: Hive name to prefix the ID with (required, e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -46,14 +46,15 @@ def create_epic(
         ...     title="Implement Auth System",
         ...     description="Build user authentication",
         ...     labels=["security", "backend"],
-        ... )
-        >>> epic_id.startswith("bees-")
-        True
-        >>> epic_id = create_epic(
-        ...     title="Backend API",
         ...     hive_name="backend",
         ... )
         >>> epic_id.startswith("backend.bees-")
+        True
+        >>> epic_id = create_epic(
+        ...     title="Frontend Dashboard",
+        ...     hive_name="frontend",
+        ... )
+        >>> epic_id.startswith("frontend.bees-")
         True
     """
     if not title:
@@ -62,7 +63,7 @@ def create_epic(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_all_hives()
-        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
+        ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
     frontmatter_data = {
@@ -97,6 +98,7 @@ def create_epic(
 
 def create_task(
     title: str,
+    hive_name: str,
     description: str = "",
     parent: str | None = None,
     labels: list[str] | None = None,
@@ -106,7 +108,6 @@ def create_task(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    hive_name: str | None = None,
 ) -> str:
     """
     Create a Task ticket with YAML frontmatter.
@@ -122,7 +123,7 @@ def create_task(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
-        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
+        hive_name: Hive name to prefix the ID with (required, e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -133,10 +134,11 @@ def create_task(
     Examples:
         >>> task_id = create_task(
         ...     title="Build login API",
-        ...     parent="bees-250",
+        ...     parent="backend.bees-250",
         ...     labels=["backend"],
+        ...     hive_name="backend",
         ... )
-        >>> task_id.startswith("bees-")
+        >>> task_id.startswith("backend.bees-")
         True
         >>> task_id = create_task(
         ...     title="Create API endpoint",
@@ -151,7 +153,7 @@ def create_task(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_all_hives()
-        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
+        ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
     frontmatter_data = {
@@ -189,6 +191,7 @@ def create_task(
 def create_subtask(
     title: str,
     parent: str,
+    hive_name: str,
     description: str = "",
     labels: list[str] | None = None,
     up_dependencies: list[str] | None = None,
@@ -197,7 +200,6 @@ def create_subtask(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    hive_name: str | None = None,
 ) -> str:
     """
     Create a Subtask ticket with YAML frontmatter.
@@ -213,7 +215,7 @@ def create_subtask(
         priority: Priority level (0-4)
         status: Status string (default: "open")
         ticket_id: Optional specific ID to use (auto-generated if not provided)
-        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
+        hive_name: Hive name to prefix the ID with (required, e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         The created ticket ID
@@ -224,14 +226,15 @@ def create_subtask(
     Examples:
         >>> subtask_id = create_subtask(
         ...     title="Write login endpoint",
-        ...     parent="bees-abc",
+        ...     parent="backend.bees-abc",
         ...     labels=["backend"],
+        ...     hive_name="backend",
         ... )
-        >>> subtask_id.startswith("bees-")
+        >>> subtask_id.startswith("backend.bees-")
         True
         >>> subtask_id = create_subtask(
         ...     title="Create helper function",
-        ...     parent="bees-abc",
+        ...     parent="backend.bees-abc",
         ...     hive_name="backend",
         ... )
         >>> subtask_id.startswith("backend.bees-")
@@ -245,7 +248,7 @@ def create_subtask(
     # Generate unique ID if not provided
     if ticket_id is None:
         existing_ids = extract_existing_ids_from_all_hives()
-        ticket_id = generate_unique_ticket_id(existing_ids, hive_name=hive_name)
+        ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
     frontmatter_data = {

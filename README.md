@@ -97,48 +97,39 @@ Example configuration:
 }
 ```
 
-**Note:** All tickets are stored in hive-specific directories. The legacy `tickets/` directory is no longer supported.
+**Note:** All tickets are stored in hive-specific directories.
 
 ### Ticket ID Format
 
-All new tickets use the hive-prefixed format: `hive_name.bees-abc1`
+All tickets use the hive-prefixed format: `hive_name.bees-abc1`
 
 - The hive name is normalized and prefixed to the ID
 - Example: `backend.bees-abc1`, `front_end.bees-xyz9`
 - **REQUIRED:** The `hive_name` parameter is mandatory for all `create_ticket()` calls
 - Omitting `hive_name` will result in a `ValueError`
 
-**Legacy Format Removed (Feb 2026):** `bees-abc1` is NO LONGER SUPPORTED
-- Legacy unprefixed IDs (e.g., `bees-abc1`) are no longer supported
-- All tickets must have hive-prefixed IDs (e.g., `backend.bees-abc1`)
-- The `hive_name` parameter is REQUIRED for all ticket creation operations
-- Path resolution rejects legacy IDs without hive prefix
-
 **ID Parsing:**
 
 The `parse_ticket_id()` utility function splits ticket IDs to extract the hive name and base ID:
 
 ```python
-# Hive-prefixed ID (REQUIRED)
+# Hive-prefixed ID format
 parse_ticket_id("backend.bees-abc1")  # Returns: ("backend", "bees-abc1")
-
-# Legacy ID (NO LONGER SUPPORTED - returns empty hive, will fail path resolution)
-parse_ticket_id("bees-abc1")  # Returns: ("", "bees-abc1")
 
 # Multiple dots (splits on first dot only)
 parse_ticket_id("multi.dot.bees-xyz")  # Returns: ("multi", "dot.bees-xyz")
 ```
 
 The parser handles edge cases:
-- Returns empty string `""` for hive name when no dot present (legacy format)
 - Splits on the first dot only, preserving dots in base ID
 - Raises `ValueError` for `None` or empty string inputs
 
 **Path Resolution:**
 
 All path resolution requires hive-prefixed IDs:
-- Hive-prefixed IDs: `/path/to/{hive_name}/epics/{hive_name}.bees-abc1.md`
-- Legacy IDs without hive prefix are REJECTED with ValueError
+- Format: `/path/to/{hive_name}/epics/{hive_name}.bees-abc1.md`
+- Unprefixed IDs (e.g., `bees-abc1`) are not supported and will raise `ValueError`
+- All ticket IDs must include the hive prefix separated by a dot (e.g., `backend.bees-abc1`)
 
 ## MCP Commands
 

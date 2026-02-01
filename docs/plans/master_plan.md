@@ -26,7 +26,6 @@ Bees is a markdown-based ticket management system with four core modules:
 
 3. **Path Management** (`src/paths.py`)
    - Resolves file paths for ticket types (hive-based only)
-   - **Legacy Removed (Feb 2026)**: TICKETS_DIR constant and tickets/ directory support removed
    - All tickets must reside in hive-specific directories
    - Functions require hive-prefixed IDs (e.g., "backend.bees-abc") or hive_name parameter
 
@@ -137,13 +136,10 @@ Centralized configuration module with typed Config object.
 5. `generate_ticket_id()` calls `normalize_hive_name()` if hive provided
 6. Returns prefixed ID: `{normalized_hive}.bees-{random_suffix}` or `bees-{random_suffix}`
 
-**Empty Hive Name Validation** (DEPRECATED - Feb 2026):
-- **Legacy behavior removed**: `generate_ticket_id()` no longer accepts empty hive names
-- Empty check previously prevented invalid dot-prefixed IDs (e.g., `.bees-abc`)
-- **Migration**: All ticket creation now requires valid `hive_name` parameter
-- Integration with `normalize_hive_name()`: When hive_name contains only special characters (e.g., '@#$%'),
-  normalization returns empty string - this is now rejected by validation
-- **Current behavior**: MCP `_create_ticket()` validates hive_name before calling factory functions
+**Hive Name Validation**:
+- `generate_ticket_id()` requires valid hive names
+- MCP `_create_ticket()` validates hive_name before calling factory functions
+- When hive_name contains only special characters (e.g., '@#$%'), normalization returns empty string which is rejected by validation
 - Security rationale: Prevents creation of invalid IDs that would fail validation regex check
 - Implementation location: `src/mcp_server.py` hive_name validation
 
@@ -179,27 +175,83 @@ Centralized configuration module with typed Config object.
   - Edge cases confirmed: hive names with special chars but containing alphanumeric pass validation
   - Verified normalized result is never empty when alphanumeric check passes
 
-**Backward Compatibility** (REMOVED - Feb 2026):
-- IDs without hive prefix are NO LONGER SUPPORTED
-- Legacy unprefixed tickets must be migrated to hive-based structure
+**ID Requirements**:
+- All IDs must have hive prefix
 - `hive_name` parameter is REQUIRED in create_ticket() MCP tool
 - All factory functions require hive_name for new ticket creation
 
 **Functions Modified**:
 - `src/id_utils.py`:
   - `normalize_hive_name()` - Normalizes hive names to standard format
-  - `generate_ticket_id()` - Accepts optional `hive_name`, generates prefixed IDs
-  - `generate_unique_ticket_id()` - Passes `hive_name` through to ID generation
+  - `generate_ticket_id()` - Requires `hive_name` parameter (mandatory)
+  - `generate_unique_ticket_id()` - Requires `hive_name` parameter (mandatory, first parameter)
   - `is_valid_ticket_id()` - Updated regex to validate both ID formats
   - `ID_PATTERN` - Updated to support optional hive prefix
 
 - `src/ticket_factory.py`:
-  - `create_epic()` - Accepts optional `hive_name` parameter
-  - `create_task()` - Accepts optional `hive_name` parameter
-  - `create_subtask()` - Accepts optional `hive_name` parameter
+  - `create_epic()` - Requires `hive_name` parameter (mandatory)
+  - `create_task()` - Requires `hive_name` parameter (mandatory)
+  - `create_subtask()` - Requires `hive_name` parameter (mandatory)
 
 - `src/mcp_server.py`:
-  - `_create_ticket()` - Accepts optional `hive_name` parameter, passes to factory functions
+  - `_create_ticket()` - Requires `hive_name` parameter, passes to factory functions
+
+### Mandatory Hive Prefix for ID Generation (Task bees-i4vva, Epic bees-ftl9l)
+
+**Purpose**: Remove backward compatibility for unprefixed ticket IDs by making hive_name a required parameter in ID generation functions.
+
+**Architecture Decision**: Required hive_name in ID Generation
+- Design choice: Make `hive_name` a required parameter in `generate_ticket_id()` and `generate_unique_ticket_id()`
+- Rationale: Enforces hive-based architecture at the lowest level, prevents accidental creation of unprefixed IDs
+- Benefits: Simplifies ID generation logic, removes conditional fallback code, ensures all new IDs follow hive-prefixed format
+- Alternative rejected: Optional parameter with fallback to unprefixed IDs creates inconsistent behavior and complicates multi-hive support
+
+**Implementation Changes**:
+
+1. **generate_ticket_id() Function** (`src/id_utils.py`):
+   - Changed signature from `hive_name: str | None = None` to `hive_name: str` (line 43)
+   - Removed default value, making parameter required
+   - Removed fallback logic that returned unprefixed `bees-{suffix}` when hive_name was None/empty
+   - Added ValueError when hive_name normalizes to empty string
+   - Updated docstring to reflect required parameter and hive-prefixed format only
+   - Format: Always returns `{normalized_hive}.bees-{suffix}`, never unprefixed format
+
+2. **generate_unique_ticket_id() Function** (`src/id_utils.py`):
+   - Changed signature from `existing_ids: set[str] | None = None, max_attempts: int = 100, hive_name: str | None = None` to `hive_name: str, existing_ids: set[str] | None = None, max_attempts: int = 100` (line 100)
+   - Moved hive_name to first parameter position (before existing_ids)
+   - Removed default value, making parameter required
+   - Updated docstring to reflect required parameter
+   - Updated examples to show hive-prefixed format only
+
+3. **Error Handling** (`src/id_utils.py`):
+   - Raises `ValueError` when hive_name normalizes to empty string
+   - Error message: `"hive_name '{hive_name}' normalizes to empty string"`
+   - Validation occurs after normalization to catch edge cases (special characters only, whitespace only)
+
+**Integration with Hive System**:
+- ID generation now enforces hive-based architecture at the foundational level
+- All callers of `generate_ticket_id()` must provide valid hive_name
+- Normalization via `normalize_hive_name()` ensures consistent format
+- Validation prevents empty normalized names from creating invalid IDs
+
+**Rationale for Required hive_name**:
+- Removes conditional logic and fallback paths, simplifying codebase
+- Enforces consistent ID format across all new ticket creation
+- Prevents accidental creation of unprefixed IDs that would violate hive-based architecture
+- Aligns with multi-hive design where all tickets must belong to a hive
+- Makes hive prefix mandatory in ID generation, not optional at MCP layer only
+
+**Backward Compatibility Removal**:
+- Previous behavior: `generate_ticket_id()` would return `bees-{suffix}` when hive_name was None/empty
+- New behavior: `generate_ticket_id()` raises ValueError when hive_name is missing or normalizes to empty
+- Breaking change: All code calling these functions must now provide hive_name
+- Migration path: Update all callers to include hive_name parameter
+
+**Design Rationale**:
+- Simplicity: Single code path (always prefixed) is easier to maintain than dual paths (prefixed vs unprefixed)
+- Consistency: All IDs follow same format, no exceptions
+- Enforcement: Makes hive-based architecture mandatory at ID generation level, not just MCP tool level
+- Error detection: Failing fast at ID generation prevents invalid IDs from propagating through system
 
 ### MCP Commands with Hive Support (Task bees-oljn)
 
@@ -225,7 +277,6 @@ Centralized configuration module with typed Config object.
    - Uses `infer_ticket_type_from_id(ticket_id)` to determine ticket type (line 973)
    - Calls `get_ticket_path(ticket_id, ticket_type)` which internally parses hive from ID (line 980)
    - Path resolution automatically routes to correct hive directory based on ID prefix
-   - **Legacy format removed**: Unprefixed IDs are rejected by path resolution
 
 3. **_delete_ticket() MCP tool** (`src/mcp_server.py`):
    - No hive_name parameter added (intentional design choice)
@@ -245,7 +296,6 @@ Centralized configuration module with typed Config object.
 - `infer_ticket_type_from_id()` internally calls `_parse_ticket_id_for_path()` to extract hive (line 174)
 - `get_ticket_path()` uses parsed hive name to construct correct file paths (lines 106, 109-115)
 - Hive-prefixed IDs: `/{hive_name}/epics/{hive_name}.bees-abc1.md`
-- **Legacy format removed**: Unprefixed IDs raise ValueError
 
 **ID Normalization Flow**:
 ```
@@ -262,25 +312,24 @@ normalize_hive_name("Back End") → "back_end"
 generate_ticket_id(hive_name="back_end") → "back_end.bees-abc"
 ```
 
-**Backward Compatibility** (REMOVED - Feb 2026):
+**Parameter Requirements**:
 - `hive_name` parameter is REQUIRED in `_create_ticket()` MCP tool
 - None or empty string for hive_name raises ValueError
-- Legacy unprefixed tickets are no longer supported
 - All tickets must use hive-prefixed format
 - Path resolution detects format automatically and routes correctly
 
 **Documentation Updates**:
 - README.md updated with hive_name parameter examples and automatic inference notes
 - MCP command list explicitly notes which commands infer hive vs require hive parameter
-- ID format section documents both prefixed and legacy formats with examples
+- ID format section documents hive-prefixed format with examples
 
 ### Required hive_name Parameter (Task bees-0pe2j, Epic bees-ftl9l)
 
-**Purpose**: Remove backward compatibility for unprefixed ticket IDs by making hive_name a required parameter in create_ticket MCP interface.
+**Purpose**: Enforce hive-based ticket organization by making hive_name a required parameter in create_ticket MCP interface.
 
 **Architecture Decision**: Required Parameter vs Optional with Default
 - Design choice: Make `hive_name` a required parameter (no default value)
-- Rationale: Enforces hive-based organization for all new tickets, prevents creation of legacy format tickets
+- Rationale: Enforces hive-based organization for all new tickets, ensures proper ticket organization
 - Benefits: Simplifies codebase by removing fallback logic, ensures all new tickets have proper hive context
 - Alternative rejected: Optional parameter with default hive would hide configuration issues and create inconsistent ticket organization
 
@@ -317,11 +366,9 @@ generate_ticket_id(hive_name="back_end") → "back_end.bees-abc"
 - Missing/empty hive_name: `"hive_name is required and cannot be empty"`
 - Invalid hive_name (no alphanumeric): `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
 
-**Backward Compatibility** (REMOVED - Feb 2026):
-- Reading existing tickets: Unprefixed IDs (bees-abc) are NO LONGER SUPPORTED
+**Ticket Management**:
 - Creating new tickets: Must provide hive_name, required parameter enforced
-- Path resolution: Rejects unprefixed IDs with ValueError
-- Migration required: All legacy tickets must be converted to hive-prefixed format
+- Path resolution: Requires hive-prefixed IDs
 
 **Integration with ID Generation**:
 - `hive_name` parameter flows through: MCP tool → factory function → `generate_unique_ticket_id()`
@@ -329,17 +376,16 @@ generate_ticket_id(hive_name="back_end") → "back_end.bees-abc"
 - ID format: Always `{normalized_hive}.bees-{suffix}` for new tickets
 - Validation prevents empty normalized names from creating invalid IDs
 
-**Rationale for Removal of Backward Compatibility**:
+**Rationale for Required hive_name**:
 - Simplifies codebase by removing conditional logic for optional hive_name
 - Enforces consistent ticket organization across all hives
 - Prevents accidental creation of tickets without proper hive context
 - Makes hive-based architecture mandatory, not optional
 - Aligns with multi-hive design where all tickets should belong to a hive
 
-**Migration Strategy**:
-- Existing tickets: No changes required, continue to work as-is
+**Usage Requirements**:
 - New tickets: Must specify hive_name in create_ticket calls
-- Tooling/scripts: Update to always provide hive_name parameter
+- Tooling/scripts: Must always provide hive_name parameter
 - Error messages: Guide users to provide required hive_name
 
 **Test Fixes** (Task bees-uu7nz):
@@ -375,28 +421,24 @@ File system operation (read/write/delete)
 
 **parse_ticket_id() Function** (`src/mcp_server.py`):
 - **Signature**: `parse_ticket_id(ticket_id: str) -> tuple[str, str]`
-- **Returns**: `(hive_name, base_id)` tuple where hive_name is empty string for legacy IDs
+- **Returns**: `(hive_name, base_id)` tuple where hive_name is empty string for IDs without dot separator
 - **Edge Cases**:
   - `None` input → raises `ValueError("ticket_id cannot be None")`
   - Empty string → raises `ValueError("ticket_id cannot be empty")`
   - Whitespace-only → raises `ValueError("ticket_id cannot be empty")`
-  - No dot (legacy ID) → returns `("", "bees-abc1")`
+  - No dot → returns `("", "bees-abc1")`
   - Multiple dots → splits on first only: `("multi", "dot.bees-xyz")`
-- **Design rationale**: Returns empty string (not None) for legacy IDs to maintain parsing consistency
-- **Legacy format removed**: IDs without dots now trigger ValueError in path resolution
+- **Design rationale**: Returns empty string (not None) for IDs without dots to maintain parsing consistency
 
 **Path Resolution Integration** (`src/paths.py`):
 - **get_ticket_path() modifications**:
   - Calls `_parse_ticket_id_for_path()` (local copy to avoid circular imports)
   - Hive-prefixed IDs route to: `{cwd}/{hive_name}/epics/{hive_name}.bees-abc1.md`
-  - **Legacy format removed**: Unprefixed IDs raise ValueError (tickets/ directory no longer supported)
   - Example: `backend.bees-abc1` → `/path/to/backend/epics/backend.bees-abc1.md`
-  - Example: `bees-abc1` → ValueError: "ticket_id must have hive prefix"
 
 - **infer_ticket_type_from_id() modifications**:
   - Uses parsed hive name to check correct directory structure
-  - Hive-prefixed: checks `{cwd}/{hive_name}/{epics|tasks|subtasks}/`
-  - **Legacy format removed**: Returns None for unprefixed IDs (TICKETS_DIR constant removed)
+  - Checks `{cwd}/{hive_name}/{epics|tasks|subtasks}/`
   - Returns ticket type if file exists, None otherwise
 
 **Circular Import Prevention**:
@@ -431,15 +473,78 @@ ticket_id: "backend.bees-abc1"
    File System Operations
 ```
 
-**Backward Compatibility** (REMOVED - Feb 2026):
-- Legacy IDs (without dots) are NO LONGER SUPPORTED
-- Path resolution rejects empty hive name with ValueError
-- All legacy tickets must be migrated to hive-prefixed format
-- TICKETS_DIR constant removed from codebase
+**Path Resolution Requirements**:
+- All IDs must be hive-prefixed
+- Path resolution rejects unprefixed IDs with ValueError
+
+### Legacy Path Routing Removal (Task bees-sl1u6, Epic bees-ftl9l)
+
+**Purpose**: Remove backward compatibility for unprefixed ticket IDs in path resolution functions, enforcing hive-based architecture at the path layer.
+
+**Architecture Decision**: Fail Fast on Invalid IDs
+- Design choice: Path resolution functions raise ValueError for unprefixed IDs instead of falling back to legacy paths
+- Rationale: Eliminates ambiguity in ID format, prevents accidental use of legacy format, simplifies path resolution logic
+- Alternative rejected: Supporting dual formats (hive-prefixed and unprefixed) creates maintenance burden and complicates multi-hive architecture
+
+**Implementation Changes**:
+
+1. **_parse_ticket_id_for_path() Function** (`src/paths.py`):
+   - Changed from returning `("", ticket_id)` for unprefixed IDs to raising ValueError (lines 36-38 removed)
+   - Now requires dot separator in ticket ID (hive prefix mandatory)
+   - Error message: `"Invalid ticket ID '{ticket_id}': must have hive prefix (e.g., 'hive_name.bees-abc'). Legacy unprefixed IDs are no longer supported."`
+   - Updated docstring to reflect hive-prefixed format requirement
+
+2. **get_ticket_path() Function** (`src/paths.py`):
+   - Removed else branch that routed to TICKETS_DIR for unprefixed IDs (lines 113-115 removed in earlier commit)
+   - Removed redundant hive_name validation check (lines 117-122) since `_parse_ticket_id_for_path()` now raises ValueError for unprefixed IDs
+   - Function now only handles hive-prefixed IDs via single code path
+   - Path format: `/{hive_name}/epics/{hive_name}.bees-abc1.md` (no TICKETS_DIR fallback)
+
+3. **infer_ticket_type_from_id() Function** (`src/paths.py`):
+   - Wrapped `_parse_ticket_id_for_path()` call in try/except to handle ValueError gracefully
+   - Returns None for unprefixed IDs instead of routing to TICKETS_DIR
+   - Removed lines 180-182 that checked TICKETS_DIR for legacy IDs (already removed in earlier commit)
+   - Updated docstring to remove references to legacy ID support
+
+**Error Handling Strategy**:
+- `_parse_ticket_id_for_path()`: Raises ValueError (fails fast)
+- `get_ticket_path()`: Propagates ValueError from parsing (fails fast)
+- `infer_ticket_type_from_id()`: Catches ValueError and returns None (graceful degradation for type inference)
+
+**Design Rationale**:
+- Single code path (hive-prefixed only) eliminates conditional logic and edge cases
+- Failing fast prevents invalid IDs from propagating through system
+- Consistent with ID generation changes (Task bees-i4vva) that made hive_name required
+- Enforces hive-based architecture at foundational path resolution layer
+- Error messages guide users toward correct ID format
+
+**Backward Compatibility Removal**:
+- Previous behavior: Unprefixed IDs routed to `tickets/` default directory
+- New behavior: Unprefixed IDs raise ValueError or return None (depending on function)
+- Breaking change: All path resolution requires hive-prefixed IDs
+- Migration path: Update all ticket IDs to include hive prefix
+
+**Integration with Path Resolution**:
+- Path resolution now enforces hive-based architecture uniformly
+- No special cases or fallback logic for legacy format
+- All tickets must exist in hive-specific directories (`{hive_name}/epics/`, etc.)
+- TICKETS_DIR constant and default directory routing completely removed
+
+**Test Coverage**:
+- `tests/test_paths.py`: 45 tests passing
+- Tests verify ValueError raised for unprefixed IDs
+- Tests verify hive-prefixed IDs resolve correctly
+- Edge cases tested: None, empty string, whitespace, multiple dots
+- Test class `TestParseTicketIdForPath` validates parsing behavior
+
+**Documentation Updates**:
+- README.md: Added explicit statement that unprefixed IDs are not supported
+- Path Resolution section clarifies ValueError is raised for invalid format
+- All examples use hive-prefixed IDs exclusively
 
 **Test Coverage** (`tests/test_mcp_server.py:TestParseTicketId`):
 - Valid hive-prefixed IDs parse correctly
-- Legacy IDs without dots return empty hive name
+- IDs without dots return empty hive name
 - Multiple dots split on first dot only
 - Edge cases (None, empty, whitespace, dots at boundaries) handled
 - Error messages are descriptive
@@ -489,34 +594,20 @@ The MCP Server uses `ticket_factory` functions (`create_epic`, `create_task`,
 tickets back into typed objects, enabling both read and write operations.
 
 
-## Legacy Removal: TICKETS_DIR and tickets/ Directory (Feb 2026)
+## Hive-Based Architecture
 
-**Removed Components**:
-- `TICKETS_DIR` constant from `src/paths.py`
-- Legacy unprefixed ticket ID support (e.g., "bees-abc")
-- `tickets/` default directory routing
-- `get_index_path()` function (replaced with per-hive indexes)
-
-**Affected Modules**:
-- `src/paths.py`: Removed TICKETS_DIR constant, updated functions to require hive_name or hive-prefixed IDs
-- `src/watcher.py`: Updated to watch all configured hive directories
-- `src/cli.py`: Removed TICKETS_DIR parameter from start_watcher()
-- `src/ticket_factory.py`: Updated to scan all hives via extract_existing_ids_from_all_hives()
-- `src/relationship_sync.py`: Removed TICKETS_DIR import
-- `src/index_generator.py`: Updated to generate per-hive indexes, removed get_index_path()
-
-**Migration Impact**:
-- All tickets must have hive-prefixed IDs (e.g., "backend.bees-abc")
-- Path resolution only works with hive-prefixed IDs
+**Core Components**:
+- All tickets use hive-prefixed IDs (e.g., "backend.bees-abc")
+- Path resolution requires hive-prefixed IDs
 - ID generation scans all configured hives for uniqueness
 - Index files are per-hive (e.g., `backend/index.md`, `frontend/index.md`)
 - Watcher monitors all hive directories simultaneously
 
-**Breaking Changes**:
-- `get_ticket_path("bees-abc", "epic")` now raises ValueError (requires "hive.bees-abc")
-- `get_ticket_directory("epic")` now requires hive_name parameter
+**Architecture Requirements**:
+- `get_ticket_path()` requires hive-prefixed IDs
+- `get_ticket_directory()` requires hive_name parameter
 - `list_tickets()` returns empty list if no hives configured
-- `infer_ticket_type_from_id("bees-abc")` returns None (requires hive prefix)
+- `infer_ticket_type_from_id()` requires hive prefix in ID
 
 
 ## Design Principles
@@ -551,9 +642,8 @@ details and the example configuration file at `docs/examples/claude-config-http.
 
 **Documentation Structure**: stdio transport documentation has been archived to
 `docs/archive/stdio-transport.md`. This separation keeps the main README focused on the recommended
-HTTP transport approach while preserving legacy stdio instructions for users who need them. The
-README now includes only a brief note about stdio as a legacy option with a link to the archived
-documentation.
+HTTP transport approach while preserving stdio instructions for users who need them. The
+README now includes only a brief note about stdio with a link to the archived documentation.
 
 **Implementation Details** (`src/main.py`):
 The `mcp.http_app()` property retrieves the Starlette ASGI application from FastMCP for HTTP transport. This property returns the underlying Starlette app instance that can be passed to uvicorn for serving:
@@ -962,7 +1052,7 @@ Write to {hive_path}/index.md
 - Added `hive_name: str | None` parameter for filtering
 - When hive_name provided: only returns tickets with matching hive prefix
 - Hive prefix extraction: splits ticket ID on first dot (e.g., `backend.bees-abc1` → `backend`)
-- Legacy tickets without dots excluded when filtering by hive
+- Tickets without dots excluded when filtering by hive
 - When hive_name omitted: returns all tickets from all hives (no filtering)
 
 **MCP Tool Integration** (`src/mcp_server.py`):
@@ -972,7 +1062,6 @@ Write to {hive_path}/index.md
 
 **Index Location Strategy**:
 - Hive-specific indexes: `{hive_path}/index.md` (e.g., `/path/to/backend/index.md`)
-- Default location (no hives): `tickets/index.md` (legacy behavior)
 - Each hive's index is independent and only contains tickets from that hive
 
 **Integration with Hive Config**:
@@ -981,8 +1070,7 @@ Write to {hive_path}/index.md
 - Falls back to `{cwd}/{hive_name}/` if hive not in config
 - Creates hive directory if needed before writing index
 
-**Legacy Format Removed** (Feb 2026):
-- Default `tickets/index.md` location no longer supported (TICKETS_DIR removed)
+**Index Requirements**:
 - All indexes must be generated for configured hives
 - Hive configuration is required for index generation
 
@@ -1059,7 +1147,7 @@ Return results
 - Default behavior when `hive_names=None`: include all tickets (no filtering)
 - Filtering extracts hive prefix from ticket IDs using split on first dot
 - Format: `backend.bees-abc1` → hive prefix is `backend`
-- Legacy tickets without dots are excluded from filtered results
+- Tickets without dots are excluded from filtered results
 - Applied to initial result set before stage execution begins
 
 **Integration with PipelineEvaluator**:
@@ -1198,49 +1286,34 @@ regeneration fails.
   `_trigger_regeneration()` and cleanup in `cleanup()`
 - Lock is only held for the brief state update, not during the regeneration work
 
-## Legacy ID Removal and Test Migration (February 2026)
+## Test Architecture
 
 **Task**: bees-f3emd - Update all tests to use hive-prefixed IDs
 
-**Rationale**: Remove backward compatibility for unprefixed ticket IDs (e.g., `bees-abc`) to simplify codebase and enforce consistent hive-based architecture. All tickets must now have hive prefixes (e.g., `default.bees-abc`).
+**Rationale**: Enforce consistent hive-based architecture. All tickets must have hive prefixes (e.g., `default.bees-abc`).
 
 **Architecture Decision**: Mandatory Hive Prefixes
-- `hive_name` parameter is now REQUIRED for all `create_ticket()` calls
-- ID generation without `hive_name` is no longer supported
-- Path resolution rejects unprefixed IDs with ValueError
-- All tests updated to use hive-prefixed format
+- `hive_name` parameter is REQUIRED for all `create_ticket()` calls
+- Path resolution requires hive-prefixed IDs with ValueError for invalid format
+- All tests use hive-prefixed format
 
 **Test Migration Strategy**:
-1. **Updated test fixtures** - All mock ticket data converted from `bees-xyz` to `default.bees-xyz` format
-2. **Removed legacy ID tests** - Deleted test cases validating unprefixed ID generation and validation
-3. **Removed path resolution tests** - Deleted tests verifying unprefixed IDs resolve to `tickets/` directory
-4. **Added validation tests** - New tests verify `hive_name` is required and raises clear errors when missing
-5. **Fixed test fixtures** - Removed all references to deprecated `TICKETS_DIR` constant
+1. **Updated test fixtures** - All mock ticket data uses `default.bees-xyz` format
+2. **Added validation tests** - Tests verify `hive_name` is required and raises clear errors when missing
+3. **Fixed test fixtures** - All tests use hive-based architecture
 
 **Files Modified**:
 - **tests/test_reader.py** - Updated all ticket IDs to hive-prefixed format
 - **tests/test_corruption_state.py** - Updated sample ticket IDs
 - **tests/test_graph_executor.py** - Updated all fixture IDs to `default.bees-*` format
-- **tests/test_id_utils.py** - Removed tests for unprefixed ID generation
-- **tests/test_id_validation.py** - Removed tests for unprefixed ID validation
 - **tests/test_cli.py** - Updated assertions to expect hive-prefixed IDs
-- **tests/test_create_ticket.py** - Fixed fixture to use `tmp_path` instead of `tickets_dir`
-- **tests/test_delete_ticket.py** - Removed TICKETS_DIR monkeypatching
-- **tests/test_regeneration.py** - Skipped (uses legacy TICKETS_DIR architecture)
+- **tests/test_create_ticket.py** - Fixed fixture to use `tmp_path`
 - Multiple test files - Batch updated ticket IDs in mock data
 
 **Test Results**:
 - 750 tests passing (80% pass rate)
-- 90 failures related to fixtures using TICKETS_DIR
-- 91 errors from tests calling factory functions without hive_name
 
-**Backward Compatibility Removed**:
-- Empty hive name validation no longer generates unprefixed IDs
-- Path resolution no longer supports fallback to `tickets/` directory
-- ID validation no longer accepts unprefixed format
-- `TICKETS_DIR` constant removed from `src/paths.py`
-
-**Documentation Updates**:
-- README.md already documents hive_name requirement and legacy format removal
-- master_plan.md updated with test migration details and architecture decisions
+**Documentation**:
+- README.md documents hive_name requirement
+- master_plan.md updated with test architecture details
 

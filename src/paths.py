@@ -15,13 +15,13 @@ def _parse_ticket_id_for_path(ticket_id: str) -> tuple[str, str]:
     between paths.py and mcp_server.py.
 
     Args:
-        ticket_id: Ticket ID string (e.g., 'backend.bees-abc1' or 'bees-abc1')
+        ticket_id: Ticket ID string (must have hive prefix, e.g., 'backend.bees-abc1')
 
     Returns:
-        tuple[str, str]: (hive_name, base_id) where hive_name is empty string for legacy IDs
+        tuple[str, str]: (hive_name, base_id)
 
     Raises:
-        ValueError: If ticket_id is None or empty string
+        ValueError: If ticket_id is None, empty string, or lacks hive prefix (no dot separator)
     """
     if ticket_id is None:
         raise ValueError("ticket_id cannot be None")
@@ -29,13 +29,16 @@ def _parse_ticket_id_for_path(ticket_id: str) -> tuple[str, str]:
     if not ticket_id or not ticket_id.strip():
         raise ValueError("ticket_id cannot be empty")
 
+    # Require hive-prefixed format
+    if '.' not in ticket_id:
+        raise ValueError(
+            f"Invalid ticket ID '{ticket_id}': must have hive prefix (e.g., 'hive_name.bees-abc'). "
+            f"Legacy unprefixed IDs are no longer supported."
+        )
+
     # Split on first dot only
-    if '.' in ticket_id:
-        hive_name, _, base_id = ticket_id.partition('.')
-        return (hive_name, base_id)
-    else:
-        # Legacy format without hive prefix
-        return ('', ticket_id)
+    hive_name, _, base_id = ticket_id.partition('.')
+    return (hive_name, base_id)
 
 
 def get_ticket_directory(ticket_type: TicketType, hive_name: str | None = None) -> Path:
@@ -108,17 +111,10 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
     if not ticket_id:
         raise ValueError("ticket_id cannot be empty")
 
-    # Parse ticket ID to extract hive name
+    # Parse ticket ID to extract hive name (raises ValueError if unprefixed)
     hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
 
-    # Require hive-prefixed ID
-    if not hive_name:
-        raise ValueError(
-            f"Invalid ticket ID '{ticket_id}': must have hive prefix (e.g., 'hive_name.bees-abc'). "
-            f"Legacy unprefixed IDs are no longer supported."
-        )
-
-    # Hive-prefixed ID: use hive-specific directory
+    # Use hive-specific directory
     # Path structure: /path/to/{hive_name}/epics/{hive_name}.bees-abc1.md
     base_dir = Path.cwd() / hive_name
 
@@ -160,11 +156,10 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
     """
     Infer ticket type from its ID by checking which directory contains the ticket file.
 
-    Supports both hive-prefixed IDs (hive_name.bees-abc1) and legacy IDs (bees-abc1).
-    Uses parsed hive name to route to correct hive directory.
+    Requires hive-prefixed IDs (e.g., 'hive_name.bees-abc1').
 
     Args:
-        ticket_id: The ticket ID (e.g., "backend.bees-250" or "bees-250")
+        ticket_id: The ticket ID (must have hive prefix, e.g., "backend.bees-250")
 
     Returns:
         The ticket type ('epic', 'task', or 'subtask') if found, None if not found
@@ -173,23 +168,20 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
         >>> infer_ticket_type_from_id("backend.bees-250")
         'epic'
 
-        >>> infer_ticket_type_from_id("bees-250")
-        'epic'
-
         >>> infer_ticket_type_from_id("nonexistent-id")
         None
     """
     if not ticket_id:
         return None
 
-    # Parse ticket ID to extract hive name
-    hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
-
-    # Require hive-prefixed ID
-    if not hive_name:
+    try:
+        # Parse ticket ID to extract hive name (raises ValueError if unprefixed)
+        hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
+    except ValueError:
+        # Invalid ticket ID format
         return None
 
-    # Hive-prefixed ID: check hive-specific directories
+    # Check hive-specific directories
     base_dir = Path.cwd() / hive_name
 
     # Map ticket type to subdirectory (plural form)

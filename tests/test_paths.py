@@ -8,7 +8,50 @@ from src.paths import (
     ensure_ticket_directory_exists,
     list_tickets,
     infer_ticket_type_from_id,
+    _parse_ticket_id_for_path,
 )
+
+
+class TestParseTicketIdForPath:
+    """Tests for _parse_ticket_id_for_path function (requires hive-prefixed IDs)."""
+
+    def test_parses_hive_prefixed_id(self):
+        """Should parse hive-prefixed ID into hive_name and base_id."""
+        hive_name, base_id = _parse_ticket_id_for_path("backend.bees-abc1")
+        assert hive_name == "backend"
+        assert base_id == "bees-abc1"
+
+    def test_parses_id_with_multiple_dots(self):
+        """Should split on first dot only."""
+        hive_name, base_id = _parse_ticket_id_for_path("my.hive.bees-xyz")
+        assert hive_name == "my"
+        assert base_id == "hive.bees-xyz"
+
+    def test_rejects_unprefixed_id(self):
+        """Should raise ValueError for unprefixed (legacy) IDs."""
+        with pytest.raises(ValueError, match="must have hive prefix"):
+            _parse_ticket_id_for_path("bees-abc1")
+
+    def test_rejects_none(self):
+        """Should raise ValueError for None."""
+        with pytest.raises(ValueError, match="ticket_id cannot be None"):
+            _parse_ticket_id_for_path(None)  # type: ignore
+
+    def test_rejects_empty_string(self):
+        """Should raise ValueError for empty string."""
+        with pytest.raises(ValueError, match="ticket_id cannot be empty"):
+            _parse_ticket_id_for_path("")
+
+    def test_rejects_whitespace_only(self):
+        """Should raise ValueError for whitespace-only string."""
+        with pytest.raises(ValueError, match="ticket_id cannot be empty"):
+            _parse_ticket_id_for_path("   ")
+
+    def test_handles_hive_name_with_numbers(self):
+        """Should handle hive names containing numbers."""
+        hive_name, base_id = _parse_ticket_id_for_path("hive123.bees-abc")
+        assert hive_name == "hive123"
+        assert base_id == "bees-abc"
 
 
 class TestGetTicketDirectory:

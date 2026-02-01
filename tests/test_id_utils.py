@@ -212,7 +212,7 @@ class TestGenerateUniqueTicketIdWithHive:
     def test_generate_unique_with_hive(self):
         """Should generate unique ID with hive prefix."""
         existing = {"backend.bees-abc", "backend.bees-123"}
-        ticket_id = generate_unique_ticket_id(existing, hive_name="backend")
+        ticket_id = generate_unique_ticket_id(hive_name="backend", existing_ids=existing)
         assert ticket_id not in existing
         assert ticket_id.startswith("backend.bees-")
         assert is_valid_ticket_id(ticket_id)
@@ -223,7 +223,7 @@ class TestGenerateUniqueTicketIdWithHive:
         existing = {f"backend.bees-{i:03x}" for i in range(100)}
 
         # Generate new ID that doesn't collide
-        ticket_id = generate_unique_ticket_id(existing, hive_name="backend")
+        ticket_id = generate_unique_ticket_id(hive_name="backend", existing_ids=existing)
         assert ticket_id not in existing
 
     def test_hive_namespacing(self):
@@ -231,7 +231,7 @@ class TestGenerateUniqueTicketIdWithHive:
         existing = {"backend.bees-abc"}
 
         # Same base ID but different hive should not count as collision
-        ticket_id = generate_unique_ticket_id(existing, hive_name="frontend")
+        ticket_id = generate_unique_ticket_id(hive_name="frontend", existing_ids=existing)
         # Could be frontend.bees-abc since backend.bees-abc doesn't conflict
 
     def test_max_attempts_exceeded(self):
@@ -244,7 +244,7 @@ class TestGenerateUniqueTicketIdWithHive:
         # Patch generate_ticket_id to always return an ID that's already in existing
         with patch('src.id_utils.generate_ticket_id', return_value="backend.bees-abc"):
             with pytest.raises(RuntimeError, match="Failed to generate unique ticket ID"):
-                generate_unique_ticket_id(existing, hive_name="backend", max_attempts=10)
+                generate_unique_ticket_id(hive_name="backend", existing_ids=existing, max_attempts=10)
 
 
 class TestExtractExistingIdsFromAllHives:
@@ -346,3 +346,92 @@ class TestExtractExistingIdsFromAllHives:
         ids = extract_existing_ids_from_all_hives()
         assert len(ids) == 1
         assert "backend.bees-abc" in ids
+
+
+class TestRequiredHiveNameValidation:
+    """Tests for required hive_name parameter validation in ID generation functions."""
+
+    def test_generate_ticket_id_requires_hive_name(self):
+        """Should raise ValueError when hive_name normalizes to empty string."""
+        # Test with special characters only (normalizes to empty)
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="@#$%")
+
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="!!!")
+
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="***&&&")
+
+    def test_generate_ticket_id_empty_string(self):
+        """Should raise ValueError for empty string hive_name."""
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="")
+
+    def test_generate_ticket_id_accepts_valid_names(self):
+        """Should accept valid hive names that normalize successfully."""
+        # Valid names should work
+        ticket_id = generate_ticket_id(hive_name="backend")
+        assert ticket_id.startswith("backend.bees-")
+
+        ticket_id = generate_ticket_id(hive_name="BackEnd")
+        assert ticket_id.startswith("backend.bees-")
+
+        ticket_id = generate_ticket_id(hive_name="My Hive")
+        assert ticket_id.startswith("my_hive.bees-")
+
+    def test_generate_unique_ticket_id_requires_hive_name(self):
+        """Should raise ValueError when hive_name normalizes to empty string."""
+        existing = set()
+
+        # Test with special characters only (normalizes to empty)
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_unique_ticket_id(hive_name="@#$%", existing_ids=existing)
+
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_unique_ticket_id(hive_name="!!!", existing_ids=existing)
+
+    def test_generate_unique_ticket_id_empty_string(self):
+        """Should raise ValueError for empty string hive_name."""
+        existing = set()
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_unique_ticket_id(hive_name="", existing_ids=existing)
+
+    def test_generate_unique_ticket_id_accepts_valid_names(self):
+        """Should accept valid hive names that normalize successfully."""
+        existing = {"backend.bees-abc"}
+
+        # Valid names should work
+        ticket_id = generate_unique_ticket_id(hive_name="backend", existing_ids=existing)
+        assert ticket_id.startswith("backend.bees-")
+        assert ticket_id not in existing
+
+        ticket_id = generate_unique_ticket_id(hive_name="frontend", existing_ids=existing)
+        assert ticket_id.startswith("frontend.bees-")
+
+    def test_error_message_includes_original_hive_name(self):
+        """Error messages should include the original invalid hive_name."""
+        with pytest.raises(ValueError, match="hive_name '@#\\$%' normalizes to empty string"):
+            generate_ticket_id(hive_name="@#$%")
+
+        with pytest.raises(ValueError, match="hive_name '!!!' normalizes to empty string"):
+            generate_ticket_id(hive_name="!!!")
+
+    def test_edge_cases_unicode_normalization(self):
+        """Should handle unicode characters that normalize to empty."""
+        # Japanese characters (no alphanumeric) normalize to empty
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="日本")
+
+        # Emoji (no alphanumeric) normalizes to empty
+        with pytest.raises(ValueError, match="normalizes to empty string"):
+            generate_ticket_id(hive_name="🚀🎉")
+
+    def test_mixed_content_with_alphanumeric(self):
+        """Should accept hive names with special chars if they contain alphanumeric."""
+        # These should work because they have alphanumeric content
+        ticket_id = generate_ticket_id(hive_name="back@end")
+        assert ticket_id.startswith("backend.bees-")
+
+        ticket_id = generate_ticket_id(hive_name="my#hive")
+        assert ticket_id.startswith("myhive.bees-")

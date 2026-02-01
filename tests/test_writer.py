@@ -19,36 +19,37 @@ class TestIdGeneration:
     """Tests for ID generation functions."""
 
     def test_generate_ticket_id_format(self):
-        """Should generate ID in correct format."""
-        ticket_id = generate_ticket_id()
-        assert ticket_id.startswith("bees-")
-        assert len(ticket_id) == 8  # bees- (5) + 3 chars
+        """Should generate ID in correct format with hive prefix."""
+        ticket_id = generate_ticket_id(hive_name="default")
+        assert ticket_id.startswith("default.bees-")
+        assert len(ticket_id) == 16  # default. (8) + bees- (5) + 3 chars
         assert is_valid_ticket_id(ticket_id)
 
     def test_generate_ticket_id_uniqueness(self):
         """Should generate different IDs on multiple calls."""
-        ids = [generate_ticket_id() for _ in range(100)]
+        ids = [generate_ticket_id(hive_name="default") for _ in range(100)]
         # Should have high uniqueness (though not guaranteed 100% with small space)
         assert len(set(ids)) > 90
 
     def test_is_valid_ticket_id_valid_cases(self):
         """Should accept valid ticket IDs."""
-        assert is_valid_ticket_id("bees-250")
-        assert is_valid_ticket_id("bees-abc")
-        assert is_valid_ticket_id("bees-9pw")
-        assert is_valid_ticket_id("bees-xyz")
-        assert is_valid_ticket_id("bees-000")
+        assert is_valid_ticket_id("default.bees-250")
+        assert is_valid_ticket_id("backend.bees-abc")
+        assert is_valid_ticket_id("my_hive.bees-9pw")
+        assert is_valid_ticket_id("test.bees-xyz")
+        assert is_valid_ticket_id("hive_v2.bees-000")
 
     def test_is_valid_ticket_id_invalid_cases(self):
         """Should reject invalid ticket IDs."""
-        assert not is_valid_ticket_id("bees-UPPER")  # uppercase not allowed
-        assert not is_valid_ticket_id("bees-1234")   # too long
-        assert not is_valid_ticket_id("bees-12")     # too short
-        assert not is_valid_ticket_id("invalid-250") # wrong prefix
-        assert not is_valid_ticket_id("bees-")       # missing suffix
-        assert not is_valid_ticket_id("250")         # missing prefix
-        assert not is_valid_ticket_id("")            # empty
-        assert not is_valid_ticket_id("bees-ab!")    # special char
+        assert not is_valid_ticket_id("default.bees-UPPER")  # uppercase not allowed
+        assert not is_valid_ticket_id("default.bees-1234")   # too long
+        assert not is_valid_ticket_id("default.bees-12")     # too short
+        assert not is_valid_ticket_id("invalid-250")         # wrong format
+        assert not is_valid_ticket_id("default.bees-")       # missing suffix
+        assert not is_valid_ticket_id("250")                 # missing prefix
+        assert not is_valid_ticket_id("")                    # empty
+        assert not is_valid_ticket_id("default.bees-ab!")    # special char
+        assert not is_valid_ticket_id("bees-250")            # unprefixed (legacy format)
 
     def test_is_valid_ticket_id_handles_none(self):
         """Should handle None gracefully."""
@@ -56,19 +57,19 @@ class TestIdGeneration:
 
     def test_generate_unique_ticket_id_no_collisions(self):
         """Should not generate IDs in existing set."""
-        existing = {"bees-250", "bees-abc", "bees-xyz"}
-        new_id = generate_unique_ticket_id(existing)
+        existing = {"default.bees-250", "default.bees-abc", "default.bees-xyz"}
+        new_id = generate_unique_ticket_id(hive_name="default", existing_ids=existing)
         assert new_id not in existing
         assert is_valid_ticket_id(new_id)
 
     def test_generate_unique_ticket_id_empty_set(self):
         """Should work with empty existing set."""
-        new_id = generate_unique_ticket_id(set())
+        new_id = generate_unique_ticket_id(hive_name="default", existing_ids=set())
         assert is_valid_ticket_id(new_id)
 
     def test_generate_unique_ticket_id_none_set(self):
         """Should work with None (no existing IDs)."""
-        new_id = generate_unique_ticket_id(None)
+        new_id = generate_unique_ticket_id(hive_name="default", existing_ids=None)
         assert is_valid_ticket_id(new_id)
 
     def test_extract_existing_ids_from_directory(self, tmp_path):

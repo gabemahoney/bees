@@ -40,36 +40,34 @@ def normalize_hive_name(hive_name: str) -> str:
     return normalized
 
 
-def generate_ticket_id(hive_name: str | None = None) -> str:
+def generate_ticket_id(hive_name: str) -> str:
     """
     Generate a unique short alphanumeric ticket ID.
 
-    Format: bees-<3 random alphanumeric chars> OR {hive_name}.bees-<3 random alphanumeric chars>
-    Examples: bees-250, bees-abc, bees-9pw, backend.bees-abc
+    Format: {hive_name}.bees-<3 random alphanumeric chars>
+    Examples: backend.bees-abc, my_hive.bees-250
 
     Args:
-        hive_name: Optional hive name to prefix the ID with
+        hive_name: Required hive name to prefix the ID with
 
     Returns:
-        A unique ticket ID string
+        A unique ticket ID string with hive prefix
+
+    Raises:
+        ValueError: If hive_name normalizes to an empty string
 
     Note:
         This function generates random IDs but does not check for collisions.
         Use generate_unique_ticket_id() for collision detection.
-
-        If hive_name contains only special characters, normalize_hive_name()
-        returns an empty string, which is treated as None (unprefixed ID).
     """
     suffix = ''.join(random.choices(CHARSET, k=3))
     base_id = f"bees-{suffix}"
 
-    if hive_name:
-        normalized = normalize_hive_name(hive_name)
-        # If normalized name is empty, treat as None (no prefix)
-        if normalized:
-            return f"{normalized}.{base_id}"
+    normalized = normalize_hive_name(hive_name)
+    if not normalized:
+        raise ValueError(f"hive_name '{hive_name}' normalizes to empty string")
 
-    return base_id
+    return f"{normalized}.{base_id}"
 
 
 def is_valid_ticket_id(ticket_id: str) -> bool:
@@ -97,27 +95,27 @@ def is_valid_ticket_id(ticket_id: str) -> bool:
     return bool(ID_PATTERN.match(ticket_id))
 
 
-def generate_unique_ticket_id(existing_ids: set[str] | None = None, max_attempts: int = 100, hive_name: str | None = None) -> str:
+def generate_unique_ticket_id(hive_name: str, existing_ids: set[str] | None = None, max_attempts: int = 100) -> str:
     """
     Generate a unique ticket ID with collision detection.
 
     Args:
+        hive_name: Required hive name to prefix the ID with
         existing_ids: Optional set of existing IDs to check against
         max_attempts: Maximum number of generation attempts before raising error
-        hive_name: Optional hive name to prefix the ID with
 
     Returns:
-        A unique ticket ID string
+        A unique ticket ID string with hive prefix
 
     Raises:
         RuntimeError: If unable to generate unique ID within max_attempts
+        ValueError: If hive_name normalizes to an empty string
 
     Examples:
-        >>> existing = {"bees-250", "bees-abc"}
-        >>> new_id = generate_unique_ticket_id(existing)
+        >>> existing = {"backend.bees-250", "backend.bees-abc"}
+        >>> new_id = generate_unique_ticket_id("backend", existing)
         >>> new_id not in existing
         True
-        >>> new_id = generate_unique_ticket_id(existing, hive_name="backend")
         >>> new_id.startswith("backend.bees-")
         True
     """
