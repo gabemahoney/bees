@@ -46,6 +46,36 @@ Use natural language with the LLM to:
 
 The auto-generated index is at `tickets/index.md` and updates automatically when tickets change.
 
+### Hive Configuration
+
+Bees stores hive configuration in `.bees/config.json` in the client repository root.
+
+**Configuration Schema:**
+
+```json
+{
+  "hives": {
+    "backend": {
+      "path": "tickets/backend/",
+      "display_name": "Backend"
+    },
+    "frontend": {
+      "path": "tickets/frontend/",
+      "display_name": "Frontend"
+    }
+  },
+  "allow_cross_hive_dependencies": false,
+  "schema_version": "1.0"
+}
+```
+
+**Fields:**
+- `hives`: Dictionary mapping normalized hive names to hive configurations
+  - `path`: Absolute or relative path to hive directory
+  - `display_name`: Human-readable name for the hive
+- `allow_cross_hive_dependencies`: Whether tickets in different hives can depend on each other
+- `schema_version`: Configuration schema version (currently "1.0")
+
 ## MCP Commands
 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`

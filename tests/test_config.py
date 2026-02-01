@@ -1,10 +1,16 @@
 """Tests for configuration loading and parsing."""
 
+import json
 import pytest
 from pathlib import Path
 import yaml
 
-from src.config import Config, load_config, get_config
+from src.config import (
+    Config, load_config, get_config,
+    BeesConfig, HiveConfig,
+    load_bees_config, save_bees_config, init_bees_config_if_needed,
+    get_config_path, ensure_bees_dir
+)
 
 
 class TestConfig:
@@ -397,3 +403,257 @@ class TestHostValidation:
         assert "0.0.0.0" in error_msg
         assert "::1" in error_msg
         assert "::" in error_msg
+
+
+class TestBeesConfigDataclasses:
+    """Test BeesConfig and HiveConfig dataclass initialization."""
+
+    def test_hive_config_initialization(self):
+        """Test HiveConfig dataclass can be instantiated."""
+        hive = HiveConfig(path="/path/to/hive", display_name="My Hive")
+        assert hive.path == "/path/to/hive"
+        assert hive.display_name == "My Hive"
+
+    def test_bees_config_initialization_defaults(self):
+        """Test BeesConfig with default values."""
+        config = BeesConfig()
+        assert config.hives == {}
+        assert config.allow_cross_hive_dependencies is False
+        assert config.schema_version == "1.0"
+
+    def test_bees_config_initialization_with_values(self):
+        """Test BeesConfig with custom values."""
+        hive = HiveConfig(path="/path", display_name="Test")
+        config = BeesConfig(
+            hives={"test": hive},
+            allow_cross_hive_dependencies=True,
+            schema_version="2.0"
+        )
+        assert config.hives == {"test": hive}
+        assert config.allow_cross_hive_dependencies is True
+        assert config.schema_version == "2.0"
+
+
+class TestLoadBeesConfig:
+    """Test load_bees_config function."""
+
+    def test_load_bees_config_missing_file(self, tmp_path, monkeypatch):
+        """Test load_bees_config returns None when file doesn't exist."""
+        monkeypatch.chdir(tmp_path)
+        config = load_bees_config()
+        assert config is None
+
+    def test_load_bees_config_valid_file(self, tmp_path, monkeypatch):
+        """Test load_bees_config with valid config file."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        config_data = {
+            "hives": {
+                "backend": {
+                    "path": "tickets/backend/",
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_bees_config()
+        assert config is not None
+        assert len(config.hives) == 1
+        assert "backend" in config.hives
+        assert config.hives["backend"].path == "tickets/backend/"
+        assert config.hives["backend"].display_name == "Backend"
+        assert config.allow_cross_hive_dependencies is False
+        assert config.schema_version == "1.0"
+
+    def test_load_bees_config_empty_hives(self, tmp_path, monkeypatch):
+        """Test load_bees_config with empty hives dict."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        config_data = {
+            "hives": {},
+            "allow_cross_hive_dependencies": True,
+            "schema_version": "1.0"
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_bees_config()
+        assert config is not None
+        assert config.hives == {}
+        assert config.allow_cross_hive_dependencies is True
+
+    def test_load_bees_config_malformed_json(self, tmp_path, monkeypatch):
+        """Test load_bees_config raises ValueError for malformed JSON."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+        config_file.write_text("{invalid json")
+
+        with pytest.raises(ValueError, match="Malformed JSON"):
+            load_bees_config()
+
+    def test_load_bees_config_invalid_schema_version_type(self, tmp_path, monkeypatch):
+        """Test load_bees_config raises ValueError for invalid schema_version type."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        config_data = {
+            "hives": {},
+            "schema_version": 123  # Should be string
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        with pytest.raises(ValueError, match="schema_version must be a string"):
+            load_bees_config()
+
+    def test_load_bees_config_invalid_hive_data_type(self, tmp_path, monkeypatch):
+        """Test load_bees_config raises ValueError for invalid hive data type."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        config_data = {
+            "hives": {
+                "backend": "not a dict"  # Should be dict
+            }
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        with pytest.raises(ValueError, match="Hive 'backend' data must be a dict"):
+            load_bees_config()
+
+
+class TestSaveBeesConfig:
+    """Test save_bees_config function."""
+
+    def test_save_bees_config_creates_directory(self, tmp_path, monkeypatch):
+        """Test save_bees_config creates .bees/ directory if needed."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+        save_bees_config(config)
+
+        bees_dir = tmp_path / ".bees"
+        assert bees_dir.exists()
+        assert bees_dir.is_dir()
+
+    def test_save_bees_config_creates_valid_json(self, tmp_path, monkeypatch):
+        """Test save_bees_config creates valid JSON file."""
+        monkeypatch.chdir(tmp_path)
+        hive = HiveConfig(path="tickets/backend/", display_name="Backend")
+        config = BeesConfig(
+            hives={"backend": hive},
+            allow_cross_hive_dependencies=False,
+            schema_version="1.0"
+        )
+        save_bees_config(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        assert config_file.exists()
+
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+
+        assert data["hives"]["backend"]["path"] == "tickets/backend/"
+        assert data["hives"]["backend"]["display_name"] == "Backend"
+        assert data["allow_cross_hive_dependencies"] is False
+        assert data["schema_version"] == "1.0"
+
+    def test_save_bees_config_sets_default_schema_version(self, tmp_path, monkeypatch):
+        """Test save_bees_config sets schema_version to '1.0' if not set."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig(schema_version="")
+        save_bees_config(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+
+        assert data["schema_version"] == "1.0"
+
+    def test_save_bees_config_formatted_with_indent(self, tmp_path, monkeypatch):
+        """Test save_bees_config creates formatted JSON with indent=2."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+        save_bees_config(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        content = config_file.read_text()
+
+        # Check for indentation (pretty-printed JSON)
+        assert "  " in content  # Should have 2-space indentation
+        assert "\n" in content  # Should have newlines
+
+
+class TestInitBeesConfigIfNeeded:
+    """Test init_bees_config_if_needed function."""
+
+    def test_init_bees_config_if_needed_creates_config(self, tmp_path, monkeypatch):
+        """Test init_bees_config_if_needed creates config on first call."""
+        monkeypatch.chdir(tmp_path)
+        config = init_bees_config_if_needed()
+
+        assert config is not None
+        assert config.hives == {}
+        assert config.allow_cross_hive_dependencies is False
+        assert config.schema_version == "1.0"
+
+        # Verify file was created
+        config_file = tmp_path / ".bees" / "config.json"
+        assert config_file.exists()
+
+    def test_init_bees_config_if_needed_returns_existing_config(self, tmp_path, monkeypatch):
+        """Test init_bees_config_if_needed returns existing config on subsequent calls."""
+        monkeypatch.chdir(tmp_path)
+
+        # First call creates config
+        config1 = init_bees_config_if_needed()
+        config1.allow_cross_hive_dependencies = True
+        save_bees_config(config1)
+
+        # Second call should load existing config
+        config2 = init_bees_config_if_needed()
+        assert config2.allow_cross_hive_dependencies is True
+
+
+class TestConfigPathHelpers:
+    """Test get_config_path and ensure_bees_dir helpers."""
+
+    def test_get_config_path(self, tmp_path, monkeypatch):
+        """Test get_config_path returns correct path."""
+        monkeypatch.chdir(tmp_path)
+        config_path = get_config_path()
+
+        assert config_path == tmp_path / ".bees" / "config.json"
+
+    def test_ensure_bees_dir_creates_directory(self, tmp_path, monkeypatch):
+        """Test ensure_bees_dir creates .bees/ directory."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        assert not bees_dir.exists()
+
+        ensure_bees_dir()
+
+        assert bees_dir.exists()
+        assert bees_dir.is_dir()
+
+    def test_ensure_bees_dir_idempotent(self, tmp_path, monkeypatch):
+        """Test ensure_bees_dir is idempotent (safe to call multiple times)."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+
+        ensure_bees_dir()
+        ensure_bees_dir()  # Should not raise error
+
+        assert bees_dir.exists()

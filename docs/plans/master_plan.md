@@ -50,6 +50,39 @@ Centralized configuration module with typed Config object.
 - All config access uses attribute access: `config.http_host`, `config.http_port`,
   `config.ticket_directory`
 
+### Hive Configuration System
+
+**Purpose**: Track hive registrations with normalized names, display names, and cross-hive dependency settings.
+
+**Schema Location**: `.bees/config.json` in client repo root
+
+**Data Structure**:
+- `HiveConfig` dataclass: Represents a single hive with `path` and `display_name` fields
+- `BeesConfig` dataclass: Container with `hives` dict (normalized_name → HiveConfig),
+  `allow_cross_hive_dependencies` bool, and `schema_version` string
+
+**Initialization Strategy**: On-demand creation during first hive registration via `init_bees_config_if_needed()`
+- Checks if config exists using `load_bees_config()`
+- If not found, creates new BeesConfig with empty hives dict, allow_cross_hive_dependencies=false,
+  schema_version='1.0', then calls `save_bees_config()`
+- Returns loaded or created config
+
+**Core Functions**:
+- `get_config_path()`: Returns Path to `.bees/config.json` in current working directory
+- `ensure_bees_dir()`: Creates `.bees/` directory if needed
+- `load_bees_config()`: Reads config.json and returns BeesConfig object, handles file-not-found
+  (returns None), validates JSON and schema_version, raises ValueError for malformed JSON
+- `save_bees_config(config)`: Writes BeesConfig to config.json with indent=2 formatting,
+  calls ensure_bees_dir() before writing, sets schema_version to '1.0' if not set
+- `init_bees_config_if_needed()`: Creates config on first call, returns existing on subsequent calls
+
+**Error Handling**:
+- Malformed JSON raises ValueError with descriptive message
+- Invalid schema_version type raises ValueError
+- Invalid hive data type raises ValueError
+- File write errors raise IOError
+
+
 
 
 ### CLI ↔ Linter
