@@ -97,6 +97,46 @@ Example configuration:
 }
 ```
 
+### Ticket ID Format
+
+Bees supports two ticket ID formats:
+
+**Hive-Prefixed Format:** `hive_name.bees-abc1`
+- Used when tickets are created with a `hive_name` parameter
+- The hive name is normalized and prefixed to the ID
+- Example: `backend.bees-abc1`, `front_end.bees-xyz9`
+
+**Legacy Format:** `bees-abc1`
+- Used for tickets without a hive prefix
+- Backward compatible with existing tickets
+- Example: `bees-abc1`, `bees-xyz9`
+
+**ID Parsing:**
+
+The `parse_ticket_id()` utility function splits ticket IDs to extract the hive name and base ID:
+
+```python
+# Hive-prefixed ID
+parse_ticket_id("backend.bees-abc1")  # Returns: ("backend", "bees-abc1")
+
+# Legacy ID
+parse_ticket_id("bees-abc1")  # Returns: ("", "bees-abc1")
+
+# Multiple dots (splits on first dot only)
+parse_ticket_id("multi.dot.bees-xyz")  # Returns: ("multi", "dot.bees-xyz")
+```
+
+The parser handles edge cases:
+- Returns empty string `""` for hive name in legacy IDs (not `None`)
+- Splits on the first dot only, preserving dots in base ID
+- Raises `ValueError` for `None` or empty string inputs
+
+**Path Resolution:**
+
+Internal routing uses the parsed hive name to construct file paths:
+- Hive-prefixed IDs: `/path/to/{hive_name}/epics/{hive_name}.bees-abc1.md`
+- Legacy IDs: `/path/to/tickets/epics/bees-abc1.md`
+
 ## MCP Commands
 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`

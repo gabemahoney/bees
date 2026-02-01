@@ -18,7 +18,8 @@ from src.mcp_server import (
     _delete_ticket,
     _server_running,
     get_repo_root,
-    validate_hive_path
+    validate_hive_path,
+    parse_ticket_id
 )
 
 
@@ -1575,3 +1576,96 @@ class TestScanForHiveExceptionHandling:
             # Should catch the error and still return hive path
             result = scan_for_hive("test_hive")
             assert result == hive_path
+
+
+class TestParseTicketId:
+    """Tests for parse_ticket_id() utility function."""
+
+    def test_parse_hive_prefixed_id(self):
+        """Test parsing ticket ID with hive prefix."""
+        hive_name, base_id = parse_ticket_id("backend.bees-abc1")
+        assert hive_name == "backend"
+        assert base_id == "bees-abc1"
+
+    def test_parse_legacy_id_without_dot(self):
+        """Test parsing legacy ticket ID without hive prefix."""
+        hive_name, base_id = parse_ticket_id("bees-abc1")
+        assert hive_name == ""
+        assert base_id == "bees-abc1"
+
+    def test_parse_id_with_multiple_dots(self):
+        """Test parsing ticket ID with multiple dots (splits on first dot only)."""
+        hive_name, base_id = parse_ticket_id("multi.dot.bees-xyz9")
+        assert hive_name == "multi"
+        assert base_id == "dot.bees-xyz9"
+
+    def test_parse_id_with_underscore_hive(self):
+        """Test parsing ticket ID with underscored hive name."""
+        hive_name, base_id = parse_ticket_id("back_end.bees-123")
+        assert hive_name == "back_end"
+        assert base_id == "bees-123"
+
+    def test_parse_id_none_raises_error(self):
+        """Test that None ticket ID raises ValueError."""
+        with pytest.raises(ValueError, match="ticket_id cannot be None"):
+            parse_ticket_id(None)
+
+    def test_parse_id_empty_string_raises_error(self):
+        """Test that empty string ticket ID raises ValueError."""
+        with pytest.raises(ValueError, match="ticket_id cannot be empty"):
+            parse_ticket_id("")
+
+    def test_parse_id_whitespace_only_raises_error(self):
+        """Test that whitespace-only ticket ID raises ValueError."""
+        with pytest.raises(ValueError, match="ticket_id cannot be empty"):
+            parse_ticket_id("   ")
+
+    def test_parse_id_returns_tuple(self):
+        """Test that parse_ticket_id returns a tuple."""
+        result = parse_ticket_id("hive.bees-123")
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+
+    def test_parse_id_backward_compatibility(self):
+        """Test backward compatibility with legacy format returns empty hive name."""
+        hive_name, base_id = parse_ticket_id("bees-legacy")
+        assert hive_name == ""  # Empty string for legacy IDs
+        assert base_id == "bees-legacy"
+        assert isinstance(hive_name, str)  # Not None, but empty string
+
+    def test_parse_id_complex_hive_names(self):
+        """Test parsing with various complex hive names."""
+        test_cases = [
+            ("frontend.bees-abc", ("frontend", "bees-abc")),
+            ("api_v2.bees-xyz", ("api_v2", "bees-xyz")),
+            ("team-alpha.bees-123", ("team-alpha", "bees-123")),
+            ("CamelCase.bees-456", ("CamelCase", "bees-456")),
+        ]
+
+        for ticket_id, expected in test_cases:
+            result = parse_ticket_id(ticket_id)
+            assert result == expected, f"Failed for {ticket_id}"
+
+    def test_parse_id_complex_base_ids(self):
+        """Test parsing with various complex base ID formats."""
+        test_cases = [
+            ("hive.bees-abc1", ("hive", "bees-abc1")),
+            ("hive.bees-xyz9", ("hive", "bees-xyz9")),
+            ("hive.bees-1234", ("hive", "bees-1234")),
+        ]
+
+        for ticket_id, expected in test_cases:
+            result = parse_ticket_id(ticket_id)
+            assert result == expected, f"Failed for {ticket_id}"
+
+    def test_parse_id_edge_case_dot_at_end(self):
+        """Test parsing ID with dot at end (unusual but should handle gracefully)."""
+        hive_name, base_id = parse_ticket_id("hive.")
+        assert hive_name == "hive"
+        assert base_id == ""  # Empty base_id after the dot
+
+    def test_parse_id_edge_case_dot_at_start(self):
+        """Test parsing ID with dot at start (unusual but should handle gracefully)."""
+        hive_name, base_id = parse_ticket_id(".bees-123")
+        assert hive_name == ""  # Empty hive name before the dot
+        assert base_id == "bees-123"

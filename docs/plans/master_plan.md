@@ -195,6 +195,98 @@ Centralized configuration module with typed Config object.
 - `src/mcp_server.py`:
   - `_create_ticket()` - Accepts optional `hive_name` parameter, passes to factory functions
 
+### Ticket ID Parsing and Routing (Task bees-3zqk)
+
+**Purpose**: Extract hive name from ticket IDs for internal routing to correct hive directories, enabling self-routing IDs in multi-hive systems.
+
+**Architecture Decision**: Split on First Dot
+- Design choice: `parse_ticket_id()` splits ticket IDs on the first dot only using `str.partition('.')`
+- Rationale: Allows dots in base ID portion (e.g., `multi.dot.bees-xyz` → hive="multi", base_id="dot.bees-xyz")
+- Alternative rejected: Split on all dots would require escaping dots in base IDs, adding complexity
+- Edge cases handled: Dot at start (`.bees-123` → hive="", base_id="bees-123"), dot at end (`hive.` → hive="hive", base_id="")
+
+**Implementation Flow**:
+```
+MCP tool call (ticket_id="backend.bees-abc1")
+  ↓
+parse_ticket_id(ticket_id)  # Returns ("backend", "bees-abc1")
+  ↓
+get_ticket_path(ticket_id, ticket_type)  # Constructs /path/to/backend/epics/backend.bees-abc1.md
+  ↓
+File system operation (read/write/delete)
+```
+
+**parse_ticket_id() Function** (`src/mcp_server.py`):
+- **Signature**: `parse_ticket_id(ticket_id: str) -> tuple[str, str]`
+- **Returns**: `(hive_name, base_id)` tuple where hive_name is empty string for legacy IDs
+- **Edge Cases**:
+  - `None` input → raises `ValueError("ticket_id cannot be None")`
+  - Empty string → raises `ValueError("ticket_id cannot be empty")`
+  - Whitespace-only → raises `ValueError("ticket_id cannot be empty")`
+  - No dot (legacy ID) → returns `("", "bees-abc1")`
+  - Multiple dots → splits on first only: `("multi", "dot.bees-xyz")`
+- **Design rationale**: Returns empty string (not None) for legacy IDs to simplify conditional logic in callers
+- **Backward compatibility**: Legacy IDs without dots continue to work, path resolution falls back to default tickets directory
+
+**Path Resolution Integration** (`src/paths.py`):
+- **get_ticket_path() modifications**:
+  - Calls `_parse_ticket_id_for_path()` (local copy to avoid circular imports)
+  - Hive-prefixed IDs route to: `{cwd}/{hive_name}/epics/{hive_name}.bees-abc1.md`
+  - Legacy IDs route to: `{TICKETS_DIR}/epics/bees-abc1.md`
+  - Example: `backend.bees-abc1` → `/path/to/backend/epics/backend.bees-abc1.md`
+  - Example: `bees-abc1` → `/path/to/tickets/epics/bees-abc1.md`
+
+- **infer_ticket_type_from_id() modifications**:
+  - Uses parsed hive name to check correct directory structure
+  - Hive-prefixed: checks `{cwd}/{hive_name}/{epics|tasks|subtasks}/`
+  - Legacy: checks `{TICKETS_DIR}/{epics|tasks|subtasks}/`
+  - Returns ticket type if file exists, None otherwise
+
+**Circular Import Prevention**:
+- Design decision: `src/paths.py` needs ID parsing but cannot import from `src/mcp_server.py` (circular dependency)
+- Solution: Duplicate `parse_ticket_id()` as `_parse_ticket_id_for_path()` in `paths.py`
+- Alternative rejected: Extracting to separate module adds unnecessary complexity for simple 10-line function
+- Maintenance strategy: Both functions have identical logic; tests verify consistency
+
+**Self-Routing ID Design**:
+- Ticket IDs contain all information needed to locate the ticket file
+- No need for separate hive name parameters in read/update/delete operations
+- Simplifies MCP tool signatures: `update_ticket(ticket_id="backend.bees-abc")` vs `update_ticket(ticket_id="bees-abc", hive_name="backend")`
+- Reduces error potential: Cannot specify mismatched ticket ID and hive name
+
+**Integration Points**:
+- All ticket operations (read, update, delete, query) use `infer_ticket_type_from_id()` which calls `_parse_ticket_id_for_path()`
+- Path resolution automatically routes to correct hive directory based on ID prefix
+- No changes needed to MCP tool signatures (except create_ticket which needs hive_name for ID generation)
+
+**Architecture Diagram - ID Parsing Flow**:
+```
+ticket_id: "backend.bees-abc1"
+           ↓
+    parse_ticket_id()
+           ↓
+  ("backend", "bees-abc1")
+           ↓
+    Path Resolution
+           ↓
+  /path/to/backend/epics/backend.bees-abc1.md
+           ↓
+   File System Operations
+```
+
+**Backward Compatibility**:
+- Legacy IDs (without dots) return empty string for hive name
+- Path resolution checks for empty hive name and uses default tickets directory
+- All existing tickets continue to work without changes
+- Mixed usage supported: Some tickets with hive prefixes, some without
+
+**Test Coverage** (`tests/test_mcp_server.py:TestParseTicketId`):
+- Valid hive-prefixed IDs parse correctly
+- Legacy IDs without dots return empty hive name
+- Multiple dots split on first dot only
+- Edge cases (None, empty, whitespace, dots at boundaries) handled
+- Error messages are descriptive
+
 **Path Validation**:
 - `validate_hive_path(path: str, repo_root: Path) -> Path` in `src/mcp_server.py` validates and normalizes hive paths
 - Validation rules enforce security and consistency:
