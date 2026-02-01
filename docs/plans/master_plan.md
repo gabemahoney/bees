@@ -39,16 +39,7 @@ Bees is a markdown-based ticket management system with four core modules:
 
 ### Configuration Architecture
 
-**Design Decision**: Centralized configuration module with typed Config object instead of
-scattered dict-based config handling.
-
-**Rationale**:
-- Type safety: Accessing `config.http_host` instead of `config.get('host')` prevents typos and
-  provides IDE autocomplete
-- Nested schema: Logical grouping (http settings, database settings) improves clarity
-- Single source of truth: All config parsing happens in `src/config.py`, not duplicated across
-  modules
-- Graceful defaults: Missing config files return safe defaults instead of raising exceptions
+Centralized configuration module with typed Config object.
 
 **Integration**:
 - `src/main.py` imports Config and load_config from config module
@@ -64,19 +55,6 @@ inconsistencies and improving maintainability.
 **Port Validation Implementation**: Added input validation layer to Config class to ensure port
 numbers are valid before server startup.
 
-**Design Decision**: Validate port values during Config initialization (fail-fast approach) rather
-than at server bind time.
-
-**Rationale**:
-- Early error detection: Configuration errors are caught immediately at startup with clear error
-  messages, before the server attempts to bind
-- Type coercion: Port values from YAML can be strings (e.g., `"8000"`); automatic conversion to
-  integers improves config flexibility
-- Clear error messages: ValueError with detailed message indicates exact problem (range violation,
-  non-numeric string, etc.)
-- Standard validation: Enforces TCP/IP port range (1-65535) at configuration layer, preventing
-  invalid values from propagating through the system
-
 **Implementation Details** (`src/config.py`):
 1. **Type Coercion**: Port value is wrapped in `int()` constructor to handle string inputs from YAML
    - Catches `TypeError` and `ValueError` exceptions and re-raises as descriptive `ValueError`
@@ -87,27 +65,8 @@ than at server bind time.
 3. **Exception Chaining**: Uses `raise ... from e` to preserve original exception context for
    debugging
 
-**Testing Strategy** (`tests/test_config.py`):
-- Valid ports: 1 (minimum), 8000 (typical), 65535 (maximum)
-- Invalid range: 0, -1, 65536, 99999
-- String coercion: `"8000"` → `8000`, `"1"` → `1`, `"65535"` → `65535`
-- Invalid strings: `"abc"`, `""`, `"8000.5"`
-- Edge cases: `None`, floats
-- Existing tests updated to expect validation errors instead of accepting invalid values
-
 **Host Validation Implementation**: Added IP address validation to Config class to ensure host values
 are valid IPv4 or IPv6 addresses before passing to uvicorn.
-
-**Design Decision**: Validate host as IP address format during Config initialization, rejecting hostnames
-and domain names.
-
-**Rationale**:
-- Early validation: Malformed IPs caught at config load time instead of at bind time with cryptic
-  network errors
-- Clear error messages: ValueError provides helpful examples of valid IP formats (127.0.0.1, ::1)
-- Security clarity: Explicit IP requirement makes network binding behavior transparent - no DNS
-  resolution or unexpected binding
-- ipaddress module: Python standard library provides robust IPv4/IPv6 validation
 
 **Implementation Details** (`src/config.py`):
 1. **Validation Method**: Added `_validate_host()` method to Config class
@@ -121,83 +80,6 @@ and domain names.
    - Format: `"Invalid host '{host}': must be a valid IPv4 or IPv6 address. Examples: ..."`
    - Includes both IPv4 and IPv6 examples in error message
 
-**Testing Strategy** (`tests/test_config.py::TestHostValidation`):
-- Valid IPv4: `127.0.0.1`, `0.0.0.0`, `192.168.1.1`, `10.0.0.1`
-- Valid IPv6: `::1`, `::`, `2001:0db8:85a3:0000:0000:8a2e:0370:7334`, `2001:db8::1`
-- Invalid formats: `999.999.999.999`, `not-an-ip`, `localhost`, `example.com`
-- Edge cases: empty string, partial IP (`192.168`), IP with port (`127.0.0.1:8000`), spaces
-- Error messages verified to include helpful examples
-- All tests achieve 100% branch coverage for validation logic
-
-**Integration Testing Strategy** (`tests/integration/test_http_server.py`):
-Integration tests verify real uvicorn behavior without mocking, catching issues that unit tests miss.
-
-**Design Decision**: Add integration tests that start real uvicorn server to verify mcp.http_app
-integration and graceful shutdown.
-
-**Rationale**:
-- Mocking limitations: Unit tests mock `uvicorn.run()`, missing real integration issues like
-  `mcp.http_app` not existing or incorrect ASGI app structure
-- Signal handling verification: Need to verify actual uvicorn blocking behavior and signal response
-- Subprocess testing: Real server startup in subprocess validates full integration path
-- Acceptance testing: Integration tests match acceptance criteria (server starts, binds, shuts down
-  gracefully)
-
-**Implementation Details**:
-1. **http_app Integration Test** (`test_http_app_exists_and_binds_with_uvicorn`):
-   - Starts uvicorn in subprocess with real mcp.http_app
-   - Uses non-standard port (9999) to avoid conflicts
-   - Retries connection with exponential backoff (handles slow startup)
-   - Verifies server responds to HTTP requests (any status code accepted)
-   - Key assertion: server binds and accepts connections, proving real integration works
-2. **Graceful Shutdown Tests** (`test_graceful_shutdown_with_sigterm/sigint`):
-   - Starts uvicorn in subprocess
-   - Sends SIGTERM or SIGINT signal
-   - Verifies server shuts down within 5-second timeout
-   - Checks for zombie processes
-   - Tests both SIGTERM (production) and SIGINT (Ctrl+C) scenarios
-3. **Error Handling**: Tests check process exit codes and capture stdout/stderr on failure
-4. **Cleanup**: Finally blocks ensure subprocess termination even on test failure
-
-**Trade-offs**:
-- Slower execution: Integration tests take ~2 seconds per test vs milliseconds for unit tests
-- Flakiness risk: Network operations and timing can introduce intermittent failures
-- Port conflicts: Tests use unique ports but conflicts possible if ports already in use
-- Benefit: Catches real integration bugs that unit tests miss (e.g., missing http_app attribute)
-
-## Design Patterns
-
-Core architectural patterns that guide Bees implementation:
-
-### Bidirectional Relationship Management
-
-**Rationale**: When relationships are created or modified in one ticket, the reciprocal relationship must be automatically updated in related tickets to maintain consistency. Parent/child and dependency relationships are synchronized bidirectionally using helper functions in the relationship sync module.
-
-**Key Benefit**: Ensures data integrity and enables efficient graph traversal without scanning all tickets.
-
-### Corruption State Tracking
-
-**Rationale**: The linter validates all tickets and persists validation results to `.bees/corruption_report.json`, creating a persistent record of system health. The MCP server checks corruption state at startup and refuses to start if errors exist, forcing manual fixes before allowing operations.
-
-**Key Benefit**: Prevents cascading data corruption by blocking operations when the database is in an invalid state.
-
-### MCP Tool Integration via FastMCP
-
-**Rationale**: FastMCP library provides decorator-based tool registration with built-in validation and type checking. The server exposes standardized MCP tools that AI agents can invoke to manipulate tickets safely while maintaining bidirectional consistency.
-
-**Key Benefit**: Provides clean, interoperable interface for AI agents without custom protocol implementation.
-
-### Write-Ahead Logging (WAL) for Atomicity
-
-**Rationale**: Batch relationship updates create in-memory backups before modifying tickets. If any write fails during the batch operation, all tickets are restored from backups, providing transaction-like semantics without requiring a database.
-
-**Key Benefit**: Prevents partial write failures that would leave relationships in inconsistent states.
-
-### File Locking with Exponential Backoff
-
-**Rationale**: OS-level file locking (fcntl on Unix, msvcrt on Windows) with non-blocking mode and retry logic prevents concurrent modification issues. Exponential backoff allows graceful handling of contention without indefinite blocking.
-
-**Key Benefit**: Enables safe concurrent access to ticket files across multiple processes without external lock servers.
 
 ## Module Integration
 
@@ -241,17 +123,6 @@ calls to create and query tickets seamlessly.
 - `extract_existing_ids_from_directory()` scans tickets/ for existing IDs
 - Collision probability is extremely low with current ID space
 
-**Design Rationale**:
-- Short IDs are easy to reference and type
-- Alphanumeric-only ensures URL safety and command-line compatibility
-- Random generation avoids predictable sequences
-- 3 characters provide sufficient space for most projects
-
-**Alternatives Considered**:
-- Sequential IDs (rejected: not suitable for distributed/concurrent creation)
-- UUIDs (rejected: too long for human use)
-- 4-character IDs (rejected: 3 chars sufficient, keeps IDs shorter)
-
 ### YAML Serialization Approach
 
 **Implementation** (`src/writer.py:serialize_frontmatter()`):
@@ -265,17 +136,6 @@ calls to create and query tickets seamlessly.
 - Multiline string preservation using YAML's literal block syntax
 - 80-character line wrapping for readability
 - Leading and trailing `---` delimiters for frontmatter
-
-**Design Rationale**:
-- PyYAML is the standard Python YAML library
-- safe_dump prevents arbitrary code execution
-- Clean frontmatter improves human readability
-- ISO datetime format is standard and easily parsable
-
-**Alternatives Considered**:
-- JSON frontmatter (rejected: less human-readable)
-- TOML frontmatter (rejected: less common in markdown ecosystem)
-- ruamel.yaml (rejected: PyYAML sufficient for our needs)
 
 ### File Writing Patterns
 
@@ -294,16 +154,6 @@ calls to create and query tickets seamlessly.
 **Directory Creation**:
 - Automatically creates parent directories via `ensure_ticket_directory_exists()`
 - Uses `mkdir(parents=True, exist_ok=True)` for idempotency
-
-**Design Rationale**:
-- Atomic writes prevent data corruption
-- Automatic directory creation improves user experience
-- Temp files use file descriptor from tempfile.mkstemp() for security
-
-**Alternatives Considered**:
-- Direct write (rejected: not atomic, can corrupt on failure)
-- Write + fsync (rejected: unnecessary overhead for our use case)
-- File locking (rejected: complexity not needed for write-once tickets)
 
 ### Factory Function Design
 
@@ -332,17 +182,6 @@ calls to create and query tickets seamlessly.
 - Skips optional fields if not provided (clean frontmatter)
 - Normalizes None values for lists to empty lists
 
-**Design Rationale**:
-- Separate functions for each type improve type safety
-- Required parent for subtasks enforces hierarchy
-- Optional custom IDs support migration scenarios
-- Automatic timestamps improve auditability
-
-**Alternatives Considered**:
-- Single factory with type parameter (rejected: less type-safe)
-- Builder pattern (rejected: overkill for simple creation)
-- ORM-style models (rejected: violates markdown-first philosophy)
-
 ### Integration with Path Utilities
 
 **Directory Resolution** (`src/paths.py`):
@@ -357,22 +196,6 @@ Bees uses a hierarchical directory structure for organizing tickets by type:
 - **Tasks**: `tickets/tasks/bees-XXX.md`
 - **Subtasks**: `tickets/subtasks/bees-XXX.md`
 
-**Design Rationale**:
-- **Scalability**: Separating ticket types into subdirectories prevents overcrowding
-  as projects grow to hundreds or thousands of tickets
-- **Organization**: Clear visual separation makes repository navigation easier
-- **Type Safety**: Directory structure reinforces type constraints and makes invalid
-  file locations immediately obvious
-- **Consistency**: Links in generated index.md use these hierarchical paths,
-  ensuring alignment between file system and navigation interface
-
-**Test Coverage**:
-The test suite (`tests/test_index_generator.py`) validates that:
-- Index generation uses correct hierarchical paths for all ticket types
-- Links work correctly with the subdirectory structure
-- Path structure remains consistent across different ticket statuses
-- Edge cases (empty sections, mixed types) handle paths correctly
-
 **Type Inference Function**:
 - **Purpose**: Determine ticket type without loading full ticket object
 - **Implementation**: Checks file existence in each type directory (epic → task → subtask)
@@ -384,12 +207,6 @@ The test suite (`tests/test_index_generator.py`) validates that:
 - Factory functions call `write_ticket_file()`
 - Writer calls `ensure_ticket_directory_exists()` before write
 - Writer calls `get_ticket_path()` to determine target location
-
-**Design Rationale**:
-- Path utilities centralize directory logic
-- Current working directory approach supports multiple projects
-- Automatic directory creation simplifies setup
-- Type inference optimization reduces unnecessary I/O in validation paths
 
 ## Reader Module Architecture
 
@@ -417,51 +234,6 @@ The test suite (`tests/test_index_generator.py`) validates that:
 - Type enforcement in `__post_init__()` methods
 - Subtask validates parent presence
 
-**Design Rationale**:
-- Dataclasses provide type hints and automatic initialization
-- Inheritance reduces duplication
-- Post-init validation catches errors early
-
-## Testing Strategy
-
-### Unit Test Coverage
-
-**ID Generation** (`tests/test_writer.py:TestIdGeneration`):
-- Format validation
-- Uniqueness testing (100 generated IDs)
-- Collision detection
-- Edge cases (None, empty, invalid formats)
-
-**YAML Serialization** (`tests/test_writer.py:TestSerializeFrontmatter`):
-- Basic fields, lists, multiline strings
-- Special characters and unicode
-- Datetime conversion
-- None/empty value handling
-
-**File Writing** (`tests/test_writer.py:TestWriteTicketFile`):
-- Directory creation
-- File content verification
-- Path resolution
-- Empty body handling
-
-**Factory Functions** (`tests/test_writer.py:TestCreate*`):
-- Required field validation
-- Optional parameter handling
-- Custom ID support
-- Error cases (missing title/parent)
-
-**Edge Cases** (`tests/test_writer.py:TestEdgeCases`):
-- Long strings (500+ chars)
-- Unicode and special characters
-- Emoji support
-
-### Test Infrastructure
-
-- Uses pytest with tmp_path fixtures for isolation
-- Temporary directory override for TICKETS_DIR
-- Comprehensive error path testing
-- 32 test cases with 100% pass rate
-
 ## Design Principles
 
 1. **Markdown-First**: Tickets are human-readable markdown files
@@ -476,9 +248,9 @@ The test suite (`tests/test_index_generator.py`) validates that:
 
 Sample tickets serve multiple purposes:
 - **Documentation**: Demonstrate the complete ticket schema and all field types
-- **Testing**: Provide fixtures for reader/parser validation testing
+- **Validation**: Provide examples for reader/parser verification
 - **Templates**: Serve as reference examples for users creating their own tickets
-- **Integration Testing**: Verify end-to-end flow from creation to parsing
+- **Integration**: Verify end-to-end flow from creation to parsing
 
 ### File Organization Structure
 
@@ -492,12 +264,6 @@ Sample tickets serve multiple purposes:
   /subtasks
     sample-subtask.md     # bees-sb1
 ```
-
-**Design Rationale**:
-- Three-tier hierarchy matches Epic → Task → Subtask relationships
-- Separate directories by type enable type-specific queries
-- Consistent naming (sample-*.md) makes samples easy to identify
-- Each sample in correct directory demonstrates proper file organization
 
 ### YAML Frontmatter Format Choices
 
@@ -573,12 +339,6 @@ priority: 0                         # Highest priority
 - Shows blocking relationship syntax
 - Demonstrates that dependencies are same-type only
 
-**Design Rationale**:
-- Sample IDs (bees-ep1, bees-tk1, bees-sb1) are memorable and distinct
-- bees-dp1 as down_dependency is referenced but not created (acceptable for docs)
-- Empty children arrays show future bidirectional sync without implementing it
-- Demonstrates both relationship types in minimal example set
-
 ### Integration with Reader/Parser Module
 
 **Validation Coverage**:
@@ -602,37 +362,6 @@ epic = read_ticket('tickets/epics/sample-epic.md')
 # Returns Epic object with all fields populated
 ```
 
-**Design Rationale**:
-- Samples validate successfully without modification
-- Demonstrate all schema requirements
-- Test reader error handling paths (missing files, invalid format)
-- Serve as regression tests for parser changes
-
-### Three-Tier Hierarchy Design Rationale
-
-**Epic Level** (User-facing features):
-- Represents complete user-testable functionality
-- High-level scope (e.g., "E-commerce Platform")
-- Maps to product roadmap items
-- May span multiple sprints/releases
-
-**Task Level** (Implementation work):
-- Represents logical units of work
-- Technical scope (e.g., "Product Catalog API")
-- Maps to pull requests or work assignments
-- Typically 1-2 weeks of work
-
-**Subtask Level** (Atomic actions):
-- Represents single-responsibility actions
-- Specific implementation details (e.g., "Create database schema")
-- Maps to individual commits or sub-day work items
-- Typically hours to 1 day of work
-
-**Relationship Rules**:
-- Epics contain Tasks (via parent field)
-- Tasks contain Subtasks (via parent field)
-- No cross-level dependencies (Epic cannot depend on Task)
-- Same-level dependencies allowed (Task → Task)
 
 **Benefits**:
 - Clear separation of concerns (user value → technical work → implementation)
@@ -653,12 +382,6 @@ epic = read_ticket('tickets/epics/sample-epic.md')
 - Epic bees-ep1 has children: [] (empty)
 - Future: Linter/MCP server will populate children automatically
 
-**Design Rationale**:
-- Single source of truth: Parent ID lives in child
-- Bidirectional links improve query performance
-- Empty children arrays show intent without premature implementation
-- Linter enforcement ensures consistency across manual edits
-
 ## MCP Server Architecture
 
 ### Overview
@@ -675,19 +398,7 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 
 ### HTTP Transport Architecture
 
-**Design Decision**: Use HTTP transport with uvicorn ASGI server instead of stdio transport for
-MCP communication.
-
-**Rationale**:
-- **Process Independence**: HTTP server runs independently, avoiding stdio stream contention and
-  interference from print statements, logging, or subprocess output
-- **Multi-Client Support**: Multiple Claude Code sessions can connect simultaneously to one server
-  instance
-- **Standard Protocol**: HTTP transport is well-understood, debuggable with standard tools (curl,
-  browser, Postman)
-- **Graceful Lifecycle**: Server can be started/stopped independently without coupling to client
-  lifecycle
-- **Security**: Localhost binding (127.0.0.1) prevents external access by default
+HTTP transport uses uvicorn ASGI server for MCP communication.
 
 **Configuration**: See the README.md Quick Start section for HTTP transport configuration
 details and the example configuration file at `docs/examples/claude-config-http.json`.
@@ -712,15 +423,6 @@ End-to-end testing confirmed HTTP transport is production-ready. The testing pro
    tool returning proper server status
 5. **Stability**: No latency issues, clean connection lifecycle, stable throughout testing
 
-**Testing Methodology**:
-- Sequential validation of each migration step (config → server → connection → tools)
-- Automated verification using system commands (`lsof`, `claude mcp list`)
-- Direct tool execution testing via Claude Code MCP integration
-- Performance observation (startup time, response latency, stability)
-
-**Test Results**: All tests passed. No issues encountered. HTTP transport provides equivalent
-functionality to stdio with improved reliability and cleaner lifecycle management. Detailed test
-report available at `docs/http-transport-test-report.md`.
 
 **Migration Recommendation**: Users can safely migrate to HTTP transport. No additional
 troubleshooting steps required beyond standard configuration. HTTP transport is now the recommended
@@ -791,16 +493,16 @@ def setup_http_routes(app):
     logger.info("MCP endpoint /mcp provided by FastMCP")
 ```
 
-**Routing Design Decisions**:
+**Routing**:
 - **Separation of Concerns**: Custom endpoints (health) are added via `setup_http_routes()` while
   MCP protocol endpoints are handled by FastMCP's internal routing
 - **Starlette Integration**: Uses Starlette's `add_route()` method to register custom endpoints on
   FastMCP's Starlette app
-- **Error Handling**: Each endpoint implements comprehensive error handling with appropriate HTTP
+- **Error Handling**: Each endpoint implements error handling with appropriate HTTP
   status codes (200 for success, 500 for server errors)
 - **Method Support**: Health endpoint supports both GET and POST methods for flexibility
 
-**Error Handling Strategy**:
+**Error Handling**:
 - **JSON Responses**: All endpoints return JSON-formatted responses for consistency
 - **HTTP Status Codes**: Proper status codes used (200 OK, 500 Internal Server Error)
 - **Error Logging**: All errors logged with `logger.error()` before returning error response
@@ -827,41 +529,6 @@ The `/mcp` endpoint is provided by FastMCP and handles MCP JSON-RPC protocol aut
 - Handlers call `stop_server()` for cleanup but do NOT call `sys.exit(0)`
 - Uvicorn's built-in signal handling completes graceful shutdown
 - All connections closed cleanly, no resources leaked
-
-**Design Decision - Signal Handler Initialization Order**:
-Signal handlers are set up after `start_server()` completes and before `uvicorn.run()` executes:
-```python
-# Start the server
-start_server()
-
-# Set up signal handlers for graceful shutdown (after server initialization)
-setup_signal_handlers(stop_server)
-
-# Run the FastMCP server with HTTP transport via uvicorn
-uvicorn.run(...)
-```
-
-**Rationale**:
-- Prevents race condition where signal handler is called before server is initialized
-- If server initialization fails, signal handlers are never registered
-- Ensures `stop_server()` callback has a valid server state to clean up
-- Follows fail-fast principle: don't register cleanup handlers for resources that don't exist
-
-**Design Decision - No sys.exit() in Signal Handlers**:
-Signal handlers no longer call `sys.exit(0)` after calling `stop_server()`:
-```python
-def signal_handler(signum, frame):
-    logger.info(f"Received signal {signum}, shutting down gracefully...")
-    shutdown_callback()
-    # Don't call sys.exit(0) - let uvicorn complete its graceful shutdown
-```
-
-**Rationale**:
-- `uvicorn.run()` is a blocking call that handles SIGINT/SIGTERM internally
-- Calling `sys.exit(0)` immediately after `stop_server()` doesn't give uvicorn time to shut down
-- Uvicorn has sophisticated shutdown logic (close connections, flush buffers, cleanup resources)
-- Relying on uvicorn's built-in signal handling is the recommended practice
-- Our signal handler provides cleanup (`stop_server()`) without forcing immediate exit
 
 **Security Considerations**:
 - **Localhost Binding**: Default `127.0.0.1` restricts connections to local machine only
@@ -904,31 +571,9 @@ actionable error messages:
 3. **RuntimeError** - Server initialization failures
 4. **Exception** - Catch-all for unexpected errors with full traceback
 
-**Design Rationale**:
-- Users get clear error messages explaining the problem and how to fix it
-- Common errors (port in use, permission denied) have specific handlers
-- Error messages include contextual information (port number, host address)
-- Generic handler still catches unexpected errors with full traceback
-- Follows fail-fast principle: server exits immediately on startup errors
-
-**Alternatives Considered**:
-- **Stdio Transport** (rejected: print/logging interference, single-client limitation, complex
-  lifecycle management)
-- **WebSocket Transport** (deferred: HTTP sufficient for current use case, WebSocket adds
-  complexity)
-- **gRPC** (rejected: overkill for simple request/response pattern, HTTP more universally
-  accessible)
-
 ### FastMCP Library Choice
 
 **Selected**: FastMCP 2.14.4
-
-**Rationale**:
-- Production-ready framework (v2.0) with stable API
-- Clean decorator-based tool registration
-- Built-in validation and type checking
-- HTTP and stdio transport support via ASGI
-- Active maintenance and community support
 
 **Integration Approach**:
 ```python
@@ -940,11 +585,6 @@ mcp = FastMCP("Bees Ticket Management Server")
 def create_ticket(...):
     # Tool implementation
 ```
-
-**Alternatives Considered**:
-- Official MCP Python SDK (rejected: lower-level, requires more boilerplate)
-- Custom protocol implementation (rejected: unnecessary complexity)
-- FastMCP 3.0 beta (rejected: not production-ready)
 
 ### Server Lifecycle Management
 
@@ -965,17 +605,6 @@ _server_running = False  # Global state flag
 - Logs shutdown messages
 - Returns status dict
 - Graceful cleanup on error
-
-**Design Rationale**:
-- Simple boolean flag sufficient for single-instance server
-- Separate start/stop functions enable programmatic control
-- Logging provides operational visibility
-- Return dicts support monitoring/orchestration
-
-**Alternatives Considered**:
-- Class-based server with state machine (rejected: overkill for simple lifecycle)
-- Singleton pattern (rejected: global module state cleaner)
-- Context manager (rejected: FastMCP manages its own lifecycle)
 
 ### MCP Server Startup and CLI Integration
 
@@ -1006,27 +635,16 @@ def health_check() -> Dict[str, Any]:
 - `ready`: Boolean indicating if server can accept requests
 - `name`, `version`: Server identification metadata
 
-**Design Rationale**:
-- Registered as MCP tool for standard access
-- Returns rich status info for monitoring
-- Simple implementation - checks global state flag
-- No external dependencies to validate
-
 **Usage Scenarios**:
 - Kubernetes/Docker health probes
 - Client connection validation
 - Monitoring dashboards
 - Debugging server state issues
 
-**Alternatives Considered**:
-- HTTP-only health endpoint (rejected: MCP tool provides broader integration, works via Claude Code)
-- Separate health check mechanism (rejected: MCP tool standard is sufficient)
-- Dependency checks (deferred: current implementation has no external deps)
-
 ### Tool Schema Design and Registration
 
 **Registration Pattern**:
-FastMCP uses Python decorators to register tools. To expose both the MCP tool and the underlying function for testing:
+FastMCP uses Python decorators to register tools. The implementation exposes both the MCP tool and the underlying function:
 
 ```python
 def _create_ticket(...):
@@ -1038,10 +656,10 @@ create_ticket = mcp.tool()(_create_ticket)
 ```
 
 **Benefits**:
-- `_create_ticket()` can be called directly in unit tests
 - `create_ticket` is registered as MCP tool
 - FastMCP handles schema generation from function signature
 - Type hints automatically generate parameter schemas
+- Clean separation between tool registration and implementation logic
 
 **create_ticket Tool Schema**:
 ```python
@@ -1083,21 +701,10 @@ def _delete_ticket(
 ) -> Dict[str, Any]:
 ```
 
-**Design Rationale**:
-- Type hints enable FastMCP to generate JSON schema automatically
-- Optional parameters use Python defaults (None, False, "")
-- Docstrings provide tool descriptions visible to clients
-- Return type Dict[str, Any] supports flexible response formats
-
 **Schema Evolution**:
 - Stub implementations return {"status": "stub"} for testing
 - Full implementations (in later Tasks) will use factory/reader/writer modules
 - Schema remains unchanged when implementation is added
-
-**Alternatives Considered**:
-- Pydantic models for schemas (rejected: FastMCP uses type hints)
-- JSON schema files (rejected: FastMCP generates from code)
-- Separate schema definitions (rejected: duplicates function signatures)
 
 ### create_ticket Tool Implementation
 
@@ -1209,56 +816,6 @@ All errors are logged at ERROR level before raising for operational visibility.
 - If relationship update fails, newly created ticket exists but relationships may be incomplete
 - Future enhancement: Wrap entire operation in transaction with rollback
 
-**Design Rationale**:
-
-**Why Validate Before Factory Call**:
-- Fail fast before creating orphan tickets
-- Clear error messages guide users to fix issues
-- Prevents inconsistent state from partial failures
-- Avoids creating ticket that must be manually cleaned up
-
-**Why Separate Bidirectional Update Function**:
-- Reusable across create/update/delete tools
-- Testable independently of MCP server
-- Clear separation of concerns (creation vs. sync)
-- Centralized relationship logic
-
-**Why Use infer_ticket_type_from_id for Validation**:
-- Fast file existence check vs. full ticket parsing
-- Don't need full ticket object just to validate existence
-- Consistent with relationship_sync module patterns
-- Performance optimization for validation-heavy operations
-
-**Why Check Circular Dependencies Early**:
-- Simplest case: same ticket in both up and down arrays
-- More complex transitive cycles handled later if needed
-- Prevents obvious errors before file writes
-- Clear error message for common mistake
-
-**Alternatives Considered**:
-
-- **Validate after creation** (rejected: creates orphan tickets on validation failure)
-- **No relationship updates** (rejected: violates bidirectional consistency goal)
-- **Load full tickets for validation** (rejected: unnecessary overhead, slow)
-- **Batch all writes** (deferred: would add complexity, current approach sufficient)
-
-**Testing Strategy** (Task bees-0xl):
-
-Comprehensive unit tests covering:
-- Success cases: epic without parent, task with parent, subtask with required parent
-- Bidirectional updates: parent/children, up/down dependencies
-- Error cases: empty title, epic with parent, subtask without parent
-- Validation errors: non-existent parent, non-existent dependencies
-- Edge cases: circular dependencies, invalid ticket_type
-
-**Performance Considerations**:
-
-- Validation phase: O(R) where R = number of related tickets (parent + children + dependencies)
-- Creation phase: O(1) - single file write via factory
-- Sync phase: O(R) - one file write per related ticket
-- Total: O(R) file writes, acceptable for typical relationship counts (<10)
-- Future optimization: Batch relationship updates if R is large
-
 **Monitoring and Debugging**:
 
 - All operations logged at INFO level for audit trail
@@ -1287,12 +844,6 @@ mcp = FastMCP("Bees Ticket Management Server")
 - Future: Support custom ticket directory paths
 - Future: Authentication/authorization middleware
 
-**Design Rationale**:
-- Start simple with sensible defaults
-- FastMCP handles complex protocol details
-- Configuration deferred until needed
-- Module-level server instance enables easy testing
-
 **Integration with Other Modules**:
 
 **Reader Integration** (future):
@@ -1315,54 +866,6 @@ mcp = FastMCP("Bees Ticket Management Server")
 - add_child_to_parent(), add_dependency() functions
 - MCP tools will call sync helpers after primary operation
 - Ensures bidirectional consistency in all relationship changes
-
-### Testing Strategy
-
-**Test Coverage** (`tests/test_mcp_server.py`):
-
-1. **Server Initialization** (3 tests):
-   - Server instance creation
-   - Configuration validation (name, version)
-   - Required attribute presence
-
-2. **Lifecycle Management** (5 tests):
-   - start_server() success
-   - stop_server() success
-   - Multiple start/stop cycles
-   - Logging verification
-   - Exception handling
-
-3. **Health Check** (3 tests):
-   - Health check when running
-   - Health check when stopped
-   - Response structure validation
-
-4. **Tool Registration** (8 tests):
-   - All tools callable
-   - create_ticket stub response
-   - Validation: ticket_type enum
-   - Validation: epic parent rule
-   - Validation: subtask parent requirement
-
-5. **Error Handling** (2 tests):
-   - Exception handling in start_server
-   - Exception handling in stop_server
-
-6. **Configuration** (2 tests):
-   - Version presence and format
-   - Name presence and format
-
-**Test Infrastructure**:
-- Direct function calls to `_health_check()`, `_create_ticket()`, etc.
-- Mock logger for logging verification
-- pytest fixtures for isolation
-- 23 tests with 100% pass rate
-
-**Design Rationale**:
-- Test underlying functions, not FastMCP tool wrappers
-- Comprehensive validation testing for schema enforcement
-- Lifecycle testing ensures state management works
-- Error path testing prevents production failures
 
 ### HTTP Configuration Architecture
 
@@ -1432,14 +935,6 @@ mcp.run()
 - Future: Metrics (request count, latency, errors)
 - Future: OpenTelemetry integration
 
-**Design Rationale**:
-- HTTP transport eliminates stdio interference with Claude Code
-- Server runs independently as background process
-- Configurable binding (default 127.0.0.1) ensures security
-- Logging to file essential for operational visibility without stdout conflicts
-- Health check enables automated monitoring
-- Extensibility for future production needs
-
 ## Relationship Synchronization Module
 
 ### Overview
@@ -1468,14 +963,6 @@ The relationship synchronization module (`src/relationship_sync.py`) provides co
 
 Validation errors raised early before writes with clear messages. File I/O errors propagate from reader/writer modules. All operations are idempotent and support retry logic.
 
-### Testing Coverage
-
-28 comprehensive tests covering parent-child operations, dependency operations, batch operations with transaction semantics, validation functions, and edge cases. Uses pytest fixtures with temporary ticket files.
-
-### Design Rationale
-
-Separate module enables reusability across MCP tools and independent testing. Bidirectional updates ensure data integrity and enable efficient graph traversal. Validation-first approach prevents inconsistent state from partial failures. Batch operations reduce I/O from O(2N) to O(N) for N relationships.
-
 ### Module Integration
 
 Uses `infer_ticket_type_from_id()` from paths module for lightweight type checking, `read_ticket()` from reader for parsing, and `write_ticket_file()` from writer for atomic writes.
@@ -1502,37 +989,6 @@ Batch sync creates in-memory backups before modifications. On write failure, all
 - Write all tickets to temp files first, then rename all atomically
 - OS rename atomicity only applies per-file, not across multiple files
 - Cleanup of temp files on failure is complex
-
-**Testing Coverage**:
-
-Comprehensive test suite in `tests/test_relationship_sync.py:TestAtomicityGuarantees`:
-
-1. **test_successful_batch_update_commits_all_changes**: Verifies all changes committed on success
-2. **test_partial_write_failure_triggers_rollback**: Mocks write failure, verifies rollback
-3. **test_all_tickets_restored_on_failure**: Ensures original state restored after error
-4. **test_no_partial_state_after_error**: Verifies no tickets partially updated
-5. **test_wal_cleanup_after_success**: Confirms backups cleared on success
-6. **test_wal_cleanup_after_rollback**: Confirms backups cleared even after failure
-
-**Design Rationale Summary**:
-
-**Why In-Memory WAL**:
-- Simple implementation without external dependencies
-- Fast - no additional disk I/O during backup phase
-- Sufficient for current scale (typical batch <100 tickets)
-- Easy to test and reason about
-
-**Why Best-Effort Rollback**:
-- Rollback failures are exceptional (disk full, filesystem errors)
-- Logging provides visibility for manual recovery if needed
-- Alternative (aborting rollback) leaves more tickets corrupted
-- Better to attempt restoration of all tickets than fail fast
-
-**Why RuntimeError Wrapping**:
-- Original exception preserved in `__cause__` attribute
-- Clear message indicates rollback was attempted
-- Distinguishes batch failures from validation failures (ValueError)
-- Stack trace includes both original and rollback context
 
 **Monitoring and Debugging**:
 - Write failures logged at ERROR level with original error
@@ -1749,11 +1205,6 @@ All validation errors are logged and raised as ValueError:
 - File locking prevents concurrent modifications to same ticket file
 - Retry logic handles transient lock contention
 
-**Design Rationale**:
-
-**Why Diff-Based Sync**:
-- Only updates changed relationships, not all relationships
-
 ### delete_ticket Tool Implementation
 
 **Overview** (Task bees-49g):
@@ -1890,13 +1341,6 @@ Subtasks have a validation requirement that they must always have a parent. When
 - Subtask children: Parent field unchanged (cannot be set to None without violating validation)
 - Result: Subtasks remain as "orphaned" records pointing to deleted parent
 
-**Design Decision**: Keep subtasks as orphaned rather than:
-- Deleting them automatically (user may not expect this)
-- Allowing invalid state (breaks validation)
-- Promoting to tasks (changes ticket type semantics)
-
-This is documented in README and error handling guides users to use `cascade=True` if they want subtasks deleted.
-
 **Error Handling Strategy**:
 
 All validation errors are logged and raised as ValueError:
@@ -1929,59 +1373,6 @@ Delete operation is NOT fully atomic:
 - No explicit file locking during delete (relies on OS-level atomic unlink)
 - Related ticket updates use existing file locking from writer module
 
-**Design Rationale**:
-
-**Why Cleanup Before Delete**:
-- Maintains referential integrity across all related tickets
-- Prevents dangling references to deleted ticket
-- Allows related tickets to remain valid after deletion
-- Standard database cascade delete pattern
-
-**Why Recursive Cascade**:
-- Handles arbitrary depth hierarchies (Epic→Task→Subtask)
-- Ensures all descendants cleaned up consistently
-- Each ticket in hierarchy has relationships cleaned before deletion
-- Natural depth-first traversal
-
-**Why Not Unlink Subtasks**:
-- Subtask validation requires parent (cannot be None)
-- Allowing invalid state breaks schema consistency
-- Forcing cascade delete would surprise users
-- Orphaned subtasks are edge case, documented solution exists
-
-**Why Depth-First Deletion**:
-- Leaf nodes deleted first (bottom-up)
-- Parent references valid until children deleted
-- Matches database foreign key cascade behavior
-- Simplifies recursion logic
-
-**Alternatives Considered**:
-
-- **Delete without cleanup** (rejected: creates dangling references, violates consistency)
-- **Prevent delete if children exist** (rejected: requires cascade=True, less flexible)
-- **Auto-promote subtasks to tasks** (rejected: changes semantics, confusing)
-- **Batch relationship cleanup** (deferred: current approach sufficient, could optimize later)
-- **Transaction wrapper with rollback** (deferred: complex, would add significant overhead)
-
-**Testing Strategy** (Task bees-49g):
-
-Comprehensive unit tests in `tests/test_delete_ticket.py`:
-- Basic deletion: file removal, nonexistent ticket errors
-- Parent cleanup: removing from parent's children array
-- Dependency cleanup: removing from up_dependencies and down_dependencies arrays
-- Cascade delete: recursive deletion of children
-- Unlink behavior: cascade=false unlinks children (except subtasks)
-- Edge cases: ticket with all relationship types, complex hierarchies
-
-**Performance Considerations**:
-
-- Deletion: O(1) - single file unlink
-- Parent cleanup: O(1) - single file write to parent
-- Dependency cleanup: O(D) where D = number of dependency relationships (typically <10)
-- Cascade delete: O(N) where N = total descendants in hierarchy
-- Total: O(N + D) - linear in number of affected tickets
-- Worst case: Large epic with many tasks/subtasks and dependencies
-
 **Monitoring and Debugging**:
 
 - All operations logged at INFO level
@@ -2002,7 +1393,6 @@ Comprehensive unit tests in `tests/test_delete_ticket.py`:
 
 **Why Separate Helper Functions**:
 - Reusable across update scenarios
-- Testable independently
 - Clear single responsibility
 - Centralized logging and error handling
 
@@ -2017,35 +1407,6 @@ Comprehensive unit tests in `tests/test_delete_ticket.py`:
 - Supports both explicit removal (None) and clearing (empty list)
 - Flexible for different client patterns
 - Consistent with Python conventions
-
-**Alternatives Considered**:
-
-- **Separate add/remove relationship tools** (rejected: more verbose API, update is natural operation)
-- **Load all related tickets upfront** (rejected: unnecessary overhead if not changing relationships)
-- **Transaction wrapper** (deferred: added complexity, current approach sufficient)
-- **Delta parameter format** (rejected: diff calculation is simpler than complex delta DSL)
-
-**Testing Strategy** (Task bees-08d):
-
-Comprehensive unit tests covering:
-- Update basic fields (title, labels, status, owner, priority)
-- Add parent relationship
-- Remove parent relationship (set to None)
-- Add children
-- Remove children
-- Add dependencies (up and down)
-- Remove dependencies
-- Bidirectional consistency verification for all relationship changes
-- Error cases: non-existent ticket, invalid relationship IDs, empty title, circular dependencies
-
-**Performance Considerations**:
-
-- Validation phase: O(R) where R = number of new relationship IDs to validate
-- Read phase: O(1) - single ticket read
-- Update phase: O(1) - single ticket write
-- Sync phase: O(C) where C = number of changed relationships
-- Total: O(R + C) operations, acceptable for typical updates (<10 changes)
-- Future optimization: Batch relationship updates if C is large
 
 **Monitoring and Debugging**:
 
@@ -2134,12 +1495,6 @@ def _is_graph_term(self, term: str) -> bool:
     return term in self.GRAPH_TERMS
 ```
 
-**Design Rationale**:
-- Search terms need values (type=epic), so use prefix matching
-- Graph terms have no parameters, so use exact matching
-- Clear distinction prevents ambiguity
-- Enables straightforward stage type detection
-
 ### Stage Purity Enforcement
 
 **Rule**: Each stage must contain ONLY search terms OR ONLY graph terms, never both.
@@ -2209,12 +1564,6 @@ def _validate_regex_pattern(self, pattern: str, term_type: str, stage_idx: int):
 - Character classes: `p[0-4]`
 - Anchors: `^start`, `end$`
 
-**Design Rationale**:
-- Early validation prevents runtime regex errors
-- Clear error messages guide users to fix patterns
-- Supports complex filtering without structural OR operator
-- Follows PRD specification for OR/NOT via regex
-
 ### Graph Term Validation
 
 **Simple Exact Matching**:
@@ -2263,12 +1612,6 @@ def _validate_graph_term(self, term: str, stage_idx: int):
 "Stage 0: Cannot mix search and graph terms in same stage. Found both: search, graph"
 ```
 
-**Design Rationale**:
-- Clear errors reduce debugging time
-- Stage indices help locate issues in multi-stage queries
-- Showing valid options guides users toward correct syntax
-- Detailed messages enable self-service problem resolution
-
 ### Integration with Pipeline Evaluator
 
 **Parser Role**:
@@ -2287,88 +1630,6 @@ def _validate_graph_term(self, term: str, stage_idx: int):
 - Pipeline: Query execution orchestration
 - Search Executor: Executes search stages (Task bees-u7v)
 - Graph Executor: Executes graph stages (Task bees-s98)
-
-### Testing Strategy
-
-**Test Coverage** (tests/test_query_parser.py):
-- Basic parsing (single/multi-stage queries)
-- YAML string parsing
-- Search term validation (all term types)
-- Graph term validation
-- Stage purity enforcement
-- Regex pattern validation (valid, invalid, complex patterns)
-- All PRD example queries
-- Error message clarity
-- parse_and_validate() convenience method
-
-**Test Structure**:
-- TestQueryParserBasics: Core parsing functionality
-- TestSearchTermValidation: All search term types
-- TestGraphTermValidation: Graph term validation
-- TestStagePurityEnforcement: Mixed stage detection
-- TestPRDExampleQueries: Real-world query examples
-- TestParseAndValidate: Combined parse+validate
-- TestRegexPatterns: Complex regex patterns
-- TestErrorMessages: Error message quality
-
-**Coverage**: 41 tests, 100% pass rate
-
-### Performance Considerations
-
-**Parse Phase**:
-- O(S × T) where S = stages, T = terms per stage
-- YAML parsing is fast (uses PyYAML C extensions when available)
-- Minimal memory overhead (stages stored as simple lists)
-
-**Validation Phase**:
-- O(S × T) for term validation
-- Regex compilation adds overhead per regex term
-- Compiled patterns not cached (validation is one-time operation)
-- Acceptable performance for typical queries (< 10 stages, < 5 terms/stage)
-
-**Future Optimizations** (if needed):
-- Cache compiled regex patterns if query executed multiple times
-- Lazy validation mode (validate on first error only)
-- Schema-based validation with jsonschema (more structured, potentially faster)
-
-### Design Decisions
-
-**Why YAML for Queries**:
-- Human-readable and editable
-- Supports lists and nesting naturally
-- Standard format in markdown ecosystem
-- PyYAML is stable and widely used
-
-**Why AND-only Within Stages**:
-- Simpler mental model (stages are filters)
-- OR expressed via regex (keeps structure simple)
-- Matches PRD requirement for AND semantics
-- Stage composition provides flexibility
-
-**Why Stage Purity Requirement**:
-- Clear execution semantics (filter vs traverse)
-- Simplifies pipeline routing logic
-- Prevents ambiguous term ordering
-- Matches PRD design specification
-
-**Why Prefix-based Search Term Detection**:
-- Search terms need values (type=epic)
-- Prefix distinguishes term type from value
-- Extensible (new search terms can be added)
-- Clear syntax for users
-
-**Why Exact-match Graph Term Detection**:
-- Graph terms have no parameters
-- Exact match prevents typos/variations
-- Simple and unambiguous
-- Maps directly to relationship field names
-
-**Alternatives Considered**:
-- **JSON query format** (rejected: less human-readable)
-- **SQL-like DSL** (rejected: too complex for simple filtering)
-- **GraphQL-style syntax** (rejected: overkill for our use case)
-- **Separate OR operator** (rejected: regex alternation sufficient per PRD)
-- **Stage type annotation** (rejected: auto-detection simpler, less verbose)
 
 ## Search Executor Architecture
 
@@ -2411,10 +1672,6 @@ Implementation:
 - Return set of matching ticket IDs
 - Handle missing issue_type field (exclude from results)
 
-Design rationale:
-- Simple exact match, no regex needed
-- Fast O(N) linear scan
-- Missing field treated as non-match (defensive)
 
 **2. filter_by_id(tickets, id_value) → Set[str]**
 
@@ -2425,10 +1682,6 @@ Implementation:
 - Return singleton set if found, empty set otherwise
 - O(1) constant time lookup via dict membership test
 
-Design rationale:
-- Simplest filter - direct dict lookup
-- No iteration needed
-- Natural short-circuit for single-ID queries
 
 **3. filter_by_title_regex(tickets, regex_pattern) → Set[str]**
 
@@ -2441,10 +1694,6 @@ Implementation:
 - Handle missing title field (exclude from results)
 - Raise re.error on invalid regex pattern
 
-Design rationale:
-- Case-insensitive by default (matches user expectations)
-- search() not match() (allows partial matches)
-- Regex compilation validated at filter time (fail fast)
 
 **4. filter_by_label_regex(tickets, regex_pattern) → Set[str]**
 
@@ -2458,10 +1707,6 @@ Implementation:
 - Break early on first label match (optimization)
 - Handle missing/empty labels (exclude from results)
 
-Design rationale:
-- ANY semantics (one matching label sufficient)
-- Early break optimization (no need to check remaining labels)
-- Empty labels list treated as non-match
 
 ### Execute Method AND Logic
 
@@ -2503,47 +1748,9 @@ Orchestrates multi-term filtering with AND semantics.
 - re.error: Invalid regex pattern (propagated from filter methods)
 - Clear error messages indicating which term failed
 
-### Design Decisions
+### Performance
 
-**Why In-Memory Filtering**:
-- Query pipeline loads all tickets once into memory
-- Avoids repeated disk I/O per filter operation
-- Enables efficient multi-stage pipelines
-- Acceptable memory usage (tickets are metadata, not full content)
-
-**Why AND Logic via Intersection**:
-- Set intersection is O(min(|A|, |B|)) - efficient
-- Natural representation of AND constraint accumulation
-- Short-circuit opportunity (empty set detected early)
-- Matches PRD requirement for AND semantics within stages
-
-**Why Separate Filter Methods**:
-- Single Responsibility Principle
-- Easier to test in isolation
-- Clearer code (each method focused on one task)
-- Extensible (new filter types add new methods)
-
-**Why Case-Insensitive Regex Default**:
-- Matches user expectations (most searches case-insensitive)
-- Users can override with regex flags if needed
-- Consistent with query parser design
-- Reduces user friction
-
-**Why Set Return Types**:
-- Natural deduplication (no duplicate IDs)
-- Efficient set operations (intersection, union)
-- Clear semantics (unordered collection of IDs)
-- Matches pipeline evaluator expectations
-
-**Why No Regex Caching**:
-- Regex patterns compiled once per execute() call
-- Query execution is typically one-shot (not repeated)
-- Caching adds complexity with minimal benefit
-- Can be added later if profiling shows bottleneck
-
-### Performance and Testing
-
-Time complexity is O(T × N) where T is terms and N is tickets. filter_by_id uses O(1) dict lookup. 43 tests with comprehensive edge case coverage. Short-circuit optimization stops processing when intermediate results become empty.
+Time complexity is O(T × N) where T is terms and N is tickets. filter_by_id uses O(1) dict lookup. Short-circuit optimization stops processing when intermediate results become empty.
 
 ## Graph Executor Architecture
 
@@ -2560,10 +1767,6 @@ if parent_id:
     related_ids.add(parent_id)
 ```
 
-Design notes:
-- parent field is string or None (single parent)
-- Missing/None parent → no ID added (returns empty)
-- Multiple input tickets can have same parent (deduplicated)
 
 **2. children** - List traversal
 
@@ -2574,10 +1777,6 @@ if children:
     related_ids.update(children)
 ```
 
-Design notes:
-- children field is list of strings (multiple children)
-- Missing field defaults to empty list (safe)
-- update() adds all children at once (efficient)
 
 **3. up_dependencies** - List traversal (blockers)
 
@@ -2588,10 +1787,6 @@ if up_deps:
     related_ids.update(up_deps)
 ```
 
-Design notes:
-- Tickets this ticket depends on (what blocks me)
-- Same pattern as children (list traversal)
-- Empty list handled gracefully
 
 **4. down_dependencies** - List traversal (blocked)
 
@@ -2602,10 +1797,6 @@ if down_deps:
     related_ids.update(down_deps)
 ```
 
-Design notes:
-- Tickets that depend on this ticket (what I block)
-- Same pattern as children and up_dependencies
-- Symmetric to up_dependencies (bidirectional relationship)
 
 ### Edge Case Handling
 
@@ -2616,22 +1807,12 @@ if graph_term not in valid_terms:
     return set()
 ```
 
-Design rationale:
-- Return empty set (graceful degradation)
-- Log warning for debugging
-- Pipeline continues executing (doesn't crash)
-
 **Missing ticket IDs**:
 ```python
 if ticket_id not in tickets:
     logger.warning(f"Ticket {ticket_id} not found in ticket data, skipping")
     continue
 ```
-
-Design rationale:
-- Skip missing ticket, process remaining
-- Log warning for debugging
-- Return partial results (tickets that were found)
 
 **None/empty ticket IDs**:
 ```python
@@ -2640,21 +1821,11 @@ if not ticket_id:
     continue
 ```
 
-Design rationale:
-- Defensive check for invalid input
-- Prevents KeyError on None lookup
-- Continues processing valid IDs
-
 **Missing relationship fields**:
 ```python
 parent = ticket_data.get('parent')  # Returns None if missing
 children = ticket_data.get('children', [])  # Returns [] if missing
 ```
-
-Design rationale:
-- Use .get() with defaults (never KeyError)
-- Treat missing field as empty relationship
-- Graceful degradation (no crashes on incomplete data)
 
 ### In-Memory Data Structure Design
 
@@ -2674,17 +1845,6 @@ tickets = {
 }
 ```
 
-**Design decisions**:
-- Dict key is ticket ID (O(1) lookup)
-- All relationship fields stored as parsed data (no YAML parsing needed)
-- Relationship fields are IDs only (no nested objects)
-- Missing fields return None or empty list (defensive)
-
-**Why this structure**:
-- Fast lookup by ID (dict key access)
-- No disk I/O during traversal (all data in memory)
-- Simple relationship field access (direct dict lookup)
-- Compatible with ticket file YAML structure
 
 ### Relationship Field Lookup Strategy
 
@@ -2714,43 +1874,6 @@ related_ids.update(children)
 
 Time complexity O(n) where n is input ticket count. Zero disk I/O during traversal - 100-1000x faster than disk-based approach. Pipeline loads all tickets once and routes to appropriate executor based on stage type. Graceful error handling returns partial results for missing tickets rather than failing query.
 
-### Testing
-
-46 tests covering all relationship types, edge cases, invalid terms, and multi-hop traversals. 100% code coverage.
-```python
-# Get children of epic (tasks)
-tasks = executor.traverse(tickets, {'bees-ep1'}, 'children')
-# Get children of tasks (subtasks)
-subtasks = executor.traverse(tickets, tasks, 'children')
-```
-
-Validates that executor can be chained for multi-hop queries.
-
-### Alternative Designs Considered
-
-**Recursive traversal** (rejected):
-- Would automatically traverse N hops
-- Less control over traversal depth
-- Harder to implement pipeline stages
-- Circular dependency risk
-
-**Bidirectional traversal validation** (rejected):
-- Could verify parent.children ↔ child.parent consistency
-- Out of scope for executor (validator's job)
-- Performance cost for every query
-- Assumes data is already consistent
-
-**Caching relationship lookups** (rejected):
-- Could cache parent/children for repeated queries
-- Premature optimization (queries are already fast)
-- Memory overhead for cache
-- Complexity not justified by current use case
-
-**Parallel traversal** (rejected):
-- Could parallelize processing of input tickets
-- Thread overhead worse than O(n) lookup time
-- Python GIL limits parallelism benefit
-- Complexity not worth marginal gain
 
 ## Pipeline Evaluator Architecture
 
@@ -2801,11 +1924,6 @@ PipelineEvaluator
 }
 ```
 
-**Design rationale**:
-- Flat structure for O(1) field access
-- Lists for relationships (support multiple children/deps)
-- Separate up/down dependency fields for bidirectional traversal
-- All fields present (empty lists, not None) to avoid KeyError
 
 ### Ticket Loading Process
 
@@ -2964,111 +2082,12 @@ SearchExecutor handles type/id/title/label filtering with AND logic. GraphExecut
 ### Performance and Error Handling
 
 Initialization is O(n) for loading all tickets. Query execution is O(s × m) where s is stages and m is tickets per stage. Pipeline fails fast on structural issues while GraphExecutor handles missing tickets gracefully.
-- Pro: Enables batch queries (amortize load cost)
-- Con: Higher memory usage (all tickets in RAM)
-- Con: Slower initialization (load everything upfront)
-- Decision: Memory trade-off worth it for query performance
-
-**Why normalize vs raw markdown format**:
-- Pro: Executor code simpler (expects consistent structure)
-- Pro: Relationship lookups O(1) (not parsing dependencies array each time)
-- Pro: Bidirectional traversal works (children populated from parent references)
-- Con: Memory overhead (duplicate relationship data)
-- Con: Normalization cost upfront (O(n) processing)
-- Decision: Query performance > initialization cost
-
-**Why build reverse relationships**:
-- Pro: Graph traversal works in both directions (children, parent)
-- Pro: Single lookup per traversal (not scanning all tickets for children)
-- Pro: Consistent with bidirectional relationship model
-- Con: Duplicate data (parent in child, child in parent.children)
-- Con: Memory overhead (2x relationship storage)
-- Decision: Correct graph traversal requires it
-
-**Why set operations for deduplication**:
-- Pro: Automatic (no explicit dedup code)
-- Pro: Efficient (O(1) per add, O(m) total)
-- Pro: Natural for ticket IDs (unordered, unique)
-- Con: None (sets are perfect for this use case)
-
-### Testing Strategy
-
-**Test Coverage** (tests/test_pipeline.py):
-- TestPipelineEvaluatorInit: 8 tests (loading, normalization, errors)
-- TestStageTypeDetection: 10 tests (search, graph, mixed, errors)
-- TestQueryExecution: 6 tests (single stage, multi-stage, dedup, short-circuit)
-- TestBatchExecution: 3 tests (multiple queries, data reuse, complex)
-- TestEdgeCases: 4 tests (empty, no matches, missing relationships, no labels)
-
-**Coverage**: 31 tests, 100% pass rate, 100% code coverage
-
-**Test data approach**:
-- Use pytest fixtures to create temporary tickets/ directory with epics/, tasks/, subtasks/
-  subdirectories
-- Generate markdown test fixtures dynamically with YAML frontmatter in the `temp_tickets_dir`
-  fixture
-- Test fixtures match production Bees ticket format (markdown with YAML frontmatter) rather
-  than legacy Beads JSONL format
-- Test both success paths and error paths
-- Verify relationship building (parent↔children)
-
-**Example test structure**:
-```python
-def test_sequential_stage_execution(pipeline):
-    """Test stages pass results to next stage."""
-    stages = [
-        ['type=epic'],      # Get epics
-        ['children'],       # Get their children
-    ]
-    results = pipeline.execute_query(stages)
-    assert 'bees-tk1' in results  # Task child of epic
-```
-
-### Alternative Designs Considered
-
-**On-demand ticket loading** (rejected):
-- Would load tickets as needed during query execution
-- Pro: Lower memory usage (only load referenced tickets)
-- Con: Multiple disk I/O operations (slower queries)
-- Con: Complex caching logic (when to load, when cached?)
-- Con: Batch queries lose efficiency (reload tickets per query)
-- Rejected: Query performance priority > memory usage
-
-**Stream processing** (rejected):
-- Would process tickets one at a time through pipeline
-- Pro: Constant memory usage (O(1) instead of O(n))
-- Con: Multiple file scans (one per stage)
-- Con: Can't do graph traversal (need relationships in memory)
-- Con: Complex stage result caching
-- Rejected: Graph queries require all tickets in memory
-
-**Parallel stage execution** (rejected):
-- Would execute independent stages in parallel
-- Pro: Faster for multi-stage queries (concurrent execution)
-- Con: Stages are sequential (output of N → input of N+1)
-- Con: No parallelism opportunity (data dependency)
-- Rejected: Pipeline is inherently sequential
-
-**Lazy evaluation** (rejected):
-- Would defer stage execution until results accessed
-- Pro: Skip work if results never used
-- Con: Complexity (tracking what's evaluated)
-- Con: Unclear benefit (queries always want results)
-- Rejected: Premature optimization (no use case for lazy)
-
-**Query compilation** (rejected):
-- Would pre-compile query into optimized execution plan
-- Pro: Could reorder stages for optimization
-- Con: Query structure is fixed (sequential stages required)
-- Con: Compilation overhead not worth it (queries run once)
-- Rejected: No optimization opportunities in current model
 
 ### Future Enhancements
 
 **Query optimization**:
 - Analyze stage selectivity (run most restrictive first)
 - Requires statistics on ticket data (label distributions)
-- Trade-off: optimization cost vs query execution time
 
 **Incremental updates**:
 - Watch tickets/ directory for changes
@@ -3126,40 +2145,6 @@ be extensible, allowing additional validation rules to be added by other tasks.
   - `validate_id_uniqueness()`: Detects duplicate IDs across all ticket types
     - Scans all loaded tickets, tracking seen IDs
     - Adds validation error for each duplicate found
-
-### Design Decisions
-
-**Separation of Concerns**:
-- Scanner handles file I/O and ticket loading
-- Validator implements validation logic
-- Reporter handles error collection and formatting
-- This separation allows each component to be tested independently
-- Other tasks can extend validation by adding methods to Linter class
-
-**Error Collection Strategy**:
-- Structured error format with severity levels enables:
-  - Filtering by severity (errors vs warnings)
-  - Grouping by error type for report generation
-  - Programmatic processing of validation results
-  - Human-readable markdown output
-- All errors collected before reporting (don't fail fast)
-  - Provides complete picture of database issues in one scan
-  - User can see all problems at once instead of fixing one at a time
-
-**Extensibility for New Validation Rules**:
-- `Linter.validate_ticket()` stub method provides extension point
-- Other tasks will add validation logic:
-  - Bidirectional relationship validation (parent/children consistency)
-  - Cyclical dependency detection
-  - Missing reference validation
-  - Schema compliance checks
-- Each validation rule adds errors to the shared `LinterReport`
-
-**Report Formats**:
-- JSON format: For programmatic processing and corruption state storage
-- Markdown format: For human-readable output with visual indicators (❌/⚠️)
-- Dictionary format: For internal processing and testing
-- Design choice: Structured data model supports multiple output formats
 
 ### Integration Points
 
@@ -3226,10 +2211,6 @@ be extensible, allowing additional validation rules to be added by other tasks.
   down_dependencies, but '{downstream_id}' does not list '{ticket_id}' in its
   up_dependencies"
 
-### Testing Strategy
-
-Comprehensive test coverage in `tests/test_linter.py::TestBidirectionalValidation` validates orphaned relationship detection for both parent/child and dependency relationships.
-
 ### Integration Points
 
 **Relationship Sync Tools**:
@@ -3244,49 +2225,7 @@ Comprehensive test coverage in `tests/test_linter.py::TestBidirectionalValidatio
 - Forces manual fix before allowing ticket operations
 - Prevents propagating bad data through API
 
-### Design Rationale
-
-**Why Check Both Directions**:
-- Manual ticket editing can corrupt either side of relationship
-- User might edit parent without updating child, or vice versa
-- Checking both directions catches corruption regardless of source
-- Provides complete validation coverage
-
-**Why Separate Parent/Child from Dependencies**:
-- Different semantic meaning (hierarchy vs blocking)
-- Different field names and data structures
-- Allows separate error categorization
-- Enables targeted fix instructions
-- Could have different fix strategies in future
-
-**Why Error Severity is "error" not "warning"**:
-- Broken relationships cause incorrect graph traversal
-- Query results would be incomplete or incorrect
-- Blocking/unblocking logic would fail
-- Critical for system integrity, not just cosmetic
-- Database cannot be trusted with broken relationships
-
-### Design Rationale
-
-**Why Structured Error Reporting vs Simple Logging**:
-- Logging would require parsing log messages to extract error data
-- Structured errors enable:
-  - Programmatic filtering and analysis
-  - Persistent corruption state tracking
-  - MCP server integration (refuse to start when corrupt)
-  - Rich formatted reports (JSON, Markdown)
-
-**Why Run All Validations Instead of Failing Fast**:
-- Users benefit from seeing all issues at once
-- Enables comprehensive corruption reports
-- Reduces iteration time (fix all issues in one pass)
-- No performance penalty (single scan already loads all tickets)
-
-**Why Extensible Design with Stub Methods**:
-- Allows incremental implementation across multiple tasks
-- Each task can add validation rules independently
-- Core infrastructure (scanner, reporter) shared by all validation rules
-- Tests can verify each validation rule in isolation
+## File System Watcher Architecture
 
 ## Future Considerations
 
@@ -3353,39 +2292,6 @@ Allows registration of reusable query templates with parameter substitution. Que
 - If tickets/ directory missing, raises clear error with directory path
 - All errors logged for debugging
 
-### Design Decisions
-
-**YAML Storage vs Database**:
-- Chose YAML for human readability and editability
-- Easy version control integration
-- Simple backup and sharing
-- Sufficient for expected query volume (<100 queries)
-- Future: Consider DB for >1000 queries or complex permissions
-
-**Parameter Format (JSON String)**:
-- FastMCP doesn't support **kwargs or Dict parameters
-- JSON string is standard format for key-value data
-- Easy to serialize/deserialize
-- Supports nested structures if needed
-- Alternative considered: URL query string (rejected: less structured)
-
-**Validation Bypass Flag**:
-- Parameterized queries need placeholders that won't validate
-- Two-mode approach: strict validation for regular queries, bypass for templates
-- Runtime validation after substitution catches invalid param values
-- Alternative considered: allow placeholders in validator (rejected: adds complexity)
-
-**Module-Level Functions**:
-- Convenience functions use singleton storage instance
-- Reduces boilerplate for common operations
-- Explicit QueryStorage class for custom storage locations
-- Pattern: `save_query()` uses default, `QueryStorage().save_query()` for custom
-
-**No Query Versioning**:
-- Overwrites existing queries with same name
-- Relies on version control for history
-- Future: Add version field if needed for migration/rollback
-
 ### Future Enhancements
 
 **Query Metadata**:
@@ -3418,10 +2324,6 @@ Allows registration of reusable query templates with parameter substitution. Que
 - Invalidate on ticket updates (watch tickets/ directory modification time)
 - Significant speedup for repeated executions
 
-**Query Testing Framework**:
-- Unit tests for parameterized queries
-- Test data fixtures for query validation
-- Expected result assertions
 
 ## File System Watcher - Timer Cleanup Mechanism
 
@@ -3460,7 +2362,6 @@ context. While this adds thread creation overhead, it's acceptable for this use 
 - Index regeneration events are relatively infrequent (typically seconds or minutes apart)
 - Thread creation cost (~milliseconds) is negligible compared to index regeneration time
 - Daemon threads automatically terminate when the main program exits
-- Alternative approaches (asyncio, thread pools) would add complexity without meaningful benefit
 
 **Thread Safety Requirements**:
 1. Timer creation in `_trigger_regeneration()` must be atomic with timer cancellation
@@ -3514,32 +2415,6 @@ observer.join()                  # Wait for observer thread to finish
 3. If another event arrives, old timer is cancelled and new one is created
 4. When timer fires, `_do_regeneration()` runs and clears timer reference
 5. On shutdown, `cleanup()` cancels any pending timer before it fires
-
-### Design Decisions
-
-**Why `threading.Timer` instead of blocking sleep**:
-- Using `time.sleep()` in the watchdog event handler would block the watchdog thread
-- Blocked watchdog thread cannot process subsequent file system events until sleep completes
-- `threading.Timer` allows non-blocking event handling by scheduling regeneration in a separate thread
-- Trade-off: Thread creation overhead vs responsive event handling
-
-**Thread creation overhead**:
-- `threading.Timer` creates a new thread for each scheduled regeneration
-- Cancelled timers don't execute their callback, but the thread is still created
-- Thread creation cost: ~10-50ms per timer on typical systems
-- For typical usage (occasional ticket edits), overhead is negligible
-- For batch operations (100+ rapid file changes), expect ~1-5 seconds total overhead
-- Acceptable trade-off for maintaining watchdog responsiveness and preventing event blocking
-
-**Why `cleanup()` instead of destructor**:
-- Explicit cleanup allows deterministic resource release
-- Can be called at precise point in shutdown sequence
-- Avoids relying on Python garbage collection timing
-
-**Why cancel before observer.stop()**:
-- Prevents timer from firing while observer is shutting down
-- Avoids potential errors from regeneration during shutdown
-- Ensures clean separation of shutdown phases
 
 ### Error Handling and Failure Modes
 
@@ -3615,16 +2490,6 @@ def _do_regeneration(self):
             self._timer = None
 ```
 
-**Design Decision Rationale**:
-
-**Why `finally` block instead of wrapping entire method in lock**:
-- The original issue suggested wrapping the entire method with `self._timer_lock`, but this would
-  hold the lock during potentially slow I/O operations (`generate_index()` scans files,
-  `write_text()` writes to disk)
-- Holding locks during I/O can cause performance degradation and increase lock contention
-- The `finally` block approach ensures state cleanup without holding the lock during I/O
-- Only the state update needs synchronization, not the actual regeneration work
-
 **Exception Safety Guarantees**:
 - `pending_regeneration` flag is always reset, even if regeneration fails
 - `_timer` reference is always cleared, preventing memory leaks
@@ -3637,8 +2502,3 @@ def _do_regeneration(self):
   `_trigger_regeneration()` and cleanup in `cleanup()`
 - Lock is only held for the brief state update, not during the regeneration work
 
-**Testing**:
-- Added `test_do_regeneration_cleans_up_state_on_exception` to verify that state is cleaned up
-  even when `generate_index()` raises an exception
-- This test ensures the `finally` block is working correctly by mocking `generate_index` to raise
-  an error and verifying that `pending_regeneration` becomes False and `_timer` becomes None
