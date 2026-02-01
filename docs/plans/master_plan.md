@@ -10,6 +10,20 @@ _This document was consolidated in January 2026 to serve as a concise architectu
 - No caches
 - Limit: scales to only tens of directories and 1000s of tickets
 
+## Documentation Philosophy
+
+**README Documentation Standards** (Task bees-5bz2t):
+
+README.md serves end users who need to quickly understand installation and basic usage. Documentation should be:
+- **User-focused**: Describe what users can do, not how the system implements it
+- **Concise**: Users should read and understand it in under a minute, get running in 5 minutes
+- **Conceptual**: High-level descriptions instead of implementation details
+- **Code-free**: No Python code examples - those belong in API documentation or tests
+
+**Rationale**: Python code examples in README create maintenance burden (must stay synced with implementation), expose internal APIs that may change, and distract from user-facing concepts. Implementation details belong in master_plan.md, API documentation, or inline code comments.
+
+**Applied to Hive Configuration**: Removed Python function call examples (colonize_hive, scan_for_hive), removed technical implementation details (directory creation flags, type safety internals, performance optimizations), removed verbose validation error examples. Replaced with simple conceptual description of what hives are, how they're structured, and what users need to know to use them.
+
 ## Architecture Overview
 
 Bees is a markdown-based ticket management system with four core modules:
@@ -144,10 +158,26 @@ Centralized configuration module with typed Config object.
   - Marker created atomically with `/eggs` and `/evicted` directories
   - Identity data written as formatted JSON with indent=2
   - Marker is hidden directory (starts with dot) to avoid clutter
-- **Recovery Function**: `scan_for_hive(name: str, config: dict | None = None) -> Path | None` in `src/mcp_server.py`
+- **Recovery Function**: `scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None` in `src/mcp_server.py`
   - Recursively scans repository directories for `.hive` markers matching normalized name
   - Called when MCP commands cannot find hive at configured path in config.json
   - Returns Path to hive directory if found, None otherwise
+  - **Type Safety: BeesConfig Type Annotation** (implemented in Task bees-74z0q):
+    - Parameter type changed from `dict | None` to `BeesConfig | None` for type consistency
+    - Ensures proper typing with the BeesConfig dataclass used throughout codebase
+    - Added BeesConfig import to mcp_server.py imports
+    - Updated function docstring and examples to reflect BeesConfig usage
+    - Type annotation rationale: Prevents type confusion and enables proper IDE/type checker support
+  - **None-Safety: Config.hives Access** (implemented in Task bees-74z0q):
+    - Added conditional check `if config and config.hives:` before accessing config.hives
+    - Prevents AttributeError when config is None or config.hives is empty
+    - Gracefully falls back to loading config from disk when config is None
+    - None-safety rationale: Defensive programming prevents crashes on edge cases
+  - **Performance: Early Return Optimization** (implemented in Task bees-74z0q):
+    - Added `return found_hive_path` immediately after finding target hive
+    - Avoids unnecessary iteration through remaining .hive markers
+    - Short-circuits scan as soon as target is located
+    - Performance benefit: Reduces scan time proportional to target position in traversal order
   - **Security: Depth Limiting** (implemented in Task bees-s1gpp):
     - Scans limited to MAX_SCAN_DEPTH (10 directory levels) from repository root
     - Prevents filesystem-wide traversal if repo_root is `/` or high-level directory
@@ -155,9 +185,9 @@ Centralized configuration module with typed Config object.
     - Markers beyond depth limit are skipped with debug log message
     - Security rationale: Bounds computation time/resource usage on misconfigured systems
   - **Performance: Config Parameter Optimization** (implemented in Task bees-s1gpp):
-    - Accepts optional `config` dict parameter to avoid redundant disk reads
-    - If config provided, extracts registered hive names directly without loading from disk
-    - If config not provided, loads from `.bees/config.json` as before
+    - Accepts optional `config` BeesConfig parameter to avoid redundant disk reads
+    - If config provided with hives, extracts registered hive names from config.hives.keys()
+    - If config is None, loads from `.bees/config.json` as before
     - Enables N+1 query optimization when scanning multiple hives in sequence
     - Performance benefit: Single config load + multiple scans instead of load-per-scan
   - **Automatically updates config.json with recovered path** (implemented in Task bees-uzyha):
@@ -257,6 +287,21 @@ End-to-end testing confirmed HTTP transport is production-ready. The testing pro
 2. Connection verification: `claude mcp list` confirms successful connection
 3. Tool execution: MCP tools execute successfully over HTTP transport
 4. Stability: Clean connection lifecycle throughout testing
+
+**Implementation Details** (`src/main.py`):
+
+The HTTP server retrieves the Starlette application from FastMCP using the `mcp.http_app()` method. This method returns the ASGI application that uvicorn uses to handle HTTP requests for the MCP protocol.
+
+```python
+# Get the Starlette app from FastMCP
+http_app = mcp.http_app()
+
+# Set up custom HTTP routes on FastMCP's Starlette app
+setup_http_routes(http_app)
+
+# Run the FastMCP server with HTTP transport via uvicorn
+uvicorn.run(http_app, host=host, port=port, log_level="info")
+```
 
 **HTTP Endpoint Routing** (Task bees-q5g7):
 

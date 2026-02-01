@@ -48,112 +48,31 @@ The auto-generated index is at `tickets/index.md` and updates automatically when
 
 ### Hive Configuration
 
-Bees stores hive configuration in `.bees/config.json` in the client repository root.
+Bees supports multiple "hives" - separate ticket collections within your repository. Configuration is stored in `.bees/config.json` and created automatically on first use.
 
-**Hive Colonization:**
+**Hive Structure:**
 
-When creating a new hive, use the `colonize_hive()` function to set up the directory structure:
+Each hive contains:
+- `/eggs` - Reserved for future features
+- `/evicted` - Archived/completed tickets
+- `/.hive` - Identity marker for automatic recovery if the hive is moved
 
-```python
-from src.mcp_server import colonize_hive
+**Configuration:**
 
-# Create a new hive with subdirectories
-result = colonize_hive(name='Back End', path='/Users/username/projects/myrepo/tickets/backend')
-```
+Hives are registered with a display name and path. Names are normalized automatically (e.g., 'Back End' → 'back_end'). Paths must be absolute and within the repository root.
 
-This creates the following directory structure:
-- `/eggs` - Reserved for future feature storage (currently stubbed)
-- `/evicted` - Storage for completed and archived tickets
-- `/.hive` - Hidden marker directory containing hive identity for recovery
-
-The function automatically:
-- Creates both subdirectories with `parents=True, exist_ok=True` for idempotent operations
-- Creates a `.hive` marker containing hive identity (normalized name and display name)
-- Normalizes the hive name (e.g., 'Back End' → 'back_end')
-- Returns status information including the normalized name and hive path
-
-**Hive Recovery:**
-
-The `.hive` marker enables automatic hive recovery when paths change. If a hive is moved or renamed, Bees can scan for its `.hive` marker to locate it:
-
-- Each hive contains a `/.hive/identity.json` file with its normalized name and display name
-- When a hive cannot be found at its configured path, Bees recursively scans the repository for `.hive` markers
-- If a matching marker is found, the config is automatically updated with the new path
-- Orphaned `.hive` markers (not registered in config) trigger warning logs for cleanup
-
-**Scan Security & Performance:**
-
-The `scan_for_hive()` function includes security and performance optimizations:
-
-- **Depth Limiting**: Scanning is limited to 10 directory levels from the repository root to prevent excessive filesystem traversal if the repo root is `/` or a high-level directory
-- **Config Optimization**: Accepts an optional `config` parameter to avoid redundant disk reads when scanning multiple hives
-
-Usage example with config parameter:
-```python
-from src.mcp_server import scan_for_hive
-from src.config import load_bees_config
-
-# Load config once for multiple scans
-config_dict = load_bees_config().dict()
-
-# Scan for multiple hives without reloading config
-hive1_path = scan_for_hive('backend', config=config_dict)
-hive2_path = scan_for_hive('frontend', config=config_dict)
-```
-
-**Configuration Schema:**
-
+Example configuration:
 ```json
 {
   "hives": {
     "backend": {
-      "path": "/Users/username/projects/myrepo/tickets/backend",
+      "path": "/path/to/tickets/backend",
       "display_name": "Backend"
-    },
-    "frontend": {
-      "path": "/Users/username/projects/myrepo/tickets/frontend",
-      "display_name": "Frontend"
     }
   },
   "allow_cross_hive_dependencies": false,
   "schema_version": "1.0"
 }
-```
-
-**Fields:**
-- `hives`: Dictionary mapping normalized hive names to hive configurations
-  - `path`: Absolute path to hive directory
-  - `display_name`: Human-readable name for the hive
-- `allow_cross_hive_dependencies`: Whether tickets in different hives can depend on each other
-- `schema_version`: Configuration schema version (currently "1.0")
-
-**Name Normalization:**
-
-Hive names are automatically normalized for use as configuration keys:
-- Spaces are converted to underscores
-- Names are lowercased
-- Normalized names must be unique
-
-Examples:
-- 'Back End' → 'back_end'
-- 'UPPERCASE' → 'uppercase'
-- 'Multi Word Name' → 'multi_word_name'
-
-This prevents registration of hives with different display names that would collide when normalized (e.g., 'Back End' and 'back end' both normalize to 'back_end').
-
-**Path Validation:**
-
-Hive paths are validated during registration to ensure security and consistency:
-- **Must be absolute paths** - Relative paths like `tickets/backend` are rejected
-- **Must exist** - The directory must be created before registering the hive
-- **Must be within repository root** - Paths outside the git repository are rejected for security
-- **Trailing slashes normalized** - Paths like `/path/to/hive/` are normalized to `/path/to/hive`
-
-Example validation errors:
-```
-ValueError: Hive path must be absolute, got relative path: tickets/backend
-ValueError: Hive path does not exist: /Users/username/projects/myrepo/nonexistent
-ValueError: Hive path must be within repository root. Path: /tmp/outside, Repo root: /Users/username/projects/myrepo
 ```
 
 ## MCP Commands

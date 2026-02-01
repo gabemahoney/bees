@@ -1072,8 +1072,9 @@ class TestScanForHiveConfigOptimization:
         return repo_root
 
     def test_scan_for_hive_accepts_config_parameter(self, temp_repo):
-        """Test that scan_for_hive accepts optional config dict parameter."""
+        """Test that scan_for_hive accepts optional config BeesConfig parameter."""
         from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig, HiveConfig
         import json
 
         # Create hive
@@ -1089,7 +1090,9 @@ class TestScanForHiveConfigOptimization:
         }))
 
         # Call with config parameter
-        config = {"hives": {"test_hive": {"path": str(hive_path)}}}
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+        })
         result = scan_for_hive("test_hive", config=config)
 
         assert result == hive_path
@@ -1097,6 +1100,7 @@ class TestScanForHiveConfigOptimization:
     def test_scan_for_hive_uses_provided_config(self, temp_repo, monkeypatch):
         """Test that scan_for_hive uses provided config instead of loading from disk."""
         from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig, HiveConfig
         import json
 
         # Create hive
@@ -1112,7 +1116,9 @@ class TestScanForHiveConfigOptimization:
         }))
 
         # Provide config with registered hive
-        config = {"hives": {"registered_hive": {"path": str(hive_path)}}}
+        config = BeesConfig(hives={
+            "registered_hive": HiveConfig(display_name="Registered Hive", path=str(hive_path))
+        })
 
         # Mock file open to ensure config not loaded from disk
         original_open = open
@@ -1130,8 +1136,9 @@ class TestScanForHiveConfigOptimization:
         assert result == hive_path
 
     def test_scan_for_hive_empty_config_parameter(self, temp_repo):
-        """Test that scan_for_hive handles empty config dict."""
+        """Test that scan_for_hive handles BeesConfig with empty hives."""
         from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig
         import json
 
         # Create hive
@@ -1147,12 +1154,13 @@ class TestScanForHiveConfigOptimization:
         }))
 
         # Call with empty config
-        result = scan_for_hive("test_hive", config={})
+        result = scan_for_hive("test_hive", config=BeesConfig(hives={}))
         assert result == hive_path
 
-    def test_scan_for_hive_config_with_missing_hives_key(self, temp_repo):
-        """Test that scan_for_hive handles config without 'hives' key."""
+    def test_scan_for_hive_config_with_empty_hives(self, temp_repo):
+        """Test that scan_for_hive handles BeesConfig with empty hives."""
         from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig
         import json
 
         # Create hive
@@ -1167,8 +1175,8 @@ class TestScanForHiveConfigOptimization:
             "display_name": "Test Hive"
         }))
 
-        # Call with config missing 'hives' key
-        result = scan_for_hive("test_hive", config={"other_key": "value"})
+        # Call with config with empty hives
+        result = scan_for_hive("test_hive", config=BeesConfig(hives={}))
         assert result == hive_path
 
     def test_scan_for_hive_loads_from_disk_when_config_not_provided(self, temp_repo):
@@ -1197,3 +1205,373 @@ class TestScanForHiveConfigOptimization:
         # Call without config parameter - should load from disk
         result = scan_for_hive("test_hive")
         assert result == hive_path
+
+
+class TestScanForHiveBugFixes:
+    """Tests for scan_for_hive() bug fixes: config type handling, None safety, and early return."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_config_none_handling(self, temp_repo):
+        """Test that scan_for_hive handles config=None without AttributeError."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call with config=None - should not raise AttributeError
+        result = scan_for_hive("test_hive", config=None)
+        assert result == hive_path
+
+    def test_scan_for_hive_config_empty_hives(self, temp_repo):
+        """Test that scan_for_hive handles config with empty hives list."""
+        from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Call with config with empty hives
+        config = BeesConfig(hives={})
+        result = scan_for_hive("test_hive", config=config)
+        assert result == hive_path
+
+    def test_scan_for_hive_early_return_behavior(self, temp_repo):
+        """Test that scan_for_hive returns immediately upon finding target hive."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create multiple hives
+        hive1_path = temp_repo / "hive1"
+        hive1_path.mkdir()
+        hive1_marker = hive1_path / ".hive"
+        hive1_marker.mkdir()
+        (hive1_marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "target_hive",
+            "display_name": "Target Hive"
+        }))
+
+        hive2_path = temp_repo / "hive2"
+        hive2_path.mkdir()
+        hive2_marker = hive2_path / ".hive"
+        hive2_marker.mkdir()
+        (hive2_marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "other_hive",
+            "display_name": "Other Hive"
+        }))
+
+        # Scan for target_hive - should find it and return immediately
+        result = scan_for_hive("target_hive")
+        assert result == hive1_path
+
+    def test_scan_for_hive_beesconfig_type_handling(self, temp_repo):
+        """Test that scan_for_hive correctly handles BeesConfig object type."""
+        from src.mcp_server import scan_for_hive
+        from src.config import BeesConfig, HiveConfig
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "registered_hive",
+            "display_name": "Registered Hive"
+        }))
+
+        # Create BeesConfig object with registered hive
+        config = BeesConfig(hives={
+            "registered_hive": HiveConfig(
+                display_name="Registered Hive",
+                path=str(hive_path)
+            )
+        })
+
+        # Call with BeesConfig object - should work without errors
+        result = scan_for_hive("registered_hive", config=config)
+        assert result == hive_path
+
+
+class TestScanForHiveFileVsDirectory:
+    """Tests for scan_for_hive() handling of .hive as file vs directory."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_skips_file_marker(self, temp_repo):
+        """Test that scan_for_hive() skips .hive when it's a file instead of directory."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create a .hive FILE (not directory) - this is the edge case
+        hive_file = temp_repo / ".hive"
+        hive_file.write_text("This is a file, not a directory")
+
+        # Also create a valid hive directory elsewhere to confirm scan still works
+        valid_hive_path = temp_repo / "valid_hive"
+        valid_hive_path.mkdir()
+
+        valid_marker = valid_hive_path / ".hive"
+        valid_marker.mkdir()
+        identity_file = valid_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Scan should skip the .hive file and find the valid directory
+        result = scan_for_hive("test_hive")
+
+        # Should find the valid hive, not fail on the file
+        assert result == valid_hive_path
+
+    def test_scan_for_hive_returns_none_when_only_file_marker(self, temp_repo):
+        """Test that scan_for_hive() returns None when .hive is only a file, not directory."""
+        from src.mcp_server import scan_for_hive
+
+        # Create only a .hive FILE (no valid directory marker)
+        hive_file = temp_repo / ".hive"
+        hive_file.write_text("This is a file, not a directory")
+
+        # Scan should return None (no valid hive found)
+        result = scan_for_hive("test_hive")
+
+        assert result is None
+
+
+class TestScanForHiveExceptionHandling:
+    """Tests for scan_for_hive() exception handling with specific exception types."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_scan_for_hive_handles_ioerror_on_config_update(self, temp_repo, monkeypatch, caplog):
+        """Test that scan_for_hive catches IOError when config.json cannot be written."""
+        from src.mcp_server import scan_for_hive
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        import json
+        import logging
+
+        caplog.set_level(logging.ERROR)
+
+        # Create config and hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+        })
+        save_bees_config(config)
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Mock save_bees_config to raise IOError
+        def mock_save_ioerror(cfg):
+            raise IOError("Permission denied")
+
+        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_ioerror)
+
+        # Should still find hive and log error
+        result = scan_for_hive("test_hive")
+        assert result == hive_path
+        assert any("Failed to update config.json" in record.message for record in caplog.records)
+
+    def test_scan_for_hive_handles_json_decode_error_on_config_load(self, temp_repo, monkeypatch, caplog):
+        """Test that scan_for_hive catches json.JSONDecodeError when config.json is malformed."""
+        from src.mcp_server import scan_for_hive
+        import json
+        import logging
+
+        caplog.set_level(logging.ERROR)
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        # Write malformed config.json
+        config_path = temp_repo / ".bees" / "config.json"
+        config_path.write_text("{invalid json")
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Mock load_bees_config to raise JSONDecodeError
+        def mock_load_json_error():
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_json_error)
+
+        # Should still find hive and log error
+        result = scan_for_hive("test_hive")
+        assert result == hive_path
+        assert any("Failed to update config.json" in record.message for record in caplog.records)
+
+    def test_scan_for_hive_handles_attribute_error_on_config_access(self, temp_repo, monkeypatch, caplog):
+        """Test that scan_for_hive catches AttributeError when config object is malformed."""
+        from src.mcp_server import scan_for_hive
+        import json
+        import logging
+
+        caplog.set_level(logging.ERROR)
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Mock load_bees_config to return object without hives attribute
+        class BadConfig:
+            pass
+
+        def mock_load_bad_config():
+            return BadConfig()
+
+        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_bad_config)
+
+        # Should still find hive and log error
+        result = scan_for_hive("test_hive")
+        assert result == hive_path
+        assert any("Failed to update config.json" in record.message for record in caplog.records)
+
+    def test_scan_for_hive_does_not_catch_programming_errors(self, temp_repo, monkeypatch):
+        """Test that scan_for_hive does NOT catch programming errors like NameError."""
+        from src.mcp_server import scan_for_hive
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Mock load_bees_config to raise NameError (programming error)
+        def mock_load_name_error():
+            raise NameError("undefined_variable is not defined")
+
+        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_name_error)
+
+        # Should propagate NameError, not catch it
+        with pytest.raises(NameError, match="undefined_variable is not defined"):
+            scan_for_hive("test_hive")
+
+    def test_scan_for_hive_exception_handling_specificity(self, temp_repo, monkeypatch):
+        """Test that exception handling only catches expected exception types."""
+        from src.mcp_server import scan_for_hive
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        import json
+
+        # Create hive
+        hive_path = temp_repo / "hive"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+        })
+        save_bees_config(config)
+
+        # Create .hive marker
+        hive_marker = hive_path / ".hive"
+        hive_marker.mkdir()
+        identity_file = hive_marker / "identity.json"
+        identity_file.write_text(json.dumps({
+            "normalized_name": "test_hive",
+            "display_name": "Test Hive"
+        }))
+
+        # Test each exception type individually
+        for error_type, error_instance in [
+            (IOError, IOError("Disk error")),
+            (json.JSONDecodeError, json.JSONDecodeError("Invalid", "", 0)),
+            (AttributeError, AttributeError("No attribute"))
+        ]:
+            # Mock save_bees_config to raise specific error
+            def mock_save_error(cfg):
+                raise error_instance
+
+            monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_error)
+
+            # Should catch the error and still return hive path
+            result = scan_for_hive("test_hive")
+            assert result == hive_path

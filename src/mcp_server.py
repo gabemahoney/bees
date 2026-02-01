@@ -19,7 +19,7 @@ from .query_storage import save_query, load_query, list_queries, validate_query
 from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
-from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig
+from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig, BeesConfig
 
 # Ensure log directory exists
 log_dir = Path.home() / '.bees'
@@ -156,7 +156,7 @@ def normalize_name(name: str) -> str:
     return name.replace(' ', '_').lower()
 
 
-def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
+def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
     """
     Recursively scan repository directories for a .hive marker matching a hive name.
 
@@ -166,8 +166,8 @@ def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
 
     Args:
         name: Normalized hive name to search for (e.g., 'back_end')
-        config: Optional config dict to avoid reloading from disk. If provided,
-                should contain 'hives' key with registered hive names.
+        config: Optional BeesConfig object to avoid reloading from disk. If provided,
+                uses config.hives to get registered hive names.
 
     Returns:
         Path to the hive directory if found, None otherwise
@@ -178,7 +178,8 @@ def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
     Example:
         >>> scan_for_hive('back_end')
         PosixPath('/Users/user/projects/myrepo/tickets')
-        >>> scan_for_hive('back_end', config={'hives': {'back_end': {...}}})
+        >>> config = BeesConfig(hives={'back_end': HiveConfig(...)})
+        >>> scan_for_hive('back_end', config=config)
         PosixPath('/Users/user/projects/myrepo/tickets')
     """
     try:
@@ -190,10 +191,10 @@ def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
     # Load config to check for registered hives
     # Use provided config if available to avoid redundant disk reads
     registered_hives = set()
-    if config is not None:
+    if config and config.hives:
         # Config was provided, use it directly
-        registered_hives = set(config.get('hives', {}).keys())
-    else:
+        registered_hives = set(config.hives.keys())
+    elif config is None:
         # Load config from disk
         config_path = Path('.bees/config.json')
         if config_path.exists():
@@ -247,8 +248,10 @@ def scan_for_hive(name: str, config: dict | None = None) -> Path | None:
                             logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
                         else:
                             logger.warning(f"Hive '{name}' not found in config, cannot update path")
-                    except Exception as e:
+                    except (IOError, json.JSONDecodeError, AttributeError) as e:
                         logger.error(f"Failed to update config.json for hive '{name}': {e}")
+
+                    return found_hive_path
                 elif marker_name not in registered_hives:
                     # Found an orphaned .hive marker
                     logger.warning(
