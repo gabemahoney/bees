@@ -42,36 +42,6 @@ title: {title}"""
         file_path.write_text(frontmatter)
         return file_path
 
-    def test_valid_lowercase_id(self, tmp_path):
-        """Should pass validation for lowercase IDs."""
-        self._create_ticket_file(tmp_path, "epic", "bees-abc", "Valid Lowercase")
-
-        linter = Linter(str(tmp_path))
-        report = linter.run()
-
-        format_errors = report.get_errors(error_type="id_format")
-        assert len(format_errors) == 0
-
-    def test_valid_numeric_id(self, tmp_path):
-        """Should pass validation for numeric IDs."""
-        self._create_ticket_file(tmp_path, "epic", "bees-123", "Valid Numeric")
-
-        linter = Linter(str(tmp_path))
-        report = linter.run()
-
-        format_errors = report.get_errors(error_type="id_format")
-        assert len(format_errors) == 0
-
-    def test_valid_mixed_alphanumeric_id(self, tmp_path):
-        """Should pass validation for mixed alphanumeric IDs."""
-        self._create_ticket_file(tmp_path, "epic", "bees-a1b", "Valid Mixed")
-
-        linter = Linter(str(tmp_path))
-        report = linter.run()
-
-        format_errors = report.get_errors(error_type="id_format")
-        assert len(format_errors) == 0
-
     def test_valid_hive_prefixed_id(self, tmp_path):
         """Should pass validation for hive-prefixed IDs."""
         self._create_ticket_file(tmp_path, "epic", "backend.bees-abc", "Hive Prefixed")

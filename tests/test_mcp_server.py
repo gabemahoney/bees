@@ -165,9 +165,6 @@ class TestToolRegistration:
         (tickets_dir / "epics").mkdir()
         (tickets_dir / "tasks").mkdir()
         (tickets_dir / "subtasks").mkdir()
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-        import src.ticket_factory
-        monkeypatch.setattr(src.ticket_factory, "TICKETS_DIR", tickets_dir)
 
         result = _create_ticket(
             hive_name="default",
@@ -247,16 +244,9 @@ class TestUpdateTicket:
     @pytest.fixture
     def temp_tickets_dir(self, tmp_path, monkeypatch):
         """Create temporary tickets directory with test fixtures."""
-        tickets_dir = tmp_path / "tickets"
-        tickets_dir.mkdir()
-        (tickets_dir / "epics").mkdir()
-        (tickets_dir / "tasks").mkdir()
-        (tickets_dir / "subtasks").mkdir()
-
-        # Monkeypatch the TICKETS_DIR in paths module
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
-        return tickets_dir
+        # Change to tmp_path for test isolation
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
 
     def test_update_ticket_basic_fields(self, temp_tickets_dir):
         """Test updating basic fields (title, labels, status, owner, priority)."""

@@ -21,25 +21,25 @@ class TestCycleDetection:
 
         # Create 3-node blocking dependency cycle
         ticket_a = Ticket(
-            id="bees-aa1",
+            id="default.bees-aa1",
             type="task",
             title="Task A",
-            up_dependencies=["bees-cc1"],  # A depends on C
-            down_dependencies=["bees-bb1"]  # B depends on A
+            up_dependencies=["default.bees-cc1"],  # A depends on C
+            down_dependencies=["default.bees-bb1"]  # B depends on A
         )
         ticket_b = Ticket(
-            id="bees-bb1",
+            id="default.bees-bb1",
             type="task",
             title="Task B",
-            up_dependencies=["bees-aa1"],  # B depends on A
-            down_dependencies=["bees-cc1"]  # C depends on B
+            up_dependencies=["default.bees-aa1"],  # B depends on A
+            down_dependencies=["default.bees-cc1"]  # C depends on B
         )
         ticket_c = Ticket(
-            id="bees-cc1",
+            id="default.bees-cc1",
             type="task",
             title="Task C",
-            up_dependencies=["bees-bb1"],  # C depends on B
-            down_dependencies=["bees-aa1"]  # A depends on C
+            up_dependencies=["default.bees-bb1"],  # C depends on B
+            down_dependencies=["default.bees-aa1"]  # A depends on C
         )
 
         # Write tickets
@@ -57,9 +57,9 @@ class TestCycleDetection:
 
         # Check cycle path is in error message
         error_msg = cycle_errors[0].message
-        assert "bees-aa1" in error_msg
-        assert "bees-bb1" in error_msg
-        assert "bees-cc1" in error_msg
+        assert "default.bees-aa1" in error_msg
+        assert "default.bees-bb1" in error_msg
+        assert "default.bees-cc1" in error_msg
         assert "Cycle detected" in error_msg
 
     def test_blocking_2_node_cycle(self, tmp_path):
@@ -70,18 +70,18 @@ class TestCycleDetection:
 
         # Create 2-node blocking dependency cycle
         ticket_a = Ticket(
-            id="bees-aa2",
+            id="default.bees-aa2",
             type="task",
             title="Task A",
-            up_dependencies=["bees-bb2"],  # A depends on B
-            down_dependencies=["bees-bb2"]  # B depends on A
+            up_dependencies=["default.bees-bb2"],  # A depends on B
+            down_dependencies=["default.bees-bb2"]  # B depends on A
         )
         ticket_b = Ticket(
-            id="bees-bb2",
+            id="default.bees-bb2",
             type="task",
             title="Task B",
-            up_dependencies=["bees-aa2"],  # B depends on A
-            down_dependencies=["bees-aa2"]  # A depends on B
+            up_dependencies=["default.bees-aa2"],  # B depends on A
+            down_dependencies=["default.bees-aa2"]  # A depends on B
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-aa2.md", ticket_a)
@@ -101,11 +101,11 @@ class TestCycleDetection:
 
         # Create self-cycle
         ticket_a = Ticket(
-            id="bees-aa3",
+            id="default.bees-aa3",
             type="task",
             title="Task A",
-            up_dependencies=["bees-aa3"],  # A depends on itself
-            down_dependencies=["bees-aa3"]  # A blocks itself
+            up_dependencies=["default.bees-aa3"],  # A depends on itself
+            down_dependencies=["default.bees-aa3"]  # A blocks itself
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-aa3.md", ticket_a)
@@ -127,25 +127,25 @@ class TestCycleDetection:
         # Create 3-node hierarchy cycle (Epic->Task->Subtask->Epic)
         # This shouldn't happen in practice, but we should detect it
         epic = Ticket(
-            id="bees-ep1",
+            id="default.bees-ep1",
             type="epic",
             title="Epic A",
-            parent="bees-st1",  # Epic's parent is Subtask (cycle!)
-            children=["bees-tk1"]
+            parent="default.bees-st1",  # Epic's parent is Subtask (cycle!)
+            children=["default.bees-tk1"]
         )
         task = Ticket(
-            id="bees-tk1",
+            id="default.bees-tk1",
             type="task",
             title="Task B",
-            parent="bees-ep1",
-            children=["bees-st1"]
+            parent="default.bees-ep1",
+            children=["default.bees-st1"]
         )
         subtask = Ticket(
-            id="bees-st1",
+            id="default.bees-st1",
             type="subtask",
             title="Subtask C",
-            parent="bees-tk1",
-            children=["bees-ep1"]
+            parent="default.bees-tk1",
+            children=["default.bees-ep1"]
         )
 
         self._write_ticket(tickets_dir / "epics" / "bees-ep1.md", epic)
@@ -166,18 +166,18 @@ class TestCycleDetection:
 
         # Create 2-node hierarchy cycle
         task_a = Ticket(
-            id="bees-ta1",
+            id="default.bees-ta1",
             type="task",
             title="Task A",
-            parent="bees-tb1",
-            children=["bees-tb1"]
+            parent="default.bees-tb1",
+            children=["default.bees-tb1"]
         )
         task_b = Ticket(
-            id="bees-tb1",
+            id="default.bees-tb1",
             type="task",
             title="Task B",
-            parent="bees-ta1",
-            children=["bees-ta1"]
+            parent="default.bees-ta1",
+            children=["default.bees-ta1"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-ta1.md", task_a)
@@ -197,11 +197,11 @@ class TestCycleDetection:
 
         # Create self-cycle in hierarchy
         task = Ticket(
-            id="bees-ts1",
+            id="default.bees-ts1",
             type="task",
             title="Task Self",
-            parent="bees-ts1",
-            children=["bees-ts1"]
+            parent="default.bees-ts1",
+            children=["default.bees-ts1"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-ts1.md", task)
@@ -220,24 +220,24 @@ class TestCycleDetection:
 
         # Create acyclic dependency chain: A -> B -> C
         ticket_a = Ticket(
-            id="bees-ac1",
+            id="default.bees-ac1",
             type="task",
             title="Task A",
             up_dependencies=[],
-            down_dependencies=["bees-bc1"]
+            down_dependencies=["default.bees-bc1"]
         )
         ticket_b = Ticket(
-            id="bees-bc1",
+            id="default.bees-bc1",
             type="task",
             title="Task B",
-            up_dependencies=["bees-ac1"],
-            down_dependencies=["bees-cc2"]
+            up_dependencies=["default.bees-ac1"],
+            down_dependencies=["default.bees-cc2"]
         )
         ticket_c = Ticket(
-            id="bees-cc2",
+            id="default.bees-cc2",
             type="task",
             title="Task C",
-            up_dependencies=["bees-bc1"],
+            up_dependencies=["default.bees-bc1"],
             down_dependencies=[]
         )
 
@@ -261,24 +261,24 @@ class TestCycleDetection:
 
         # Create acyclic hierarchy: Epic -> Task -> Subtask
         epic = Ticket(
-            id="bees-ae1",
+            id="default.bees-ae1",
             type="epic",
             title="Epic A",
             parent=None,
-            children=["bees-at1"]
+            children=["default.bees-at1"]
         )
         task = Ticket(
-            id="bees-at1",
+            id="default.bees-at1",
             type="task",
             title="Task A",
-            parent="bees-ae1",
-            children=["bees-as1"]
+            parent="default.bees-ae1",
+            children=["default.bees-as1"]
         )
         subtask = Ticket(
-            id="bees-as1",
+            id="default.bees-as1",
             type="subtask",
             title="Subtask A",
-            parent="bees-at1",
+            parent="default.bees-at1",
             children=[]
         )
 
@@ -300,32 +300,32 @@ class TestCycleDetection:
 
         # Create two independent cycles: (A->B->A) and (C->D->C)
         ticket_a = Ticket(
-            id="bees-na1",
+            id="default.bees-na1",
             type="task",
             title="Task A",
-            up_dependencies=["bees-nb1"],
-            down_dependencies=["bees-nb1"]
+            up_dependencies=["default.bees-nb1"],
+            down_dependencies=["default.bees-nb1"]
         )
         ticket_b = Ticket(
-            id="bees-nb1",
+            id="default.bees-nb1",
             type="task",
             title="Task B",
-            up_dependencies=["bees-na1"],
-            down_dependencies=["bees-na1"]
+            up_dependencies=["default.bees-na1"],
+            down_dependencies=["default.bees-na1"]
         )
         ticket_c = Ticket(
-            id="bees-nc1",
+            id="default.bees-nc1",
             type="task",
             title="Task C",
-            up_dependencies=["bees-nd1"],
-            down_dependencies=["bees-nd1"]
+            up_dependencies=["default.bees-nd1"],
+            down_dependencies=["default.bees-nd1"]
         )
         ticket_d = Ticket(
-            id="bees-nd1",
+            id="default.bees-nd1",
             type="task",
             title="Task D",
-            up_dependencies=["bees-nc1"],
-            down_dependencies=["bees-nc1"]
+            up_dependencies=["default.bees-nc1"],
+            down_dependencies=["default.bees-nc1"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-na1.md", ticket_a)
@@ -361,7 +361,7 @@ class TestCycleDetection:
         (tickets_dir / "tasks").mkdir()
 
         ticket = Ticket(
-            id="bees-sn1",
+            id="default.bees-sn1",
             type="task",
             title="Single Task",
             up_dependencies=[],
@@ -388,34 +388,34 @@ class TestCycleDetection:
 
         # Component 1: A -> B (acyclic)
         ticket_a = Ticket(
-            id="bees-dc1",
+            id="default.bees-dc1",
             type="task",
             title="Task A",
             up_dependencies=[],
-            down_dependencies=["bees-db1"]
+            down_dependencies=["default.bees-db1"]
         )
         ticket_b = Ticket(
-            id="bees-db1",
+            id="default.bees-db1",
             type="task",
             title="Task B",
-            up_dependencies=["bees-dc1"],
+            up_dependencies=["default.bees-dc1"],
             down_dependencies=[]
         )
 
         # Component 2: C -> D -> C (cycle)
         ticket_c = Ticket(
-            id="bees-dc2",
+            id="default.bees-dc2",
             type="task",
             title="Task C",
-            up_dependencies=["bees-dd1"],
-            down_dependencies=["bees-dd1"]
+            up_dependencies=["default.bees-dd1"],
+            down_dependencies=["default.bees-dd1"]
         )
         ticket_d = Ticket(
-            id="bees-dd1",
+            id="default.bees-dd1",
             type="task",
             title="Task D",
-            up_dependencies=["bees-dc2"],
-            down_dependencies=["bees-dc2"]
+            up_dependencies=["default.bees-dc2"],
+            down_dependencies=["default.bees-dc2"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-dc1.md", ticket_a)
@@ -439,22 +439,22 @@ class TestCycleDetection:
         # Create blocking cycle: A -> B -> A
         # AND parent cycle: A is parent of B, B is parent of A
         ticket_a = Ticket(
-            id="bees-ma1",
+            id="default.bees-ma1",
             type="task",
             title="Task A",
-            up_dependencies=["bees-mb1"],
-            down_dependencies=["bees-mb1"],
-            parent="bees-mb1",
-            children=["bees-mb1"]
+            up_dependencies=["default.bees-mb1"],
+            down_dependencies=["default.bees-mb1"],
+            parent="default.bees-mb1",
+            children=["default.bees-mb1"]
         )
         ticket_b = Ticket(
-            id="bees-mb1",
+            id="default.bees-mb1",
             type="task",
             title="Task B",
-            up_dependencies=["bees-ma1"],
-            down_dependencies=["bees-ma1"],
-            parent="bees-ma1",
-            children=["bees-ma1"]
+            up_dependencies=["default.bees-ma1"],
+            down_dependencies=["default.bees-ma1"],
+            parent="default.bees-ma1",
+            children=["default.bees-ma1"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-ma1.md", ticket_a)
@@ -478,18 +478,18 @@ class TestCycleDetection:
 
         # Create simple cycle A -> B -> A
         ticket_a = Ticket(
-            id="bees-em1",
+            id="default.bees-em1",
             type="task",
             title="Task A",
-            up_dependencies=["bees-em2"],
-            down_dependencies=["bees-em2"]
+            up_dependencies=["default.bees-em2"],
+            down_dependencies=["default.bees-em2"]
         )
         ticket_b = Ticket(
-            id="bees-em2",
+            id="default.bees-em2",
             type="task",
             title="Task B",
-            up_dependencies=["bees-em1"],
-            down_dependencies=["bees-em1"]
+            up_dependencies=["default.bees-em1"],
+            down_dependencies=["default.bees-em1"]
         )
 
         self._write_ticket(tickets_dir / "tasks" / "bees-em1.md", ticket_a)
@@ -505,7 +505,7 @@ class TestCycleDetection:
         # Check format includes cycle path with arrow notation
         assert "->" in error_msg, "Error message should include -> notation"
         assert "Cycle detected" in error_msg, "Error should indicate cycle was detected"
-        assert "bees-em1" in error_msg and "bees-em2" in error_msg, "Should include both ticket IDs"
+        assert "default.bees-em1" in error_msg and "default.bees-em2" in error_msg, "Should include both ticket IDs"
 
     def _write_ticket(self, path, ticket):
         """Helper to write a ticket to a markdown file with YAML frontmatter."""

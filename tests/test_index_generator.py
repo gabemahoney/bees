@@ -18,9 +18,6 @@ class TestScanTickets:
         (tickets_dir / "tasks").mkdir(parents=True)
         (tickets_dir / "subtasks").mkdir(parents=True)
 
-        # Monkeypatch TICKETS_DIR to use tmp_path
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = scan_tickets()
 
         assert result == {
@@ -86,9 +83,6 @@ updated_at: '2026-01-30T13:00:00'
 
 Subtask description.""")
 
-        # Monkeypatch TICKETS_DIR
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = scan_tickets()
 
         assert len(result["epic"]) == 2
@@ -97,11 +91,11 @@ Subtask description.""")
 
         # Verify ticket IDs
         epic_ids = [t.id for t in result["epic"]]
-        assert "bees-ep1" in epic_ids
-        assert "bees-ep2" in epic_ids
+        assert "default.bees-ep1" in epic_ids
+        assert "default.bees-ep2" in epic_ids
 
-        assert result["task"][0].id == "bees-ts1"
-        assert result["subtask"][0].id == "bees-sb1"
+        assert result["task"][0].id == "default.bees-ts1"
+        assert result["subtask"][0].id == "default.bees-sb1"
 
     def test_scan_tickets_with_invalid_ticket(self, tmp_path, monkeypatch):
         """Should skip invalid tickets and continue processing."""
@@ -128,15 +122,12 @@ type: epic
 
 Invalid ticket missing id.""")
 
-        # Monkeypatch TICKETS_DIR
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         # Should succeed and return the valid ticket
         with pytest.warns(UserWarning, match="Failed to load ticket"):
             result = scan_tickets()
 
         assert len(result["epic"]) == 1
-        assert result["epic"][0].id == "bees-ep1"
+        assert result["epic"][0].id == "default.bees-ep1"
 
     def test_scan_tickets_filter_by_status(self, tmp_path, monkeypatch):
         """Should filter tickets by status."""
@@ -167,17 +158,15 @@ updated_at: '2026-01-30T11:00:00'
 
 Completed.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         # Filter for open only
         result = scan_tickets(status_filter='open')
         assert len(result["epic"]) == 1
-        assert result["epic"][0].id == "bees-ep1"
+        assert result["epic"][0].id == "default.bees-ep1"
 
         # Filter for completed only
         result = scan_tickets(status_filter='completed')
         assert len(result["epic"]) == 1
-        assert result["epic"][0].id == "bees-ep2"
+        assert result["epic"][0].id == "default.bees-ep2"
 
     def test_scan_tickets_filter_by_type(self, tmp_path, monkeypatch):
         """Should filter tickets by type."""
@@ -209,8 +198,6 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Task.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         # Filter for epics only
         result = scan_tickets(type_filter='epic')
@@ -264,13 +251,11 @@ updated_at: '2026-01-30T12:00:00'
 
 Open task.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         # Filter for open epics only
         result = scan_tickets(status_filter='open', type_filter='epic')
         assert len(result["epic"]) == 1
         assert len(result["task"]) == 0
-        assert result["epic"][0].id == "bees-ep1"
+        assert result["epic"][0].id == "default.bees-ep1"
 
         # Filter for completed tasks (should be empty)
         result = scan_tickets(status_filter='completed', type_filter='task')
@@ -300,22 +285,22 @@ class TestFormatIndexMarkdown:
     def test_format_with_tickets(self):
         """Should format tickets with ID, title, and status."""
         epic1 = Epic(
-            id="bees-ep1",
+            id="default.bees-ep1",
             type="epic",
             title="Test Epic",
             status="open"
         )
         task1 = Task(
-            id="bees-ts1",
+            id="default.bees-ts1",
             type="task",
             title="Test Task",
             status="in_progress"
         )
         subtask1 = Subtask(
-            id="bees-sb1",
+            id="default.bees-sb1",
             type="subtask",
             title="Test Subtask",
-            parent="bees-ts1",
+            parent="default.bees-ts1",
             status="closed"
         )
 
@@ -367,7 +352,7 @@ class TestFormatIndexMarkdown:
     def test_format_handles_missing_status(self):
         """Should display 'unknown' for tickets without status."""
         epic1 = Epic(
-            id="bees-ep1",
+            id="default.bees-ep1",
             type="epic",
             title="No Status",
             status=None
@@ -386,7 +371,7 @@ class TestFormatIndexMarkdown:
     def test_format_with_special_characters_in_title(self):
         """Should handle special characters in title for markdown links."""
         epic1 = Epic(
-            id="bees-ep1",
+            id="default.bees-ep1",
             type="epic",
             title="Test [Special] Characters: & Symbols",
             status="open"
@@ -405,9 +390,9 @@ class TestFormatIndexMarkdown:
 
     def test_format_link_paths_are_relative(self):
         """Should use relative paths for ticket links."""
-        epic1 = Epic(id="bees-abc", type="epic", title="Test", status="open")
-        task1 = Task(id="bees-xyz", type="task", title="Test", status="open")
-        subtask1 = Subtask(id="bees-123", type="subtask", title="Test", parent="bees-xyz", status="open")
+        epic1 = Epic(id="default.bees-abc", type="epic", title="Test", status="open")
+        task1 = Task(id="default.bees-xyz", type="task", title="Test", status="open")
+        subtask1 = Subtask(id="default.bees-123", type="subtask", title="Test", parent="default.bees-xyz", status="open")
 
         tickets = {
             "epic": [epic1],
@@ -444,9 +429,9 @@ class TestFormatIndexMarkdown:
 
     def test_format_link_path_includes_type_subdirectory(self):
         """Should generate link paths with type subdirectories (tickets/{type}s/{id}.md)."""
-        epic1 = Epic(id="bees-abc", type="epic", title="Test Epic", status="open")
-        task1 = Task(id="bees-xyz", type="task", title="Test Task", status="open")
-        subtask1 = Subtask(id="bees-123", type="subtask", title="Test Subtask", parent="bees-xyz", status="open")
+        epic1 = Epic(id="default.bees-abc", type="epic", title="Test Epic", status="open")
+        task1 = Task(id="default.bees-xyz", type="task", title="Test Task", status="open")
+        subtask1 = Subtask(id="default.bees-123", type="subtask", title="Test Subtask", parent="default.bees-xyz", status="open")
 
         tickets = {
             "epic": [epic1],
@@ -501,9 +486,6 @@ updated_at: '2026-01-30T11:00:00'
 
 Task body.""")
 
-        # Monkeypatch TICKETS_DIR
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index()
 
         # Verify structure
@@ -523,8 +505,6 @@ Task body.""")
         (tickets_dir / "epics").mkdir(parents=True)
         (tickets_dir / "tasks").mkdir(parents=True)
         (tickets_dir / "subtasks").mkdir(parents=True)
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index()
 
@@ -559,11 +539,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Completed.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index(status_filter='open')
         assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
-        assert "bees-ep2" not in result
+        assert "default.bees-ep2" not in result
 
     def test_generate_index_with_type_filter(self, tmp_path, monkeypatch):
         """Should filter index by type."""
@@ -595,11 +573,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Task.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index(type_filter='epic')
         assert "[bees-ep1: Test Epic](tickets/epics/bees-ep1.md) (open)" in result
-        assert "bees-ts1" not in result
+        assert "default.bees-ts1" not in result
 
     def test_generate_index_with_combined_filters(self, tmp_path, monkeypatch):
         """Should filter index by both status and type."""
@@ -642,12 +618,10 @@ updated_at: '2026-01-30T12:00:00'
 
 Open task.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index(status_filter='open', type_filter='epic')
         assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
-        assert "bees-ep2" not in result
-        assert "bees-ts1" not in result
+        assert "default.bees-ep2" not in result
+        assert "default.bees-ts1" not in result
 
     def test_hierarchical_paths_for_all_types(self, tmp_path, monkeypatch):
         """Should generate hierarchical paths (tickets/{type}s/) for all ticket types."""
@@ -695,8 +669,6 @@ updated_at: '2026-01-30T12:00:00'
 
 Subtask.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index()
 
         # Verify hierarchical paths for all types
@@ -731,8 +703,6 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 Solo epic.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index()
 
@@ -783,8 +753,6 @@ updated_at: '2026-01-30T12:00:00'
 
 Closed.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         result = generate_index()
 
         # All should use hierarchical paths regardless of status
@@ -832,8 +800,6 @@ updated_at: '2026-01-30T12:00:00'
 ---
 
 Mixed.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         result = generate_index()
 
@@ -886,8 +852,6 @@ updated_at: '2026-01-30T12:00:00'
 
 Legacy epic.""")
 
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
         # Filter for backend hive only
         result = scan_tickets(hive_name='backend')
         assert len(result["epic"]) == 1
@@ -929,8 +893,6 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Legacy.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         # Filtering by hive should exclude legacy ticket
         result = scan_tickets(hive_name='backend')
@@ -975,8 +937,6 @@ Backend epic.""")
             "schema_version": "1.0"
         }
         (bees_dir / "config.json").write_text(json.dumps(config))
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
         monkeypatch.chdir(tmp_path)
 
         # Generate index for backend hive
@@ -1047,8 +1007,6 @@ Frontend.""")
             "schema_version": "1.0"
         }
         (bees_dir / "config.json").write_text(json.dumps(config))
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
         monkeypatch.chdir(tmp_path)
 
         # Generate indexes for all hives
@@ -1086,8 +1044,6 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 New backend.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
         monkeypatch.chdir(tmp_path)
 
         # Generate index for hive not in config
@@ -1119,15 +1075,13 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 Legacy.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
         monkeypatch.chdir(tmp_path)
 
         # Generate index without config - should return markdown without writing
         result = generate_index()
 
         # Should contain the ticket
-        assert "bees-ep1" in result
+        assert "default.bees-ep1" in result
         assert "Legacy Epic" in result
 
         # Should NOT write to disk when no config
@@ -1161,8 +1115,6 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Closed.""")
-
-        monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
 
         # Filter for backend + open only
         result = scan_tickets(hive_name='backend', status_filter='open')

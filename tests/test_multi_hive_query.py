@@ -298,7 +298,7 @@ Legacy epic without hive prefix
             results = evaluator.execute_query(stages)
 
             # Should include all tickets
-            assert results == {"backend.bees-abc", "frontend.bees-xyz", "bees-123"}
+            assert results == {"backend.bees-abc", "frontend.bees-xyz", "default.bees-123"}
 
     def test_pipeline_excludes_legacy_tickets_when_filtering(self):
         """Test that legacy tickets (no hive prefix) are excluded when filtering."""
@@ -335,7 +335,7 @@ Legacy epic without hive prefix
             results = evaluator.execute_query(stages, hive_names=["backend"])
 
             # Legacy ticket should be excluded
-            assert "bees-123" not in results
+            assert "default.bees-123" not in results
             assert results == {"backend.bees-abc"}
 
     def test_pipeline_empty_hive_list(self):

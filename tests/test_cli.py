@@ -13,19 +13,19 @@ def sample_report_with_errors():
     """Create sample linter report with errors."""
     report = LinterReport()
     report.add_error(
-        ticket_id="bees-abc",
+        ticket_id="default.bees-abc",
         error_type="id_format",
         message="Ticket ID 'bees-ABC' does not match required format: bees-[a-z0-9]{3}",
         severity="error"
     )
     report.add_error(
-        ticket_id="bees-abc",
+        ticket_id="default.bees-abc",
         error_type="duplicate_id",
-        message="Duplicate ticket ID 'bees-abc' found (also in epic)",
+        message="Duplicate ticket ID 'default.bees-abc' found (also in epic)",
         severity="error"
     )
     report.add_error(
-        ticket_id="bees-xyz",
+        ticket_id="default.bees-xyz",
         error_type="dependency_cycle",
         message="Cycle detected in blocking dependencies: bees-xyz -> bees-abc -> bees-xyz",
         severity="error"
@@ -52,8 +52,8 @@ class TestFormatErrorOutput:
         output = format_error_output(sample_report_with_errors)
 
         assert "Found 3 validation error(s):" in output
-        assert "Ticket: bees-abc" in output
-        assert "Ticket: bees-xyz" in output
+        assert "Ticket: default.bees-abc" in output
+        assert "Ticket: default.bees-xyz" in output
         assert "[ERROR]" in output
         assert "id_format" in output
         assert "duplicate_id" in output
@@ -64,11 +64,11 @@ class TestFormatErrorOutput:
         output = format_error_output(sample_report_with_errors)
 
         # Check that ticket headers appear in sorted order
-        abc_pos = output.find("Ticket: bees-abc")
-        xyz_pos = output.find("Ticket: bees-xyz")
+        abc_pos = output.find("Ticket: default.bees-abc")
+        xyz_pos = output.find("Ticket: default.bees-xyz")
         assert abc_pos < xyz_pos
 
-        # Check that errors for bees-abc are between its header and next header
+        # Check that errors for default.bees-abc are between its header and next header
         abc_section = output[abc_pos:xyz_pos]
         assert "id_format" in abc_section
         assert "duplicate_id" in abc_section
@@ -77,7 +77,7 @@ class TestFormatErrorOutput:
         """Test formatting with warning severity."""
         report = LinterReport()
         report.add_error(
-            ticket_id="bees-abc",
+            ticket_id="default.bees-abc",
             error_type="test_warning",
             message="This is a warning",
             severity="warning"
@@ -300,5 +300,5 @@ class TestCLIIntegration:
         output = captured.out
 
         assert "Found 3 validation error(s):" in output
-        assert "bees-abc" in output
-        assert "bees-xyz" in output
+        assert "default.bees-abc" in output
+        assert "default.bees-xyz" in output

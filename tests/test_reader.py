@@ -17,7 +17,7 @@ class TestParseFrontmatter:
         """Should successfully parse valid YAML frontmatter."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 type: epic
 title: Test Epic
 ---
@@ -26,7 +26,7 @@ This is the body.""")
 
         frontmatter, body = parse_frontmatter(file_path)
 
-        assert frontmatter["id"] == "bees-250"
+        assert frontmatter["id"] == "default.bees-250"
         assert frontmatter["type"] == "epic"
         assert frontmatter["title"] == "Test Epic"
         assert body == "This is the body."
@@ -35,14 +35,14 @@ This is the body.""")
         """Should parse lists in frontmatter."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-abc
+id: default.bees-abc
 type: task
 title: Test Task
 labels:
   - open
   - p0
 children:
-  - bees-xyz
+  - default.bees-xyz
 ---
 
 Body text.""")
@@ -50,7 +50,7 @@ Body text.""")
         frontmatter, body = parse_frontmatter(file_path)
 
         assert frontmatter["labels"] == ["open", "p0"]
-        assert frontmatter["children"] == ["bees-xyz"]
+        assert frontmatter["children"] == ["default.bees-xyz"]
 
     def test_missing_frontmatter_raises_error(self, tmp_path):
         """Should raise error if no frontmatter."""
@@ -64,7 +64,7 @@ Body text.""")
         """Should raise error on invalid YAML."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 title: [invalid yaml: unclosed
 ---
 
@@ -77,7 +77,7 @@ Body.""")
         """Should raise error if closing --- is missing."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 type: epic
 
 Body without closing delimiter.""")
@@ -99,11 +99,11 @@ class TestValidateTicket:
     def test_validate_valid_epic(self):
         """Should pass validation for valid epic."""
         data = {
-            "id": "bees-250",
+            "id": "default.bees-250",
             "type": "epic",
             "title": "Test Epic",
             "labels": ["open"],
-            "children": ["bees-abc"]
+            "children": ["default.bees-abc"]
         }
 
         # Should not raise
@@ -112,10 +112,10 @@ class TestValidateTicket:
     def test_validate_valid_task(self):
         """Should pass validation for valid task."""
         data = {
-            "id": "bees-jty",
+            "id": "default.bees-jty",
             "type": "task",
             "title": "Test Task",
-            "parent": "bees-250"
+            "parent": "default.bees-250"
         }
 
         validate_ticket(data)
@@ -123,24 +123,24 @@ class TestValidateTicket:
     def test_validate_valid_subtask(self):
         """Should pass validation for valid subtask with parent."""
         data = {
-            "id": "bees-xyz",
+            "id": "default.bees-xyz",
             "type": "subtask",
             "title": "Test Subtask",
-            "parent": "bees-jty"
+            "parent": "default.bees-jty"
         }
 
         validate_ticket(data)
 
     def test_missing_required_field_raises_error(self):
         """Should raise error if required field missing."""
-        data = {"id": "bees-250", "title": "Missing type"}
+        data = {"id": "default.bees-250", "title": "Missing type"}
 
         with pytest.raises(ValidationError, match="Missing required field: type"):
             validate_ticket(data)
 
     def test_invalid_type_raises_error(self):
         """Should raise error for invalid type enum."""
-        data = {"id": "bees-250", "type": "invalid", "title": "Test"}
+        data = {"id": "default.bees-250", "type": "invalid", "title": "Test"}
 
         with pytest.raises(ValidationError, match="Invalid type"):
             validate_ticket(data)
@@ -154,7 +154,7 @@ class TestValidateTicket:
 
     def test_subtask_without_parent_raises_error(self):
         """Should raise error if subtask has no parent."""
-        data = {"id": "bees-xyz", "type": "subtask", "title": "Test"}
+        data = {"id": "default.bees-xyz", "type": "subtask", "title": "Test"}
 
         with pytest.raises(ValidationError, match="Subtask must have a parent"):
             validate_ticket(data)
@@ -162,7 +162,7 @@ class TestValidateTicket:
     def test_labels_must_be_list(self):
         """Should raise error if labels is not a list."""
         data = {
-            "id": "bees-250",
+            "id": "default.bees-250",
             "type": "epic",
             "title": "Test",
             "labels": "not-a-list"
@@ -177,10 +177,10 @@ class TestValidateIdFormat:
 
     def test_valid_ids(self):
         """Should accept valid ID formats."""
-        assert validate_id_format("bees-250")
-        assert validate_id_format("bees-abc")
-        assert validate_id_format("bees-9pw")
-        assert validate_id_format("bees-jty")
+        assert validate_id_format("default.bees-250")
+        assert validate_id_format("default.bees-abc")
+        assert validate_id_format("default.bees-9pw")
+        assert validate_id_format("default.bees-jty")
 
     def test_invalid_ids(self):
         """Should reject invalid ID formats."""
@@ -198,14 +198,14 @@ class TestReadTicket:
         """Should read and return Epic object."""
         file_path = tmp_path / "test-epic.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 type: epic
 title: Core Schema
 labels:
   - open
   - p0
 children:
-  - bees-jty
+  - default.bees-jty
 ---
 
 Implementation of the core schema.""")
@@ -213,23 +213,23 @@ Implementation of the core schema.""")
         ticket = read_ticket(file_path)
 
         assert isinstance(ticket, Epic)
-        assert ticket.id == "bees-250"
+        assert ticket.id == "default.bees-250"
         assert ticket.type == "epic"
         assert ticket.title == "Core Schema"
         assert ticket.labels == ["open", "p0"]
-        assert ticket.children == ["bees-jty"]
+        assert ticket.children == ["default.bees-jty"]
         assert "Implementation of the core schema" in ticket.description
 
     def test_read_task(self, tmp_path):
         """Should read and return Task object."""
         file_path = tmp_path / "test-task.md"
         file_path.write_text("""---
-id: bees-jty
+id: default.bees-jty
 type: task
 title: Design Schema
-parent: bees-250
+parent: default.bees-250
 up_dependencies:
-  - bees-abc
+  - default.bees-abc
 ---
 
 Design the ticket schema.""")
@@ -237,19 +237,19 @@ Design the ticket schema.""")
         ticket = read_ticket(file_path)
 
         assert isinstance(ticket, Task)
-        assert ticket.id == "bees-jty"
+        assert ticket.id == "default.bees-jty"
         assert ticket.type == "task"
-        assert ticket.parent == "bees-250"
-        assert ticket.up_dependencies == ["bees-abc"]
+        assert ticket.parent == "default.bees-250"
+        assert ticket.up_dependencies == ["default.bees-abc"]
 
     def test_read_subtask(self, tmp_path):
         """Should read and return Subtask object."""
         file_path = tmp_path / "test-subtask.md"
         file_path.write_text("""---
-id: bees-xyz
+id: default.bees-xyz
 type: subtask
 title: Write code
-parent: bees-jty
+parent: default.bees-jty
 ---
 
 Write the implementation.""")
@@ -257,15 +257,15 @@ Write the implementation.""")
         ticket = read_ticket(file_path)
 
         assert isinstance(ticket, Subtask)
-        assert ticket.id == "bees-xyz"
+        assert ticket.id == "default.bees-xyz"
         assert ticket.type == "subtask"
-        assert ticket.parent == "bees-jty"
+        assert ticket.parent == "default.bees-jty"
 
     def test_read_with_datetime(self, tmp_path):
         """Should parse datetime fields."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 type: epic
 title: Test
 created_at: 2026-01-30T10:00:00
@@ -304,7 +304,7 @@ Body.""")
         """Should ignore extra fields not in Ticket model."""
         file_path = tmp_path / "test.md"
         file_path.write_text("""---
-id: bees-250
+id: default.bees-250
 type: epic
 title: Test Epic
 custom_field: some_value
@@ -318,7 +318,7 @@ Body text.""")
         ticket = read_ticket(file_path)
 
         assert isinstance(ticket, Epic)
-        assert ticket.id == "bees-250"
+        assert ticket.id == "default.bees-250"
         assert ticket.title == "Test Epic"
         assert ticket.labels == ["open"]
         # Extra fields should be filtered out

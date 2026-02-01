@@ -20,7 +20,7 @@ def setup_tickets_dir(tmp_path, monkeypatch):
     # This fixture is kept for backward compatibility but does minimal setup
     monkeypatch.chdir(tmp_path)
 
-    yield tickets_dir
+    yield tmp_path
 
 
 class TestCreateEpic:

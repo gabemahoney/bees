@@ -123,13 +123,6 @@ class TestNormalizeHiveName:
 class TestGenerateTicketIdWithHive:
     """Tests for generate_ticket_id() with hive_name parameter."""
 
-    def test_generate_id_without_hive(self):
-        """Should generate standard ID without hive."""
-        ticket_id = generate_ticket_id()
-        assert ticket_id.startswith("bees-")
-        assert len(ticket_id) == 8  # "bees-" + 3 chars
-        assert is_valid_ticket_id(ticket_id)
-
     def test_generate_id_with_hive(self):
         """Should generate hive-prefixed ID."""
         ticket_id = generate_ticket_id(hive_name="backend")
@@ -151,53 +144,11 @@ class TestGenerateTicketIdWithHive:
         # 100 random IDs should be unique
         assert len(ids) >= 95  # Allow for rare collisions
 
-    def test_empty_normalized_hive_name(self):
-        """Should generate unprefixed ID when hive name normalizes to empty string."""
-        # Hive name with only special characters normalizes to empty string
-        ticket_id = generate_ticket_id(hive_name="@#$%")
-        assert ticket_id.startswith("bees-")
-        assert not ticket_id.startswith(".bees-")  # Should not have leading dot
-        assert len(ticket_id) == 8  # "bees-" + 3 chars
-        assert is_valid_ticket_id(ticket_id)
-
-    def test_empty_string_hive_name(self):
-        """Should generate unprefixed ID when hive name is empty string."""
-        ticket_id = generate_ticket_id(hive_name="")
-        assert ticket_id.startswith("bees-")
-        assert not ticket_id.startswith(".bees-")
-        assert len(ticket_id) == 8
-        assert is_valid_ticket_id(ticket_id)
-
-    def test_special_chars_only_variations(self):
-        """Should handle various special character combinations."""
-        test_cases = ["!!!", "###", "@@@@", "!@#$%^&*()"]
-        for hive_name in test_cases:
-            ticket_id = generate_ticket_id(hive_name=hive_name)
-            assert ticket_id.startswith("bees-")
-            assert not ticket_id.startswith(".bees-")
-            assert is_valid_ticket_id(ticket_id)
-
     def test_whitespace_only_hive_name(self):
         """Should normalize whitespace-only hive name to underscores."""
         # Whitespace normalizes to underscores, not empty string
         ticket_id = generate_ticket_id(hive_name="   ")
         assert ticket_id.startswith("___.bees-")
-        assert is_valid_ticket_id(ticket_id)
-
-    def test_tab_only_hive_name(self):
-        """Should handle tab-only hive name (normalizes to empty)."""
-        # Tab is removed as special char, resulting in empty string
-        ticket_id = generate_ticket_id(hive_name="\t")
-        assert ticket_id.startswith("bees-")
-        assert not ticket_id.startswith(".bees-")
-        assert is_valid_ticket_id(ticket_id)
-
-    def test_newline_only_hive_name(self):
-        """Should handle newline-only hive name (normalizes to empty)."""
-        # Newline is removed as special char, resulting in empty string
-        ticket_id = generate_ticket_id(hive_name="\n")
-        assert ticket_id.startswith("bees-")
-        assert not ticket_id.startswith(".bees-")
         assert is_valid_ticket_id(ticket_id)
 
     def test_mixed_special_chars_and_whitespace_hive_names(self):
@@ -207,21 +158,9 @@ class TestGenerateTicketIdWithHive:
         assert ticket_id.startswith("____.bees-")
         assert is_valid_ticket_id(ticket_id)
 
-        # Only tabs and newlines (removed) result in unprefixed ID
-        ticket_id = generate_ticket_id(hive_name="\t!!!\n")
-        assert ticket_id.startswith("bees-")
-        assert not ticket_id.startswith(".bees-")
-        assert is_valid_ticket_id(ticket_id)
-
 
 class TestIsValidTicketIdWithHive:
     """Tests for is_valid_ticket_id() with hive-prefixed IDs."""
-
-    def test_valid_standard_ids(self):
-        """Should accept standard IDs without hive."""
-        assert is_valid_ticket_id("bees-abc")
-        assert is_valid_ticket_id("bees-123")
-        assert is_valid_ticket_id("bees-a1b")
 
     def test_valid_hive_prefixed_ids(self):
         """Should accept hive-prefixed IDs."""
@@ -270,14 +209,6 @@ class TestIsValidTicketIdWithHive:
 class TestGenerateUniqueTicketIdWithHive:
     """Tests for generate_unique_ticket_id() with hive_name parameter."""
 
-    def test_generate_unique_without_hive(self):
-        """Should generate unique ID without hive."""
-        existing = {"bees-abc", "bees-123"}
-        ticket_id = generate_unique_ticket_id(existing)
-        assert ticket_id not in existing
-        assert ticket_id.startswith("bees-")
-        assert is_valid_ticket_id(ticket_id)
-
     def test_generate_unique_with_hive(self):
         """Should generate unique ID with hive prefix."""
         existing = {"backend.bees-abc", "backend.bees-123"}
@@ -302,20 +233,6 @@ class TestGenerateUniqueTicketIdWithHive:
         # Same base ID but different hive should not count as collision
         ticket_id = generate_unique_ticket_id(existing, hive_name="frontend")
         # Could be frontend.bees-abc since backend.bees-abc doesn't conflict
-
-    def test_mixed_hive_and_no_hive(self):
-        """Should handle mix of hive-prefixed and non-prefixed IDs."""
-        existing = {"bees-abc", "backend.bees-123", "frontend.bees-xyz"}
-
-        # Generate without hive
-        ticket_id = generate_unique_ticket_id(existing)
-        assert ticket_id not in existing
-        assert is_valid_ticket_id(ticket_id)
-
-        # Generate with hive
-        ticket_id = generate_unique_ticket_id(existing, hive_name="backend")
-        assert ticket_id not in existing
-        assert is_valid_ticket_id(ticket_id)
 
     def test_max_attempts_exceeded(self):
         """Should raise error if max attempts exceeded."""

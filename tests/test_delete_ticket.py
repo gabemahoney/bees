@@ -16,20 +16,11 @@ from src.paths import get_ticket_path
 @pytest.fixture
 def setup_tickets_dir(tmp_path, monkeypatch):
     """Create temporary tickets directory structure."""
-    tickets_dir = tmp_path / "tickets"
-    tickets_dir.mkdir()
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
+    # TICKETS_DIR has been removed - tests now use hive-based structure
+    # Just change to tmp_path for test isolation
+    monkeypatch.chdir(tmp_path)
 
-    # Monkeypatch TICKETS_DIR in paths module
-    monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
-    # Also patch in ticket_factory which imports it directly
-    import src.ticket_factory
-    monkeypatch.setattr(src.ticket_factory, "TICKETS_DIR", tickets_dir)
-
-    yield tickets_dir
+    yield tmp_path
 
 
 class TestDeleteTicketBasic:

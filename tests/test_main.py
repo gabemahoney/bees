@@ -421,13 +421,13 @@ class TestCorruptionStateStartupCheck:
             "error_count": 2,
             "errors": [
                 {
-                    "ticket_id": "bees-abc",
+                    "ticket_id": "default.bees-abc",
                     "error_type": "id_format",
                     "message": "Invalid ID format",
                     "severity": "error"
                 },
                 {
-                    "ticket_id": "bees-xyz",
+                    "ticket_id": "default.bees-xyz",
                     "error_type": "duplicate_id",
                     "message": "Duplicate ID",
                     "severity": "error"

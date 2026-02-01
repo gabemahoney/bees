@@ -31,12 +31,7 @@ def setup_tickets_dir(tmp_path, monkeypatch):
     (tickets_dir / "tasks").mkdir()
     (tickets_dir / "subtasks").mkdir()
 
-    # Monkeypatch TICKETS_DIR in paths module
-    monkeypatch.setattr("src.paths.TICKETS_DIR", tickets_dir)
-
     # Also patch in ticket_factory which imports it directly
-    import src.ticket_factory
-    monkeypatch.setattr(src.ticket_factory, "TICKETS_DIR", tickets_dir)
 
     yield tickets_dir
 

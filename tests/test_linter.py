@@ -89,9 +89,9 @@ Subtask description.""")
         tickets = list(scanner.scan_all())
 
         assert len(tickets) == 3
-        assert any(t.id == "bees-abc" and isinstance(t, Epic) for t in tickets)
-        assert any(t.id == "bees-xyz" and isinstance(t, Task) for t in tickets)
-        assert any(t.id == "bees-123" and isinstance(t, Subtask) for t in tickets)
+        assert any(t.id == "default.bees-abc" and isinstance(t, Epic) for t in tickets)
+        assert any(t.id == "default.bees-xyz" and isinstance(t, Task) for t in tickets)
+        assert any(t.id == "default.bees-123" and isinstance(t, Subtask) for t in tickets)
 
     def test_scan_all_handles_invalid_tickets(self, tmp_path):
         """Should skip invalid tickets and continue scanning."""
@@ -115,7 +115,7 @@ Body.""")
 
         # Should load the valid ticket and skip the invalid one
         assert len(tickets) == 1
-        assert tickets[0].id == "bees-abc"
+        assert tickets[0].id == "default.bees-abc"
 
     def test_scan_all_sorted_order(self, tmp_path):
         """Should scan tickets in sorted order."""
@@ -123,7 +123,7 @@ Body.""")
         epics_dir.mkdir()
 
         # Create tickets in non-alphabetical order
-        for ticket_id in ["bees-zzz", "bees-aaa", "bees-mmm"]:
+        for ticket_id in ["default.bees-zzz", "default.bees-aaa", "default.bees-mmm"]:
             (epics_dir / f"{ticket_id}.md").write_text(f"""---
 id: {ticket_id}
 type: epic
@@ -136,9 +136,9 @@ Body.""")
         tickets = list(scanner.scan_all())
 
         # Should be sorted
-        assert tickets[0].id == "bees-aaa"
-        assert tickets[1].id == "bees-mmm"
-        assert tickets[2].id == "bees-zzz"
+        assert tickets[0].id == "default.bees-aaa"
+        assert tickets[1].id == "default.bees-mmm"
+        assert tickets[2].id == "default.bees-zzz"
 
 
 class TestLinter:
@@ -300,7 +300,7 @@ Body.""")
         # Should have duplicate_id error
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-abc"
+        assert duplicate_errors[0].ticket_id == "default.bees-abc"
         assert "Duplicate" in duplicate_errors[0].message
 
     def test_run_reports_ticket_count(self, tmp_path):
@@ -449,8 +449,8 @@ Child.""")
         # Should have orphaned_child error
         errors = report.get_errors(error_type="orphaned_child")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-xyz"
-        assert "bees-abc" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-xyz"
+        assert "default.bees-abc" in errors[0].message
         assert "does not list" in errors[0].message
 
     def test_parent_children_orphaned_parent(self, tmp_path):
@@ -486,8 +486,8 @@ Child.""")
         # Should have orphaned_parent error
         errors = report.get_errors(error_type="orphaned_parent")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-abc"
-        assert "bees-xyz" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-abc"
+        assert "default.bees-xyz" in errors[0].message
         assert "does not list" in errors[0].message
 
     def test_parent_children_multiple_children(self, tmp_path):
@@ -544,8 +544,8 @@ Child 3.""")
         # Should have one orphaned_parent error for bees-002
         errors = report.get_errors(error_type="orphaned_parent")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-abc"
-        assert "bees-002" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-abc"
+        assert "default.bees-002" in errors[0].message
 
     def test_dependencies_valid_bidirectional(self, tmp_path):
         """Should pass when dependency relationships are bidirectional."""
@@ -610,8 +610,8 @@ Downstream.""")
         # Should have orphaned_dependency error
         errors = report.get_errors(error_type="orphaned_dependency")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-bbb"
-        assert "bees-aaa" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-bbb"
+        assert "default.bees-aaa" in errors[0].message
         assert "does not list" in errors[0].message
 
     def test_dependencies_missing_backlink(self, tmp_path):
@@ -645,8 +645,8 @@ Downstream.""")
         # Should have missing_backlink error
         errors = report.get_errors(error_type="missing_backlink")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-aaa"
-        assert "bees-bbb" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-aaa"
+        assert "default.bees-bbb" in errors[0].message
         assert "does not list" in errors[0].message
 
     def test_dependencies_multiple_dependencies(self, tmp_path):
@@ -703,8 +703,8 @@ Down 3.""")
         # Should have one missing_backlink error for bees-b02
         errors = report.get_errors(error_type="missing_backlink")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-aaa"
-        assert "bees-b02" in errors[0].message
+        assert errors[0].ticket_id == "default.bees-aaa"
+        assert "default.bees-b02" in errors[0].message
 
     def test_edge_case_empty_relationships(self, tmp_path):
         """Should handle tickets with no relationships gracefully."""
@@ -775,4 +775,4 @@ Task.""")
         # Should detect orphaned_parent (self doesn't list self as parent)
         errors = report.get_errors(error_type="orphaned_parent")
         assert len(errors) == 1
-        assert errors[0].ticket_id == "bees-aaa"
+        assert errors[0].ticket_id == "default.bees-aaa"

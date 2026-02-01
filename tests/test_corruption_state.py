@@ -32,13 +32,13 @@ def sample_report():
     """Create sample linter report with errors."""
     report = LinterReport()
     report.add_error(
-        ticket_id="bees-abc",
+        ticket_id="default.bees-abc",
         error_type="id_format",
         message="Invalid ID format",
         severity="error"
     )
     report.add_error(
-        ticket_id="bees-xyz",
+        ticket_id="default.bees-xyz",
         error_type="duplicate_id",
         message="Duplicate ID found",
         severity="error"
