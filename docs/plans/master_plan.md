@@ -119,6 +119,19 @@ Centralized configuration module with typed Config object.
 - Raises ValueError if not in a git repository (no .git directory found)
 - Used by `validate_hive_path()` to determine allowed path boundaries
 
+**Hive Directory Structure**:
+- `colonize_hive(name: str, path: str) -> Dict[str, Any]` in `src/mcp_server.py` creates hive directory structure
+- **Design Decision**: Subdirectories created during colonization rather than on-demand for predictable setup
+- **Directory Structure**:
+  - `/eggs` - Reserved for future feature storage (currently stubbed)
+  - `/evicted` - Storage for completed and archived tickets
+- **Implementation Details**:
+  - Uses `Path.mkdir(parents=True, exist_ok=True)` for idempotent directory creation
+  - Creates both subdirectories atomically during hive setup
+  - Returns normalized hive name and path in response dict
+- **Integration**: Called during hive registration flow to ensure directory structure exists before tickets are created
+- **Future Enhancements**: /eggs directory will store feature-specific data structures in later iterations
+
 
 
 

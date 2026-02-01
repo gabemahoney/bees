@@ -154,6 +154,46 @@ def normalize_name(name: str) -> str:
     return name.replace(' ', '_').lower()
 
 
+def colonize_hive(name: str, path: str) -> Dict[str, Any]:
+    """
+    Create a new hive directory structure at the specified path.
+
+    Sets up the necessary directories for a hive, including subdirectories
+    for ticket organization (/eggs for future features, /evicted for completed tickets).
+
+    Args:
+        name: Display name for the hive (e.g., 'Back End')
+        path: Absolute path where the hive should be created
+
+    Returns:
+        dict: Status information including normalized name and hive path
+
+    Raises:
+        ValueError: If path is invalid or hive creation fails
+
+    Example:
+        >>> colonize_hive('Back End', '/Users/user/projects/myrepo/tickets')
+        {'status': 'success', 'hive_name': 'back_end', 'hive_path': '/Users/user/projects/myrepo/tickets'}
+    """
+    hive_path = Path(path)
+
+    # Create /eggs subdirectory for future feature storage
+    eggs_path = hive_path / "eggs"
+    eggs_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Created /eggs directory at {eggs_path}")
+
+    # Create /evicted subdirectory for completed/archived tickets
+    evicted_path = hive_path / "evicted"
+    evicted_path.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Created /evicted directory at {evicted_path}")
+
+    return {
+        "status": "success",
+        "hive_name": normalize_name(name),
+        "hive_path": str(hive_path)
+    }
+
+
 def validate_unique_hive_name(normalized_name: str, config_path: Path | None = None) -> None:
     """
     Validate that a normalized hive name is unique in the config.

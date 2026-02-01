@@ -50,6 +50,26 @@ The auto-generated index is at `tickets/index.md` and updates automatically when
 
 Bees stores hive configuration in `.bees/config.json` in the client repository root.
 
+**Hive Colonization:**
+
+When creating a new hive, use the `colonize_hive()` function to set up the directory structure:
+
+```python
+from src.mcp_server import colonize_hive
+
+# Create a new hive with subdirectories
+result = colonize_hive(name='Back End', path='/Users/username/projects/myrepo/tickets/backend')
+```
+
+This creates the following directory structure:
+- `/eggs` - Reserved for future feature storage (currently stubbed)
+- `/evicted` - Storage for completed and archived tickets
+
+The function automatically:
+- Creates both subdirectories with `parents=True, exist_ok=True` for idempotent operations
+- Normalizes the hive name (e.g., 'Back End' → 'back_end')
+- Returns status information including the normalized name and hive path
+
 **Configuration Schema:**
 
 ```json
