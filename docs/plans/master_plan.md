@@ -99,6 +99,16 @@ Centralized configuration module with typed Config object.
 - Raises ValueError with existing hive's display name if collision detected
 - Called during hive registration flow before saving config
 
+**Duplicate Name Validation Implementation** (Task bees-qzkp):
+- Validation occurs in `colonize_hive()` orchestration function (Step 3)
+- Calls `validate_unique_hive_name(normalized_name)` from config module
+- Checks normalized name against existing hives in `.bees/config.json`
+- Returns error dict (not exception) on duplicate with `error_type: "duplicate_name_error"`
+- Error message format: `"A hive with normalized name '{normalized_name}' already exists. Display name: '{existing_display_name}'"`
+- Validation functions: `normalize_hive_name()` (src/id_utils.py), `load_bees_config()` (src/config.py), `validate_unique_hive_name()` (src/config.py)
+- Test coverage: 16 tests for `normalize_hive_name()` in tests/test_id_utils.py, 8 tests for duplicate validation in tests/test_colonize_hive.py::TestColonizeHiveOrchestrationUnit
+- All tests passing as of Task bees-qzkp completion
+
 **Storage Architecture**:
 - Hives dictionary uses normalized names as keys: `config.hives['back_end']`
 - Each HiveConfig stores both path and display_name

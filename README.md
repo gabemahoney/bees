@@ -82,6 +82,18 @@ Examples:
 
 Paths must be absolute and within the repository root.
 
+**Duplicate Name Detection:**
+
+The system rejects duplicate normalized names to prevent configuration conflicts. Since names are normalized before registration, different display names that normalize to the same value will be rejected:
+
+- ✅ First registration: `colonize_hive("Back End", "/path/backend")` → Creates hive with normalized name `back_end`
+- ❌ Duplicate attempt: `colonize_hive("back end", "/path/other")` → **REJECTED** (normalizes to `back_end`, which already exists)
+- ❌ Duplicate attempt: `colonize_hive("back_end", "/path/third")` → **REJECTED** (normalizes to `back_end`, which already exists)
+
+Error message format: `"A hive with normalized name 'back_end' already exists. Display name: 'Back End'"`
+
+This ensures each hive has a unique identifier while allowing users to choose their preferred display names (spaces, capitalization, etc.).
+
 **Hive Name Validation:**
 
 Hive names must contain at least one alphanumeric character (a-z, A-Z, 0-9). The system validates hive names before creating tickets and rejects invalid names:
