@@ -59,14 +59,15 @@ class TestUpdateTicketHiveInference:
     """Tests that update_ticket() infers hive from ticket ID."""
 
     def test_update_legacy_ticket_without_hive(self, temp_tickets_dir):
-        """Should update legacy ticket (no hive prefix) correctly."""
-        # Create ticket without hive
+        """Should update ticket in default hive correctly."""
+        # Create ticket in default hive
         create_result = _create_ticket(
             ticket_type="epic",
-            title="Original Title"
+            title="Original Title",
+            hive_name="default"
         )
         ticket_id = create_result["ticket_id"]
-        assert ticket_id.startswith("bees-")
+        assert ticket_id.startswith("default.bees-")
 
         # Update the ticket
         update_result = _update_ticket(
@@ -167,14 +168,15 @@ class TestDeleteTicketHiveInference:
     """Tests that delete_ticket() infers hive from ticket ID."""
 
     def test_delete_legacy_ticket_without_hive(self, temp_tickets_dir):
-        """Should delete legacy ticket (no hive prefix) correctly."""
-        # Create ticket without hive
+        """Should delete ticket in default hive correctly."""
+        # Create ticket in default hive
         create_result = _create_ticket(
             ticket_type="epic",
-            title="Test Epic"
+            title="Test Epic",
+            hive_name="default"
         )
         ticket_id = create_result["ticket_id"]
-        assert ticket_id.startswith("bees-")
+        assert ticket_id.startswith("default.bees-")
 
         # Verify ticket exists
         ticket_path = get_ticket_path(ticket_id, "epic")
@@ -281,11 +283,12 @@ class TestBackwardCompatibility:
     """Tests backward compatibility between legacy and hive-prefixed IDs."""
 
     def test_mixed_id_formats_in_system(self, temp_tickets_dir):
-        """Should support both legacy and hive-prefixed IDs simultaneously."""
-        # Create mix of tickets
-        legacy_epic = _create_ticket(
+        """Should support multiple hive-prefixed IDs simultaneously."""
+        # Create tickets in different hives
+        default_epic = _create_ticket(
             ticket_type="epic",
-            title="Legacy Epic"
+            title="Default Epic",
+            hive_name="default"
         )["ticket_id"]
 
         hive_epic = _create_ticket(
@@ -295,35 +298,36 @@ class TestBackwardCompatibility:
         )["ticket_id"]
 
         # Both should be valid
-        assert legacy_epic.startswith("bees-")
+        assert default_epic.startswith("default.bees-")
         assert hive_epic.startswith("backend.bees-")
 
         # Both should be readable
-        assert infer_ticket_type_from_id(legacy_epic) == "epic"
+        assert infer_ticket_type_from_id(default_epic) == "epic"
         assert infer_ticket_type_from_id(hive_epic) == "epic"
 
         # Both should be updatable
-        _update_ticket(legacy_epic, title="Updated Legacy")
+        _update_ticket(default_epic, title="Updated Default")
         _update_ticket(hive_epic, title="Updated Hive")
 
         # Both should be deletable
-        _delete_ticket(ticket_id=legacy_epic)
+        _delete_ticket(ticket_id=default_epic)
         _delete_ticket(ticket_id=hive_epic)
 
         # Verify both deleted
-        assert not get_ticket_path(legacy_epic, "epic").exists()
+        assert not get_ticket_path(default_epic, "epic").exists()
         assert not get_ticket_path(hive_epic, "epic").exists()
 
     def test_cross_hive_relationships(self, temp_tickets_dir):
-        """Should support relationships between different hive formats."""
-        # Create parent without hive
+        """Should support relationships between different hives."""
+        # Create parent in default hive
         parent_result = _create_ticket(
             ticket_type="epic",
-            title="Parent Epic"
+            title="Parent Epic",
+            hive_name="default"
         )
         parent_id = parent_result["ticket_id"]
 
-        # Create child with hive
+        # Create child in backend hive
         child_result = _create_ticket(
             ticket_type="task",
             title="Child Task",
@@ -336,7 +340,7 @@ class TestBackwardCompatibility:
         child_ticket = read_ticket(get_ticket_path(child_id, "task"))
         assert child_ticket.parent == parent_id
 
-        # Update should work across formats
+        # Update should work across hives
         _update_ticket(parent_id, title="Updated Parent")
         _update_ticket(child_id, title="Updated Child")
 

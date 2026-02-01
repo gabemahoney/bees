@@ -36,23 +36,6 @@ def temp_tickets_dir():
 class TestMCPCreateTicketWithHive:
     """Tests for _create_ticket() MCP tool with hive_name parameter."""
 
-    def test_create_epic_without_hive(self, temp_tickets_dir):
-        """Should create epic with standard ID when hive_name not provided."""
-        result = _create_ticket(
-            ticket_type="epic",
-            title="Test Epic",
-            description="Test description"
-        )
-
-        assert result["status"] == "success"
-        ticket_id = result["ticket_id"]
-        assert ticket_id.startswith("bees-")
-        assert is_valid_ticket_id(ticket_id)
-
-        # Verify file was created
-        epic_path = get_ticket_path(ticket_id, "epic")
-        assert epic_path.exists()
-
     def test_create_epic_with_hive(self, temp_tickets_dir):
         """Should create epic with hive-prefixed ID when hive_name provided."""
         result = _create_ticket(
@@ -92,7 +75,8 @@ class TestMCPCreateTicketWithHive:
         # Create parent task first
         parent_result = _create_ticket(
             ticket_type="task",
-            title="Parent Task"
+            title="Parent Task",
+            hive_name="backend"
         )
         parent_id = parent_result["ticket_id"]
 
@@ -100,9 +84,9 @@ class TestMCPCreateTicketWithHive:
         result = _create_ticket(
             ticket_type="subtask",
             title="Backend Subtask",
+            hive_name="backend",
             parent=parent_id,
-            description="Backend work",
-            hive_name="backend"
+            description="Backend work"
         )
 
         assert result["status"] == "success"
@@ -149,15 +133,9 @@ class TestMCPCreateTicketWithHive:
             hive_name="frontend"
         )
 
-        no_hive_result = _create_ticket(
-            ticket_type="epic",
-            title="No Hive Epic"
-        )
-
-        # All should succeed with different ID patterns
+        # Both should succeed with hive-prefixed IDs
         assert backend_result["ticket_id"].startswith("backend.bees-")
         assert frontend_result["ticket_id"].startswith("frontend.bees-")
-        assert no_hive_result["ticket_id"].startswith("bees-")
 
     def test_hive_with_all_ticket_types(self, temp_tickets_dir):
         """Should support hive_name for epic, task, and subtask."""
@@ -186,50 +164,23 @@ class TestMCPCreateTicketWithHive:
         )
         assert subtask_result["ticket_id"].startswith("test_hive.bees-")
 
-    def test_hive_none_vs_not_provided(self, temp_tickets_dir):
-        """hive_name=None should behave same as not providing the parameter."""
-        result1 = _create_ticket(
-            ticket_type="epic",
-            title="Test 1"
-        )
-
-        result2 = _create_ticket(
-            ticket_type="epic",
-            title="Test 2",
-            hive_name=None
-        )
-
-        # Both should generate standard IDs
-        assert result1["ticket_id"].startswith("bees-")
-        assert result2["ticket_id"].startswith("bees-")
-
-    def test_hive_empty_string(self, temp_tickets_dir):
-        """Empty string hive_name should behave like None."""
-        result = _create_ticket(
-            ticket_type="epic",
-            title="Test",
-            hive_name=""
-        )
-
-        # Should generate standard ID (empty string treated as None)
-        ticket_id = result["ticket_id"]
-        assert ticket_id.startswith("bees-")
 
     def test_cross_hive_relationships(self, temp_tickets_dir):
         """Should allow relationships between tickets in different hives."""
-        # Create parent epic without hive
+        # Create parent epic in one hive
         parent_result = _create_ticket(
             ticket_type="epic",
-            title="Parent Epic"
+            title="Parent Epic",
+            hive_name="frontend"
         )
         parent_id = parent_result["ticket_id"]
 
-        # Create child task with hive
+        # Create child task in different hive
         child_result = _create_ticket(
             ticket_type="task",
             title="Child Task",
-            parent=parent_id,
-            hive_name="backend"
+            hive_name="backend",
+            parent=parent_id
         )
 
         # Both should succeed
@@ -290,39 +241,6 @@ class TestMCPCreateTicketHiveValidation:
         assert result2["status"] == "success"
         assert result2["ticket_id"].startswith("back_end.bees-")
 
-    def test_empty_string_hive_name_raises_error(self, temp_tickets_dir):
-        """Empty string hive_name should be rejected."""
-        # Note: Current implementation treats empty string as None, but we should validate it
-        # This test documents current behavior - may need to be updated based on requirements
-        result = _create_ticket(
-            ticket_type="epic",
-            title="Test",
-            hive_name=""
-        )
-        # Empty string currently treated as None, so generates standard ID
-        assert result["ticket_id"].startswith("bees-")
-
-    def test_whitespace_only_hive_name_raises_error(self, temp_tickets_dir):
-        """Whitespace-only hive_name should raise ValueError."""
-        with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
-                ticket_type="epic",
-                title="Test",
-                hive_name="   "
-            )
-        assert "Invalid hive_name" in str(exc_info.value)
-        assert "must contain at least one alphanumeric character" in str(exc_info.value)
-
-    def test_none_hive_name_allowed(self, temp_tickets_dir):
-        """None hive_name should be allowed (no validation error)."""
-        result = _create_ticket(
-            ticket_type="epic",
-            title="Test",
-            hive_name=None
-        )
-        assert result["status"] == "success"
-        assert result["ticket_id"].startswith("bees-")
-
     def test_special_chars_only_hive_name_raises_error(self, temp_tickets_dir):
         """Hive name with only special characters should raise ValueError."""
         with pytest.raises(ValueError) as exc_info:
@@ -336,7 +254,7 @@ class TestMCPCreateTicketHiveValidation:
 
     def test_normalized_empty_string_raises_error(self, temp_tickets_dir):
         """Hive name that normalizes to empty string should raise ValueError."""
-        # Names with only hyphens/spaces that become empty after normalization
+        # Names with only hyphens that become empty after normalization
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="epic",
@@ -345,25 +263,162 @@ class TestMCPCreateTicketHiveValidation:
             )
         assert "Invalid hive_name" in str(exc_info.value)
 
-        with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
-                ticket_type="epic",
-                title="Test",
-                hive_name="_ _ _"
-            )
-        # This might actually work because underscores are valid
-        # Let's test a case that definitely normalizes to empty
-        pass
+    def test_hive_with_special_chars_passes(self, temp_tickets_dir):
+        """Hive name with special chars but has alphanumeric should pass."""
+        result = _create_ticket(
+            ticket_type="epic",
+            title="Test Epic",
+            hive_name="my@hive"
+        )
+        assert result["status"] == "success"
+        # Should normalize to myhive (@ removed)
+        assert result["ticket_id"].startswith("myhive.bees-")
 
-    def test_validation_error_message_includes_original_name(self, temp_tickets_dir):
-        """Validation error message should include the original invalid hive name."""
+    def test_hive_with_only_special_chars_fails(self, temp_tickets_dir):
+        """Hive name with only special chars should fail validation."""
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="epic",
                 title="Test",
+                hive_name="!!!!"
+            )
+        assert "Invalid hive_name" in str(exc_info.value)
+        assert "must contain at least one alphanumeric character" in str(exc_info.value)
+
+    def test_hive_with_mixed_alphanumeric_special_passes(self, temp_tickets_dir):
+        """Hive name with mixed alphanumeric/special chars should pass."""
+        result = _create_ticket(
+            ticket_type="epic",
+            title="Test Epic",
+            hive_name="test-123"
+        )
+        assert result["status"] == "success"
+        assert result["ticket_id"].startswith("test_123.bees-")
+
+    def test_normalized_result_never_empty_when_alphanumeric_present(self, temp_tickets_dir):
+        """Verify normalized result is never empty when alphanumeric check passes."""
+        # If we have at least one alphanumeric char, normalization cannot result in empty string
+        test_cases = [
+            "a",           # Single letter
+            "1",           # Single digit
+            "@a@",         # Letter surrounded by special chars
+            "!!!test!!!",  # Alphanumeric with special chars
+            "my-hive-123", # Mixed with hyphens
+        ]
+
+        for hive_name in test_cases:
+            result = _create_ticket(
+                ticket_type="epic",
+                title=f"Test for {hive_name}",
+                hive_name=hive_name
+            )
+            assert result["status"] == "success"
+            ticket_id = result["ticket_id"]
+            # Verify ID has a non-empty prefix before .bees-
+            prefix = ticket_id.split(".bees-")[0]
+            assert len(prefix) > 0, f"Normalized hive name is empty for input '{hive_name}'"
+
+
+class TestMCPCreateTicketRequiredHive:
+    """Tests for _create_ticket() with required hive_name parameter (Task bees-0pe2j)."""
+
+    def test_create_ticket_without_hive_raises_error(self, temp_tickets_dir):
+        """Should raise TypeError when hive_name is not provided."""
+        with pytest.raises(TypeError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test Epic"
+            )
+        # Python raises TypeError for missing required parameter
+        assert "hive_name" in str(exc_info.value)
+
+    def test_create_ticket_with_none_hive_raises_error(self, temp_tickets_dir):
+        """Should raise ValueError when hive_name is None."""
+        with pytest.raises(ValueError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test Epic",
+                hive_name=None
+            )
+        assert "hive_name is required" in str(exc_info.value)
+
+    def test_create_ticket_with_empty_string_raises_error(self, temp_tickets_dir):
+        """Should raise ValueError when hive_name is empty string."""
+        with pytest.raises(ValueError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test Epic",
+                hive_name=""
+            )
+        assert "hive_name is required" in str(exc_info.value)
+
+    def test_create_ticket_with_whitespace_raises_error(self, temp_tickets_dir):
+        """Should raise ValueError when hive_name is whitespace only."""
+        with pytest.raises(ValueError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test Epic",
                 hive_name="   "
             )
-        error_msg = str(exc_info.value)
-        assert "Invalid hive_name" in error_msg
-        # Verify error message is helpful
-        assert "must contain at least one alphanumeric character" in error_msg
+        assert "hive_name is required" in str(exc_info.value)
+
+    def test_create_ticket_with_valid_hive_succeeds(self, temp_tickets_dir):
+        """Should succeed when valid hive_name is provided."""
+        result = _create_ticket(
+            ticket_type="epic",
+            title="Test Epic",
+            hive_name="backend"
+        )
+        assert result["status"] == "success"
+        assert result["ticket_id"].startswith("backend.bees-")
+
+    def test_all_ticket_types_require_hive(self, temp_tickets_dir):
+        """All ticket types (epic, task, subtask) should require hive_name."""
+        # Epic without hive_name
+        with pytest.raises(TypeError):
+            _create_ticket(
+                ticket_type="epic",
+                title="Epic"
+            )
+
+        # Task without hive_name
+        with pytest.raises(TypeError):
+            _create_ticket(
+                ticket_type="task",
+                title="Task"
+            )
+
+        # Create parent first for subtask test
+        parent_result = _create_ticket(
+            ticket_type="task",
+            title="Parent",
+            hive_name="test"
+        )
+
+        # Subtask without hive_name
+        with pytest.raises(TypeError):
+            _create_ticket(
+                ticket_type="subtask",
+                title="Subtask",
+                parent=parent_result["ticket_id"]
+            )
+
+    def test_error_messages_are_clear(self, temp_tickets_dir):
+        """Error messages should clearly indicate hive_name is required."""
+        # None value
+        with pytest.raises(ValueError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test",
+                hive_name=None
+            )
+        assert "required" in str(exc_info.value).lower()
+
+        # Empty string
+        with pytest.raises(ValueError) as exc_info:
+            _create_ticket(
+                ticket_type="epic",
+                title="Test",
+                hive_name=""
+            )
+        assert "required" in str(exc_info.value).lower()

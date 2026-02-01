@@ -6,6 +6,7 @@ Provides FastMCP server infrastructure with tool registration for ticket operati
 
 import json
 import logging
+import re
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -741,6 +742,7 @@ health_check = mcp.tool()(_health_check)
 def _create_ticket(
     ticket_type: str,
     title: str,
+    hive_name: str,
     description: str = "",
     parent: str | None = None,
     children: list[str] | None = None,
@@ -749,8 +751,7 @@ def _create_ticket(
     labels: list[str] | None = None,
     owner: str | None = None,
     priority: int | None = None,
-    status: str | None = None,
-    hive_name: str | None = None
+    status: str | None = None
 ) -> Dict[str, Any]:
     """
     Create a new ticket (epic, task, or subtask).
@@ -758,6 +759,7 @@ def _create_ticket(
     Args:
         ticket_type: Type of ticket to create - must be 'epic', 'task', or 'subtask'
         title: Title of the ticket (required)
+        hive_name: Hive name to prefix the ID with (required, e.g., "backend" -> "backend.bees-abc")
         description: Detailed description of the ticket
         parent: Parent ticket ID (required for subtasks, optional for tasks, not allowed for epics)
         children: List of child ticket IDs
@@ -767,7 +769,6 @@ def _create_ticket(
         owner: Owner/assignee of the ticket
         priority: Priority level (typically 0-4)
         status: Status of the ticket (e.g., 'open', 'in_progress', 'completed')
-        hive_name: Optional hive name to prefix the ID with (e.g., "backend" -> "backend.bees-abc")
 
     Returns:
         dict: Created ticket information including ticket_id
@@ -787,21 +788,17 @@ def _create_ticket(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Validate hive_name if provided
-    if hive_name is not None and hive_name != "":
-        # Check if hive_name contains at least one alphanumeric character
-        import re
-        if not re.search(r'[a-zA-Z0-9]', hive_name):
-            error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+    # Validate hive_name (required parameter)
+    if not hive_name or not hive_name.strip():
+        error_msg = "hive_name is required and cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
-        # Additional check: normalized name should not be empty
-        normalized_hive = normalize_hive_name(hive_name)
-        if not normalized_hive:
-            error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+    # Check if hive_name contains at least one alphanumeric character
+    if not re.search(r'[a-zA-Z0-9]', hive_name):
+        error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     # Validate parent requirements
     if ticket_type == "epic" and parent:

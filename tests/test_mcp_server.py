@@ -170,6 +170,7 @@ class TestToolRegistration:
         monkeypatch.setattr(src.ticket_factory, "TICKETS_DIR", tickets_dir)
 
         result = _create_ticket(
+            hive_name="default",
             ticket_type="task",
             title="Test Task"
         )
@@ -183,21 +184,21 @@ class TestToolRegistration:
     def test_create_ticket_validates_type(self):
         """Test that create_ticket validates ticket_type parameter."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(ticket_type="invalid", title="Test")
+            _create_ticket(hive_name="default", ticket_type="invalid", title="Test")
 
         assert "Invalid ticket_type" in str(exc_info.value)
 
     def test_create_ticket_validates_epic_parent(self):
         """Test that create_ticket rejects parent for epics."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(ticket_type="epic", title="Test", parent="some-id")
+            _create_ticket(hive_name="default", ticket_type="epic", title="Test", parent="some-id")
 
         assert "Epics cannot have a parent" in str(exc_info.value)
 
     def test_create_ticket_validates_subtask_parent(self):
         """Test that create_ticket requires parent for subtasks."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(ticket_type="subtask", title="Test")
+            _create_ticket(hive_name="default", ticket_type="subtask", title="Test")
 
         assert "Subtasks must have a parent" in str(exc_info.value)
 

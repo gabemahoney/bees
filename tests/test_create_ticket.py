@@ -43,7 +43,8 @@ class TestCreateEpic:
             title="Test Epic",
             description="Test epic description",
             labels=["test", "epic"],
-            priority=0
+            priority=0,
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -69,7 +70,8 @@ class TestCreateEpic:
             _create_ticket(
                 ticket_type="epic",
                 title="Test Epic",
-                parent="bees-xyz"
+                parent="bees-xyz",
+                hive_name="default"
             )
 
         assert "Epics cannot have a parent" in str(exc_info.value)
@@ -79,7 +81,8 @@ class TestCreateEpic:
         # First create a dependency epic
         dep_result = _create_ticket(
             ticket_type="epic",
-            title="Dependency Epic"
+            title="Dependency Epic",
+            hive_name="default"
         )
         dep_id = dep_result["ticket_id"]
 
@@ -87,7 +90,8 @@ class TestCreateEpic:
         result = _create_ticket(
             ticket_type="epic",
             title="Test Epic",
-            up_dependencies=[dep_id]
+            up_dependencies=[dep_id],
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -109,7 +113,8 @@ class TestCreateTask:
         # First create parent epic
         epic_result = _create_ticket(
             ticket_type="epic",
-            title="Parent Epic"
+            title="Parent Epic",
+            hive_name="default"
         )
         epic_id = epic_result["ticket_id"]
 
@@ -119,7 +124,8 @@ class TestCreateTask:
             title="Test Task",
             parent=epic_id,
             description="Task description",
-            labels=["backend"]
+            labels=["backend"],
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -138,7 +144,8 @@ class TestCreateTask:
         """Test creating a task without parent (valid case)."""
         result = _create_ticket(
             ticket_type="task",
-            title="Standalone Task"
+            title="Standalone Task",
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -153,7 +160,8 @@ class TestCreateTask:
             _create_ticket(
                 ticket_type="task",
                 title="Test Task",
-                parent="bees-nonexistent"
+                parent="bees-nonexistent",
+                hive_name="default"
             )
 
         assert "Parent ticket does not exist" in str(exc_info.value)
@@ -167,7 +175,8 @@ class TestCreateSubtask:
         # Create parent task
         task_result = _create_ticket(
             ticket_type="task",
-            title="Parent Task"
+            title="Parent Task",
+            hive_name="default"
         )
         task_id = task_result["ticket_id"]
 
@@ -176,7 +185,8 @@ class TestCreateSubtask:
             ticket_type="subtask",
             title="Test Subtask",
             parent=task_id,
-            description="Subtask description"
+            description="Subtask description",
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -196,7 +206,8 @@ class TestCreateSubtask:
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="subtask",
-                title="Test Subtask"
+                title="Test Subtask",
+                hive_name="default"
             )
 
         assert "Subtasks must have a parent" in str(exc_info.value)
@@ -210,7 +221,8 @@ class TestBidirectionalRelationships:
         # Create parent
         parent_result = _create_ticket(
             ticket_type="epic",
-            title="Parent Epic"
+            title="Parent Epic",
+            hive_name="default"
         )
         parent_id = parent_result["ticket_id"]
 
@@ -218,7 +230,8 @@ class TestBidirectionalRelationships:
         child_result = _create_ticket(
             ticket_type="task",
             title="Child Task",
-            parent=parent_id
+            parent=parent_id,
+            hive_name="default"
         )
         child_id = child_result["ticket_id"]
 
@@ -234,7 +247,8 @@ class TestBidirectionalRelationships:
         # Create blocking ticket
         blocking_result = _create_ticket(
             ticket_type="task",
-            title="Blocking Task"
+            title="Blocking Task",
+            hive_name="default"
         )
         blocking_id = blocking_result["ticket_id"]
 
@@ -242,7 +256,8 @@ class TestBidirectionalRelationships:
         dependent_result = _create_ticket(
             ticket_type="task",
             title="Dependent Task",
-            up_dependencies=[blocking_id]
+            up_dependencies=[blocking_id],
+            hive_name="default"
         )
         dependent_id = dependent_result["ticket_id"]
 
@@ -258,7 +273,8 @@ class TestBidirectionalRelationships:
         # Create blocked ticket
         blocked_result = _create_ticket(
             ticket_type="task",
-            title="Blocked Task"
+            title="Blocked Task",
+            hive_name="default"
         )
         blocked_id = blocked_result["ticket_id"]
 
@@ -266,7 +282,8 @@ class TestBidirectionalRelationships:
         blocking_result = _create_ticket(
             ticket_type="task",
             title="Blocking Task",
-            down_dependencies=[blocked_id]
+            down_dependencies=[blocked_id],
+            hive_name="default"
         )
         blocking_id = blocking_result["ticket_id"]
 
@@ -282,7 +299,8 @@ class TestBidirectionalRelationships:
         # Create parent
         parent_result = _create_ticket(
             ticket_type="epic",
-            title="Parent Epic"
+            title="Parent Epic",
+            hive_name="default"
         )
         parent_id = parent_result["ticket_id"]
 
@@ -290,14 +308,16 @@ class TestBidirectionalRelationships:
         child1_result = _create_ticket(
             ticket_type="task",
             title="Child 1",
-            parent=parent_id
+            parent=parent_id,
+            hive_name="default"
         )
         child1_id = child1_result["ticket_id"]
 
         child2_result = _create_ticket(
             ticket_type="task",
             title="Child 2",
-            parent=parent_id
+            parent=parent_id,
+            hive_name="default"
         )
         child2_id = child2_result["ticket_id"]
 
@@ -315,7 +335,8 @@ class TestValidation:
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="epic",
-                title=""
+                title="",
+                hive_name="default"
             )
 
         assert "Ticket title cannot be empty" in str(exc_info.value)
@@ -325,7 +346,8 @@ class TestValidation:
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="epic",
-                title="   "
+                title="   ",
+                hive_name="default"
             )
 
         assert "Ticket title cannot be empty" in str(exc_info.value)
@@ -335,7 +357,8 @@ class TestValidation:
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(
                 ticket_type="invalid",
-                title="Test"
+                title="Test",
+                hive_name="default"
             )
 
         assert "Invalid ticket_type" in str(exc_info.value)
@@ -346,7 +369,8 @@ class TestValidation:
             _create_ticket(
                 ticket_type="task",
                 title="Test Task",
-                up_dependencies=["bees-nonexistent"]
+                up_dependencies=["bees-nonexistent"],
+                hive_name="default"
             )
 
         assert "Dependency ticket does not exist" in str(exc_info.value)
@@ -356,7 +380,8 @@ class TestValidation:
         # Create a task
         task_result = _create_ticket(
             ticket_type="task",
-            title="Existing Task"
+            title="Existing Task",
+            hive_name="default"
         )
         task_id = task_result["ticket_id"]
 
@@ -366,7 +391,8 @@ class TestValidation:
                 ticket_type="task",
                 title="Test Task",
                 up_dependencies=[task_id],
-                down_dependencies=[task_id]
+                down_dependencies=[task_id],
+                hive_name="default"
             )
 
         assert "Circular dependency detected" in str(exc_info.value)
@@ -384,7 +410,8 @@ class TestEdgeCases:
             labels=["label1", "label2"],
             owner="user@example.com",
             priority=2,
-            status="in_progress"
+            status="in_progress",
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -402,7 +429,8 @@ class TestEdgeCases:
         """Test creating ticket with only required fields."""
         result = _create_ticket(
             ticket_type="epic",
-            title="Minimal Epic"
+            title="Minimal Epic",
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -415,7 +443,8 @@ class TestEdgeCases:
         """Test creating ticket with unicode characters in title."""
         result = _create_ticket(
             ticket_type="epic",
-            title="Unicode Test: 你好 🚀"
+            title="Unicode Test: 你好 🚀",
+            hive_name="default"
         )
 
         assert result["status"] == "success"
@@ -431,7 +460,8 @@ class TestEdgeCases:
         result = _create_ticket(
             ticket_type="epic",
             title="Long Description Test",
-            description=long_description
+            description=long_description,
+            hive_name="default"
         )
 
         assert result["status"] == "success"

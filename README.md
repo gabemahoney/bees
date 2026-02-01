@@ -39,8 +39,10 @@ You should see `bees - ✓ Connected`.
 
 Manage tickets through Claude Code using the MCP tools. You can create epics, tasks, and subtasks, query tickets by status or type, update ticket properties, and generate markdown reports.
 
+**IMPORTANT:** All ticket creation requires a `hive_name` parameter. You must specify which hive the ticket belongs to.
+
 Use natural language with the LLM to:
-- create, update and delete tickets
+- create, update and delete tickets (hive_name REQUIRED for creation)
 - add named queries the LLM can then later use
 - run named queries to find tickets that match them
 
@@ -79,9 +81,7 @@ Paths must be absolute and within the repository root.
 Hive names must contain at least one alphanumeric character (a-z, A-Z, 0-9). The system validates hive names before creating tickets and rejects invalid names:
 
 - **Valid:** `"backend"`, `"Back End"` (normalizes to `back_end`), `"front-end"` (normalizes to `front_end`)
-- **Invalid:** `"   "` (whitespace only), `"@#$%"` (special characters only), `"---"` (no alphanumeric)
-
-Empty strings (`""`) and `None` are allowed - they create tickets without hive prefixes (standard format: `bees-abc`).
+- **Invalid:** `"   "` (whitespace only), `"@#$%"` (special characters only), `"---"` (no alphanumeric), `""` (empty string)
 
 Example configuration:
 ```json
@@ -99,17 +99,19 @@ Example configuration:
 
 ### Ticket ID Format
 
-Bees supports two ticket ID formats:
+All new tickets use the hive-prefixed format: `hive_name.bees-abc1`
 
-**Hive-Prefixed Format:** `hive_name.bees-abc1`
-- Used when tickets are created with a `hive_name` parameter
 - The hive name is normalized and prefixed to the ID
 - Example: `backend.bees-abc1`, `front_end.bees-xyz9`
+- **REQUIRED:** The `hive_name` parameter is mandatory for all `create_ticket()` calls
+- Omitting `hive_name` will result in a `ValueError`
 
-**Legacy Format:** `bees-abc1`
-- Used for tickets without a hive prefix
-- Backward compatible with existing tickets
-- Example: `bees-abc1`, `bees-xyz9`
+**Legacy Format:** `bees-abc1` (backward compatible - READ-ONLY)
+- Legacy unprefixed IDs (e.g., `bees-abc1`) are supported ONLY for reading and updating existing tickets
+- **Creating new tickets with legacy format is NOT supported**
+- The `hive_name` parameter is REQUIRED for all new ticket creation operations
+- All newly created tickets will have hive-prefixed IDs (e.g., `backend.bees-abc1`)
+- Example legacy IDs: `bees-abc1`, `bees-xyz9`
 
 **ID Parsing:**
 
@@ -140,7 +142,9 @@ Internal routing uses the parsed hive name to construct file paths:
 ## MCP Commands
 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
-  - `hive_name` is optional; when provided, generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
+  - **`hive_name` parameter is REQUIRED for all ticket creation**
+  - All new tickets must specify a hive; generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
+  - Attempting to create a ticket without `hive_name` will raise a `ValueError`
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **delete_ticket** - `ticket_id, cascade`
@@ -159,11 +163,11 @@ Internal routing uses the parsed hive name to construct file paths:
 ### Examples
 
 ```python
-# Create an epic
-create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout")
+# Create an epic (hive_name is required)
+create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout", hive_name="backend")
 
 # Create a task under an epic
-create_ticket(ticket_type="task", title="Build login API", parent="epic-001")
+create_ticket(ticket_type="task", title="Build login API", parent="backend.epic-001", hive_name="backend")
 
 # Create a ticket with hive prefix (generates ID like "backend.bees-abc")
 create_ticket(ticket_type="epic", title="Backend API", hive_name="backend")

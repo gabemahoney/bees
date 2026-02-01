@@ -41,7 +41,8 @@ class TestDeleteTicketBasic:
         result = _create_ticket(
             ticket_type="epic",
             title="Test Epic",
-            description="Test description"
+            description="Test description",
+            hive_name="default"
         )
         ticket_id = result["ticket_id"]
 
@@ -72,10 +73,10 @@ class TestDeleteTicketParentCleanup:
     def test_delete_ticket_removes_from_parent_children(self, setup_tickets_dir):
         """Test that deleting a ticket removes it from parent's children array."""
         # Create parent epic and child task
-        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic")
+        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
         parent_id = parent_result["ticket_id"]
 
-        child_result = _create_ticket(ticket_type="task", title="Child Task", parent=parent_id)
+        child_result = _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="default")
         child_id = child_result["ticket_id"]
 
         # Verify parent has child in children array
@@ -95,7 +96,7 @@ class TestDeleteTicketParentCleanup:
     def test_delete_ticket_without_parent(self, setup_tickets_dir):
         """Test that deleting a ticket without parent works correctly."""
         # Create epic without parent
-        result = _create_ticket(ticket_type="epic", title="Epic Without Parent")
+        result = _create_ticket(ticket_type="epic", title="Epic Without Parent", hive_name="default")
         ticket_id = result["ticket_id"]
 
         # Delete the ticket
@@ -112,13 +113,14 @@ class TestDeleteTicketDependencyCleanup:
     def test_delete_ticket_removes_from_down_dependencies(self, setup_tickets_dir):
         """Test that deleting a ticket removes it from blocking tickets' down_dependencies."""
         # Create two epics with dependency relationship
-        blocking_result = _create_ticket(ticket_type="epic", title="Blocking Epic")
+        blocking_result = _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="default")
         blocking_id = blocking_result["ticket_id"]
 
         blocked_result = _create_ticket(
             ticket_type="epic",
             title="Blocked Epic",
-            up_dependencies=[blocking_id]
+            up_dependencies=[blocking_id],
+            hive_name="default"
         )
         blocked_id = blocked_result["ticket_id"]
 
@@ -136,13 +138,14 @@ class TestDeleteTicketDependencyCleanup:
     def test_delete_ticket_removes_from_up_dependencies(self, setup_tickets_dir):
         """Test that deleting a ticket removes it from blocked tickets' up_dependencies."""
         # Create two epics with dependency relationship
-        blocking_result = _create_ticket(ticket_type="epic", title="Blocking Epic")
+        blocking_result = _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="default")
         blocking_id = blocking_result["ticket_id"]
 
         blocked_result = _create_ticket(
             ticket_type="epic",
             title="Blocked Epic",
-            up_dependencies=[blocking_id]
+            up_dependencies=[blocking_id],
+            hive_name="default"
         )
         blocked_id = blocked_result["ticket_id"]
 
@@ -160,17 +163,18 @@ class TestDeleteTicketDependencyCleanup:
     def test_delete_ticket_with_multiple_dependencies(self, setup_tickets_dir):
         """Test deleting a ticket with multiple dependency relationships."""
         # Create epics with complex dependency structure
-        epic1_result = _create_ticket(ticket_type="epic", title="Epic 1")
+        epic1_result = _create_ticket(ticket_type="epic", title="Epic 1", hive_name="default")
         epic1_id = epic1_result["ticket_id"]
 
-        epic2_result = _create_ticket(ticket_type="epic", title="Epic 2")
+        epic2_result = _create_ticket(ticket_type="epic", title="Epic 2", hive_name="default")
         epic2_id = epic2_result["ticket_id"]
 
         epic3_result = _create_ticket(
             ticket_type="epic",
             title="Epic 3",
             up_dependencies=[epic1_id],
-            down_dependencies=[epic2_id]
+            down_dependencies=[epic2_id],
+            hive_name="default"
         )
         epic3_id = epic3_result["ticket_id"]
 
@@ -192,13 +196,13 @@ class TestDeleteTicketCascade:
     def test_cascade_delete_children(self, setup_tickets_dir):
         """Test that cascade=True recursively deletes all children."""
         # Create parent epic with multiple children
-        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic")
+        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
         parent_id = parent_result["ticket_id"]
 
-        child1_result = _create_ticket(ticket_type="task", title="Child 1", parent=parent_id)
+        child1_result = _create_ticket(ticket_type="task", title="Child 1", parent=parent_id, hive_name="default")
         child1_id = child1_result["ticket_id"]
 
-        child2_result = _create_ticket(ticket_type="task", title="Child 2", parent=parent_id)
+        child2_result = _create_ticket(ticket_type="task", title="Child 2", parent=parent_id, hive_name="default")
         child2_id = child2_result["ticket_id"]
 
         # Verify children exist
@@ -219,13 +223,13 @@ class TestDeleteTicketCascade:
     def test_cascade_delete_nested_children(self, setup_tickets_dir):
         """Test that cascade delete works with nested hierarchies."""
         # Create nested hierarchy: Epic -> Task -> Subtask
-        epic_result = _create_ticket(ticket_type="epic", title="Epic")
+        epic_result = _create_ticket(ticket_type="epic", title="Epic", hive_name="default")
         epic_id = epic_result["ticket_id"]
 
-        task_result = _create_ticket(ticket_type="task", title="Task", parent=epic_id)
+        task_result = _create_ticket(ticket_type="task", title="Task", parent=epic_id, hive_name="default")
         task_id = task_result["ticket_id"]
 
-        subtask_result = _create_ticket(ticket_type="subtask", title="Subtask", parent=task_id)
+        subtask_result = _create_ticket(ticket_type="subtask", title="Subtask", parent=task_id, hive_name="default")
         subtask_id = subtask_result["ticket_id"]
 
         # Delete epic with cascade=True
@@ -239,10 +243,10 @@ class TestDeleteTicketCascade:
     def test_delete_without_cascade_unlinks_children(self, setup_tickets_dir):
         """Test that cascade=False unlinks children instead of deleting them."""
         # Create parent epic with child
-        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic")
+        parent_result = _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
         parent_id = parent_result["ticket_id"]
 
-        child_result = _create_ticket(ticket_type="task", title="Child Task", parent=parent_id)
+        child_result = _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="default")
         child_id = child_result["ticket_id"]
 
         # Verify child has parent reference
@@ -263,7 +267,7 @@ class TestDeleteTicketCascade:
     def test_delete_ticket_without_children(self, setup_tickets_dir):
         """Test that deleting ticket without children works with cascade parameter."""
         # Create epic without children
-        result = _create_ticket(ticket_type="epic", title="Epic Without Children")
+        result = _create_ticket(ticket_type="epic", title="Epic Without Children", hive_name="default")
         ticket_id = result["ticket_id"]
 
         # Delete with cascade=True should work fine
@@ -280,21 +284,22 @@ class TestDeleteTicketEdgeCases:
     def test_delete_ticket_with_all_relationships(self, setup_tickets_dir):
         """Test deleting a ticket with parent, children, and dependencies."""
         # Create complex relationship structure
-        parent_result = _create_ticket(ticket_type="epic", title="Parent")
+        parent_result = _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
         parent_id = parent_result["ticket_id"]
 
-        blocking_result = _create_ticket(ticket_type="epic", title="Blocking")
+        blocking_result = _create_ticket(ticket_type="epic", title="Blocking", hive_name="default")
         blocking_id = blocking_result["ticket_id"]
 
         target_result = _create_ticket(
             ticket_type="task",
             title="Target Task",
             parent=parent_id,
-            up_dependencies=[blocking_id]
+            up_dependencies=[blocking_id],
+            hive_name="default"
         )
         target_id = target_result["ticket_id"]
 
-        child_result = _create_ticket(ticket_type="subtask", title="Child", parent=target_id)
+        child_result = _create_ticket(ticket_type="subtask", title="Child", parent=target_id, hive_name="default")
         child_id = child_result["ticket_id"]
 
         # Delete target without cascade (unlinks child)
@@ -321,17 +326,18 @@ class TestDeleteTicketEdgeCases:
     def test_cascade_delete_with_dependencies(self, setup_tickets_dir):
         """Test that cascade delete also cleans up dependencies for children."""
         # Create parent with child that has dependencies
-        parent_result = _create_ticket(ticket_type="epic", title="Parent")
+        parent_result = _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
         parent_id = parent_result["ticket_id"]
 
-        blocking_result = _create_ticket(ticket_type="epic", title="Blocking")
+        blocking_result = _create_ticket(ticket_type="epic", title="Blocking", hive_name="default")
         blocking_id = blocking_result["ticket_id"]
 
         child_result = _create_ticket(
             ticket_type="task",
             title="Child",
             parent=parent_id,
-            up_dependencies=[blocking_id]
+            up_dependencies=[blocking_id],
+            hive_name="default"
         )
         child_id = child_result["ticket_id"]
 

@@ -155,7 +155,6 @@ Centralized configuration module with typed Config object.
   before calling `create_epic()`, `create_task()`, or `create_subtask()` factory functions
 - **What is validated**:
   - Checks if `hive_name` contains at least one alphanumeric character using `re.search(r'[a-zA-Z0-9]', hive_name)`
-  - Verifies that `normalize_hive_name()` does not return empty string
   - Raises `ValueError` with descriptive message if validation fails
 - **Validation rules**:
   - `None` and empty string (`""`) are allowed (treated as no hive prefix)
@@ -166,12 +165,19 @@ Centralized configuration module with typed Config object.
   `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
 - **Integration with normalize_hive_name()**: Validation occurs before normalization is used for ID generation,
   preventing edge cases where normalized names become empty or invalid
+- **Validation simplification** (Task bees-ur1t5): Originally included redundant check for empty normalized name
+  (lines 804-808) after alphanumeric check (lines 798-801). This was removed because `normalize_hive_name()` can
+  only return empty string if input has no alphanumeric characters, which is already validated by the regex check.
+  Single alphanumeric validation is sufficient - if the check passes, the normalized result is guaranteed to be
+  non-empty.
 - **Test coverage**: Unit tests in `tests/test_mcp_create_ticket_hive.py` verify validation behavior:
   - Valid hive names pass through successfully
   - Whitespace-only names raise ValueError
   - Special characters only raise ValueError
   - None and empty string are allowed (no validation error)
   - Error messages include original invalid name
+  - Edge cases confirmed: hive names with special chars but containing alphanumeric pass validation
+  - Verified normalized result is never empty when alphanumeric check passes
 
 **Backward Compatibility**:
 - IDs without hive prefix remain valid
@@ -267,6 +273,84 @@ generate_ticket_id(hive_name="back_end") → "back_end.bees-abc"
 - README.md updated with hive_name parameter examples and automatic inference notes
 - MCP command list explicitly notes which commands infer hive vs require hive parameter
 - ID format section documents both prefixed and legacy formats with examples
+
+### Required hive_name Parameter (Task bees-0pe2j, Epic bees-ftl9l)
+
+**Purpose**: Remove backward compatibility for unprefixed ticket IDs by making hive_name a required parameter in create_ticket MCP interface.
+
+**Architecture Decision**: Required Parameter vs Optional with Default
+- Design choice: Make `hive_name` a required parameter (no default value)
+- Rationale: Enforces hive-based organization for all new tickets, prevents creation of legacy format tickets
+- Benefits: Simplifies codebase by removing fallback logic, ensures all new tickets have proper hive context
+- Alternative rejected: Optional parameter with default hive would hide configuration issues and create inconsistent ticket organization
+
+**Implementation Changes**:
+
+1. **Parameter Signature** (`src/mcp_server.py`):
+   - Changed from `hive_name: str | None = None` to `hive_name: str` (line 753)
+   - Removed default value, making parameter required in function signature
+   - MCP tool interface now requires hive_name for all create_ticket calls
+
+2. **Docstring Updates** (`src/mcp_server.py`):
+   - Updated parameter documentation from "Optional hive name" to "Hive name (required)"
+   - Removed references to optional behavior and default values
+   - Clarified that hive_name is mandatory for ticket creation
+   - **Parameter Order Fix** (Task bees-irbfa): Reordered docstring parameters to match function signature
+     - Moved `hive_name` documentation from last position to third position (after `title`)
+     - Ensures docstring parameter order matches function signature: `ticket_type, title, hive_name, description, ...`
+     - Improves code readability and maintains consistency between signature and documentation
+
+3. **Validation Logic** (`src/mcp_server.py`):
+   - Updated validation to check for empty/missing hive_name (lines 790-807)
+   - Changed from `if hive_name is not None and hive_name != ""` to explicit required check
+   - Added error for empty/missing hive_name: `"hive_name is required and cannot be empty"`
+   - Existing alphanumeric validation remains unchanged
+
+4. **Documentation Updates**:
+   - **README.md**: Updated to state hive_name is required, not optional
+   - Removed statements about empty strings and None being allowed
+   - Updated all examples to include hive_name parameter
+   - Modified ID format section to clarify new tickets require hive prefix
+   - **master_plan.md**: Added this section documenting the architectural decision and implementation
+
+**Error Messages**:
+- Missing/empty hive_name: `"hive_name is required and cannot be empty"`
+- Invalid hive_name (no alphanumeric): `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
+
+**Backward Compatibility**:
+- Reading existing tickets: Unprefixed IDs (bees-abc) still supported for reading/updating/deleting
+- Creating new tickets: Must provide hive_name, no fallback to unprefixed format
+- Path resolution: Continues to handle both formats automatically
+- Mixed usage: Existing unprefixed tickets coexist with new hive-prefixed tickets
+
+**Integration with ID Generation**:
+- `hive_name` parameter flows through: MCP tool → factory function → `generate_unique_ticket_id()`
+- Normalization via `normalize_hive_name()` still occurs in `generate_ticket_id()`
+- ID format: Always `{normalized_hive}.bees-{suffix}` for new tickets
+- Validation prevents empty normalized names from creating invalid IDs
+
+**Rationale for Removal of Backward Compatibility**:
+- Simplifies codebase by removing conditional logic for optional hive_name
+- Enforces consistent ticket organization across all hives
+- Prevents accidental creation of tickets without proper hive context
+- Makes hive-based architecture mandatory, not optional
+- Aligns with multi-hive design where all tickets should belong to a hive
+
+**Migration Strategy**:
+- Existing tickets: No changes required, continue to work as-is
+- New tickets: Must specify hive_name in create_ticket calls
+- Tooling/scripts: Update to always provide hive_name parameter
+- Error messages: Guide users to provide required hive_name
+
+**Test Fixes** (Task bees-uu7nz):
+After making hive_name required, 42 existing tests needed updates to include the parameter:
+- `tests/test_create_ticket.py`: Updated all `_create_ticket()` calls to include `hive_name='default'`
+- `tests/test_delete_ticket.py`: Updated all `_create_ticket()` calls to include `hive_name='default'`
+- `tests/test_mcp_hive_inference.py`: All calls already included hive_name (no changes needed)
+- `tests/test_mcp_server.py`: Updated 4 `_create_ticket()` calls to include `hive_name='default'`
+
+All tests now explicitly specify hive_name, ensuring compatibility with the required parameter change.
+The test fixes validate that existing code patterns can be easily updated to comply with the new requirement.
 
 ### Ticket ID Parsing and Routing (Task bees-3zqk)
 
@@ -440,6 +524,24 @@ details and the example configuration file at `docs/examples/claude-config-http.
 HTTP transport approach while preserving legacy stdio instructions for users who need them. The
 README now includes only a brief note about stdio as a legacy option with a link to the archived
 documentation.
+
+**Implementation Details** (`src/main.py`):
+The `mcp.http_app()` property retrieves the Starlette ASGI application from FastMCP for HTTP transport. This property returns the underlying Starlette app instance that can be passed to uvicorn for serving:
+
+```python
+# Get the Starlette app from FastMCP
+http_app = mcp.http_app()
+
+# Run the FastMCP server with HTTP transport via uvicorn
+uvicorn.run(
+    http_app,
+    host=host,
+    port=port,
+    log_level="info"
+)
+```
+
+Reference: `src/main.py` lines 158-175.
 
 **HTTP Transport Testing & Validation** (Task bees-1u88):
 

@@ -1,6 +1,8 @@
 - Is there a watcher? Remove it. Add design requirement of no daemons
+- Add agent that reviews Made Epics, Tasks and Subtasks agains the source docs
 - Bug: MCP does not start if DB is corrupt. It should start but refuse to respond to commands with a friendly message
 - Add a Feature Reviewer subagent who validates the work conforms to the docs
+- Use bees dependency chains to describe agent workflows (not skills)
 - Egg: An unhatched bee. .eggs/feature/PRD.md SRD.md etc
   - hatch egg == docs-to-epics
 - do-epic skill: if I have suggestions make them Tasks dont just do them!

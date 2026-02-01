@@ -260,3 +260,33 @@ def init_bees_config_if_needed() -> BeesConfig:
         save_bees_config(config)
 
     return config
+
+
+def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig] = None) -> None:
+    """Validate that a normalized hive name is unique.
+
+    Args:
+        normalized_name: The normalized name to check (e.g., 'back_end')
+        config: BeesConfig object to check against (loads from disk if None)
+
+    Raises:
+        ValueError: If the normalized name already exists in the hive registry
+
+    Note:
+        This checks against existing hive keys, which are already normalized names.
+        This prevents 'Back End' and 'back end' from both being registered since
+        they normalize to the same key.
+    """
+    if config is None:
+        config = load_bees_config()
+
+    # If no config exists yet, name is unique by default
+    if config is None:
+        return
+
+    # Check if normalized name already exists as a hive key
+    if normalized_name in config.hives:
+        raise ValueError(
+            f"A hive with normalized name '{normalized_name}' already exists. "
+            f"Display name: '{config.hives[normalized_name].display_name}'"
+        )
