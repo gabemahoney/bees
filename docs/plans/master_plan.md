@@ -103,6 +103,22 @@ Centralized configuration module with typed Config object.
 - This design enables case-insensitive, whitespace-normalized lookups while preserving user intent
 - Display names shown in UI/reports, normalized names used for internal operations
 
+**Path Validation**:
+- `validate_hive_path(path: str, repo_root: Path) -> Path` in `src/mcp_server.py` validates and normalizes hive paths
+- Validation rules enforce security and consistency:
+  - **Absolute path requirement**: Rejects relative paths like `tickets/backend`
+  - **Existence check**: Verifies path exists using `Path.exists()` before accepting registration
+  - **Repository boundary check**: Ensures path is within repo root
+  - **Trailing slash normalization**: `Path.resolve()` automatically removes trailing slashes
+- Returns normalized absolute Path object on success
+- Raises ValueError with descriptive error messages for validation failures
+
+**Repository Root Detection**:
+- `get_repo_root() -> Path` in `src/mcp_server.py` finds git repository root for boundary validation
+- Returns absolute Path to repository root
+- Raises ValueError if not in a git repository (no .git directory found)
+- Used by `validate_hive_path()` to determine allowed path boundaries
+
 
 
 

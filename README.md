@@ -56,11 +56,11 @@ Bees stores hive configuration in `.bees/config.json` in the client repository r
 {
   "hives": {
     "backend": {
-      "path": "tickets/backend/",
+      "path": "/Users/username/projects/myrepo/tickets/backend",
       "display_name": "Backend"
     },
     "frontend": {
-      "path": "tickets/frontend/",
+      "path": "/Users/username/projects/myrepo/tickets/frontend",
       "display_name": "Frontend"
     }
   },
@@ -71,7 +71,7 @@ Bees stores hive configuration in `.bees/config.json` in the client repository r
 
 **Fields:**
 - `hives`: Dictionary mapping normalized hive names to hive configurations
-  - `path`: Absolute or relative path to hive directory
+  - `path`: Absolute path to hive directory
   - `display_name`: Human-readable name for the hive
 - `allow_cross_hive_dependencies`: Whether tickets in different hives can depend on each other
 - `schema_version`: Configuration schema version (currently "1.0")
@@ -89,6 +89,21 @@ Examples:
 - 'Multi Word Name' → 'multi_word_name'
 
 This prevents registration of hives with different display names that would collide when normalized (e.g., 'Back End' and 'back end' both normalize to 'back_end').
+
+**Path Validation:**
+
+Hive paths are validated during registration to ensure security and consistency:
+- **Must be absolute paths** - Relative paths like `tickets/backend` are rejected
+- **Must exist** - The directory must be created before registering the hive
+- **Must be within repository root** - Paths outside the git repository are rejected for security
+- **Trailing slashes normalized** - Paths like `/path/to/hive/` are normalized to `/path/to/hive`
+
+Example validation errors:
+```
+ValueError: Hive path must be absolute, got relative path: tickets/backend
+ValueError: Hive path does not exist: /Users/username/projects/myrepo/nonexistent
+ValueError: Hive path must be within repository root. Path: /tmp/outside, Repo root: /Users/username/projects/myrepo
+```
 
 ## MCP Commands
 

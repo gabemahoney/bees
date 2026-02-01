@@ -6,6 +6,7 @@ health checks, and tool schema registration.
 """
 
 import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 from src.mcp_server import (
     mcp,
@@ -15,7 +16,9 @@ from src.mcp_server import (
     _create_ticket,
     _update_ticket,
     _delete_ticket,
-    _server_running
+    _server_running,
+    get_repo_root,
+    validate_hive_path
 )
 
 
@@ -628,3 +631,157 @@ class TestUpdateTicket:
         epic = read_ticket(epic_path)
         assert task1_id in epic.children
         assert task2_id not in epic.children
+
+
+class TestGetRepoRoot:
+    """Tests for get_repo_root() helper function."""
+
+    def test_get_repo_root_success(self, tmp_path, monkeypatch):
+        """Test get_repo_root finds .git directory in current or parent directories."""
+        # Create a fake repo structure
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        subdir = repo_root / "some" / "nested" / "dir"
+        subdir.mkdir(parents=True)
+
+        # Change to nested directory
+        monkeypatch.chdir(subdir)
+
+        # Should find repo root by walking up
+        result = get_repo_root()
+        assert result == repo_root
+
+    def test_get_repo_root_at_root(self, tmp_path, monkeypatch):
+        """Test get_repo_root when .git is in current directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        monkeypatch.chdir(repo_root)
+
+        result = get_repo_root()
+        assert result == repo_root
+
+    def test_get_repo_root_not_in_repo(self, tmp_path, monkeypatch):
+        """Test get_repo_root raises ValueError when not in a git repo."""
+        # Create directory without .git
+        non_repo = tmp_path / "not_a_repo"
+        non_repo.mkdir()
+
+        monkeypatch.chdir(non_repo)
+
+        with pytest.raises(ValueError, match="Not in a git repository"):
+            get_repo_root()
+
+
+class TestValidateHivePath:
+    """Tests for validate_hive_path() function."""
+
+    def test_validate_hive_path_valid_absolute_path(self, tmp_path):
+        """Test validation succeeds for valid absolute path within repo."""
+        # Create repo structure
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        hive_dir = repo_root / "tickets" / "backend"
+        hive_dir.mkdir(parents=True)
+
+        # Should succeed and return normalized path
+        result = validate_hive_path(str(hive_dir), repo_root)
+        assert result == hive_dir.resolve()
+
+    def test_validate_hive_path_with_trailing_slash(self, tmp_path):
+        """Test validation normalizes trailing slashes."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        hive_dir = repo_root / "tickets"
+        hive_dir.mkdir()
+
+        # Test with trailing slash
+        result = validate_hive_path(str(hive_dir) + "/", repo_root)
+        assert result == hive_dir.resolve()
+        # Verify no trailing slash in result
+        assert not str(result).endswith("/")
+
+    def test_validate_hive_path_relative_path_fails(self, tmp_path):
+        """Test validation rejects relative paths."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Try to use relative path
+        with pytest.raises(ValueError, match="must be absolute.*relative path"):
+            validate_hive_path("tickets/backend", repo_root)
+
+    def test_validate_hive_path_nonexistent_path_fails(self, tmp_path):
+        """Test validation rejects non-existent paths."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Path doesn't exist
+        nonexistent = repo_root / "does_not_exist"
+
+        with pytest.raises(ValueError, match="does not exist"):
+            validate_hive_path(str(nonexistent), repo_root)
+
+    def test_validate_hive_path_outside_repo_fails(self, tmp_path):
+        """Test validation rejects paths outside repository root."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Create directory outside repo
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        with pytest.raises(ValueError, match="must be within repository root"):
+            validate_hive_path(str(outside), repo_root)
+
+    def test_validate_hive_path_at_repo_root(self, tmp_path):
+        """Test validation allows path at repo root itself."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Using repo root as hive path should be valid
+        result = validate_hive_path(str(repo_root), repo_root)
+        assert result == repo_root.resolve()
+
+    def test_validate_hive_path_deeply_nested(self, tmp_path):
+        """Test validation works for deeply nested paths."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Create deeply nested structure
+        deep_path = repo_root / "level1" / "level2" / "level3" / "level4"
+        deep_path.mkdir(parents=True)
+
+        result = validate_hive_path(str(deep_path), repo_root)
+        assert result == deep_path.resolve()
+
+    def test_validate_hive_path_error_messages(self, tmp_path):
+        """Test error messages are descriptive."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+
+        # Test relative path error message
+        try:
+            validate_hive_path("relative/path", repo_root)
+        except ValueError as e:
+            assert "absolute" in str(e).lower()
+            assert "relative" in str(e).lower()
+
+        # Test nonexistent path error message
+        nonexistent = repo_root / "missing"
+        try:
+            validate_hive_path(str(nonexistent), repo_root)
+        except ValueError as e:
+            assert "does not exist" in str(e).lower()
+
+        # Test outside repo error message
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        try:
+            validate_hive_path(str(outside), repo_root)
+        except ValueError as e:
+            assert "within repository root" in str(e).lower()

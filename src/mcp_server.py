@@ -39,6 +39,98 @@ mcp = FastMCP("Bees Ticket Management Server")
 _server_running = False
 
 
+def get_repo_root() -> Path:
+    """
+    Find the git repository root by walking up directories.
+
+    Starts from the current working directory and walks up the directory tree
+    looking for a .git directory. Returns the path to the repository root
+    when found.
+
+    Returns:
+        Path: Absolute path to the git repository root
+
+    Raises:
+        ValueError: If not in a git repository (no .git directory found)
+
+    Example:
+        >>> repo_root = get_repo_root()
+        >>> print(repo_root)
+        /Users/username/projects/myrepo
+    """
+    current = Path.cwd()
+
+    # Walk up directory tree looking for .git
+    while current != current.parent:
+        if (current / '.git').exists():
+            return current
+        current = current.parent
+
+    # Check root directory
+    if (current / '.git').exists():
+        return current
+
+    raise ValueError("Not in a git repository - no .git directory found")
+
+
+def validate_hive_path(path: str, repo_root: Path) -> Path:
+    """
+    Validate a hive path and return normalized absolute path.
+
+    Validates that:
+    - Path is absolute
+    - Path exists
+    - Path is within the repository root
+    - Normalizes trailing slashes
+
+    Args:
+        path: Path string to validate (must be absolute)
+        repo_root: Repository root path for boundary checking
+
+    Returns:
+        Path: Normalized absolute path to the hive directory
+
+    Raises:
+        ValueError: If path is relative, doesn't exist, or is outside repo root
+
+    Example:
+        >>> repo = Path('/Users/username/projects/myrepo')
+        >>> validate_hive_path('/Users/username/projects/myrepo/tickets/', repo)
+        PosixPath('/Users/username/projects/myrepo/tickets')
+        >>> validate_hive_path('tickets/', repo)  # Raises ValueError - not absolute
+        >>> validate_hive_path('/tmp/other/', repo)  # Raises ValueError - outside repo
+    """
+    hive_path = Path(path)
+
+    # Check if path is absolute
+    if not hive_path.is_absolute():
+        raise ValueError(
+            f"Hive path must be absolute, got relative path: {path}"
+        )
+
+    # Check if path exists
+    if not hive_path.exists():
+        raise ValueError(
+            f"Hive path does not exist: {path}"
+        )
+
+    # Resolve both paths to handle symlinks and normalize
+    resolved_hive = hive_path.resolve()
+    resolved_repo = repo_root.resolve()
+
+    # Check if hive path is within repo root
+    try:
+        resolved_hive.relative_to(resolved_repo)
+    except ValueError:
+        raise ValueError(
+            f"Hive path must be within repository root. "
+            f"Path: {resolved_hive}, Repo root: {resolved_repo}"
+        )
+
+    # Return normalized path (resolve() already removes trailing slashes)
+    return resolved_hive
+
+
 def normalize_name(name: str) -> str:
     """
     Normalize a hive name for use as a config key.
