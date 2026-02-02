@@ -299,6 +299,35 @@ class TestColonizeHive:
             assert result["error_type"] == "filesystem_error"
             assert "identity" in result["message"].lower()
 
+    def test_linter_stub_placeholder_exists(self, git_repo_tmp_path):
+        """Test that colonize_hive includes linter stub placeholder without breaking functionality."""
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # Call colonize_hive and verify it succeeds with linter stub in place
+        result = colonize_hive("Test Hive", str(hive_path))
+
+        # Verify colonize_hive completes successfully (linter stub is non-breaking)
+        assert result["status"] == "success"
+        assert result["normalized_name"] == "test_hive"
+
+        # Verify all expected directories were created despite linter stub
+        assert (hive_path / "eggs").exists()
+        assert (hive_path / "evicted").exists()
+        assert (hive_path / ".hive").exists()
+
+    def test_linter_stub_code_exists_in_source(self):
+        """Test that linter stub TODO comment exists in colonize_hive source code."""
+        import inspect
+        from src.mcp_server import colonize_hive
+
+        # Get source code of colonize_hive function
+        source = inspect.getsource(colonize_hive)
+
+        # Verify linter stub TODO comment is present
+        assert "TODO: Linter integration stub" in source or "TODO" in source and "linter" in source.lower()
+        assert "conflicting tickets" in source.lower() or "linter" in source.lower()
+
 
 class TestScanForHive:
     """Tests for scan_for_hive() function."""

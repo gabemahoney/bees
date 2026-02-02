@@ -271,6 +271,10 @@ All path resolution requires hive-prefixed IDs:
   - **Registration:**
     - Automatically registers hive in `.bees/config.json`
     - Creates config file if it doesn't exist
+  - **Linter Integration (Stubbed):**
+    - Placeholder for future linter validation during hive colonization
+    - Intended behavior: Validate no conflicting tickets exist across hives
+    - Implementation deferred to future Epic
   - **Error Cases:**
     - `validation_error`: Name normalizes to empty string
     - `path_validation_error`: Path is relative, doesn't exist, or outside repository

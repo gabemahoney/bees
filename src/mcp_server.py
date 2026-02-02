@@ -453,6 +453,13 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
                 }
             }
 
+        # TODO: Linter integration stub
+        # Future: Add linter check here to validate no conflicting tickets exist
+        # across hives during colonization. The linter should scan for duplicate
+        # ticket IDs, conflicting hive names, and other cross-hive invariants.
+        # Deferred to future Epic for full implementation.
+        logger.info(f"Linter check: (stubbed out for now)")
+
         # Step 5: Register hive in config.json
         try:
             # Get current timestamp for registration

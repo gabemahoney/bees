@@ -432,7 +432,14 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]
    - Returns error dict (not exception) on filesystem errors
    - Writes `identity.json` with normalized name, display name, timestamp, version
 
-5. **Config Registration** - Calls `init_bees_config_if_needed()` and `save_bees_config(config)`
+5. **Linter Integration (Stubbed)** - Placeholder for future linter check
+   - TODO: Add linter validation to check for conflicting tickets across hives
+   - Intended behavior: Scan for duplicate ticket IDs, conflicting hive names, cross-hive invariants
+   - Implementation deferred to future Epic
+   - Current status: Logged as "(stubbed out for now)" in colonize_hive()
+   - Rationale: Core colonization functionality needed first; linter complexity deferred
+
+6. **Config Registration** - Calls `init_bees_config_if_needed()` and `save_bees_config(config)`
    - Creates `.bees/config.json` if first hive
    - Adds hive entry with normalized name as key
    - Stores HiveConfig with path and display_name
