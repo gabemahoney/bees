@@ -129,7 +129,7 @@ Human users do not need to interact with the MCP server. These commands are prov
   - Deletes ticket and all child and grandchild tickets
 - **add_named_query** - `name, query_yaml`
   - Registers reusable queries that can be executed later by `name`
-  - All queries are validated when registered
+  - All queries are validated at registration time to ensure immediate feedback on errors
 - **execute_query** - `query_name, hive_names`
   - Executes a registered named query
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives

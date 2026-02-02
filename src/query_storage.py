@@ -44,24 +44,22 @@ class QueryStorage:
             yaml.dump({}, f, default_flow_style=False)
         logger.info(f"Initialized queries file: {self.queries_file}")
 
-    def save_query(self, name: str, query_yaml: str | list, validate: bool = True) -> None:
+    def save_query(self, name: str, query_yaml: str | list) -> None:
         """Save a named query to storage.
+
+        All queries are validated at registration time to ensure immediate feedback
+        on any structural errors.
 
         Args:
             name: Name for the query
             query_yaml: YAML string or list structure representing the query
-            validate: Whether to validate query structure (set False for parameterized queries)
 
         Raises:
-            QueryValidationError: If query structure is invalid and validate=True
+            QueryValidationError: If query structure is invalid
             IOError: If file cannot be written
         """
-        # Validate query structure if requested
-        if validate:
-            stages = self.parser.parse_and_validate(query_yaml)
-        else:
-            # Just parse without validation (for parameterized queries)
-            stages = self.parser.parse(query_yaml)
+        # Always validate query structure
+        stages = self.parser.parse_and_validate(query_yaml)
 
         # Load existing queries
         queries = self._load_all_queries()
@@ -155,20 +153,22 @@ def _get_default_storage() -> QueryStorage:
     return _default_storage
 
 
-def save_query(name: str, query_yaml: str | list, validate: bool = True) -> None:
+def save_query(name: str, query_yaml: str | list) -> None:
     """Save a named query to default storage.
+
+    All queries are validated at registration time to ensure immediate feedback
+    on any structural errors.
 
     Args:
         name: Name for the query
         query_yaml: YAML string or list structure representing the query
-        validate: Whether to validate query structure (set False for parameterized queries)
 
     Raises:
-        QueryValidationError: If query structure is invalid and validate=True
+        QueryValidationError: If query structure is invalid
         IOError: If file cannot be written
     """
     storage = _get_default_storage()
-    storage.save_query(name, query_yaml, validate)
+    storage.save_query(name, query_yaml)
 
 
 def load_query(name: str) -> list:

@@ -2167,9 +2167,9 @@ Allows registration of reusable static queries. Queries stored persistently in `
 
 ### Components
 
-**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. All queries are validated when saved to ensure correct structure.
+**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. All queries are validated at registration time to provide immediate feedback on structural errors. The validation is always performed - there is no conditional validation logic.
 
-**MCP Tools**: The add_named_query function registers queries with validation. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries raise ValueError exceptions.
+**MCP Tools**: The add_named_query function registers queries by always validating them at registration time. This ensures immediate feedback on any structural errors, making query registration safer and providing clearer error messages. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries raise ValueError exceptions.
 
 ### Multi-Hive Query Filtering (Task bees-062t)
 

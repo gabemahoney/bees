@@ -52,6 +52,82 @@ class TestQueryStorage:
             with pytest.raises(QueryValidationError):
                 storage.save_query("bad_query", [])
 
+    def test_save_query_always_validates(self):
+        """Test that save_query always validates queries with no ability to skip."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queries_file = Path(tmpdir) / "test_queries.yaml"
+            storage = QueryStorage(str(queries_file))
+
+            # Invalid query with mixed terms should be rejected
+            invalid_query = [["type=task", "parent"]]  # Mixed search and graph
+            with pytest.raises(QueryValidationError, match="Cannot mix"):
+                storage.save_query("bad_query", invalid_query)
+
+            # Invalid regex should be rejected
+            invalid_regex_query = [["title~[invalid("]]
+            with pytest.raises(QueryValidationError, match="Invalid regex"):
+                storage.save_query("bad_regex", invalid_regex_query)
+
+            # Invalid ticket type should be rejected
+            invalid_type_query = [["type=invalid_type"]]
+            with pytest.raises(QueryValidationError, match="Invalid type"):
+                storage.save_query("bad_type", invalid_type_query)
+
+    def test_save_query_validates_string_input(self):
+        """Test that save_query validates both string and list query_yaml inputs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queries_file = Path(tmpdir) / "test_queries.yaml"
+            storage = QueryStorage(str(queries_file))
+
+            # Valid YAML string should be accepted
+            valid_yaml_string = "- [type=task]"
+            storage.save_query("valid_string", valid_yaml_string)
+            loaded = storage.load_query("valid_string")
+            assert loaded == [["type=task"]]
+
+            # Invalid YAML string should be rejected
+            invalid_yaml_string = "- [type=invalid_type]"
+            with pytest.raises(QueryValidationError, match="Invalid type"):
+                storage.save_query("invalid_string", invalid_yaml_string)
+
+    def test_save_query_validates_list_input(self):
+        """Test that save_query validates list query_yaml inputs."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queries_file = Path(tmpdir) / "test_queries.yaml"
+            storage = QueryStorage(str(queries_file))
+
+            # Valid list should be accepted
+            valid_list = [["type=task"]]
+            storage.save_query("valid_list", valid_list)
+            loaded = storage.load_query("valid_list")
+            assert loaded == valid_list
+
+            # Invalid list should be rejected
+            invalid_list = [["type=invalid_type"]]
+            with pytest.raises(QueryValidationError, match="Invalid type"):
+                storage.save_query("invalid_list", invalid_list)
+
+    def test_save_query_validation_error_messages(self):
+        """Test that validation errors provide clear feedback."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            queries_file = Path(tmpdir) / "test_queries.yaml"
+            storage = QueryStorage(str(queries_file))
+
+            # Empty query error message
+            with pytest.raises(QueryValidationError) as exc_info:
+                storage.save_query("empty", [])
+            assert "cannot be empty" in str(exc_info.value)
+
+            # Mixed terms error message
+            with pytest.raises(QueryValidationError) as exc_info:
+                storage.save_query("mixed", [["type=task", "parent"]])
+            assert "Cannot mix" in str(exc_info.value)
+
+            # Invalid regex error message
+            with pytest.raises(QueryValidationError) as exc_info:
+                storage.save_query("bad_regex", [["title~[invalid("]])
+            assert "Invalid regex" in str(exc_info.value)
+
     def test_load_nonexistent_query_raises_error(self):
         """Test that loading nonexistent query raises KeyError."""
         with tempfile.TemporaryDirectory() as tmpdir:
