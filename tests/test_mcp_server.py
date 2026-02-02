@@ -2706,3 +2706,228 @@ class TestListHives:
         # Verify all hives are present
         normalized_names = {h["normalized_name"] for h in result["hives"]}
         assert normalized_names == {"hive0", "hive1", "hive2", "hive3", "hive4"}
+
+
+class TestAbandonHive:
+    """Tests for _abandon_hive() function."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_abandon_hive_removes_from_config(self, git_repo_tmp_path):
+        """Test that abandon_hive removes hive entry from config."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.config import load_bees_config
+
+        # Create a hive
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        # Verify hive exists in config
+        config = load_bees_config()
+        assert "test_hive" in config.hives
+
+        # Abandon the hive
+        result = _abandon_hive("Test Hive")
+
+        # Verify success
+        assert result["status"] == "success"
+
+        # Verify hive removed from config
+        config = load_bees_config()
+        assert "test_hive" not in config.hives
+
+    def test_abandon_hive_preserves_files(self, git_repo_tmp_path):
+        """Test that abandon_hive leaves ticket files intact."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        # Create a hive with structure
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        # Create some ticket files
+        ticket_file = hive_path / "test.md"
+        ticket_file.write_text("test ticket")
+
+        # Abandon the hive
+        result = _abandon_hive("Test Hive")
+
+        # Verify files still exist
+        assert hive_path.exists()
+        assert ticket_file.exists()
+        assert ticket_file.read_text() == "test ticket"
+
+        # Verify .hive marker still exists
+        assert (hive_path / ".hive").exists()
+
+    def test_abandon_hive_returns_error_for_nonexistent(self, git_repo_tmp_path):
+        """Test that abandon_hive raises ValueError for non-existent hive."""
+        from src.mcp_server import _abandon_hive
+
+        with pytest.raises(ValueError) as exc_info:
+            _abandon_hive("NonExistent")
+        
+        assert "NonExistent" in str(exc_info.value)
+        assert "nonexistent" in str(exc_info.value)
+
+    def test_abandon_hive_returns_success_message(self, git_repo_tmp_path):
+        """Test that abandon_hive returns success message with display name."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Back End", str(hive_path))
+
+        result = _abandon_hive("Back End")
+
+        assert result["status"] == "success"
+        assert "Back End" in result["message"]
+
+    def test_abandon_hive_handles_normalized_name(self, git_repo_tmp_path):
+        """Test that abandon_hive works with normalized hive name."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.config import load_bees_config
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Back End", str(hive_path))
+
+        result = _abandon_hive("back_end")
+
+        assert result["status"] == "success"
+
+    def test_abandon_hive_handles_display_name(self, git_repo_tmp_path):
+        """Test that abandon_hive works with display name."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Back End", str(hive_path))
+
+        result = _abandon_hive("Back End")
+
+        assert result["status"] == "success"
+
+    def test_abandon_hive_returns_path(self, git_repo_tmp_path):
+        """Test that abandon_hive returns the hive path."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        result = _abandon_hive("Test Hive")
+
+        assert result["path"] == str(hive_path)
+
+    def test_abandon_hive_with_multiple_hives(self, git_repo_tmp_path):
+        """Test that abandon_hive removes only target hive from config."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.config import load_bees_config
+
+        # Create multiple hives
+        hive1_path = git_repo_tmp_path / "hive1"
+        hive2_path = git_repo_tmp_path / "hive2"
+        hive1_path.mkdir()
+        hive2_path.mkdir()
+
+        colonize_hive("Hive 1", str(hive1_path))
+        colonize_hive("Hive 2", str(hive2_path))
+
+        # Verify both exist
+        config = load_bees_config()
+        assert "hive_1" in config.hives
+        assert "hive_2" in config.hives
+
+        # Abandon one hive
+        result = _abandon_hive("Hive 1")
+
+        assert result["status"] == "success"
+
+        # Verify only target removed
+        config = load_bees_config()
+        assert "hive_1" not in config.hives
+        assert "hive_2" in config.hives
+
+    def test_abandon_hive_handles_last_hive(self, git_repo_tmp_path):
+        """Test that abandon_hive handles removing the last hive in config."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.config import load_bees_config
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        # Abandon the only hive
+        result = _abandon_hive("Test Hive")
+
+        assert result["status"] == "success"
+
+        # Verify config has no hives
+        config = load_bees_config()
+        assert len(config.hives) == 0
+
+    def test_abandon_hive_normalizes_hive_name(self, git_repo_tmp_path):
+        """Test that abandon_hive normalizes hive name before lookup."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Back End", str(hive_path))
+
+        # Try various forms of the name
+        result = _abandon_hive("BACK END")
+        assert result["status"] == "success"
+
+    def test_abandon_hive_preserves_eggs_directory(self, git_repo_tmp_path):
+        """Test that abandon_hive leaves /eggs directory intact."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        # Abandon hive
+        result = _abandon_hive("Test Hive")
+
+        # Verify /eggs still exists
+        assert (hive_path / "eggs").exists()
+
+    def test_abandon_hive_preserves_evicted_directory(self, git_repo_tmp_path):
+        """Test that abandon_hive leaves /evicted directory intact."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        # Abandon hive
+        result = _abandon_hive("Test Hive")
+
+        # Verify /evicted still exists
+        assert (hive_path / "evicted").exists()
+
+    def test_abandon_hive_response_structure(self, git_repo_tmp_path):
+        """Test that abandon_hive returns correct response structure."""
+        from src.mcp_server import _abandon_hive, colonize_hive
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+        colonize_hive("Test Hive", str(hive_path))
+
+        result = _abandon_hive("Test Hive")
+
+        # Verify response has all expected keys
+        assert "status" in result
+        assert "message" in result
+        assert "display_name" in result
+        assert "normalized_name" in result
+        assert "path" in result
+        assert result["status"] == "success"

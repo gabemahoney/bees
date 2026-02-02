@@ -1960,6 +1960,84 @@ def _list_hives() -> Dict[str, Any]:
 list_hives = mcp.tool()(_list_hives)
 
 
+def _abandon_hive(hive_name: str) -> Dict[str, Any]:
+    """
+    Stop tracking a hive without deleting ticket files.
+
+    Removes the hive entry from .bees/config.json while leaving all ticket
+    files and the .hive marker intact on the filesystem. This allows users
+    to stop tracking a hive without data loss and re-colonize it later if needed.
+
+    Args:
+        hive_name: Display name or normalized name of the hive to abandon
+
+    Returns:
+        dict: Operation result with status and details
+            {
+                'status': 'success',
+                'message': 'Hive abandoned successfully',
+                'display_name': str,     # Original display name
+                'normalized_name': str,  # Internal hive identifier
+                'path': str              # Path where files remain
+            }
+
+    Raises:
+        ValueError: If hive doesn't exist or operation cannot be completed
+
+    Example:
+        >>> _abandon_hive('Back End')
+        {
+            'status': 'success',
+            'message': 'Hive "Back End" abandoned successfully',
+            'display_name': 'Back End',
+            'normalized_name': 'back_end',
+            'path': '/Users/user/projects/myrepo/tickets/backend'
+        }
+
+    Error Conditions:
+        - Hive not found: Normalized name doesn't exist in config
+        - Config read error: Cannot read .bees/config.json
+        - Config write error: Cannot write updated config
+    """
+    # Normalize hive name for lookup
+    normalized_name = normalize_hive_name(hive_name)
+    logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
+
+    # Load config from .bees/config.json
+    config = load_bees_config()
+
+    # Check if hive exists
+    if not config or normalized_name not in config.hives:
+        error_msg = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Get hive details before removal
+    hive_config = config.hives[normalized_name]
+    display_name = hive_config.display_name
+    hive_path = hive_config.path
+
+    # Remove hive from config
+    del config.hives[normalized_name]
+
+    # Save updated config
+    save_bees_config(config)
+    logger.info(f"Removed hive '{normalized_name}' from config.json")
+
+    # Success response
+    return {
+        "status": "success",
+        "message": f"Hive \"{display_name}\" abandoned successfully",
+        "display_name": display_name,
+        "normalized_name": normalized_name,
+        "path": hive_path
+    }
+
+
+# Register the abandon_hive tool with FastMCP
+abandon_hive = mcp.tool()(_abandon_hive)
+
+
 if __name__ == "__main__":
     logger.info("Running Bees MCP Server directly")
     start_server()

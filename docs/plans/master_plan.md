@@ -1304,6 +1304,7 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 3. **Atomic Operations**: All relationship updates succeed or fail together
 4. **Tool-Based Interface**: Standard MCP tool schemas for interoperability
 5. **Health Monitoring**: Server lifecycle management and readiness checks
+6. **Consistent Error Handling**: All MCP tools raise `ValueError` for errors (validation failures, missing resources, config errors) rather than returning error dicts. This provides consistent error propagation through the MCP protocol and simplifies error handling for clients.
 
 ### HTTP Transport Architecture
 
@@ -1431,8 +1432,8 @@ This error handling ensures the tool never crashes and provides useful feedback 
 
 **Integration with Hive Management**: The list_hives tool is the first step in the hive management workflow:
 - **list_hives()** → Discover existing hives
+- **abandon_hive()** → Remove from config without deleting files
 - **rename_hive()** → Modify hive names (future)
-- **abandon_hive()** → Remove from config (future)
 - **sanitize_hive()** → Validate and repair (future)
 
 **Use Cases**:
@@ -1450,6 +1451,70 @@ This error handling ensures the tool never crashes and provides useful feedback 
 - Exception handling (graceful failure on errors)
 - Single hive edge case
 - Multiple hives (5+) stress test
+
+### abandon_hive MCP Tool
+
+**abandon_hive MCP Tool** (`_abandon_hive()` in `src/mcp_server.py`) provides a clean way to stop tracking a hive without deleting ticket files. This enables users to remove hive registrations from configuration while preserving all data on disk, allowing for future re-colonization or reference.
+
+**Architecture**: The tool integrates with the config management system to safely remove hive entries:
+- Normalizes hive name using `normalize_hive_name()` for lookup consistency
+- Loads configuration using `load_bees_config()` to access current hive registry
+- Validates hive exists before attempting removal
+- Removes hive from `config.hives` dictionary
+- Persists changes using `save_bees_config()` with atomic write guarantees
+
+**Design Decisions**:
+- **File preservation**: All ticket files, `.hive` marker, `/eggs`, and `/evicted` directories remain untouched on filesystem
+- **When to use abandon vs delete**: Use `abandon_hive()` when you want to stop tracking a hive temporarily or permanently but need to keep the files for reference, migration, or future re-colonization. Use filesystem commands (`rm -rf`) if you want to permanently delete both registration and files.
+- **Re-colonization support**: After abandoning a hive, you can re-colonize the same directory using `colonize_hive()` with the same or different display name, as long as the normalized name doesn't conflict with existing hives.
+
+**Implementation Details**:
+- Config modification approach: Direct dictionary deletion (`del config.hives[normalized_name]`) followed by atomic save
+- Error handling strategy: Raises `ValueError` for all errors (hive not found, config errors) - consistent with `colonize_hive()` and other MCP tools
+- Name normalization: Uses `normalize_hive_name()` to ensure both display names and normalized names work as input
+- Validation: Checks hive exists in config before attempting removal, raises `ValueError` if not found
+
+**Integration**:
+- How it fits with `colonize_hive()`: Inverse operation - colonize adds to config, abandon removes from config. Both use consistent ValueError error handling.
+- How it fits with `list_hives()`: Can be used together - list to discover hives, abandon to remove specific hive
+- Edge cases handled:
+  - Hive doesn't exist: Raises `ValueError` with message indicating normalized name not found
+  - Last hive removal: Works correctly - results in empty `config.hives` dictionary
+  - Multiple hives: Only removes specified hive, leaves others intact
+  - Display name vs normalized name: Both work as input due to normalization before lookup
+
+**Return Structure**:
+
+Success case:
+```python
+{
+  'status': 'success',
+  'message': 'Hive "Back End" abandoned successfully',
+  'display_name': 'Back End',
+  'normalized_name': 'back_end',
+  'path': '/absolute/path/to/hive'
+}
+```
+
+Error case (hive not found):
+```python
+# Raises ValueError with message:
+# "Hive 'backend' (normalized: 'backend') does not exist in config"
+```
+
+**Test Coverage**: Comprehensive test suite in `tests/test_mcp_server.py::TestAbandonHive` (13 tests):
+- Hive removal from config verification
+- File preservation (tickets, .hive marker, /eggs, /evicted)
+- Error handling for non-existent hive
+- Success message with display name
+- Normalized name input handling
+- Display name input handling
+- Path return in success response
+- Multiple hive handling (only target removed)
+- Last hive removal (empty config)
+- Name normalization (various input forms)
+- Directory preservation (/eggs, /evicted)
+- Response structure validation
 
 ## MCP Server Startup and CLI Integration
 

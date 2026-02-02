@@ -398,6 +398,28 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
     - `filesystem_error`: Directory creation failed (permissions, disk full)
     - `config_error`: Failed to update config.json
 
+- **abandon_hive** - `hive_name`
+  - Stops tracking a hive without deleting ticket files
+  - **Parameters:**
+    - `hive_name` (required): Display name or normalized name of hive to abandon
+  - **Returns:**
+    - On success: `{'status': 'success', 'message': str, 'display_name': str, 'normalized_name': str, 'path': str}`
+  - **Raises:**
+    - `ValueError`: If hive doesn't exist in config or operation cannot be completed
+  - **Behavior:**
+    - Removes hive entry from `.bees/config.json`
+    - Leaves all ticket files intact in the filesystem
+    - Preserves `.hive` marker directory and identity.json
+    - Preserves `/eggs` and `/evicted` directories
+    - Hive can be re-colonized later using `colonize_hive` if needed
+  - **Error Cases:**
+    - Hive doesn't exist in config (normalized name not found)
+    - Config read/write errors
+  - **Use Cases:**
+    - Temporarily stop tracking a hive without losing data
+    - Clean up config after moving hive to different location
+    - Remove outdated hive registration while keeping files for reference
+
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
   - **`hive_name` parameter is REQUIRED for all ticket creation**
   - All new tickets must specify a hive; generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
@@ -452,6 +474,10 @@ colonize_hive(name="Back End", path="/Users/user/projects/myrepo/tickets/backend
 # Colonize with validation error (invalid path)
 colonize_hive(name="Frontend", path="relative/path")
 # Returns: {'status': 'error', 'error_type': 'path_validation_error', 'message': '...'}
+
+# Abandon a hive (stop tracking without deleting files)
+abandon_hive(hive_name="Back End")
+# Returns: {'status': 'success', 'message': 'Hive "Back End" abandoned successfully', 'display_name': 'Back End', 'normalized_name': 'back_end', 'path': '/Users/user/projects/myrepo/tickets/backend'}
 
 # Create an epic (hive_name is required)
 create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout", hive_name="backend")
