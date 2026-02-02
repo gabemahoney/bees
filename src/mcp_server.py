@@ -89,6 +89,37 @@ def parse_ticket_id(ticket_id: str) -> tuple[str, str]:
         return ('', ticket_id)
 
 
+def parse_hive_from_ticket_id(ticket_id: str) -> str | None:
+    """
+    Extract hive prefix from a ticket ID.
+
+    Splits ticket_id on first dot to extract the hive name prefix.
+    For prefixed IDs (backend.bees-abc1), returns the hive name (backend).
+    For unprefixed IDs (bees-abc1), returns None (malformed/legacy format).
+
+    Args:
+        ticket_id: Ticket ID string (e.g., 'backend.bees-abc1')
+
+    Returns:
+        str | None: Hive name prefix, or None if no dot found (malformed ID)
+
+    Example:
+        >>> parse_hive_from_ticket_id('backend.bees-abc1')
+        'backend'
+        >>> parse_hive_from_ticket_id('bees-abc1')
+        None
+        >>> parse_hive_from_ticket_id('multi.dot.bees-xyz9')
+        'multi'
+    """
+    # Split on first dot only
+    if '.' in ticket_id:
+        hive_name, _, _ = ticket_id.partition('.')
+        return hive_name
+    else:
+        # No dot found - malformed ID
+        return None
+
+
 def get_repo_root() -> Path:
     """
     Find the git repository root by walking up directories.
@@ -1204,6 +1235,23 @@ def _update_ticket(
         When updating relationships (parent, children, dependencies), the change
         is automatically reflected bidirectionally in related tickets.
     """
+    # Parse hive from ticket_id
+    hive_prefix = parse_hive_from_ticket_id(ticket_id)
+
+    # Return error if hive prefix is None (malformed ID)
+    if hive_prefix is None:
+        error_msg = f"Malformed ticket ID: '{ticket_id}'. Expected format: hive_name.bees-xxxx"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate hive exists in config using normalize_name for lookup
+    normalized_hive = normalize_hive_name(hive_prefix)
+    config = load_bees_config()
+    if not config or normalized_hive not in config.hives:
+        error_msg = f"Unknown hive: '{hive_prefix}' (normalized: '{normalized_hive}'). Hive not found in config."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
     # Validate ticket exists
     ticket_type = infer_ticket_type_from_id(ticket_id)
     if not ticket_type:

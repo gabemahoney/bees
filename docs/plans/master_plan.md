@@ -697,9 +697,16 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
 
 2. **_update_ticket() MCP tool** (`src/mcp_server.py`):
    - No hive_name parameter needed (hive inferred from ticket_id)
+   - **Hive Parsing Logic**: Calls `parse_hive_from_ticket_id(ticket_id)` to extract hive prefix
+     - Splits ticket_id on first dot: `backend.bees-abc1` → `backend`
+     - Returns None for malformed IDs (no dot found)
+   - **Hive Validation**: Uses `normalize_hive_name()` for lookup and validates hive exists in config
+     - Returns error if hive prefix is None: "Malformed ticket ID: Expected format: hive_name.bees-xxxx"
+     - Returns error if hive not found: "Unknown hive: '{hive}' not found in config"
    - Uses `infer_ticket_type_from_id(ticket_id)` to determine ticket type (line 973)
    - Calls `get_ticket_path(ticket_id, ticket_type)` which internally parses hive from ID (line 980)
    - Path resolution automatically routes to correct hive directory based on ID prefix
+   - **Integration with normalize_name()**: Hive validation uses `normalize_hive_name()` to handle display name variations (e.g., "Back End" → "back_end")
 
 3. **_delete_ticket() MCP tool** (`src/mcp_server.py`):
    - No hive_name parameter added (intentional design choice)
@@ -714,6 +721,25 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
      - `_remove_from_down_dependencies()`, `_add_to_down_dependencies()` - Hive-aware lookups (lines 575, 599)
      - `_remove_from_up_dependencies()`, `_add_to_up_dependencies()` - Hive-aware lookups (lines 624, 648)
    - No explicit hive handling needed; path utilities handle it transparently
+
+**Helper Function: parse_hive_from_ticket_id()** (`src/mcp_server.py`):
+- **Purpose**: Extract hive prefix from ticket IDs for self-routing in update/delete operations
+- **Signature**: `parse_hive_from_ticket_id(ticket_id: str) -> str | None`
+- **Implementation**:
+  - Splits ticket_id on first dot using `partition('.')`
+  - For prefixed IDs (`backend.bees-abc1`): Returns hive name (`backend`)
+  - For unprefixed IDs (`bees-abc1`): Returns None (malformed/legacy format)
+  - Example multi-dot ID: `multi.dot.bees-xyz9` → `multi` (only first dot used)
+- **Return Value**:
+  - `str`: Hive name prefix if dot found
+  - `None`: If no dot found (malformed ID)
+- **Usage in update_ticket()**:
+  - Called at start of update_ticket() to validate ticket_id format
+  - Result passed to `normalize_hive_name()` for config lookup
+  - Enables clear error messages for malformed IDs vs unknown hives
+- **Design Decision**: Separate from `parse_ticket_id()` to provide focused single-responsibility helper
+  - `parse_ticket_id()`: Returns tuple (hive_name, base_id) for full parsing
+  - `parse_hive_from_ticket_id()`: Returns only hive name for routing validation
 
 **Integration with Path Resolution** (`src/paths.py`):
 - `infer_ticket_type_from_id()` internally calls `_parse_ticket_id_for_path()` to extract hive

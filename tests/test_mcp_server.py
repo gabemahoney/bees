@@ -19,7 +19,8 @@ from src.mcp_server import (
     _server_running,
     get_repo_root,
     validate_hive_path,
-    parse_ticket_id
+    parse_ticket_id,
+    parse_hive_from_ticket_id
 )
 
 
@@ -243,9 +244,29 @@ class TestUpdateTicket:
 
     @pytest.fixture
     def temp_tickets_dir(self, tmp_path, monkeypatch):
-        """Create temporary tickets directory with test fixtures."""
+        """Create temporary tickets directory with test fixtures and hive config."""
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
         # Change to tmp_path for test isolation
         monkeypatch.chdir(tmp_path)
+
+        # Create default hive directory
+        default_hive = tmp_path / "tickets"
+        default_hive.mkdir()
+
+        # Initialize .bees/config.json
+        from datetime import datetime
+        config = BeesConfig(
+            hives={
+                'default': HiveConfig(
+                    path=str(default_hive),
+                    display_name='Default',
+                    created_at=datetime.now().isoformat()
+                )
+            }
+        )
+        save_bees_config(config)
+
         return tmp_path
 
     def test_update_ticket_basic_fields(self, temp_tickets_dir):
@@ -256,6 +277,7 @@ class TestUpdateTicket:
 
         # Create an epic
         epic_id = create_epic(
+            hive_name="default",
             title="Original Title",
             description="Original description",
             labels=["label1"],
@@ -292,13 +314,13 @@ class TestUpdateTicket:
     def test_update_ticket_nonexistent(self, temp_tickets_dir):
         """Test updating a non-existent ticket raises ValueError."""
         with pytest.raises(ValueError, match="Ticket does not exist"):
-            _update_ticket(ticket_id="bees-nonexistent", title="Test")
+            _update_ticket(ticket_id="default.bees-nonexistent", title="Test")
 
     def test_update_ticket_empty_title(self, temp_tickets_dir):
         """Test updating with empty title raises ValueError."""
         from src.ticket_factory import create_epic
 
-        epic_id = create_epic(title="Original Title")
+        epic_id = create_epic(hive_name="default", title="Original Title")
 
         with pytest.raises(ValueError, match="Ticket title cannot be empty"):
             _update_ticket(ticket_id=epic_id, title="")
@@ -313,8 +335,8 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create epic and task
-        epic_id = create_epic(title="Parent Epic")
-        task_id = create_task(title="Child Task")
+        epic_id = create_epic(hive_name="default", title="Parent Epic")
+        task_id = create_task(hive_name="default", title="Child Task")
 
         # Add parent to task
         result = _update_ticket(ticket_id=task_id, parent=epic_id)
@@ -337,8 +359,8 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create epic and task with parent
-        epic_id = create_epic(title="Parent Epic")
-        task_id = create_task(title="Child Task", parent=epic_id)
+        epic_id = create_epic(hive_name="default", title="Parent Epic")
+        task_id = create_task(hive_name="default", title="Child Task", parent=epic_id)
 
         # Update bidirectional relationships
         from src.mcp_server import _add_child_to_parent
@@ -369,9 +391,9 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create epic and tasks
-        epic_id = create_epic(title="Parent Epic")
-        task1_id = create_task(title="Child Task 1")
-        task2_id = create_task(title="Child Task 2")
+        epic_id = create_epic(hive_name="default", title="Parent Epic")
+        task1_id = create_task(hive_name="default", title="Child Task 1")
+        task2_id = create_task(hive_name="default", title="Child Task 2")
 
         # Add children to epic
         result = _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
@@ -399,9 +421,9 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create epic with children
-        epic_id = create_epic(title="Parent Epic")
-        task1_id = create_task(title="Child Task 1", parent=epic_id)
-        task2_id = create_task(title="Child Task 2", parent=epic_id)
+        epic_id = create_epic(hive_name="default", title="Parent Epic")
+        task1_id = create_task(hive_name="default", title="Child Task 1", parent=epic_id)
+        task2_id = create_task(hive_name="default", title="Child Task 2", parent=epic_id)
 
         # Update bidirectional relationships
         from src.mcp_server import _add_child_to_parent
@@ -433,9 +455,9 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create tasks
-        task1_id = create_task(title="Task 1")
-        task2_id = create_task(title="Task 2 (blocking)")
-        task3_id = create_task(title="Task 3 (blocked)")
+        task1_id = create_task(hive_name="default", title="Task 1")
+        task2_id = create_task(hive_name="default", title="Task 2 (blocking)")
+        task3_id = create_task(hive_name="default", title="Task 3 (blocked)")
 
         # Add dependencies
         result = _update_ticket(
@@ -468,11 +490,11 @@ class TestUpdateTicket:
 
         # Create tasks with dependencies
         task1_id = create_task(
-            title="Task 1",
+            hive_name="default", title="Task 1",
             up_dependencies=[],
             down_dependencies=[]
         )
-        task2_id = create_task(title="Task 2")
+        task2_id = create_task(hive_name="default", title="Task 2")
 
         # Add dependency first
         _update_ticket(ticket_id=task1_id, up_dependencies=[task2_id])
@@ -499,7 +521,7 @@ class TestUpdateTicket:
         """Test updating with non-existent parent raises ValueError."""
         from src.ticket_factory import create_task
 
-        task_id = create_task(title="Test Task")
+        task_id = create_task(hive_name="default", title="Test Task")
 
         with pytest.raises(ValueError, match="Parent ticket does not exist"):
             _update_ticket(ticket_id=task_id, parent="bees-nonexistent")
@@ -508,7 +530,7 @@ class TestUpdateTicket:
         """Test updating with non-existent child raises ValueError."""
         from src.ticket_factory import create_epic
 
-        epic_id = create_epic(title="Test Epic")
+        epic_id = create_epic(hive_name="default", title="Test Epic")
 
         with pytest.raises(ValueError, match="Child ticket does not exist"):
             _update_ticket(ticket_id=epic_id, children=["bees-nonexistent"])
@@ -517,7 +539,7 @@ class TestUpdateTicket:
         """Test updating with non-existent dependency raises ValueError."""
         from src.ticket_factory import create_task
 
-        task_id = create_task(title="Test Task")
+        task_id = create_task(hive_name="default", title="Test Task")
 
         with pytest.raises(ValueError, match="Dependency ticket does not exist"):
             _update_ticket(ticket_id=task_id, up_dependencies=["bees-nonexistent"])
@@ -529,8 +551,8 @@ class TestUpdateTicket:
         """Test updating with circular dependency raises ValueError."""
         from src.ticket_factory import create_task
 
-        task1_id = create_task(title="Task 1")
-        task2_id = create_task(title="Task 2")
+        task1_id = create_task(hive_name="default", title="Task 1")
+        task2_id = create_task(hive_name="default", title="Task 2")
 
         with pytest.raises(ValueError, match="Circular dependency detected"):
             _update_ticket(
@@ -547,7 +569,7 @@ class TestUpdateTicket:
 
         # Create epic with various fields
         epic_id = create_epic(
-            title="Original Title",
+            hive_name="default", title="Original Title",
             description="Original description",
             labels=["label1", "label2"],
             status="open",
@@ -582,10 +604,10 @@ class TestUpdateTicket:
         from src.paths import get_ticket_path
 
         # Create tickets
-        epic_id = create_epic(title="Epic")
-        task1_id = create_task(title="Task 1")
-        task2_id = create_task(title="Task 2")
-        task3_id = create_task(title="Task 3")
+        epic_id = create_epic(hive_name="default", title="Epic")
+        task1_id = create_task(hive_name="default", title="Task 1")
+        task2_id = create_task(hive_name="default", title="Task 2")
+        task3_id = create_task(hive_name="default", title="Task 3")
 
         # Add task1 and task2 as children of epic
         _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
@@ -2317,3 +2339,153 @@ class TestParseTicketId:
         hive_name, base_id = parse_ticket_id(".bees-123")
         assert hive_name == ""  # Empty hive name before the dot
         assert base_id == "bees-123"
+
+
+class TestParseHiveFromTicketId:
+    """Tests for parse_hive_from_ticket_id() helper function."""
+
+    def test_parse_hive_with_valid_prefixed_id(self):
+        """Test parsing hive from valid prefixed ID."""
+        hive_name = parse_hive_from_ticket_id("backend.bees-abc1")
+        assert hive_name == "backend"
+
+    def test_parse_hive_with_frontend_id(self):
+        """Test parsing hive from frontend prefixed ID."""
+        hive_name = parse_hive_from_ticket_id("frontend.bees-xyz9")
+        assert hive_name == "frontend"
+
+    def test_parse_hive_with_malformed_id_no_dot(self):
+        """Test parsing hive from malformed ID (no dot) returns None."""
+        hive_name = parse_hive_from_ticket_id("bees-abc1")
+        assert hive_name is None
+
+    def test_parse_hive_with_multi_dot_id(self):
+        """Test parsing hive from ID with multiple dots (splits on first)."""
+        hive_name = parse_hive_from_ticket_id("multi.dot.bees-xyz9")
+        assert hive_name == "multi"
+
+    def test_parse_hive_with_underscore_hive(self):
+        """Test parsing hive with underscore in name."""
+        hive_name = parse_hive_from_ticket_id("back_end.bees-123")
+        assert hive_name == "back_end"
+
+    def test_parse_hive_with_hyphen_hive(self):
+        """Test parsing hive with hyphen in name."""
+        hive_name = parse_hive_from_ticket_id("api-v2.bees-456")
+        assert hive_name == "api-v2"
+
+    def test_parse_hive_returns_none_for_legacy_format(self):
+        """Test that legacy format IDs (no prefix) return None."""
+        hive_name = parse_hive_from_ticket_id("bees-legacy")
+        assert hive_name is None
+
+
+class TestUpdateTicketHiveParsing:
+    """Tests for hive parsing and routing in update_ticket()."""
+
+    @pytest.fixture
+    def mock_config(self, tmp_path):
+        """Create a mock hive config for testing."""
+        from src.config import BeesConfig, HiveConfig
+        from datetime import datetime
+
+        hive_path = tmp_path / "tickets"
+        hive_path.mkdir()
+
+        config = BeesConfig(
+            hives={
+                "backend": HiveConfig(
+                    display_name="Backend",
+                    path=str(hive_path),
+                    created_at=datetime.now().isoformat()
+                )
+            }
+        )
+        return config
+
+    @pytest.fixture
+    def setup_test_ticket(self, tmp_path, mock_config):
+        """Create a test ticket with prefixed ID."""
+        from src.ticket_factory import create_task
+        from src.config import save_bees_config
+
+        # Save config
+        config_dir = Path(".bees")
+        config_dir.mkdir(exist_ok=True)
+        save_bees_config(mock_config)
+
+        # Create hive marker
+        hive_path = Path(mock_config.hives["backend"].path)
+        marker_path = hive_path / ".hive"
+        marker_path.mkdir(exist_ok=True)
+        identity_file = marker_path / "identity.json"
+        import json
+        with open(identity_file, 'w') as f:
+            json.dump({
+                "normalized_name": "backend",
+                "display_name": "Backend",
+                "created_at": "2024-01-01T00:00:00",
+                "version": "1.0.0"
+            }, f)
+
+        # Create test ticket
+        ticket_id = create_task(
+            title="Test Task",
+            description="Test description",
+            hive_name="backend"
+        )
+        return ticket_id
+
+    @patch('src.mcp_server.load_bees_config')
+    def test_update_ticket_with_valid_prefixed_id(self, mock_load_config, mock_config, setup_test_ticket):
+        """Test update_ticket successfully updates with valid prefixed ID."""
+        mock_load_config.return_value = mock_config
+        ticket_id = setup_test_ticket
+
+        result = _update_ticket(
+            ticket_id=ticket_id,
+            title="Updated Title"
+        )
+
+        assert result["status"] == "success"
+        assert result["ticket_id"] == ticket_id
+
+    @patch('src.mcp_server.load_bees_config')
+    def test_update_ticket_with_malformed_id_raises_error(self, mock_load_config, mock_config):
+        """Test update_ticket returns error for malformed ID (no dot)."""
+        mock_load_config.return_value = mock_config
+
+        with pytest.raises(ValueError, match="Malformed ticket ID.*Expected format: hive_name.bees-xxxx"):
+            _update_ticket(
+                ticket_id="bees-abc1",  # No hive prefix
+                title="Updated Title"
+            )
+
+    @patch('src.mcp_server.load_bees_config')
+    def test_update_ticket_with_unknown_hive_raises_error(self, mock_load_config, mock_config):
+        """Test update_ticket returns error for unknown hive prefix."""
+        mock_load_config.return_value = mock_config
+
+        with pytest.raises(ValueError, match="Unknown hive.*not found in config"):
+            _update_ticket(
+                ticket_id="unknown_hive.bees-abc1",
+                title="Updated Title"
+            )
+
+    @patch('src.mcp_server.load_bees_config')
+    def test_update_ticket_routes_to_correct_hive(self, mock_load_config, mock_config, setup_test_ticket):
+        """Test update_ticket routes to correct hive based on prefix."""
+        mock_load_config.return_value = mock_config
+        ticket_id = setup_test_ticket
+
+        # Verify the ticket_id has the expected backend prefix
+        assert ticket_id.startswith("backend.")
+
+        # Update should succeed because it routes to the correct hive
+        result = _update_ticket(
+            ticket_id=ticket_id,
+            status="in_progress"
+        )
+
+        assert result["status"] == "success"
+        assert result["ticket_id"] == ticket_id

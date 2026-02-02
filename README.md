@@ -381,6 +381,12 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
   - Ticket is stored in the hive directory specified in config (flat storage at hive root)
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
+  - **Ticket ID Format:** `{hive}.bees-{random}` (e.g., `backend.bees-abc1`)
+  - The hive prefix is extracted from the ticket_id and used to route the update to the correct hive
+  - **Example:** Updating `backend.bees-abc1` automatically routes to the `backend` hive
+  - **Error Cases:**
+    - Malformed IDs (no dot separator): Returns error "Malformed ticket ID: Expected format: hive_name.bees-xxxx"
+    - Unknown hives: Returns error "Unknown hive: '{hive}' not found in config"
 - **delete_ticket** - `ticket_id, cascade`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **add_named_query** - `name, query_yaml, validate`
