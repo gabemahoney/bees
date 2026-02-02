@@ -2163,13 +2163,13 @@ Write to {hive_path}/index.md
 
 ## Named Query System
 
-Allows registration of reusable static queries. Queries stored persistently in `.bees/queries.yaml` with YAML format. All queries are static (no parameter substitution) for simplicity.
+Allows registration of reusable static queries. Queries stored persistently in `.bees/queries.yaml` with YAML format.
 
 ### Components
 
-**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. All queries are validated at registration time to provide immediate feedback on structural errors. The validation is always performed - there is no conditional validation logic.
+**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. All queries are validated at registration time to provide immediate feedback on structural errors.
 
-**MCP Tools**: The add_named_query function registers queries by always validating them at registration time. This ensures immediate feedback on any structural errors, making query registration safer and providing clearer error messages. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries raise ValueError exceptions.
+**MCP Tools**: The add_named_query function registers static queries and validates them at registration time. This ensures immediate feedback on any structural errors, making query registration safer and providing clearer error messages. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries raise ValueError exceptions.
 
 ### Multi-Hive Query Filtering (Task bees-062t)
 
@@ -2257,7 +2257,7 @@ execute_query("open_tasks", hive_names=["nonexistent"])
 - `_execute_query(query_name: str, hive_names: list[str] | None = None)`
 - Parameter order: query_name (required), hive_names (optional list)
 - Returns: Dict with status, query_name, result_count, ticket_ids (filtered by hive if specified)
-- **Design Decision**: Removed params parameter (Epic bees-94krc) for simplicity - all queries are now static with no parameter substitution. This reduces complexity with zero production usage impact.
+- **Design Decision**: Removed params parameter (Epic bees-94krc) for simplicity. This reduces complexity with zero production usage impact.
 
 **Documentation Updates**:
 - README.md includes hive_names parameter documentation with examples
