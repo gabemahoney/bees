@@ -2489,3 +2489,37 @@ class TestUpdateTicketHiveParsing:
 
         assert result["status"] == "success"
         assert result["ticket_id"] == ticket_id
+
+
+class TestParseHiveFromTicketId:
+    """Tests for parse_hive_from_ticket_id helper function."""
+
+    def test_extracts_hive_prefix_from_valid_id(self):
+        """Test extraction of hive prefix from valid ticket ID."""
+        assert parse_hive_from_ticket_id('backend.bees-abc1') == 'backend'
+        assert parse_hive_from_ticket_id('frontend.bees-xyz2') == 'frontend'
+        assert parse_hive_from_ticket_id('my_hive.bees-123') == 'my_hive'
+
+    def test_returns_none_for_malformed_id_no_dot(self):
+        """Test returns None for IDs without dots (malformed)."""
+        assert parse_hive_from_ticket_id('bees-abc1') is None
+        assert parse_hive_from_ticket_id('invalid') is None
+        assert parse_hive_from_ticket_id('nodotshere') is None
+
+    def test_handles_multiple_dots_correctly(self):
+        """Test that only first dot is used to split hive prefix."""
+        # With multiple dots, only the first dot matters
+        assert parse_hive_from_ticket_id('multi.dot.bees-xyz9') == 'multi'
+        assert parse_hive_from_ticket_id('hive.sub.bees-abc') == 'hive'
+
+    def test_handles_empty_prefix(self):
+        """Test handling of IDs with empty prefix before dot."""
+        # Edge case: dot at beginning
+        result = parse_hive_from_ticket_id('.bees-abc1')
+        assert result == ''  # Empty string is the prefix
+
+    def test_handles_empty_suffix(self):
+        """Test handling of IDs with empty suffix after dot."""
+        # Edge case: dot at end
+        result = parse_hive_from_ticket_id('backend.')
+        assert result == 'backend'

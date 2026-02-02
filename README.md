@@ -389,6 +389,13 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
     - Unknown hives: Returns error "Unknown hive: '{hive}' not found in config"
 - **delete_ticket** - `ticket_id, cascade`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
+  - **Ticket ID Format:** `{hive}.bees-{random}` (e.g., `backend.bees-abc1`)
+  - The hive prefix is extracted from the ticket_id and used to route the deletion to the correct hive
+  - **Example:** Deleting `backend.bees-abc1` automatically routes to the `backend` hive
+  - **Cascade Parameter:** When `cascade=True`, recursively deletes all child tickets
+  - **Error Cases:**
+    - Malformed IDs (no dot separator): Returns error "Malformed ticket ID: Expected format: hive_name.bees-xxxx"
+    - Unknown hives: Returns error "Hive '{hive_prefix}' not found in configuration"
 - **add_named_query** - `name, query_yaml, validate`
 - **execute_query** - `query_name, params, hive_names`
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives
@@ -432,8 +439,8 @@ update_ticket(ticket_id="task-001", labels=["backend", "security"])
 # Add a dependency (task-002 depends on task-001)
 update_ticket(ticket_id="task-002", up_dependencies=["task-001"])
 
-# Delete ticket with children
-delete_ticket(ticket_id="epic-001", cascade=True)
+# Delete ticket with children (automatically routes to backend hive)
+delete_ticket(ticket_id="backend.bees-abc1", cascade=True)
 
 # Register query
 add_named_query(name="open_tasks", query_yaml="- - type=task\n  - status=open")

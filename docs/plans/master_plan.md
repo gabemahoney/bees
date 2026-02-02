@@ -709,10 +709,19 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
    - **Integration with normalize_name()**: Hive validation uses `normalize_hive_name()` to handle display name variations (e.g., "Back End" → "back_end")
 
 3. **_delete_ticket() MCP tool** (`src/mcp_server.py`):
-   - No hive_name parameter added (intentional design choice)
-   - Uses same pattern as update_ticket: `infer_ticket_type_from_id()` + `get_ticket_path()` (lines 1173, 1180)
-   - Automatic hive inference from ticket_id for path resolution
-   - Cascade delete recursively uses same pattern for child tickets
+   - No hive_name parameter needed (hive inferred from ticket_id)
+   - **Hive Parsing Logic**: Calls `parse_hive_from_ticket_id(ticket_id)` to extract hive prefix
+     - Splits ticket_id on first dot: `backend.bees-abc1` → `backend`
+     - Returns None for malformed IDs (no dot found)
+   - **Hive Validation**: Uses `normalize_hive_name()` for lookup and validates hive exists in config
+     - Returns error if hive prefix is None: "Malformed ticket ID: Expected format: hive_name.bees-xxxx"
+     - Returns error if hive not found: "Hive '{hive_prefix}' not found in configuration"
+   - Uses `infer_ticket_type_from_id(ticket_id)` to determine ticket type
+   - Calls `get_ticket_path(ticket_id, ticket_type)` which internally parses hive from ID
+   - Path resolution automatically routes to correct hive directory based on ID prefix
+   - **Cascade Delete**: Recursively calls `_delete_ticket()` for child tickets, each parsing its own hive prefix
+   - **Design Decision**: Self-routing IDs eliminate need for explicit hive parameter, simplifying the API
+   - **Integration with normalize_name()**: Hive validation uses `normalize_hive_name()` to handle display name variations
 
 4. **Bidirectional Relationship Helpers** (`src/mcp_server.py`):
    - All helper functions updated to handle hive-prefixed IDs:
@@ -733,10 +742,11 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
 - **Return Value**:
   - `str`: Hive name prefix if dot found
   - `None`: If no dot found (malformed ID)
-- **Usage in update_ticket()**:
-  - Called at start of update_ticket() to validate ticket_id format
+- **Usage in update_ticket() and delete_ticket()**:
+  - Called at start of both functions to validate ticket_id format
   - Result passed to `normalize_hive_name()` for config lookup
   - Enables clear error messages for malformed IDs vs unknown hives
+  - Same error handling pattern in both functions for consistency
 - **Design Decision**: Separate from `parse_ticket_id()` to provide focused single-responsibility helper
   - `parse_ticket_id()`: Returns tuple (hive_name, base_id) for full parsing
   - `parse_hive_from_ticket_id()`: Returns only hive name for routing validation

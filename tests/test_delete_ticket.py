@@ -75,7 +75,7 @@ class TestDeleteTicketBasic:
     def test_delete_nonexistent_ticket_error(self, setup_tickets_dir):
         """Test that deleting non-existent ticket raises ValueError."""
         with pytest.raises(ValueError, match="Ticket does not exist"):
-            _delete_ticket(ticket_id="nonexistent-id")
+            _delete_ticket(ticket_id="default.bees-nonexistent")
 
 
 class TestDeleteTicketParentCleanup:
@@ -366,3 +366,138 @@ class TestDeleteTicketEdgeCases:
         # Verify blocking ticket's down_dependencies cleaned up
         blocking = read_ticket(get_ticket_path(blocking_id, "epic"))
         assert child_id not in (blocking.down_dependencies or [])
+
+
+class TestDeleteTicketHiveRouting:
+    """Tests for hive routing in delete_ticket()."""
+
+    @pytest.fixture
+    def setup_multi_hive(self, tmp_path, monkeypatch):
+        """Create temporary directory with multiple hives."""
+        # Change to temp directory
+        monkeypatch.chdir(tmp_path)
+
+        # Create multiple hive directories
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir()
+
+        frontend_dir = tmp_path / "frontend"
+        frontend_dir.mkdir()
+
+        # Initialize .bees/config.json with multiple hives
+        from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
+
+        config = BeesConfig(
+            hives={
+                'backend': HiveConfig(
+                    path=str(backend_dir),
+                    display_name='Backend',
+                    created_at=datetime.now().isoformat()
+                ),
+                'frontend': HiveConfig(
+                    path=str(frontend_dir),
+                    display_name='Frontend',
+                    created_at=datetime.now().isoformat()
+                ),
+            },
+            allow_cross_hive_dependencies=True,
+            schema_version='1.0'
+        )
+        save_bees_config(config)
+
+        yield tmp_path
+
+    def test_delete_ticket_routes_to_correct_hive(self, setup_multi_hive):
+        """Test that delete_ticket routes to correct hive based on ticket ID prefix."""
+        # Create tickets in different hives
+        backend_result = _create_ticket(
+            ticket_type="epic",
+            title="Backend Epic",
+            hive_name="backend"
+        )
+        backend_id = backend_result["ticket_id"]
+
+        frontend_result = _create_ticket(
+            ticket_type="epic",
+            title="Frontend Epic",
+            hive_name="frontend"
+        )
+        frontend_id = frontend_result["ticket_id"]
+
+        # Verify tickets exist with correct prefixes
+        assert backend_id.startswith("backend.")
+        assert frontend_id.startswith("frontend.")
+        assert get_ticket_path(backend_id, "epic").exists()
+        assert get_ticket_path(frontend_id, "epic").exists()
+
+        # Delete backend ticket
+        result = _delete_ticket(ticket_id=backend_id)
+        assert result["status"] == "success"
+        assert not get_ticket_path(backend_id, "epic").exists()
+
+        # Verify frontend ticket still exists
+        assert get_ticket_path(frontend_id, "epic").exists()
+
+        # Delete frontend ticket
+        result = _delete_ticket(ticket_id=frontend_id)
+        assert result["status"] == "success"
+        assert not get_ticket_path(frontend_id, "epic").exists()
+
+    def test_delete_ticket_malformed_id_error(self, setup_multi_hive):
+        """Test that delete_ticket raises error for malformed ticket IDs."""
+        with pytest.raises(ValueError, match="Malformed ticket ID"):
+            _delete_ticket(ticket_id="bees-abc1")  # Missing hive prefix
+
+    def test_delete_ticket_unknown_hive_error(self, setup_multi_hive):
+        """Test that delete_ticket raises error for unknown hive prefix."""
+        with pytest.raises(ValueError, match="Hive .* not found in configuration"):
+            _delete_ticket(ticket_id="unknown.bees-abc1")
+
+    def test_delete_ticket_with_multiple_dots_in_id(self, setup_multi_hive):
+        """Test that delete_ticket handles IDs with multiple dots correctly."""
+        # Create ticket in backend hive
+        result = _create_ticket(
+            ticket_type="epic",
+            title="Test Epic",
+            hive_name="backend"
+        )
+        ticket_id = result["ticket_id"]
+
+        # Verify ticket exists
+        assert get_ticket_path(ticket_id, "epic").exists()
+
+        # Delete should work correctly (only first dot matters)
+        result = _delete_ticket(ticket_id=ticket_id)
+        assert result["status"] == "success"
+        assert not get_ticket_path(ticket_id, "epic").exists()
+
+    def test_delete_ticket_cascade_with_hive_routing(self, setup_multi_hive):
+        """Test cascade delete with hive-prefixed IDs."""
+        # Create parent and child in backend hive
+        parent_result = _create_ticket(
+            ticket_type="epic",
+            title="Parent Epic",
+            hive_name="backend"
+        )
+        parent_id = parent_result["ticket_id"]
+
+        child_result = _create_ticket(
+            ticket_type="task",
+            title="Child Task",
+            parent=parent_id,
+            hive_name="backend"
+        )
+        child_id = child_result["ticket_id"]
+
+        # Verify both exist
+        assert get_ticket_path(parent_id, "epic").exists()
+        assert get_ticket_path(child_id, "task").exists()
+
+        # Cascade delete parent
+        result = _delete_ticket(ticket_id=parent_id, cascade=True)
+        assert result["status"] == "success"
+
+        # Verify both are deleted
+        assert not get_ticket_path(parent_id, "epic").exists()
+        assert not get_ticket_path(child_id, "task").exists()

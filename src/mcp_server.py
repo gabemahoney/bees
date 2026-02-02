@@ -1452,6 +1452,23 @@ def _delete_ticket(
         - If cascade=True, all child tickets are recursively deleted
         - If cascade=False and children exist, deletion may be prevented
     """
+    # Parse hive from ticket_id
+    hive_prefix = parse_hive_from_ticket_id(ticket_id)
+
+    # Return error if hive prefix is None (malformed ID)
+    if hive_prefix is None:
+        error_msg = f"Malformed ticket ID: '{ticket_id}'. Expected format: hive_name.bees-xxxx"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate hive exists in config using normalize_name for lookup
+    normalized_hive = normalize_hive_name(hive_prefix)
+    config = load_bees_config()
+    if not config or normalized_hive not in config.hives:
+        error_msg = f"Hive '{hive_prefix}' not found in configuration"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
     # Validate ticket exists
     ticket_type = infer_ticket_type_from_id(ticket_id)
     if not ticket_type:
