@@ -1668,56 +1668,6 @@ def _execute_query(
         error_msg = f"Failed to execute query '{query_name}': {e}"
         logger.error(error_msg)
         raise ValueError(error_msg)
-
-
-def _substitute_query_params(stages: list, params: Dict[str, str]) -> list:
-    """Substitute parameters in query stages.
-
-    Replaces {param_name} placeholders with actual values.
-
-    Args:
-        stages: List of stages with potential placeholders
-        params: Dictionary of parameter name -> value mappings
-
-    Returns:
-        List of stages with substituted values
-
-    Raises:
-        ValueError: If required parameter is missing
-    """
-    import re
-
-    substituted_stages = []
-
-    for stage in stages:
-        substituted_stage = []
-        for term in stage:
-            # Find all {param} placeholders in term
-            placeholders = re.findall(r'\{(\w+)\}', term)
-
-            # Check all required params are provided
-            for placeholder in placeholders:
-                if placeholder not in params:
-                    raise ValueError(
-                        f"Missing required parameter: {placeholder}. "
-                        f"Provided: {', '.join(params.keys())}"
-                    )
-
-            # Substitute all placeholders
-            substituted_term = term
-            for param_name, param_value in params.items():
-                substituted_term = substituted_term.replace(
-                    f"{{{param_name}}}",
-                    str(param_value)
-                )
-
-            substituted_stage.append(substituted_term)
-
-        substituted_stages.append(substituted_stage)
-
-    return substituted_stages
-
-
 # Register the execute_query tool with FastMCP
 execute_query = mcp.tool()(_execute_query)
 
