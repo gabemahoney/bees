@@ -1,10 +1,16 @@
 # Named Queries for Bees Query System
 # Each query is a list of stages for the pipeline evaluator
 ---
+all_epics:
+- - type=epic
+all_epics_demo:
+- - type=epic
 beta_work:
 - - type=epic
   - label~beta
 - - children
+demo_query:
+- - type=epic
 high_priority_beta_work:
 - - type=task
   - label~beta

@@ -1,61 +1,11 @@
 {
   "hives": {
     "backend": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/backend",
+      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-515/test_update_ticket_routes_to_c0/tickets",
       "display_name": "Backend",
-      "created_at": "2026-02-02T11:44:03.272145"
-    },
-    "frontend": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/frontend",
-      "display_name": "Frontend",
-      "created_at": "2026-02-02T11:44:03.272157"
-    },
-    "test_hive": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/test_hive",
-      "display_name": "Test Hive",
-      "created_at": "2026-02-02T11:44:03.272159"
-    },
-    "my_hive": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/my_hive",
-      "display_name": "My Hive",
-      "created_at": "2026-02-02T11:44:03.272161"
-    },
-    "front_end": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/front_end",
-      "display_name": "Front End",
-      "created_at": "2026-02-02T11:44:03.272162"
-    },
-    "back_end": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/back_end",
-      "display_name": "Back End",
-      "created_at": "2026-02-02T11:44:03.272163"
-    },
-    "myhive": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/myhive",
-      "display_name": "MyHive",
-      "created_at": "2026-02-02T11:44:03.272165"
-    },
-    "test_123": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/test_123",
-      "display_name": "Test-123",
-      "created_at": "2026-02-02T11:44:03.272166"
-    },
-    "test": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/test",
-      "display_name": "Test",
-      "created_at": "2026-02-02T11:44:03.272167"
-    },
-    "a": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/a",
-      "display_name": "A",
-      "created_at": "2026-02-02T11:44:03.272168"
-    },
-    "_1": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-388/test_create_ticket_with_valid_0/_1",
-      "display_name": "1",
-      "created_at": "2026-02-02T11:44:03.272169"
+      "created_at": "2026-02-02T17:54:01.735488"
     }
   },
-  "allow_cross_hive_dependencies": true,
+  "allow_cross_hive_dependencies": false,
   "schema_version": "1.0"
 }

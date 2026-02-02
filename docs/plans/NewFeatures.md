@@ -1,5 +1,13 @@
+- Quality
+  - git hook to run tests as CI
+  - improve make-task and do-task with more instructions - check old tests for broken
 - Is there a watcher? Remove it. Add design requirement of no daemons
+
+- Clone bees
+- Cross-hive dependency setting should be per hive (stored in .hive)
+- Make-task: Add detailed instructions for docs and tests
 - Add agent that reviews Made Epics, Tasks and Subtasks agains the source docs
+  - Looks for under-specification in PRD and Asks User for more clarity to stop it from just inventing stuff
 - Bug: MCP does not start if DB is corrupt. It should start but refuse to respond to commands with a friendly message
 - Add a Feature Reviewer subagent who validates the work conforms to the docs
 - Use bees dependency chains to describe agent workflows (not skills)
@@ -55,3 +63,16 @@
 - Maybe do-task should be calling code-review and docs-review instead of do-epic for seperation of concerns
 - do-epic: clear guidance on how to find next epic when user does not specify
 - do-epic pause and restart (will it pickup previous work?)
+
+                                                                                              
+❯ /cost                                                                                       
+  ⎿  Total cost:            $149.23                                                           
+     Total duration (API):  10h 9m 2s                                                         
+     Total duration (wall): 1d 4h 31m                                                         
+     Total code changes:    15225 lines added, 2893 lines removed                             
+     Usage by model:                                                                          
+             claude-haiku:  3.2m input, 135.2k output, 2.0m cache read, 1.2m cache write      
+     ($5.57)                                                                                  
+            claude-sonnet:  62.6k input, 1.4m output, 259.0m cache read, 11.8m cache write    
+     ($143.66)                                                                                
+                 

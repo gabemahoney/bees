@@ -260,15 +260,13 @@ class TestExtractExistingIdsFromAllHives:
         backend_dir = tmp_path / "backend"
         frontend_dir = tmp_path / "frontend"
 
-        backend_epics = backend_dir / "epics"
-        frontend_tasks = frontend_dir / "tasks"
-        backend_epics.mkdir(parents=True)
-        frontend_tasks.mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
+        frontend_dir.mkdir(parents=True)
 
-        # Create ticket files
-        (backend_epics / "backend.bees-abc.md").touch()
-        (backend_epics / "backend.bees-xyz.md").touch()
-        (frontend_tasks / "frontend.bees-123.md").touch()
+        # Create ticket files in hive root (flat storage)
+        (backend_dir / "backend.bees-abc.md").touch()
+        (backend_dir / "backend.bees-xyz.md").touch()
+        (frontend_dir / "frontend.bees-123.md").touch()
 
         # Configure hives
         config = BeesConfig(
@@ -302,17 +300,16 @@ class TestExtractExistingIdsFromAllHives:
 
         # Create hive directory
         backend_dir = tmp_path / "backend"
-        backend_epics = backend_dir / "epics"
-        backend_epics.mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
 
-        # Create valid and invalid ticket files
-        (backend_epics / "backend.bees-abc.md").touch()
-        (backend_epics / "invalid-id.md").touch()
-        (backend_epics / "README.md").touch()
+        # Create valid and invalid ticket files in hive root (flat storage)
+        (backend_dir / "backend.bees-abc.md").touch()
+        (backend_dir / "invalid-id.md").touch()
+        (backend_dir / "README.md").touch()
 
         # Configure hives
         config = BeesConfig(
-            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend")}
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at="2026-02-02T10:00:00")}
         )
         save_bees_config(config)
 
@@ -329,15 +326,14 @@ class TestExtractExistingIdsFromAllHives:
 
         # Create one valid hive, one with nonexistent path
         backend_dir = tmp_path / "backend"
-        backend_epics = backend_dir / "epics"
-        backend_epics.mkdir(parents=True)
-        (backend_epics / "backend.bees-abc.md").touch()
+        backend_dir.mkdir(parents=True)
+        (backend_dir / "backend.bees-abc.md").touch()
 
         # Configure hives - frontend path doesn't exist
         config = BeesConfig(
             hives={
-                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
-                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend"),
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at="2026-02-02T10:00:00"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
         save_bees_config(config)

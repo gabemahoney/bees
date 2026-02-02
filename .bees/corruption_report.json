@@ -5,6 +5,7 @@
     "is_corrupt": true,
     "error_count": 1,
     "warning_count": 0,
+    "fix_count": 0,
     "errors": [
       {
         "ticket_id": "default.bees-em1",
@@ -12,7 +13,8 @@
         "message": "Cycle detected in blocking dependencies: default.bees-em1 -> default.bees-em2 -> default.bees-em1",
         "severity": "error"
       }
-    ]
+    ],
+    "fixes": []
   },
-  "timestamp": "2026-02-01T13:12:48.810503"
+  "timestamp": "2026-02-02T17:54:00.211435"
 }
