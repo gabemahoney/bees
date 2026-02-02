@@ -220,8 +220,8 @@ class TestDeleteTicketCascade:
         assert get_ticket_path(child1_id, "task").exists()
         assert get_ticket_path(child2_id, "task").exists()
 
-        # Delete parent with cascade=True
-        result = _delete_ticket(ticket_id=parent_id, cascade=True)
+        # Delete parent (always cascades)
+        result = _delete_ticket(ticket_id=parent_id)
 
         # Verify success
         assert result["status"] == "success"
@@ -243,16 +243,16 @@ class TestDeleteTicketCascade:
         subtask_result = _create_ticket(ticket_type="subtask", title="Subtask", parent=task_id, hive_name="default")
         subtask_id = subtask_result["ticket_id"]
 
-        # Delete epic with cascade=True
-        _delete_ticket(ticket_id=epic_id, cascade=True)
+        # Delete epic (always cascades)
+        _delete_ticket(ticket_id=epic_id)
 
         # Verify all tickets are deleted
         assert not get_ticket_path(epic_id, "epic").exists()
         assert not get_ticket_path(task_id, "task").exists()
         assert not get_ticket_path(subtask_id, "subtask").exists()
 
-    def test_delete_without_cascade_unlinks_children(self, setup_tickets_dir):
-        """Test that cascade=False unlinks children instead of deleting them."""
+    def test_delete_always_cascades_to_children(self, setup_tickets_dir):
+        """Test that deletion always cascades to children."""
         # Create parent epic with child
         parent_result = _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
         parent_id = parent_result["ticket_id"]
@@ -264,29 +264,106 @@ class TestDeleteTicketCascade:
         child = read_ticket(get_ticket_path(child_id, "task"))
         assert child.parent == parent_id
 
-        # Delete parent with cascade=False (default)
-        _delete_ticket(ticket_id=parent_id, cascade=False)
+        # Delete parent (always cascades)
+        _delete_ticket(ticket_id=parent_id)
 
         # Verify parent is deleted
         assert not get_ticket_path(parent_id, "epic").exists()
 
-        # Verify child still exists but parent reference is removed
-        assert get_ticket_path(child_id, "task").exists()
-        child = read_ticket(get_ticket_path(child_id, "task"))
-        assert child.parent is None
+        # Verify child is also deleted (cascaded)
+        assert not get_ticket_path(child_id, "task").exists()
 
     def test_delete_ticket_without_children(self, setup_tickets_dir):
-        """Test that deleting ticket without children works with cascade parameter."""
+        """Test that deleting ticket without children works correctly."""
         # Create epic without children
         result = _create_ticket(ticket_type="epic", title="Epic Without Children", hive_name="default")
         ticket_id = result["ticket_id"]
 
-        # Delete with cascade=True should work fine
-        result = _delete_ticket(ticket_id=ticket_id, cascade=True)
+        # Delete should work fine
+        result = _delete_ticket(ticket_id=ticket_id)
 
         # Verify success
         assert result["status"] == "success"
         assert not get_ticket_path(ticket_id, "epic").exists()
+
+
+    def test_cascade_delete_deep_hierarchy(self, setup_tickets_dir):
+        """Test that cascade delete works with deep hierarchies (4+ levels)."""
+        # Create deep hierarchy: Epic -> Task -> Subtask (and verify grandchildren concept)
+        epic_result = _create_ticket(ticket_type="epic", title="Epic", hive_name="default")
+        epic_id = epic_result["ticket_id"]
+
+        task1_result = _create_ticket(ticket_type="task", title="Task 1", parent=epic_id, hive_name="default")
+        task1_id = task1_result["ticket_id"]
+
+        task2_result = _create_ticket(ticket_type="task", title="Task 2", parent=epic_id, hive_name="default")
+        task2_id = task2_result["ticket_id"]
+
+        subtask1_result = _create_ticket(ticket_type="subtask", title="Subtask 1", parent=task1_id, hive_name="default")
+        subtask1_id = subtask1_result["ticket_id"]
+
+        subtask2_result = _create_ticket(ticket_type="subtask", title="Subtask 2", parent=task2_id, hive_name="default")
+        subtask2_id = subtask2_result["ticket_id"]
+
+        # Verify all exist
+        assert get_ticket_path(epic_id, "epic").exists()
+        assert get_ticket_path(task1_id, "task").exists()
+        assert get_ticket_path(task2_id, "task").exists()
+        assert get_ticket_path(subtask1_id, "subtask").exists()
+        assert get_ticket_path(subtask2_id, "subtask").exists()
+
+        # Delete epic at root (should cascade through entire tree)
+        _delete_ticket(ticket_id=epic_id)
+
+        # Verify entire tree is deleted
+        assert not get_ticket_path(epic_id, "epic").exists()
+        assert not get_ticket_path(task1_id, "task").exists()
+        assert not get_ticket_path(task2_id, "task").exists()
+        assert not get_ticket_path(subtask1_id, "subtask").exists()
+        assert not get_ticket_path(subtask2_id, "subtask").exists()
+
+    def test_cascade_delete_single_child(self, setup_tickets_dir):
+        """Test edge case: parent with exactly one child."""
+        parent_result = _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        parent_id = parent_result["ticket_id"]
+
+        child_result = _create_ticket(ticket_type="task", title="Only Child", parent=parent_id, hive_name="default")
+        child_id = child_result["ticket_id"]
+
+        # Delete parent
+        _delete_ticket(ticket_id=parent_id)
+
+        # Verify both deleted
+        assert not get_ticket_path(parent_id, "epic").exists()
+        assert not get_ticket_path(child_id, "task").exists()
+
+    def test_cascade_delete_multiple_children_at_same_level(self, setup_tickets_dir):
+        """Test edge case: parent with many children at the same level."""
+        parent_result = _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        parent_id = parent_result["ticket_id"]
+
+        # Create 5 children
+        child_ids = []
+        for i in range(5):
+            child_result = _create_ticket(
+                ticket_type="task",
+                title=f"Child {i}",
+                parent=parent_id,
+                hive_name="default"
+            )
+            child_ids.append(child_result["ticket_id"])
+
+        # Verify all exist
+        for child_id in child_ids:
+            assert get_ticket_path(child_id, "task").exists()
+
+        # Delete parent
+        _delete_ticket(ticket_id=parent_id)
+
+        # Verify all deleted
+        assert not get_ticket_path(parent_id, "epic").exists()
+        for child_id in child_ids:
+            assert not get_ticket_path(child_id, "task").exists()
 
 
 class TestDeleteTicketEdgeCases:
@@ -313,8 +390,8 @@ class TestDeleteTicketEdgeCases:
         child_result = _create_ticket(ticket_type="subtask", title="Child", parent=target_id, hive_name="default")
         child_id = child_result["ticket_id"]
 
-        # Delete target without cascade (unlinks child)
-        _delete_ticket(ticket_id=target_id, cascade=False)
+        # Delete target (always cascades)
+        _delete_ticket(ticket_id=target_id)
 
         # Verify target is deleted
         assert not get_ticket_path(target_id, "task").exists()
@@ -327,12 +404,8 @@ class TestDeleteTicketEdgeCases:
         blocking = read_ticket(get_ticket_path(blocking_id, "epic"))
         assert target_id not in (blocking.down_dependencies or [])
 
-        # Verify child is unlinked but still exists
-        # Note: Subtasks cannot be unlinked (they require a parent), so they remain
-        # pointing to the deleted parent
-        assert get_ticket_path(child_id, "subtask").exists()
-        child = read_ticket(get_ticket_path(child_id, "subtask"))
-        assert child.parent == target_id  # Subtask still points to deleted parent
+        # Verify child is also deleted (cascaded)
+        assert not get_ticket_path(child_id, "subtask").exists()
 
     def test_cascade_delete_with_dependencies(self, setup_tickets_dir):
         """Test that cascade delete also cleans up dependencies for children."""
@@ -356,8 +429,8 @@ class TestDeleteTicketEdgeCases:
         blocking = read_ticket(get_ticket_path(blocking_id, "epic"))
         assert child_id in blocking.down_dependencies
 
-        # Cascade delete parent
-        _delete_ticket(ticket_id=parent_id, cascade=True)
+        # Delete parent (always cascades)
+        _delete_ticket(ticket_id=parent_id)
 
         # Verify both parent and child are deleted
         assert not get_ticket_path(parent_id, "epic").exists()
@@ -494,8 +567,8 @@ class TestDeleteTicketHiveRouting:
         assert get_ticket_path(parent_id, "epic").exists()
         assert get_ticket_path(child_id, "task").exists()
 
-        # Cascade delete parent
-        result = _delete_ticket(ticket_id=parent_id, cascade=True)
+        # Delete parent (always cascades)
+        result = _delete_ticket(ticket_id=parent_id)
         assert result["status"] == "success"
 
         # Verify both are deleted

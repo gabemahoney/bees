@@ -1429,16 +1429,16 @@ update_ticket = mcp.tool()(_update_ticket)
 
 
 def _delete_ticket(
-    ticket_id: str,
-    cascade: bool = False
+    ticket_id: str
 ) -> Dict[str, Any]:
     """
     Delete a ticket and clean up relationships in related tickets.
+    
+    Deletion always cascades to children - deleting a parent ticket will
+    recursively delete all child tickets and grandchildren in the entire subtree.
 
     Args:
         ticket_id: ID of the ticket to delete (required)
-        cascade: If True, recursively delete all child tickets. If False and ticket
-                has children, the operation will fail or unlink children (default: False)
 
     Returns:
         dict: Deletion status and information about cleaned relationships
@@ -1450,8 +1450,8 @@ def _delete_ticket(
         When a ticket is deleted:
         - It's removed from parent's children array
         - It's removed from all dependency arrays in related tickets
-        - If cascade=True, all child tickets are recursively deleted
-        - If cascade=False and children exist, deletion may be prevented
+        - All child tickets are recursively deleted (cascade behavior)
+        - The entire subtree under this ticket is deleted
     """
     # Parse hive from ticket_id
     hive_prefix = parse_hive_from_ticket_id(ticket_id)
@@ -1490,21 +1490,14 @@ def _delete_ticket(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Handle children tickets based on cascade parameter
+    # Recursively delete all child tickets (always cascade)
     if ticket.children:
-        if cascade:
-            # Recursively delete all child tickets
-            for child_id in ticket.children:
-                try:
-                    _delete_ticket(child_id, cascade=True)
-                    logger.info(f"Cascade deleted child ticket: {child_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to cascade delete child {child_id}: {e}")
-        else:
-            # Unlink children by removing parent reference
-            for child_id in ticket.children:
-                _remove_parent_from_child(child_id)
-                logger.info(f"Unlinked child {child_id} from parent {ticket_id}")
+        for child_id in ticket.children:
+            try:
+                _delete_ticket(child_id)
+                logger.info(f"Cascade deleted child ticket: {child_id}")
+            except Exception as e:
+                logger.warning(f"Failed to cascade delete child {child_id}: {e}")
 
     # Clean up parent's children array
     if ticket.parent:

@@ -710,6 +710,7 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
 
 3. **_delete_ticket() MCP tool** (`src/mcp_server.py`):
    - No hive_name parameter needed (hive inferred from ticket_id)
+   - No cascade parameter needed (deletion always cascades)
    - **Hive Parsing Logic**: Calls `parse_hive_from_ticket_id(ticket_id)` to extract hive prefix
      - Splits ticket_id on first dot: `backend.bees-abc1` → `backend`
      - Returns None for malformed IDs (no dot found)
@@ -719,8 +720,11 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
    - Uses `infer_ticket_type_from_id(ticket_id)` to determine ticket type
    - Calls `get_ticket_path(ticket_id, ticket_type)` which internally parses hive from ID
    - Path resolution automatically routes to correct hive directory based on ID prefix
-   - **Cascade Delete**: Recursively calls `_delete_ticket()` for child tickets, each parsing its own hive prefix
-   - **Design Decision**: Self-routing IDs eliminate need for explicit hive parameter, simplifying the API
+   - **Always-Cascade Delete**: Recursively calls `_delete_ticket()` for all child tickets, each parsing its own hive prefix
+     - Deleting a parent ticket always deletes its entire subtree (children and grandchildren)
+     - Simplified API by removing optional cascade parameter - behavior is now consistent and predictable
+     - Removed unlink code path that previously allowed keeping children when cascade=False
+   - **Design Decision**: Self-routing IDs eliminate need for explicit hive parameter, and always-cascade behavior simplifies the API
    - **Integration with normalize_name()**: Hive validation uses `normalize_hive_name()` to handle display name variations
 
 4. **Bidirectional Relationship Helpers** (`src/mcp_server.py`):

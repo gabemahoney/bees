@@ -271,8 +271,8 @@ class TestDeleteTicketHiveInference:
         assert get_ticket_path(child1_id, "task").exists()
         assert get_ticket_path(child2_id, "task").exists()
 
-        # Delete parent with cascade
-        _delete_ticket(ticket_id=parent_id, cascade=True)
+        # Delete parent (always cascades)
+        _delete_ticket(ticket_id=parent_id)
 
         # Verify all deleted
         assert not get_ticket_path(parent_id, "epic").exists()
