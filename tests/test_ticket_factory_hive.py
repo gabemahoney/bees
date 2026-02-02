@@ -237,3 +237,62 @@ class TestFactoryHiveNamespacing:
         assert epic_id.startswith("test_hive.bees-")
         assert task_id.startswith("test_hive.bees-")
         assert subtask_id.startswith("test_hive.bees-")
+
+
+class TestBeesVersionField:
+    """Tests for bees_version field in ticket creation."""
+
+    def test_create_epic_includes_bees_version(self, temp_hive_config):
+        """Epic creation should include bees_version='1.1' in frontmatter."""
+        from src.constants import BEES_SCHEMA_VERSION
+
+        epic_id = create_epic(
+            title="Versioned Epic",
+            description="Test bees_version field",
+            hive_name="backend"
+        )
+
+        # Read ticket and verify bees_version field
+        epic_path = get_ticket_path(epic_id, "epic")
+        epic = read_ticket(epic_path)
+
+        assert epic.bees_version == BEES_SCHEMA_VERSION
+        assert epic.bees_version == '1.1'
+
+    def test_create_task_includes_bees_version(self, temp_hive_config):
+        """Task creation should include bees_version='1.1' in frontmatter."""
+        from src.constants import BEES_SCHEMA_VERSION
+
+        task_id = create_task(
+            title="Versioned Task",
+            description="Test bees_version field",
+            hive_name="backend"
+        )
+
+        # Read ticket and verify bees_version field
+        task_path = get_ticket_path(task_id, "task")
+        task = read_ticket(task_path)
+
+        assert task.bees_version == BEES_SCHEMA_VERSION
+        assert task.bees_version == '1.1'
+
+    def test_create_subtask_includes_bees_version(self, temp_hive_config):
+        """Subtask creation should include bees_version='1.1' in frontmatter."""
+        from src.constants import BEES_SCHEMA_VERSION
+
+        # Create parent task first
+        parent_id = create_task(title="Parent Task", hive_name="backend")
+
+        subtask_id = create_subtask(
+            title="Versioned Subtask",
+            parent=parent_id,
+            description="Test bees_version field",
+            hive_name="backend"
+        )
+
+        # Read ticket and verify bees_version field
+        subtask_path = get_ticket_path(subtask_id, "subtask")
+        subtask = read_ticket(subtask_path)
+
+        assert subtask.bees_version == BEES_SCHEMA_VERSION
+        assert subtask.bees_version == '1.1'

@@ -10,18 +10,13 @@ from src.pipeline import PipelineEvaluator
 
 @pytest.fixture
 def temp_tickets_dir(tmp_path):
-    """Create temporary tickets directory with test tickets in markdown format."""
+    """Create temporary tickets directory with test tickets in markdown format (flat storage)."""
     tickets_dir = tmp_path / "tickets"
     tickets_dir.mkdir()
 
-    # Create subdirectories
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
-
-    # Create test tickets as markdown files with YAML frontmatter
+    # Create test tickets in hive root (flat storage) with bees_version field
     test_tickets = {
-        "epics/bees-ep1.md": {
+        "bees-ep1.md": {
             "id": "bees-ep1",
             "title": "Build Auth System",
             "type": "epic",
@@ -30,9 +25,10 @@ def temp_tickets_dir(tmp_path):
             "parent": None,
             "children": [],
             "up_dependencies": [],
-            "down_dependencies": []
+            "down_dependencies": [],
+            "bees_version": "1.1"
         },
-        "epics/bees-ep2.md": {
+        "bees-ep2.md": {
             "id": "bees-ep2",
             "title": "Frontend Dashboard",
             "type": "epic",
@@ -41,9 +37,10 @@ def temp_tickets_dir(tmp_path):
             "parent": None,
             "children": [],
             "up_dependencies": [],
-            "down_dependencies": ["bees-ep1"]
+            "down_dependencies": ["bees-ep1"],
+            "bees_version": "1.1"
         },
-        "tasks/bees-tk1.md": {
+        "bees-tk1.md": {
             "id": "bees-tk1",
             "title": "Implement OAuth Login",
             "type": "task",
@@ -52,9 +49,10 @@ def temp_tickets_dir(tmp_path):
             "parent": "bees-ep1",
             "children": [],
             "up_dependencies": [],
-            "down_dependencies": []
+            "down_dependencies": [],
+            "bees_version": "1.1"
         },
-        "tasks/bees-tk2.md": {
+        "bees-tk2.md": {
             "id": "bees-tk2",
             "title": "Build User Profile API",
             "type": "task",
@@ -63,9 +61,10 @@ def temp_tickets_dir(tmp_path):
             "parent": "bees-ep1",
             "children": [],
             "up_dependencies": ["bees-tk1"],
-            "down_dependencies": []
+            "down_dependencies": [],
+            "bees_version": "1.1"
         },
-        "subtasks/bees-st1.md": {
+        "bees-st1.md": {
             "id": "bees-st1",
             "title": "Write OAuth tests",
             "type": "chore",
@@ -74,7 +73,8 @@ def temp_tickets_dir(tmp_path):
             "parent": "bees-tk1",
             "children": [],
             "up_dependencies": [],
-            "down_dependencies": []
+            "down_dependencies": [],
+            "bees_version": "1.1"
         },
     }
 
@@ -147,10 +147,9 @@ class TestPipelineEvaluatorInit:
         """Test that malformed YAML frontmatter raises ValueError."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "tasks").mkdir()
 
-        # Create markdown file with invalid YAML
-        bad_file = tickets_dir / "tasks" / "bad.md"
+        # Create markdown file with invalid YAML in hive root
+        bad_file = tickets_dir / "bad.md"
         with open(bad_file, 'w') as f:
             f.write('---\n')
             f.write('id: bees-123\n')
@@ -166,17 +165,16 @@ class TestPipelineEvaluatorInit:
         """Test that tickets without IDs are skipped with warning."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "tasks").mkdir()
 
-        # Ticket without ID
-        no_id_file = tickets_dir / "tasks" / "no-id.md"
+        # Ticket without ID (in hive root)
+        no_id_file = tickets_dir / "no-id.md"
         with open(no_id_file, 'w') as f:
-            f.write('---\ntitle: No ID ticket\ntype: task\n---\n# No ID\n')
+            f.write('---\ntitle: No ID ticket\ntype: task\nbees_version: "1.1"\n---\n# No ID\n')
 
-        # Valid ticket
-        valid_file = tickets_dir / "tasks" / "valid.md"
+        # Valid ticket (in hive root)
+        valid_file = tickets_dir / "valid.md"
         with open(valid_file, 'w') as f:
-            f.write('---\nid: bees-123\ntitle: Valid ticket\ntype: task\n---\n# Valid\n')
+            f.write('---\nid: bees-123\ntitle: Valid ticket\ntype: task\nbees_version: "1.1"\n---\n# Valid\n')
 
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
         assert len(pipeline.tickets) == 1
@@ -380,19 +378,16 @@ class TestBatchExecution:
 class TestMarkdownTicketLoading:
     """Test markdown ticket loading with YAML frontmatter."""
 
-    def test_loads_tickets_from_subdirectories(self, tmp_path):
-        """Test that tickets are loaded from epics/, tasks/, subtasks/ subdirectories."""
+    def test_loads_tickets_from_hive_root(self, tmp_path):
+        """Test that tickets are loaded from hive root (flat storage)."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "epics").mkdir()
-        (tickets_dir / "tasks").mkdir()
-        (tickets_dir / "subtasks").mkdir()
 
-        # Create tickets in each subdirectory
-        for subdir, ticket_id in [("epics", "bees-ep1"), ("tasks", "bees-tk1"), ("subtasks", "bees-st1")]:
-            filepath = tickets_dir / subdir / f"{ticket_id}.md"
+        # Create tickets in hive root (flat storage)
+        for ticket_id, ticket_type in [("bees-ep1", "epic"), ("bees-tk1", "task"), ("bees-st1", "subtask")]:
+            filepath = tickets_dir / f"{ticket_id}.md"
             with open(filepath, 'w') as f:
-                f.write(f'---\nid: {ticket_id}\ntype: {subdir[:-1]}\ntitle: Test\n---\n# Test\n')
+                f.write(f'---\nid: {ticket_id}\ntype: {ticket_type}\ntitle: Test\nbees_version: "1.1"\n---\n# Test\n')
 
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
         assert len(pipeline.tickets) == 3
@@ -404,17 +399,16 @@ class TestMarkdownTicketLoading:
         """Test that markdown files without YAML frontmatter are skipped."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "tasks").mkdir()
 
-        # File without frontmatter
-        bad_file = tickets_dir / "tasks" / "no-frontmatter.md"
+        # File without frontmatter (in hive root)
+        bad_file = tickets_dir / "no-frontmatter.md"
         with open(bad_file, 'w') as f:
             f.write('# Just a regular markdown file\n\nNo YAML here.')
 
-        # Valid file
-        good_file = tickets_dir / "tasks" / "valid.md"
+        # Valid file (in hive root)
+        good_file = tickets_dir / "valid.md"
         with open(good_file, 'w') as f:
-            f.write('---\nid: bees-123\ntype: task\ntitle: Valid\n---\n# Valid\n')
+            f.write('---\nid: bees-123\ntype: task\ntitle: Valid\nbees_version: "1.1"\n---\n# Valid\n')
 
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
         assert len(pipeline.tickets) == 1
@@ -424,17 +418,16 @@ class TestMarkdownTicketLoading:
         """Test that files with incomplete frontmatter delimiters are skipped."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "tasks").mkdir()
 
-        # File with only opening delimiter
-        bad_file = tickets_dir / "tasks" / "malformed.md"
+        # File with only opening delimiter (in hive root)
+        bad_file = tickets_dir / "malformed.md"
         with open(bad_file, 'w') as f:
             f.write('---\nid: bees-bad\nNo closing delimiter')
 
-        # Valid file
-        good_file = tickets_dir / "tasks" / "valid.md"
+        # Valid file (in hive root)
+        good_file = tickets_dir / "valid.md"
         with open(good_file, 'w') as f:
-            f.write('---\nid: bees-123\ntype: task\n---\n# Valid\n')
+            f.write('---\nid: bees-123\ntype: task\nbees_version: "1.1"\n---\n# Valid\n')
 
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
         assert len(pipeline.tickets) == 1
@@ -451,20 +444,14 @@ class TestMarkdownTicketLoading:
         assert tk2['parent'] == 'bees-ep1'
         assert 'bees-tk1' in tk2['up_dependencies']
 
-    def test_handles_missing_subdirectories_gracefully(self, tmp_path):
-        """Test that missing subdirectories don't cause errors."""
+    def test_handles_empty_hive_root_gracefully(self, tmp_path):
+        """Test that empty hive root directory doesn't cause errors."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        # Only create tasks directory, not epics or subtasks
-        (tickets_dir / "tasks").mkdir()
 
-        task_file = tickets_dir / "tasks" / "bees-tk1.md"
-        with open(task_file, 'w') as f:
-            f.write('---\nid: bees-tk1\ntype: task\ntitle: Test\n---\n# Test\n')
-
+        # Empty hive root with no tickets
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
-        assert len(pipeline.tickets) == 1
-        assert 'bees-tk1' in pipeline.tickets
+        assert len(pipeline.tickets) == 0
 
 
 class TestEdgeCases:
@@ -499,12 +486,11 @@ class TestEdgeCases:
         """Test that tickets without labels field are handled gracefully."""
         tickets_dir = tmp_path / "tickets"
         tickets_dir.mkdir()
-        (tickets_dir / "tasks").mkdir()
 
-        # Ticket without labels field
-        task_file = tickets_dir / "tasks" / "bees-1.md"
+        # Ticket without labels field (in hive root)
+        task_file = tickets_dir / "bees-1.md"
         with open(task_file, 'w') as f:
-            f.write('---\nid: bees-1\ntype: task\ntitle: Test\n---\n# Test\n')
+            f.write('---\nid: bees-1\ntype: task\ntitle: Test\nbees_version: "1.1"\n---\n# Test\n')
 
         pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
 
@@ -516,3 +502,166 @@ class TestEdgeCases:
         stages = [['label~test']]
         results = pipeline.execute_query(stages)
         assert len(results) == 0
+
+
+class TestFlatStorageScanning:
+    """Test flat storage scanning (bees_version 1.1) with hive root directory."""
+
+    def test_loads_tickets_from_hive_root_only(self, tmp_path):
+        """Test that _load_tickets() scans only hive root, not subdirectories."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # Create tickets in hive root with bees_version field
+        root_ticket = tickets_dir / "bees-root1.md"
+        with open(root_ticket, 'w') as f:
+            f.write('---\nid: bees-root1\ntype: epic\ntitle: Root Ticket\nbees_version: "1.1"\n---\n# Root\n')
+
+        # Create subdirectory with tickets (should be ignored)
+        subdir = tickets_dir / "subdir"
+        subdir.mkdir()
+        sub_ticket = subdir / "bees-sub1.md"
+        with open(sub_ticket, 'w') as f:
+            f.write('---\nid: bees-sub1\ntype: task\ntitle: Subdir Ticket\nbees_version: "1.1"\n---\n# Sub\n')
+
+        pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        # Should only load root ticket, not subdirectory ticket
+        assert len(pipeline.tickets) == 1
+        assert 'bees-root1' in pipeline.tickets
+        assert 'bees-sub1' not in pipeline.tickets
+
+    def test_filters_by_bees_version_field(self, tmp_path):
+        """Test that files without bees_version field are skipped."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # Ticket with bees_version (should be loaded)
+        valid_ticket = tickets_dir / "bees-valid.md"
+        with open(valid_ticket, 'w') as f:
+            f.write('---\nid: bees-valid\ntype: epic\ntitle: Valid\nbees_version: "1.1"\n---\n# Valid\n')
+
+        # Ticket without bees_version (should be skipped)
+        invalid_ticket = tickets_dir / "bees-invalid.md"
+        with open(invalid_ticket, 'w') as f:
+            f.write('---\nid: bees-invalid\ntype: task\ntitle: No Version\n---\n# Invalid\n')
+
+        # Regular markdown file (should be skipped)
+        readme = tickets_dir / "README.md"
+        with open(readme, 'w') as f:
+            f.write('# Project README\n\nThis is not a ticket.')
+
+        pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        # Should only load ticket with bees_version field
+        assert len(pipeline.tickets) == 1
+        assert 'bees-valid' in pipeline.tickets
+        assert 'bees-invalid' not in pipeline.tickets
+
+    def test_excludes_eggs_subdirectory(self, tmp_path):
+        """Test that /eggs subdirectory is excluded from scanning."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # Ticket in root (should be loaded)
+        root_ticket = tickets_dir / "bees-root.md"
+        with open(root_ticket, 'w') as f:
+            f.write('---\nid: bees-root\ntype: epic\ntitle: Root\nbees_version: "1.1"\n---\n# Root\n')
+
+        # Ticket in /eggs subdirectory (should be ignored)
+        eggs_dir = tickets_dir / "eggs"
+        eggs_dir.mkdir()
+        eggs_ticket = eggs_dir / "bees-eggs.md"
+        with open(eggs_ticket, 'w') as f:
+            f.write('---\nid: bees-eggs\ntype: task\ntitle: Eggs\nbees_version: "1.1"\n---\n# Eggs\n')
+
+        pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        assert len(pipeline.tickets) == 1
+        assert 'bees-root' in pipeline.tickets
+        assert 'bees-eggs' not in pipeline.tickets
+
+    def test_excludes_evicted_subdirectory(self, tmp_path):
+        """Test that /evicted subdirectory is excluded from scanning."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # Ticket in root (should be loaded)
+        root_ticket = tickets_dir / "bees-root.md"
+        with open(root_ticket, 'w') as f:
+            f.write('---\nid: bees-root\ntype: epic\ntitle: Root\nbees_version: "1.1"\n---\n# Root\n')
+
+        # Ticket in /evicted subdirectory (should be ignored)
+        evicted_dir = tickets_dir / "evicted"
+        evicted_dir.mkdir()
+        evicted_ticket = evicted_dir / "bees-evicted.md"
+        with open(evicted_ticket, 'w') as f:
+            f.write('---\nid: bees-evicted\ntype: task\ntitle: Evicted\nbees_version: "1.1"\n---\n# Evicted\n')
+
+        pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        assert len(pipeline.tickets) == 1
+        assert 'bees-root' in pipeline.tickets
+        assert 'bees-evicted' not in pipeline.tickets
+
+    def test_handles_invalid_yaml_gracefully(self, tmp_path):
+        """Test error handling for invalid YAML in ticket files."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # File with invalid YAML
+        bad_yaml = tickets_dir / "bees-bad.md"
+        with open(bad_yaml, 'w') as f:
+            f.write('---\nid: bees-bad\ninvalid: yaml: syntax: here\n---\n# Bad\n')
+
+        with pytest.raises(ValueError) as exc_info:
+            PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        assert "Invalid YAML" in str(exc_info.value)
+
+    def test_queries_work_with_flat_storage(self, tmp_path):
+        """Test that queries work correctly with flat storage tickets."""
+        tickets_dir = tmp_path / "tickets"
+        tickets_dir.mkdir()
+
+        # Create test tickets in flat storage
+        tickets = {
+            "bees-ep1": {"type": "epic", "labels": ["backend"]},
+            "bees-tk1": {"type": "task", "parent": "bees-ep1", "labels": ["backend"]},
+            "bees-tk2": {"type": "task", "parent": "bees-ep1", "labels": ["frontend"]},
+        }
+
+        for ticket_id, data in tickets.items():
+            filepath = tickets_dir / f"{ticket_id}.md"
+            frontmatter = {
+                "id": ticket_id,
+                "type": data["type"],
+                "title": f"Test {ticket_id}",
+                "bees_version": "1.1",
+                "parent": data.get("parent"),
+                "labels": data.get("labels", []),
+            }
+            with open(filepath, 'w') as f:
+                f.write(f"---\n{yaml.dump(frontmatter)}---\n# Test\n")
+
+        pipeline = PipelineEvaluator(tickets_dir=str(tickets_dir))
+
+        # Test type filtering
+        epic_query = [['type=epic']]
+        epic_results = pipeline.execute_query(epic_query)
+        assert len(epic_results) == 1
+        assert 'bees-ep1' in epic_results
+
+        # Test label filtering
+        backend_query = [['label~backend']]
+        backend_results = pipeline.execute_query(backend_query)
+        assert len(backend_results) == 2
+        assert 'bees-ep1' in backend_results
+        assert 'bees-tk1' in backend_results
+
+        # Test relationship traversal
+        children_query = [['id=bees-ep1'], ['children']]
+        children_results = pipeline.execute_query(children_query)
+        assert len(children_results) == 2
+        assert 'bees-tk1' in children_results
+        assert 'bees-tk2' in children_results

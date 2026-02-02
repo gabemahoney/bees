@@ -6,7 +6,7 @@ from typing import Any
 
 from .models import Epic, Task, Subtask, Ticket
 from .parser import parse_frontmatter
-from .validator import validate_ticket
+from .validator import validate_ticket, ValidationError
 
 __all__ = ["read_ticket"]
 
@@ -27,14 +27,20 @@ def read_ticket(file_path: Path | str) -> Ticket:
         ValidationError: If ticket data doesn't match schema
 
     Examples:
-        >>> ticket = read_ticket("tickets/epics/bees-250.md")
+        >>> ticket = read_ticket("backend/backend.bees-250.md")
         >>> ticket.id
-        'bees-250'
+        'backend.bees-250'
         >>> isinstance(ticket, Epic)
         True
     """
     # Parse file
     frontmatter, body = parse_frontmatter(file_path)
+
+    # Check for bees_version field to confirm this is a Bees ticket
+    if "bees_version" not in frontmatter:
+        raise ValidationError(
+            "Markdown file is not a valid Bees ticket: missing 'bees_version' field in frontmatter"
+        )
 
     # Validate against schema
     validate_ticket(frontmatter)
@@ -98,6 +104,7 @@ def _filter_ticket_fields(data: dict[str, Any]) -> dict[str, Any]:
         "owner",
         "priority",
         "status",
+        "bees_version",
     }
 
     return {k: v for k, v in data.items() if k in known_fields}

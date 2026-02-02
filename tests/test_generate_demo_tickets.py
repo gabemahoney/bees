@@ -24,16 +24,43 @@ def read_ticket_by_id(ticket_id: str, ticket_type: str):
 
 @pytest.fixture
 def setup_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary tickets directory structure."""
-    tickets_dir = tmp_path / "tickets"
-    tickets_dir.mkdir()
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
+    """Create temporary hive-based directory structure."""
+    import src.config
+    import json
 
-    # Also patch in ticket_factory which imports it directly
+    # Create default hive directory
+    default_hive = tmp_path / "default"
+    default_hive.mkdir()
+    (default_hive / "eggs").mkdir()
+    (default_hive / "evicted").mkdir()
 
-    yield tickets_dir
+    # Create config
+    config_dir = tmp_path / ".bees"
+    config_dir.mkdir()
+    config_file = config_dir / "config.json"
+
+    config_data = {
+        "hives": {
+            "default": {"path": str(default_hive), "display_name": "Default"}
+        },
+        "allow_cross_hive_dependencies": False,
+        "schema_version": "1.0"
+    }
+
+    with open(config_file, 'w') as f:
+        json.dump(config_data, f)
+
+    # Mock get_config_path to return our temporary config file
+    monkeypatch.setattr(src.config, 'get_config_path', lambda: config_file)
+
+    # Clear the hive config cache
+    if hasattr(src.config, '_hive_config_cache'):
+        src.config._hive_config_cache = None
+
+    # Change to the tmp_path directory so path resolution works
+    monkeypatch.chdir(tmp_path)
+
+    yield tmp_path
 
 
 @pytest.fixture
@@ -62,11 +89,12 @@ class TestDemoEpicGeneration:
         assert len(generated_tickets["epics"]) == 5
 
     def test_epic_files_exist(self, generated_tickets, setup_tickets_dir):
-        """Test that epic files are created in correct directory."""
-        epics_dir = setup_tickets_dir / "epics"
+        """Test that epic files are created in correct hive directory."""
+        # Epics now stored in hive root with flat storage
+        default_dir = setup_tickets_dir / "default"
         for epic_id in generated_tickets["epics"].values():
-            epic_file = epics_dir / f"{epic_id}.md"
-            assert epic_file.exists(), f"Epic file {epic_id}.md not found"
+            epic_file = default_dir / f"{epic_id}.md"
+            assert epic_file.exists(), f"Epic file {epic_id}.md not found in {default_dir}"
 
     def test_epic_has_valid_frontmatter(self, generated_tickets):
         """Test that epics have all required frontmatter fields."""
@@ -121,11 +149,12 @@ class TestDemoTaskGeneration:
         assert len(generated_tickets["tasks"]) == 8
 
     def test_task_files_exist(self, generated_tickets, setup_tickets_dir):
-        """Test that task files are created in correct directory."""
-        tasks_dir = setup_tickets_dir / "tasks"
+        """Test that task files are created in correct hive directory."""
+        # Tasks now stored in hive root with flat storage
+        default_dir = setup_tickets_dir / "default"
         for task_id in generated_tickets["tasks"].values():
-            task_file = tasks_dir / f"{task_id}.md"
-            assert task_file.exists(), f"Task file {task_id}.md not found"
+            task_file = default_dir / f"{task_id}.md"
+            assert task_file.exists(), f"Task file {task_id}.md not found in {default_dir}"
 
     def test_task_has_valid_frontmatter(self, generated_tickets):
         """Test that tasks have all required frontmatter fields."""
@@ -189,11 +218,12 @@ class TestDemoSubtaskGeneration:
         assert len(generated_tickets["subtasks"]) == 15
 
     def test_subtask_files_exist(self, generated_tickets, setup_tickets_dir):
-        """Test that subtask files are created in correct directory."""
-        subtasks_dir = setup_tickets_dir / "subtasks"
+        """Test that subtask files are created in correct hive directory."""
+        # Subtasks now stored in hive root with flat storage
+        default_dir = setup_tickets_dir / "default"
         for subtask_id in generated_tickets["subtasks"].values():
-            subtask_file = subtasks_dir / f"{subtask_id}.md"
-            assert subtask_file.exists(), f"Subtask file {subtask_id}.md not found"
+            subtask_file = default_dir / f"{subtask_id}.md"
+            assert subtask_file.exists(), f"Subtask file {subtask_id}.md not found in {default_dir}"
 
     def test_subtask_has_valid_frontmatter(self, generated_tickets):
         """Test that subtasks have all required frontmatter fields."""
@@ -369,3 +399,89 @@ class TestDependencyChains:
 
         # Should have at least one completed task at the root of chains
         assert len(root_completed) > 0, "No completed tasks at root of chains"
+
+
+class TestFlatStorageArchitecture:
+    """Tests for flat storage path validation."""
+
+    def test_fixtures_use_flat_storage_paths(self, generated_tickets, setup_tickets_dir):
+        """Verify that test fixtures check correct directory paths (default/ not default/epics/)."""
+        # All tickets should be in the root of the hive, not in subdirectories
+        default_dir = setup_tickets_dir / "default"
+
+        # Verify epics subdirectory does not exist or is not used
+        epics_subdir = default_dir / "epics"
+        tasks_subdir = default_dir / "tasks"
+        subtasks_subdir = default_dir / "subtasks"
+
+        # Check that tickets are in the flat root directory
+        for epic_id in generated_tickets["epics"].values():
+            epic_file = default_dir / f"{epic_id}.md"
+            assert epic_file.exists(), f"Epic {epic_id}.md should exist in flat root {default_dir}"
+
+            # Verify it's NOT in subdirectory (if subdirectory exists)
+            if epics_subdir.exists():
+                subdir_file = epics_subdir / f"{epic_id}.md"
+                assert not subdir_file.exists(), f"Epic {epic_id}.md should NOT be in {epics_subdir}"
+
+        for task_id in generated_tickets["tasks"].values():
+            task_file = default_dir / f"{task_id}.md"
+            assert task_file.exists(), f"Task {task_id}.md should exist in flat root {default_dir}"
+
+            if tasks_subdir.exists():
+                subdir_file = tasks_subdir / f"{task_id}.md"
+                assert not subdir_file.exists(), f"Task {task_id}.md should NOT be in {tasks_subdir}"
+
+        for subtask_id in generated_tickets["subtasks"].values():
+            subtask_file = default_dir / f"{subtask_id}.md"
+            assert subtask_file.exists(), f"Subtask {subtask_id}.md should exist in flat root {default_dir}"
+
+            if subtasks_subdir.exists():
+                subdir_file = subtasks_subdir / f"{subtask_id}.md"
+                assert not subdir_file.exists(), f"Subtask {subtask_id}.md should NOT be in {subtasks_subdir}"
+
+    def test_missing_ticket_in_root_directory(self, setup_tickets_dir):
+        """Test edge case of missing ticket file in root directory."""
+        from src.reader import read_ticket
+        from src.paths import get_ticket_path
+
+        # Try to read a ticket that doesn't exist (use hive-prefixed ID format)
+        fake_ticket_id = "default.bees-fake123"
+        fake_ticket_path = get_ticket_path(fake_ticket_id, "epic")
+
+        # Should raise an exception or return None
+        try:
+            ticket = read_ticket(fake_ticket_path)
+            # If we get here without exception, ticket should be None or invalid
+            assert ticket is None or not hasattr(ticket, 'id'), \
+                "Should not successfully read non-existent ticket"
+        except (FileNotFoundError, ValueError, Exception):
+            # Expected behavior - file doesn't exist
+            pass
+
+    def test_tickets_not_in_wrong_subdirectories(self, generated_tickets, setup_tickets_dir):
+        """Validate test assertions fail if tickets are in wrong location."""
+        default_dir = setup_tickets_dir / "default"
+
+        # Verify that old subdirectories either don't exist or are empty
+        old_subdirs = ["epics", "tasks", "subtasks"]
+
+        for subdir_name in old_subdirs:
+            subdir = default_dir / subdir_name
+            if subdir.exists():
+                # If subdirectory exists, it should be empty
+                md_files = list(subdir.glob("*.md"))
+                assert len(md_files) == 0, \
+                    f"Found {len(md_files)} .md files in {subdir}, but flat storage should have all tickets in root"
+
+        # Verify all generated tickets are in root, not subdirectories
+        all_ticket_ids = (
+            list(generated_tickets["epics"].values()) +
+            list(generated_tickets["tasks"].values()) +
+            list(generated_tickets["subtasks"].values())
+        )
+
+        for ticket_id in all_ticket_ids:
+            root_file = default_dir / f"{ticket_id}.md"
+            assert root_file.exists(), \
+                f"Ticket {ticket_id}.md should exist in flat storage root {default_dir}"

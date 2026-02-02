@@ -137,26 +137,27 @@ def extract_existing_ids_from_directory(tickets_dir: Path) -> set[str]:
     """
     Extract all existing ticket IDs from ticket files in a directory.
 
+    With flat storage, scans hive root directory directly (no subdirectories).
+
     Args:
-        tickets_dir: Path to the tickets directory (containing epics/, tasks/, subtasks/)
+        tickets_dir: Path to the hive root directory
 
     Returns:
         Set of existing ticket IDs found in filenames
 
     Examples:
-        >>> extract_existing_ids_from_directory(Path("tickets"))
-        {'bees-250', 'bees-abc', 'bees-9pw'}
+        >>> extract_existing_ids_from_directory(Path("backend"))
+        {'backend.bees-250', 'backend.bees-abc', 'backend.bees-9pw'}
     """
     existing_ids = set()
 
-    for subdir in ["epics", "tasks", "subtasks"]:
-        subdir_path = tickets_dir / subdir
-        if subdir_path.exists():
-            for md_file in subdir_path.glob("*.md"):
-                # Extract ID from filename (without .md extension)
-                filename = md_file.stem
-                if is_valid_ticket_id(filename):
-                    existing_ids.add(filename)
+    # Scan hive root directory for .md files
+    if tickets_dir.exists():
+        for md_file in tickets_dir.glob("*.md"):
+            # Extract ID from filename (without .md extension)
+            filename = md_file.stem
+            if is_valid_ticket_id(filename):
+                existing_ids.add(filename)
 
     return existing_ids
 

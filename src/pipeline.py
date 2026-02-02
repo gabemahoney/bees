@@ -59,68 +59,70 @@ class PipelineEvaluator:
     def _load_tickets(self) -> None:
         """Load all tickets from markdown files with YAML frontmatter into memory.
 
-        Scans tickets/epics/, tickets/tasks/, tickets/subtasks/ directories and
-        parses YAML frontmatter from each markdown file.
-        Stores tickets as dict[ticket_id -> ticket_data].
+        Scans hive root directory (flat storage) for *.md files and parses YAML
+        frontmatter from each. Only processes files with bees_version field.
+        Skips subdirectories (/eggs, /evicted). Stores tickets as dict[ticket_id -> ticket_data].
 
         Raises:
-            FileNotFoundError: If tickets directory not found
+            FileNotFoundError: If hive directory not found
             ValueError: If YAML frontmatter contains invalid syntax
         """
         if not self.tickets_dir.exists():
             raise FileNotFoundError(
                 f"Tickets directory not found: {self.tickets_dir}. "
-                f"Ensure tickets directory exists with epics/, tasks/, subtasks/ subdirectories."
+                f"Ensure tickets directory exists at hive root."
             )
 
-        # Scan subdirectories for markdown files
-        subdirs = ['epics', 'tasks', 'subtasks']
-        for subdir in subdirs:
-            subdir_path = self.tickets_dir / subdir
-            if not subdir_path.exists():
+        # Scan only hive root for markdown files (flat storage)
+        for md_file in self.tickets_dir.glob('*.md'):
+            # Skip files in subdirectories (e.g., /eggs, /evicted)
+            if md_file.parent != self.tickets_dir:
                 continue
 
-            # Load all markdown files in subdirectory
-            for md_file in subdir_path.glob('*.md'):
-                try:
-                    with open(md_file, 'r') as f:
-                        content = f.read()
+            try:
+                with open(md_file, 'r') as f:
+                    content = f.read()
 
-                    # Parse YAML frontmatter
-                    if not content.startswith('---'):
-                        logger.warning(f"Skipping {md_file}: no YAML frontmatter")
-                        continue
-
-                    # Extract frontmatter between --- delimiters
-                    parts = content.split('---', 2)
-                    if len(parts) < 3:
-                        logger.warning(f"Skipping {md_file}: malformed YAML frontmatter")
-                        continue
-
-                    frontmatter_str = parts[1]
-                    ticket = yaml.safe_load(frontmatter_str)
-
-                    if not isinstance(ticket, dict):
-                        logger.warning(f"Skipping {md_file}: frontmatter is not a dict")
-                        continue
-
-                    # Extract ticket ID and store ticket data
-                    ticket_id = ticket.get('id')
-                    if not ticket_id:
-                        logger.warning(f"Skipping {md_file}: no ID in frontmatter")
-                        continue
-
-                    # Normalize ticket data structure for executors
-                    normalized = self._normalize_ticket(ticket)
-                    self.tickets[ticket_id] = normalized
-
-                except yaml.YAMLError as e:
-                    raise ValueError(
-                        f"Invalid YAML in {md_file}: {e}"
-                    )
-                except Exception as e:
-                    logger.warning(f"Error loading {md_file}: {e}")
+                # Parse YAML frontmatter
+                if not content.startswith('---'):
+                    logger.warning(f"Skipping {md_file}: no YAML frontmatter")
                     continue
+
+                # Extract frontmatter between --- delimiters
+                parts = content.split('---', 2)
+                if len(parts) < 3:
+                    logger.warning(f"Skipping {md_file}: malformed YAML frontmatter")
+                    continue
+
+                frontmatter_str = parts[1]
+                ticket = yaml.safe_load(frontmatter_str)
+
+                if not isinstance(ticket, dict):
+                    logger.warning(f"Skipping {md_file}: frontmatter is not a dict")
+                    continue
+
+                # Filter by bees_version field - skip files without it
+                if 'bees_version' not in ticket:
+                    logger.debug(f"Skipping {md_file}: no bees_version field")
+                    continue
+
+                # Extract ticket ID and store ticket data
+                ticket_id = ticket.get('id')
+                if not ticket_id:
+                    logger.warning(f"Skipping {md_file}: no ID in frontmatter")
+                    continue
+
+                # Normalize ticket data structure for executors
+                normalized = self._normalize_ticket(ticket)
+                self.tickets[ticket_id] = normalized
+
+            except yaml.YAMLError as e:
+                raise ValueError(
+                    f"Invalid YAML in {md_file}: {e}"
+                )
+            except Exception as e:
+                logger.warning(f"Error loading {md_file}: {e}")
+                continue
 
         # Second pass: Build reverse relationships (children from parents, etc)
         self._build_reverse_relationships()

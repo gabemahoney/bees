@@ -27,9 +27,9 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
         FileNotFoundError: If file doesn't exist
 
     Examples:
-        >>> frontmatter, body = parse_frontmatter("tickets/epics/bees-250.md")
+        >>> frontmatter, body = parse_frontmatter("backend/backend.bees-250.md")
         >>> frontmatter['id']
-        'bees-250'
+        'backend.bees-250'
         >>> frontmatter['type']
         'epic'
     """

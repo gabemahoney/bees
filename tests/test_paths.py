@@ -3,7 +3,6 @@
 import pytest
 from pathlib import Path
 from src.paths import (
-    get_ticket_directory,
     get_ticket_path,
     ensure_ticket_directory_exists,
     list_tickets,
@@ -54,40 +53,6 @@ class TestParseTicketIdForPath:
         assert base_id == "bees-abc"
 
 
-class TestGetTicketDirectory:
-    """Tests for get_ticket_directory function (deprecated, requires hive_name)."""
-
-    def test_epic_directory_requires_hive_name(self):
-        """Should require hive_name parameter."""
-        with pytest.raises(ValueError, match="hive_name is required"):
-            get_ticket_directory("epic")
-
-    def test_task_directory_requires_hive_name(self):
-        """Should require hive_name parameter."""
-        with pytest.raises(ValueError, match="hive_name is required"):
-            get_ticket_directory("task")
-
-    def test_subtask_directory_requires_hive_name(self):
-        """Should require hive_name parameter."""
-        with pytest.raises(ValueError, match="hive_name is required"):
-            get_ticket_directory("subtask")
-
-    def test_invalid_type_raises_error(self):
-        """Should raise ValueError for invalid ticket type."""
-        with pytest.raises(ValueError, match="Invalid ticket type"):
-            get_ticket_directory("invalid", "backend")  # type: ignore
-
-    def test_empty_string_raises_error(self):
-        """Should raise ValueError for empty string type."""
-        with pytest.raises(ValueError):
-            get_ticket_directory("", "backend")  # type: ignore
-
-    def test_case_sensitive(self):
-        """Should be case-sensitive and reject uppercase types."""
-        with pytest.raises(ValueError):
-            get_ticket_directory("EPIC", "backend")  # type: ignore
-
-
 class TestGetTicketPath:
     """Tests for get_ticket_path function (requires hive-prefixed IDs)."""
 
@@ -111,47 +76,73 @@ class TestGetTicketPath:
         with pytest.raises(ValueError, match="ticket_id cannot be empty"):
             get_ticket_path("", "epic")
 
-    def test_invalid_type_raises_error(self):
-        """Should raise ValueError for invalid ticket type."""
-        with pytest.raises(ValueError, match="Invalid ticket type"):
-            get_ticket_path("backend.bees-250", "invalid")  # type: ignore
-
-    def test_special_characters_in_hive_prefixed_id(self, tmp_path, monkeypatch):
-        """Should handle hive-prefixed IDs."""
+    def test_accepts_any_ticket_type(self, tmp_path, monkeypatch):
+        """Should accept any ticket type (validation removed in flat storage)."""
         monkeypatch.chdir(tmp_path)
-        path = get_ticket_path("backend.bees-abc", "task")
-        assert path == tmp_path / "backend" / "tasks" / "backend.bees-abc.md"
+
+        # In flat storage, ticket_type doesn't affect path
+        path = get_ticket_path("backend.bees-250", "invalid")  # type: ignore
+        # Should not raise, path is always the same
+        assert path == tmp_path / "backend" / "backend.bees-250.md"
+
+    def test_flat_storage_path_for_epic(self, tmp_path, monkeypatch):
+        """Should return flat storage path in hive root for epic."""
+        monkeypatch.chdir(tmp_path)
+        path = get_ticket_path("backend.bees-abc", "epic")
+        assert path == tmp_path / "backend" / "backend.bees-abc.md"
+
+    def test_flat_storage_path_for_task(self, tmp_path, monkeypatch):
+        """Should return flat storage path in hive root for task."""
+        monkeypatch.chdir(tmp_path)
+        path = get_ticket_path("backend.bees-xyz", "task")
+        assert path == tmp_path / "backend" / "backend.bees-xyz.md"
+
+    def test_flat_storage_path_for_subtask(self, tmp_path, monkeypatch):
+        """Should return flat storage path in hive root for subtask."""
+        monkeypatch.chdir(tmp_path)
+        path = get_ticket_path("frontend.bees-123", "subtask")
+        assert path == tmp_path / "frontend" / "frontend.bees-123.md"
+
+    def test_flat_storage_ignores_ticket_type(self, tmp_path, monkeypatch):
+        """Should return same path regardless of ticket type (flat storage)."""
+        monkeypatch.chdir(tmp_path)
+        epic_path = get_ticket_path("backend.bees-abc", "epic")
+        task_path = get_ticket_path("backend.bees-abc", "task")
+        subtask_path = get_ticket_path("backend.bees-abc", "subtask")
+        # All paths should be identical in flat storage
+        assert epic_path == task_path == subtask_path
+        assert epic_path == tmp_path / "backend" / "backend.bees-abc.md"
 
 
 class TestEnsureTicketDirectoryExists:
-    """Tests for ensure_ticket_directory_exists function (requires hive_name)."""
+    """Tests for ensure_ticket_directory_exists function (flat storage)."""
 
     def test_creates_directory_if_missing(self, tmp_path, monkeypatch):
-        """Should create directory if it doesn't exist when hive_name provided."""
+        """Should create hive root directory if it doesn't exist."""
         monkeypatch.chdir(tmp_path)
 
-        epic_dir = tmp_path / "backend" / "epics"
-        assert not epic_dir.exists()
+        hive_dir = tmp_path / "backend"
+        assert not hive_dir.exists()
 
-        ensure_ticket_directory_exists("epic", "backend")
-        assert epic_dir.exists()
-        assert epic_dir.is_dir()
+        ensure_ticket_directory_exists("backend")
+        assert hive_dir.exists()
+        assert hive_dir.is_dir()
 
     def test_no_error_if_directory_exists(self, tmp_path, monkeypatch):
         """Should not raise error if directory already exists."""
         monkeypatch.chdir(tmp_path)
 
-        task_dir = tmp_path / "backend" / "tasks"
-        task_dir.mkdir(parents=True)
+        hive_dir = tmp_path / "backend"
+        hive_dir.mkdir(parents=True)
 
         # Should not raise
-        ensure_ticket_directory_exists("task", "backend")
-        assert task_dir.exists()
+        ensure_ticket_directory_exists("backend")
+        assert hive_dir.exists()
 
-    def test_invalid_type_raises_error(self):
-        """Should raise ValueError for invalid ticket type."""
-        with pytest.raises(ValueError):
-            ensure_ticket_directory_exists("invalid", "backend")  # type: ignore
+    def test_invalid_hive_name_raises_error(self):
+        """Should raise ValueError for empty hive name."""
+        with pytest.raises(ValueError, match="hive_name is required"):
+            ensure_ticket_directory_exists("")
 
 
 class TestListTickets:
@@ -174,18 +165,18 @@ class TestListTickets:
         assert tickets == []
 
     def test_empty_directory(self, tmp_path, monkeypatch):
-        """Should return empty list for empty hive directory."""
+        """Should return empty list for empty hive directory (flat storage)."""
+        from datetime import datetime
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         monkeypatch.chdir(tmp_path)
 
-        # Create hive with empty directories
+        # Create empty hive root directory
         backend_dir = tmp_path / "backend"
-        subtask_dir = backend_dir / "subtasks"
-        subtask_dir.mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
 
         config = BeesConfig(
-            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend")}
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
         save_bees_config(config)
 
@@ -194,13 +185,14 @@ class TestListTickets:
 
     def test_nonexistent_directory(self, tmp_path, monkeypatch):
         """Should return empty list when hive path doesn't exist."""
+        from datetime import datetime
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         monkeypatch.chdir(tmp_path)
 
         # Configure hive with nonexistent path
         config = BeesConfig(
-            hives={"backend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Backend")}
+            hives={"backend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Backend", created_at=datetime.now().isoformat())}
         )
         save_bees_config(config)
 
@@ -208,23 +200,23 @@ class TestListTickets:
         assert tickets == []
 
     def test_sorted_output(self, tmp_path, monkeypatch):
-        """Should return tickets in sorted order."""
+        """Should return tickets in sorted order (flat storage)."""
+        from datetime import datetime
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         monkeypatch.chdir(tmp_path)
 
-        # Create hive with tickets
+        # Create hive with tickets in root directory
         backend_dir = tmp_path / "backend"
-        epic_dir = backend_dir / "epics"
-        epic_dir.mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
 
-        # Create in random order
-        (epic_dir / "backend.bees-zzz.md").touch()
-        (epic_dir / "backend.bees-aaa.md").touch()
-        (epic_dir / "backend.bees-mmm.md").touch()
+        # Create in random order with YAML frontmatter
+        (backend_dir / "backend.bees-zzz.md").write_text("---\ntype: epic\n---\n")
+        (backend_dir / "backend.bees-aaa.md").write_text("---\ntype: epic\n---\n")
+        (backend_dir / "backend.bees-mmm.md").write_text("---\ntype: epic\n---\n")
 
         config = BeesConfig(
-            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend")}
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
         save_bees_config(config)
 
@@ -262,30 +254,77 @@ class TestInferTicketTypeFromId:
         """Should return None for ticket ID that doesn't exist."""
         monkeypatch.chdir(tmp_path)
 
-        # Create hive directories but no ticket files
+        # Create hive directory but no ticket files
         backend_dir = tmp_path / "backend"
-        for subdir in ["epics", "tasks", "subtasks"]:
-            (backend_dir / subdir).mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
 
         ticket_type = infer_ticket_type_from_id("backend.nonexistent-id")
         assert ticket_type is None
 
-    def test_returns_first_match_for_duplicate_id(self, tmp_path, monkeypatch):
-        """Should return first match when ID exists in multiple directories."""
+    def test_infers_epic_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+        """Should infer type 'epic' from YAML frontmatter in flat storage."""
         monkeypatch.chdir(tmp_path)
 
-        # Create same ticket ID in multiple directories (edge case)
         backend_dir = tmp_path / "backend"
-        epic_dir = backend_dir / "epics"
-        task_dir = backend_dir / "tasks"
-        epic_dir.mkdir(parents=True)
-        task_dir.mkdir(parents=True)
-        (epic_dir / "backend.bees-dup.md").touch()
-        (task_dir / "backend.bees-dup.md").touch()
+        backend_dir.mkdir(parents=True)
 
-        # Should return 'epic' as it's checked first
-        ticket_type = infer_ticket_type_from_id("backend.bees-dup")
+        ticket_file = backend_dir / "backend.bees-abc.md"
+        ticket_file.write_text("---\nbees_version: 1.1\ntype: epic\ntitle: Test Epic\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-abc")
         assert ticket_type == "epic"
+
+    def test_infers_task_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+        """Should infer type 'task' from YAML frontmatter in flat storage."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        ticket_file = backend_dir / "backend.bees-xyz.md"
+        ticket_file.write_text("---\nbees_version: 1.1\ntype: task\ntitle: Test Task\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-xyz")
+        assert ticket_type == "task"
+
+    def test_infers_subtask_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+        """Should infer type 'subtask' from YAML frontmatter in flat storage."""
+        monkeypatch.chdir(tmp_path)
+
+        frontend_dir = tmp_path / "frontend"
+        frontend_dir.mkdir(parents=True)
+
+        ticket_file = frontend_dir / "frontend.bees-123.md"
+        ticket_file.write_text("---\nbees_version: 1.1\ntype: subtask\ntitle: Test Subtask\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("frontend.bees-123")
+        assert ticket_type == "subtask"
+
+    def test_returns_none_for_invalid_yaml(self, tmp_path, monkeypatch):
+        """Should return None when YAML frontmatter is invalid."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        ticket_file = backend_dir / "backend.bees-bad.md"
+        ticket_file.write_text("---\n[invalid: yaml: content\n---\n\nBody")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-bad")
+        assert ticket_type is None
+
+    def test_returns_none_for_missing_type_field(self, tmp_path, monkeypatch):
+        """Should return None when type field is missing from YAML."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        ticket_file = backend_dir / "backend.bees-notype.md"
+        ticket_file.write_text("---\ntitle: Test\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-notype")
+        assert ticket_type is None
 
     def test_returns_none_for_empty_id(self, tmp_path, monkeypatch):
         """Should return None for empty ticket ID."""
@@ -302,6 +341,33 @@ class TestInferTicketTypeFromId:
         ticket_type = infer_ticket_type_from_id("bees-123")
         assert ticket_type is None
 
+    def test_returns_none_for_missing_bees_version(self, tmp_path, monkeypatch):
+        """Should return None when bees_version field is missing from YAML."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        ticket_file = backend_dir / "backend.bees-noversion.md"
+        ticket_file.write_text("---\ntype: epic\ntitle: Test\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-noversion")
+        assert ticket_type is None
+
+    def test_validates_bees_version_before_type(self, tmp_path, monkeypatch):
+        """Should validate bees_version field before returning type."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Valid ticket with both bees_version and type
+        ticket_file = backend_dir / "backend.bees-valid.md"
+        ticket_file.write_text("---\nbees_version: 1.1\ntype: task\ntitle: Test\n---\n\nBody content")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-valid")
+        assert ticket_type == "task"
+
 
 class TestLegacyIDRejection:
     """Tests for legacy unprefixed ID rejection after TICKETS_DIR removal."""
@@ -312,18 +378,17 @@ class TestLegacyIDRejection:
             get_ticket_path("bees-250", "epic")
 
     def test_get_ticket_path_accepts_hive_prefixed_id(self, tmp_path, monkeypatch):
-        """Should accept hive-prefixed IDs in get_ticket_path()."""
+        """Should accept hive-prefixed IDs in get_ticket_path() with flat storage."""
         # Mock current working directory
         monkeypatch.chdir(tmp_path)
 
-        # Create hive directory structure
+        # Create hive root directory (flat storage)
         hive_dir = tmp_path / "backend"
-        epic_dir = hive_dir / "epics"
-        epic_dir.mkdir(parents=True)
+        hive_dir.mkdir(parents=True)
 
         # Should not raise
         path = get_ticket_path("backend.bees-250", "epic")
-        assert path == hive_dir / "epics" / "backend.bees-250.md"
+        assert path == hive_dir / "backend.bees-250.md"
 
     def test_infer_ticket_type_returns_none_for_legacy_id(self):
         """Should return None for legacy IDs without hive prefix in infer_ticket_type_from_id()."""
@@ -331,75 +396,139 @@ class TestLegacyIDRejection:
         assert ticket_type is None
 
     def test_infer_ticket_type_works_for_hive_prefixed_id(self, tmp_path, monkeypatch):
-        """Should work for hive-prefixed IDs in infer_ticket_type_from_id()."""
+        """Should work for hive-prefixed IDs in infer_ticket_type_from_id() with flat storage."""
         # Mock current working directory
         monkeypatch.chdir(tmp_path)
 
-        # Create hive directory with ticket
+        # Create hive root directory with ticket (flat storage)
         hive_dir = tmp_path / "backend"
-        epic_dir = hive_dir / "epics"
-        epic_dir.mkdir(parents=True)
-        (epic_dir / "backend.bees-250.md").touch()
+        hive_dir.mkdir(parents=True)
+        (hive_dir / "backend.bees-250.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
 
         ticket_type = infer_ticket_type_from_id("backend.bees-250")
         assert ticket_type == "epic"
 
-    def test_get_ticket_directory_requires_hive_name(self):
-        """Should require hive_name parameter in get_ticket_directory()."""
-        with pytest.raises(ValueError, match="hive_name is required"):
-            get_ticket_directory("epic")
-
-    def test_get_ticket_directory_works_with_hive_name(self, tmp_path, monkeypatch):
-        """Should work when hive_name is provided in get_ticket_directory()."""
-        monkeypatch.chdir(tmp_path)
-
-        path = get_ticket_directory("epic", "backend")
-        assert path == tmp_path / "backend" / "epics"
-
     def test_ensure_ticket_directory_requires_hive_name(self):
         """Should require hive_name parameter in ensure_ticket_directory_exists()."""
         with pytest.raises(ValueError, match="hive_name is required"):
-            ensure_ticket_directory_exists("epic")
+            ensure_ticket_directory_exists("")
 
     def test_ensure_ticket_directory_works_with_hive_name(self, tmp_path, monkeypatch):
         """Should work when hive_name is provided in ensure_ticket_directory_exists()."""
         monkeypatch.chdir(tmp_path)
 
-        epic_dir = tmp_path / "backend" / "epics"
-        assert not epic_dir.exists()
+        hive_dir = tmp_path / "backend"
+        assert not hive_dir.exists()
 
-        ensure_ticket_directory_exists("epic", "backend")
-        assert epic_dir.exists()
-        assert epic_dir.is_dir()
+        ensure_ticket_directory_exists("backend")
+        assert hive_dir.exists()
+        assert hive_dir.is_dir()
+
+
+class TestFlatStorageArchitecture:
+    """Tests for flat storage architecture (bees_version 1.1)."""
+
+    def test_get_ticket_path_returns_root_path(self, tmp_path, monkeypatch):
+        """get_ticket_path() should return path in hive root, not subdirectory."""
+        monkeypatch.chdir(tmp_path)
+
+        path = get_ticket_path("backend.bees-abc", "epic")
+        assert path == tmp_path / "backend" / "backend.bees-abc.md"
+
+        # Should be same path regardless of ticket type
+        path_task = get_ticket_path("backend.bees-abc", "task")
+        assert path == path_task
+
+    def test_infer_ticket_type_reads_yaml(self, tmp_path, monkeypatch):
+        """infer_ticket_type_from_id() should read type from YAML frontmatter."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Create ticket with epic type in YAML
+        ticket_file = backend_dir / "backend.bees-test.md"
+        ticket_file.write_text("---\nbees_version: 1.1\ntype: task\ntitle: Test\n---\n\nBody")
+
+        ticket_type = infer_ticket_type_from_id("backend.bees-test")
+        assert ticket_type == "task"
+
+    def test_ensure_directory_creates_root_only(self, tmp_path, monkeypatch):
+        """ensure_ticket_directory_exists() should create hive root only."""
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        assert not backend_dir.exists()
+
+        ensure_ticket_directory_exists("backend")
+
+        assert backend_dir.exists()
+        assert backend_dir.is_dir()
+        # Should not create subdirectories
+        assert not (backend_dir / "epics").exists()
+        assert not (backend_dir / "tasks").exists()
+        assert not (backend_dir / "subtasks").exists()
+
+    def test_list_tickets_scans_root(self, tmp_path, monkeypatch):
+        """list_tickets() should scan hive root directory."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Create tickets in root with different types
+        (backend_dir / "backend.bees-epic1.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+        (backend_dir / "backend.bees-task1.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
+        (backend_dir / "backend.bees-subtask1.md").write_text("---\nbees_version: 1.1\ntype: subtask\n---\n")
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
+        # List all tickets
+        all_tickets = list_tickets()
+        assert len(all_tickets) == 3
+
+        # List by type
+        epics = list_tickets("epic")
+        assert len(epics) == 1
+        assert epics[0].name == "backend.bees-epic1.md"
+
+        tasks = list_tickets("task")
+        assert len(tasks) == 1
+        assert tasks[0].name == "backend.bees-task1.md"
 
 
 class TestListTicketsFromHives:
     """Tests for list_tickets() scanning all hives."""
 
     def test_list_tickets_scans_all_hives(self, tmp_path, monkeypatch):
-        """Should scan all configured hives when listing tickets."""
+        """Should scan all configured hives when listing tickets (flat storage)."""
+        from datetime import datetime
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         monkeypatch.chdir(tmp_path)
 
-        # Create hive directories
+        # Create hive root directories
         backend_dir = tmp_path / "backend"
         frontend_dir = tmp_path / "frontend"
+        backend_dir.mkdir(parents=True)
+        frontend_dir.mkdir(parents=True)
 
-        backend_epics = backend_dir / "epics"
-        frontend_tasks = frontend_dir / "tasks"
-        backend_epics.mkdir(parents=True)
-        frontend_tasks.mkdir(parents=True)
-
-        # Create tickets
-        (backend_epics / "backend.bees-abc.md").touch()
-        (frontend_tasks / "frontend.bees-xyz.md").touch()
+        # Create tickets in root with YAML frontmatter
+        (backend_dir / "backend.bees-abc.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+        (frontend_dir / "frontend.bees-xyz.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
 
         # Configure hives
+        now = datetime.now().isoformat()
         config = BeesConfig(
             hives={
-                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
-                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend"),
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=now),
+                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend", created_at=now),
             }
         )
         save_bees_config(config)
@@ -412,25 +541,23 @@ class TestListTicketsFromHives:
         assert "frontend.bees-xyz.md" in ticket_names
 
     def test_list_tickets_filters_by_type(self, tmp_path, monkeypatch):
-        """Should filter by ticket type when listing from hives."""
+        """Should filter by ticket type when listing from hives (flat storage)."""
+        from datetime import datetime
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         monkeypatch.chdir(tmp_path)
 
-        # Create hive directory
+        # Create hive root directory
         backend_dir = tmp_path / "backend"
-        backend_epics = backend_dir / "epics"
-        backend_tasks = backend_dir / "tasks"
-        backend_epics.mkdir(parents=True)
-        backend_tasks.mkdir(parents=True)
+        backend_dir.mkdir(parents=True)
 
-        # Create tickets of different types
-        (backend_epics / "backend.bees-epic1.md").touch()
-        (backend_tasks / "backend.bees-task1.md").touch()
+        # Create tickets in root with YAML frontmatter
+        (backend_dir / "backend.bees-epic1.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+        (backend_dir / "backend.bees-task1.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
 
         # Configure hives
         config = BeesConfig(
-            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend")}
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
         save_bees_config(config)
 
@@ -446,3 +573,112 @@ class TestListTicketsFromHives:
         # No hives configured - list_tickets should return empty
         tickets = list_tickets()
         assert tickets == []
+
+    def test_list_tickets_filters_by_bees_version(self, tmp_path, monkeypatch):
+        """Should only return files with bees_version field (valid tickets)."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Valid ticket with bees_version
+        (backend_dir / "backend.bees-valid.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+        # Invalid - missing bees_version
+        (backend_dir / "backend.bees-invalid.md").write_text("---\ntype: epic\n---\n")
+        # Regular markdown file (not a ticket)
+        (backend_dir / "README.md").write_text("# README\n\nJust a regular file")
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
+        # Should only return the valid ticket
+        tickets = list_tickets()
+        assert len(tickets) == 1
+        assert tickets[0].name == "backend.bees-valid.md"
+
+    def test_list_tickets_filters_by_type_with_bees_version(self, tmp_path, monkeypatch):
+        """Should filter by type and validate bees_version."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Valid tickets with bees_version
+        (backend_dir / "backend.bees-epic1.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+        (backend_dir / "backend.bees-task1.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
+        # Invalid - missing bees_version
+        (backend_dir / "backend.bees-epic2.md").write_text("---\ntype: epic\n---\n")
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
+        # Should only return valid epic (with bees_version)
+        epics = list_tickets("epic")
+        assert len(epics) == 1
+        assert epics[0].name == "backend.bees-epic1.md"
+
+    def test_list_tickets_excludes_eggs_directory(self, tmp_path, monkeypatch):
+        """Should exclude tickets in /eggs subdirectory."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Ticket in hive root (should be included)
+        (backend_dir / "backend.bees-root.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+
+        # Ticket in /eggs subdirectory (should be excluded)
+        eggs_dir = backend_dir / "eggs"
+        eggs_dir.mkdir()
+        (eggs_dir / "backend.bees-eggs.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
+        # Should only return root ticket, not eggs ticket
+        tickets = list_tickets()
+        assert len(tickets) == 1
+        assert tickets[0].name == "backend.bees-root.md"
+
+    def test_list_tickets_excludes_evicted_directory(self, tmp_path, monkeypatch):
+        """Should exclude tickets in /evicted subdirectory."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        # Ticket in hive root (should be included)
+        (backend_dir / "backend.bees-root.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+
+        # Ticket in /evicted subdirectory (should be excluded)
+        evicted_dir = backend_dir / "evicted"
+        evicted_dir.mkdir()
+        (evicted_dir / "backend.bees-evicted.md").write_text("---\nbees_version: 1.1\ntype: task\n---\n")
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
+        # Should only return root ticket, not evicted ticket
+        tickets = list_tickets()
+        assert len(tickets) == 1
+        assert tickets[0].name == "backend.bees-root.md"

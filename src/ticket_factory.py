@@ -3,6 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 
+from .constants import BEES_SCHEMA_VERSION
 from .id_utils import generate_unique_ticket_id, extract_existing_ids_from_all_hives
 from .types import TicketType
 from .writer import write_ticket_file
@@ -77,6 +78,7 @@ def create_epic(
         "status": status,
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
+        "bees_version": BEES_SCHEMA_VERSION,
     }
 
     # Add optional fields
@@ -167,6 +169,7 @@ def create_task(
         "status": status,
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
+        "bees_version": BEES_SCHEMA_VERSION,
     }
 
     # Add optional fields
@@ -263,6 +266,7 @@ def create_subtask(
         "status": status,
         "created_at": datetime.now(),
         "updated_at": datetime.now(),
+        "bees_version": BEES_SCHEMA_VERSION,
     }
 
     # Add optional fields

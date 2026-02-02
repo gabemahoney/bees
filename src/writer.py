@@ -98,7 +98,7 @@ def write_ticket_file(
     target_path = get_ticket_path(ticket_id, ticket_type)
 
     # Ensure the directory exists (use parent directory of target path)
-    # This handles both legacy tickets (tickets/epics/) and hive tickets (backend/epics/)
+    # With flat storage, this creates the hive root directory
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Serialize frontmatter

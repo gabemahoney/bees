@@ -318,14 +318,14 @@ class TestFormatIndexMarkdown:
         assert "## Tasks" in result
         assert "## Subtasks" in result
 
-        # Check epic formatting with clickable link
-        assert "[bees-ep1: Test Epic](tickets/epics/bees-ep1.md) (open)" in result
+        # Check epic formatting with clickable link (flat storage format)
+        assert "[default.bees-ep1: Test Epic](default.bees-ep1.md) (open)" in result
 
-        # Check task formatting with clickable link
-        assert "[bees-ts1: Test Task](tickets/tasks/bees-ts1.md) (in_progress)" in result
+        # Check task formatting with clickable link (flat storage format)
+        assert "[default.bees-ts1: Test Task](default.bees-ts1.md) (in_progress)" in result
 
-        # Check subtask formatting (includes parent and clickable link)
-        assert "[bees-sb1: Test Subtask](tickets/subtasks/bees-sb1.md) (closed) (parent: bees-ts1)" in result
+        # Check subtask formatting (includes parent and clickable link, flat storage format)
+        assert "[default.bees-sb1: Test Subtask](default.bees-sb1.md) (closed) (parent: default.bees-ts1)" in result
 
     def test_format_sorts_by_id(self):
         """Should sort tickets by ID within each section."""
@@ -366,7 +366,7 @@ class TestFormatIndexMarkdown:
 
         result = format_index_markdown(tickets)
 
-        assert "[bees-ep1: No Status](tickets/epics/bees-ep1.md) (unknown)" in result
+        assert "[default.bees-ep1: No Status](default.bees-ep1.md) (unknown)" in result
 
     def test_format_with_special_characters_in_title(self):
         """Should handle special characters in title for markdown links."""
@@ -386,10 +386,10 @@ class TestFormatIndexMarkdown:
         result = format_index_markdown(tickets)
 
         # Markdown link should preserve special characters in link text
-        assert "[bees-ep1: Test [Special] Characters: & Symbols](tickets/epics/bees-ep1.md) (open)" in result
+        assert "[default.bees-ep1: Test [Special] Characters: & Symbols](default.bees-ep1.md) (open)" in result
 
     def test_format_link_paths_are_relative(self):
-        """Should use relative paths for ticket links."""
+        """Should use relative paths for ticket links (flat storage format)."""
         epic1 = Epic(id="default.bees-abc", type="epic", title="Test", status="open")
         task1 = Task(id="default.bees-xyz", type="task", title="Test", status="open")
         subtask1 = Subtask(id="default.bees-123", type="subtask", title="Test", parent="default.bees-xyz", status="open")
@@ -402,10 +402,10 @@ class TestFormatIndexMarkdown:
 
         result = format_index_markdown(tickets)
 
-        # All links should use tickets/{type}s/ relative path with type subdirectories
-        assert "(tickets/epics/bees-abc.md)" in result
-        assert "(tickets/tasks/bees-xyz.md)" in result
-        assert "(tickets/subtasks/bees-123.md)" in result
+        # All links should use flat relative paths (no type subdirectories)
+        assert "(default.bees-abc.md)" in result
+        assert "(default.bees-xyz.md)" in result
+        assert "(default.bees-123.md)" in result
 
     def test_format_link_includes_id_and_title(self):
         """Should include both ID and title in link text."""
@@ -427,8 +427,8 @@ class TestFormatIndexMarkdown:
         # Link text should be "ID: Title"
         assert "[bees-test: My Epic Title]" in result
 
-    def test_format_link_path_includes_type_subdirectory(self):
-        """Should generate link paths with type subdirectories (tickets/{type}s/{id}.md)."""
+    def test_format_link_path_uses_flat_structure(self):
+        """Should generate link paths without type subdirectories (flat storage)."""
         epic1 = Epic(id="default.bees-abc", type="epic", title="Test Epic", status="open")
         task1 = Task(id="default.bees-xyz", type="task", title="Test Task", status="open")
         subtask1 = Subtask(id="default.bees-123", type="subtask", title="Test Subtask", parent="default.bees-xyz", status="open")
@@ -441,14 +441,14 @@ class TestFormatIndexMarkdown:
 
         result = format_index_markdown(tickets)
 
-        # Epic link should use tickets/epics/ subdirectory
-        assert "[bees-abc: Test Epic](tickets/epics/bees-abc.md)" in result
+        # Epic link should use flat path (no subdirectory)
+        assert "[default.bees-abc: Test Epic](default.bees-abc.md)" in result
 
-        # Task link should use tickets/tasks/ subdirectory
-        assert "[bees-xyz: Test Task](tickets/tasks/bees-xyz.md)" in result
+        # Task link should use flat path (no subdirectory)
+        assert "[default.bees-xyz: Test Task](default.bees-xyz.md)" in result
 
-        # Subtask link should use tickets/subtasks/ subdirectory
-        assert "[bees-123: Test Subtask](tickets/subtasks/bees-123.md)" in result
+        # Subtask link should use flat path (no subdirectory)
+        assert "[default.bees-123: Test Subtask](default.bees-123.md)" in result
 
 
 class TestGenerateIndex:
@@ -494,9 +494,9 @@ Task body.""")
         assert "## Tasks" in result
         assert "## Subtasks" in result
 
-        # Verify content with clickable links
-        assert "[bees-ep1: Sample Epic](tickets/epics/bees-ep1.md) (open)" in result
-        assert "[bees-ts1: Sample Task](tickets/tasks/bees-ts1.md) (open)" in result
+        # Verify content with clickable links (flat storage format)
+        assert "[default.bees-ep1: Sample Epic](default.bees-ep1.md) (open)" in result
+        assert "[default.bees-ts1: Sample Task](default.bees-ts1.md) (open)" in result
         assert "*No tickets found*" in result  # For subtasks section
 
     def test_generate_index_empty_directory(self, tmp_path, monkeypatch):
@@ -540,7 +540,7 @@ updated_at: '2026-01-30T11:00:00'
 Completed.""")
 
         result = generate_index(status_filter='open')
-        assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
+        assert "[default.bees-ep1: Open Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ep2" not in result
 
     def test_generate_index_with_type_filter(self, tmp_path, monkeypatch):
@@ -574,7 +574,7 @@ updated_at: '2026-01-30T11:00:00'
 Task.""")
 
         result = generate_index(type_filter='epic')
-        assert "[bees-ep1: Test Epic](tickets/epics/bees-ep1.md) (open)" in result
+        assert "[default.bees-ep1: Test Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ts1" not in result
 
     def test_generate_index_with_combined_filters(self, tmp_path, monkeypatch):
@@ -619,12 +619,12 @@ updated_at: '2026-01-30T12:00:00'
 Open task.""")
 
         result = generate_index(status_filter='open', type_filter='epic')
-        assert "[bees-ep1: Open Epic](tickets/epics/bees-ep1.md) (open)" in result
+        assert "[default.bees-ep1: Open Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ep2" not in result
         assert "default.bees-ts1" not in result
 
-    def test_hierarchical_paths_for_all_types(self, tmp_path, monkeypatch):
-        """Should generate hierarchical paths (tickets/{type}s/) for all ticket types."""
+    def test_flat_paths_for_all_types(self, tmp_path, monkeypatch):
+        """Should generate flat paths ({id}.md) for all ticket types."""
         tickets_dir = tmp_path / "tickets"
         epics_dir = tickets_dir / "epics"
         tasks_dir = tickets_dir / "tasks"
@@ -671,18 +671,18 @@ Subtask.""")
 
         result = generate_index()
 
-        # Verify hierarchical paths for all types
-        assert "tickets/epics/bees-ep9.md" in result
-        assert "tickets/tasks/bees-ts9.md" in result
-        assert "tickets/subtasks/bees-sb9.md" in result
+        # Verify flat paths for all types (no type subdirectories)
+        assert "default.bees-ep9.md" in result
+        assert "default.bees-ts9.md" in result
+        assert "default.bees-sb9.md" in result
 
-        # Verify flat paths are NOT used
-        assert "tickets/bees-ep9.md" not in result
-        assert "tickets/bees-ts9.md" not in result
-        assert "tickets/bees-sb9.md" not in result
+        # Verify hierarchical paths are NOT used
+        assert "tickets/epics/" not in result
+        assert "tickets/tasks/" not in result
+        assert "tickets/subtasks/" not in result
 
-    def test_hierarchical_paths_with_empty_sections(self, tmp_path, monkeypatch):
-        """Should handle empty sections correctly with hierarchical structure."""
+    def test_flat_paths_with_empty_sections(self, tmp_path, monkeypatch):
+        """Should handle empty sections correctly with flat structure."""
         tickets_dir = tmp_path / "tickets"
         epics_dir = tickets_dir / "epics"
         tasks_dir = tickets_dir / "tasks"
@@ -706,14 +706,14 @@ Solo epic.""")
 
         result = generate_index()
 
-        # Should have hierarchical path for epic
-        assert "tickets/epics/bees-on1.md" in result
+        # Should have flat path for epic
+        assert "default.bees-on1.md" in result
 
         # Should have "No tickets found" for empty sections
         assert result.count("*No tickets found*") == 2
 
-    def test_hierarchical_paths_with_mixed_statuses(self, tmp_path, monkeypatch):
-        """Should use hierarchical paths regardless of ticket status."""
+    def test_flat_paths_with_mixed_statuses(self, tmp_path, monkeypatch):
+        """Should use flat paths regardless of ticket status."""
         tickets_dir = tmp_path / "tickets"
         epics_dir = tickets_dir / "epics"
 
@@ -755,13 +755,13 @@ Closed.""")
 
         result = generate_index()
 
-        # All should use hierarchical paths regardless of status
-        assert "tickets/epics/bees-op1.md" in result
-        assert "tickets/epics/bees-pr1.md" in result
-        assert "tickets/epics/bees-cl1.md" in result
+        # All should use flat paths regardless of status
+        assert "default.bees-op1.md" in result
+        assert "default.bees-pr1.md" in result
+        assert "default.bees-cl1.md" in result
 
-    def test_hierarchical_paths_with_invalid_ids(self, tmp_path, monkeypatch):
-        """Should handle tickets with various ID formats using hierarchical paths."""
+    def test_flat_paths_with_various_ids(self, tmp_path, monkeypatch):
+        """Should handle tickets with various ID formats using flat paths."""
         tickets_dir = tmp_path / "tickets"
         tasks_dir = tickets_dir / "tasks"
 
@@ -803,10 +803,10 @@ Mixed.""")
 
         result = generate_index()
 
-        # All should use hierarchical paths with correct type subdirectory
-        assert "tickets/tasks/bees-abc.md" in result
-        assert "tickets/tasks/bees-123.md" in result
-        assert "tickets/tasks/bees-x9z.md" in result
+        # All should use flat paths (no type subdirectories)
+        assert "default.bees-abc.md" in result
+        assert "default.bees-123.md" in result
+        assert "default.bees-x9z.md" in result
 
 
 class TestPerHiveIndexGeneration:
@@ -1120,3 +1120,580 @@ Closed.""")
         result = scan_tickets(hive_name='backend', status_filter='open')
         assert len(result["epic"]) == 1
         assert result["epic"][0].id == "backend.bees-ep1"
+
+
+class TestFlatStorageLinkGeneration:
+    """Tests for flat storage link generation (Task bees-qjt92)."""
+
+    def test_format_uses_flat_link_paths(self):
+        """Should use relative paths without type subdirectories for flat storage."""
+        epic1 = Epic(id="backend.bees-abc1", type="epic", title="Test Epic", status="open")
+        task1 = Task(id="frontend.bees-xyz9", type="task", title="Test Task", status="open")
+        subtask1 = Subtask(id="backend.bees-123a", type="subtask", title="Test Subtask", parent="backend.bees-abc1", status="open")
+
+        tickets = {
+            "epic": [epic1],
+            "task": [task1],
+            "subtask": [subtask1]
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Links should use flat format: {ticket_id}.md (no type subdirectories)
+        assert "[backend.bees-abc1: Test Epic](backend.bees-abc1.md)" in result
+        assert "[frontend.bees-xyz9: Test Task](frontend.bees-xyz9.md)" in result
+        assert "[backend.bees-123a: Test Subtask](backend.bees-123a.md)" in result
+
+        # Should NOT contain old hierarchical paths
+        assert "tickets/epics/" not in result
+        assert "tickets/tasks/" not in result
+        assert "tickets/subtasks/" not in result
+
+    def test_format_flat_links_with_legacy_ids(self):
+        """Should use flat links even for tickets without hive prefix."""
+        epic1 = Epic(id="default.bees-ep1", type="epic", title="Legacy Epic", status="open")
+
+        tickets = {
+            "epic": [epic1],
+            "task": [],
+            "subtask": []
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Should use simple relative path
+        assert "[default.bees-ep1: Legacy Epic](default.bees-ep1.md)" in result
+
+    def test_format_flat_links_work_from_hive_root(self):
+        """Links should work from {hive_name}/index.md to {hive_name}/{ticket_id}.md."""
+        # This is a documentation test - links are relative from index location
+        epic1 = Epic(id="backend.bees-abc1", type="epic", title="Backend Epic", status="open")
+
+        tickets = {
+            "epic": [epic1],
+            "task": [],
+            "subtask": []
+        }
+
+        result = format_index_markdown(tickets)
+
+        # Link format should be relative path from index
+        # When index is at backend/index.md, link backend.bees-abc1.md points to backend/backend.bees-abc1.md
+        assert "(backend.bees-abc1.md)" in result
+
+    def test_format_flat_links_multiple_tickets(self):
+        """Should generate flat links for multiple tickets correctly."""
+        epic1 = Epic(id="backend.bees-001", type="epic", title="First Epic", status="open")
+        epic2 = Epic(id="backend.bees-002", type="epic", title="Second Epic", status="closed")
+        task1 = Task(id="frontend.bees-101", type="task", title="First Task", status="open")
+
+        tickets = {
+            "epic": [epic1, epic2],
+            "task": [task1],
+            "subtask": []
+        }
+
+        result = format_index_markdown(tickets)
+
+        # All links should use flat format
+        assert "[backend.bees-001: First Epic](backend.bees-001.md)" in result
+        assert "[backend.bees-002: Second Epic](backend.bees-002.md)" in result
+        assert "[frontend.bees-101: First Task](frontend.bees-101.md)" in result
+
+
+class TestIsIndexStaleFlatStorage:
+    """Tests for is_index_stale() with flat storage (Task bees-qjt92)."""
+
+    def test_is_index_stale_scans_hive_root(self, tmp_path, monkeypatch):
+        """Should scan hive root directory for ticket files, not subdirectories."""
+        import json
+        from src.index_generator import is_index_stale
+
+        # Create hive with flat storage
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create index.md
+        index_path = backend_hive / "index.md"
+        index_path.write_text("# Old Index")
+
+        # Create ticket files in hive root (flat storage)
+        (backend_hive / "backend.bees-abc1.md").write_text("""---
+id: backend.bees-abc1
+type: epic
+title: Test Epic
+bees_version: '1.1'
+---
+Epic.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Make ticket newer than index
+        import time
+        time.sleep(0.01)
+        (backend_hive / "backend.bees-abc1.md").write_text("""---
+id: backend.bees-abc1
+type: epic
+title: Updated Epic
+bees_version: '1.1'
+---
+Updated.""")
+
+        # Should detect stale index
+        assert is_index_stale("backend") is True
+
+    def test_is_index_stale_skips_index_itself(self, tmp_path, monkeypatch):
+        """Should skip index.md when checking modification times."""
+        import json
+        from src.index_generator import is_index_stale
+        import time
+
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create old ticket
+        (backend_hive / "backend.bees-abc1.md").write_text("""---
+id: backend.bees-abc1
+type: epic
+bees_version: '1.1'
+---
+Epic.""")
+
+        time.sleep(0.01)
+
+        # Create index (newer than ticket)
+        index_path = backend_hive / "index.md"
+        index_path.write_text("# Index")
+
+        # Create config
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Index is newer than tickets, should not be stale
+        assert is_index_stale("backend") is False
+
+    def test_is_index_stale_no_subdirectory_scan(self, tmp_path, monkeypatch):
+        """Should NOT scan type subdirectories (epics/, tasks/, subtasks/)."""
+        import json
+        from src.index_generator import is_index_stale
+        import time
+
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create index
+        index_path = backend_hive / "index.md"
+        index_path.write_text("# Index")
+
+        time.sleep(0.01)
+
+        # Create OLD-STYLE subdirectories with tickets (should be ignored)
+        epics_dir = backend_hive / "epics"
+        epics_dir.mkdir()
+        (epics_dir / "backend.bees-old.md").write_text("""---
+id: backend.bees-old
+type: epic
+---
+Old style.""")
+
+        # Create config
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Should NOT detect stale because subdirectories are not scanned
+        assert is_index_stale("backend") is False
+
+    def test_is_index_stale_empty_hive_directory(self, tmp_path, monkeypatch):
+        """Should handle empty hive directory (no tickets) gracefully."""
+        import json
+        from src.index_generator import is_index_stale
+
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create index in empty hive
+        index_path = backend_hive / "index.md"
+        index_path.write_text("# Index")
+
+        # Create config
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Empty hive with index should not be stale
+        assert is_index_stale("backend") is False
+
+    def test_is_index_stale_ignores_non_md_files(self, tmp_path, monkeypatch):
+        """Should ignore non-.md files in hive root when checking staleness."""
+        import json
+        from src.index_generator import is_index_stale
+        import time
+
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create old ticket
+        (backend_hive / "backend.bees-abc1.md").write_text("""---
+id: backend.bees-abc1
+type: epic
+bees_version: '1.1'
+---
+Epic.""")
+
+        time.sleep(0.01)
+
+        # Create index (newer than ticket)
+        index_path = backend_hive / "index.md"
+        index_path.write_text("# Index")
+
+        time.sleep(0.01)
+
+        # Create non-.md files that are newer than index (should be ignored)
+        (backend_hive / "README.txt").write_text("readme")
+        (backend_hive / "notes.json").write_text("{}")
+        (backend_hive / ".hidden").write_text("hidden")
+        (backend_hive / "config.yaml").write_text("config: true")
+
+        # Create config
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Should NOT be stale - non-.md files should be ignored
+        assert is_index_stale("backend") is False
+
+
+class TestFlatStorageExclusions:
+    """Tests for /eggs and /evicted directory exclusion in flat storage."""
+
+    def test_scan_tickets_excludes_eggs_directory(self, tmp_path, monkeypatch):
+        """Should exclude tickets in /eggs subdirectory from scan."""
+        import json
+
+        # Create hive directory
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
+
+        # Create valid ticket in hive root
+        (backend_hive / "backend.bees-abc.md").write_text("""---
+id: backend.bees-abc
+type: epic
+title: Valid Epic
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Valid epic in hive root.""")
+
+        # Create /eggs subdirectory with ticket (should be excluded)
+        eggs_dir = backend_hive / "eggs"
+        eggs_dir.mkdir()
+        (eggs_dir / "backend.bees-egg.md").write_text("""---
+id: backend.bees-egg
+type: task
+title: Egg Template
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Template in eggs directory.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Scan tickets - should only find ticket in hive root
+        result = scan_tickets()
+        assert len(result["epic"]) == 1
+        assert len(result["task"]) == 0  # Egg template excluded
+        assert result["epic"][0].id == "backend.bees-abc"
+
+    def test_scan_tickets_excludes_evicted_directory(self, tmp_path, monkeypatch):
+        """Should exclude tickets in /evicted subdirectory from scan."""
+        import json
+
+        # Create hive directory
+        frontend_hive = tmp_path / "frontend"
+        frontend_hive.mkdir()
+
+        # Create valid ticket in hive root
+        (frontend_hive / "frontend.bees-xyz.md").write_text("""---
+id: frontend.bees-xyz
+type: task
+title: Active Task
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Active task in hive root.""")
+
+        # Create /evicted subdirectory with archived ticket (should be excluded)
+        evicted_dir = frontend_hive / "evicted"
+        evicted_dir.mkdir()
+        (evicted_dir / "frontend.bees-old1.md").write_text("""---
+id: frontend.bees-old1
+type: epic
+title: Archived Epic
+status: completed
+bees_version: '1.1'
+created_at: '2026-01-29T10:00:00'
+updated_at: '2026-01-30T12:00:00'
+---
+
+Archived epic in evicted directory.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "frontend": {
+                    "path": str(frontend_hive),
+                    "display_name": "Frontend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Scan tickets - should only find active ticket, not archived
+        result = scan_tickets()
+        assert len(result["task"]) == 1
+        assert len(result["epic"]) == 0  # Archived epic excluded
+        assert result["task"][0].id == "frontend.bees-xyz"
+
+    def test_scan_tickets_excludes_both_eggs_and_evicted(self, tmp_path, monkeypatch):
+        """Should exclude both /eggs and /evicted subdirectories simultaneously."""
+        import json
+
+        # Create hive directory
+        hive = tmp_path / "test_hive"
+        hive.mkdir()
+
+        # Create valid tickets in hive root
+        (hive / "test_hive.bees-001.md").write_text("""---
+id: test_hive.bees-001
+type: epic
+title: Active Epic
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Active epic.""")
+
+        (hive / "test_hive.bees-002.md").write_text("""---
+id: test_hive.bees-002
+type: task
+title: Active Task
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T11:00:00'
+updated_at: '2026-01-30T11:00:00'
+---
+
+Active task.""")
+
+        # Create /eggs directory with template
+        eggs_dir = hive / "eggs"
+        eggs_dir.mkdir()
+        (eggs_dir / "test_hive.bees-egg1.md").write_text("""---
+id: test_hive.bees-egg1
+type: subtask
+title: Template Subtask
+bees_version: '1.1'
+---
+
+Template.""")
+
+        # Create /evicted directory with archived ticket
+        evicted_dir = hive / "evicted"
+        evicted_dir.mkdir()
+        (evicted_dir / "test_hive.bees-old1.md").write_text("""---
+id: test_hive.bees-old1
+type: epic
+title: Archived Epic
+status: completed
+bees_version: '1.1'
+---
+
+Archived.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "test_hive": {
+                    "path": str(hive),
+                    "display_name": "Test Hive"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Scan tickets - should only find active tickets in hive root
+        result = scan_tickets()
+        assert len(result["epic"]) == 1
+        assert len(result["task"]) == 1
+        assert len(result["subtask"]) == 0  # Template excluded
+        assert result["epic"][0].id == "test_hive.bees-001"
+        assert result["task"][0].id == "test_hive.bees-002"
+
+    def test_generate_index_excludes_eggs_and_evicted(self, tmp_path, monkeypatch):
+        """Generated index should not include tickets from /eggs or /evicted."""
+        import json
+
+        # Create hive
+        hive = tmp_path / "my_hive"
+        hive.mkdir()
+
+        # Valid ticket in root
+        (hive / "my_hive.bees-001.md").write_text("""---
+id: my_hive.bees-001
+type: epic
+title: Visible Epic
+status: open
+bees_version: '1.1'
+created_at: '2026-01-30T10:00:00'
+updated_at: '2026-01-30T10:00:00'
+---
+
+Visible.""")
+
+        # Ticket in /eggs (excluded)
+        eggs_dir = hive / "eggs"
+        eggs_dir.mkdir()
+        (eggs_dir / "my_hive.bees-egg.md").write_text("""---
+id: my_hive.bees-egg
+type: task
+title: Hidden Egg
+bees_version: '1.1'
+---
+
+Hidden.""")
+
+        # Ticket in /evicted (excluded)
+        evicted_dir = hive / "evicted"
+        evicted_dir.mkdir()
+        (evicted_dir / "my_hive.bees-old.md").write_text("""---
+id: my_hive.bees-old
+type: subtask
+title: Hidden Archive
+bees_version: '1.1'
+---
+
+Hidden.""")
+
+        # Create config
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "my_hive": {
+                    "path": str(hive),
+                    "display_name": "My Hive"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
+        # Generate index
+        result = generate_index()
+
+        # Should only include visible epic
+        assert "my_hive.bees-001" in result
+        assert "Visible Epic" in result
+
+        # Should NOT include eggs or evicted tickets
+        assert "my_hive.bees-egg" not in result
+        assert "Hidden Egg" not in result
+        assert "my_hive.bees-old" not in result
+        assert "Hidden Archive" not in result

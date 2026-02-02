@@ -201,6 +201,7 @@ class TestReadTicket:
 id: default.bees-250
 type: epic
 title: Core Schema
+bees_version: '1.1'
 labels:
   - open
   - p0
@@ -227,6 +228,7 @@ Implementation of the core schema.""")
 id: default.bees-jty
 type: task
 title: Design Schema
+bees_version: '1.1'
 parent: default.bees-250
 up_dependencies:
   - default.bees-abc
@@ -249,6 +251,7 @@ Design the ticket schema.""")
 id: default.bees-xyz
 type: subtask
 title: Write code
+bees_version: '1.1'
 parent: default.bees-jty
 ---
 
@@ -268,6 +271,7 @@ Write the implementation.""")
 id: default.bees-250
 type: epic
 title: Test
+bees_version: '1.1'
 created_at: 2026-01-30T10:00:00
 ---
 
@@ -307,6 +311,7 @@ Body.""")
 id: default.bees-250
 type: epic
 title: Test Epic
+bees_version: '1.1'
 custom_field: some_value
 another_extra: 123
 labels:
@@ -324,3 +329,71 @@ Body text.""")
         # Extra fields should be filtered out
         assert not hasattr(ticket, "custom_field")
         assert not hasattr(ticket, "another_extra")
+
+    def test_read_with_bees_version(self, tmp_path):
+        """Should parse and preserve bees_version field."""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("""---
+id: default.bees-250
+type: epic
+title: Versioned Epic
+bees_version: '1.1'
+---
+
+Epic with schema version.""")
+
+        ticket = read_ticket(file_path)
+
+        assert isinstance(ticket, Epic)
+        assert ticket.bees_version == '1.1'
+
+    def test_read_without_bees_version_raises_error(self, tmp_path):
+        """Should raise ValidationError for tickets without bees_version field."""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("""---
+id: default.bees-250
+type: task
+title: Task Without Version
+---
+
+Task without schema version.""")
+
+        with pytest.raises(ValidationError, match="missing 'bees_version' field"):
+            read_ticket(file_path)
+
+    def test_bees_version_validation_error_message(self, tmp_path):
+        """Should provide clear error message when bees_version is missing."""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("""---
+id: default.bees-abc
+type: epic
+title: Epic Without Version
+---
+
+Body content.""")
+
+        with pytest.raises(ValidationError) as exc_info:
+            read_ticket(file_path)
+
+        assert "not a valid Bees ticket" in str(exc_info.value)
+        assert "bees_version" in str(exc_info.value)
+
+    def test_bees_version_preserved_through_read_write_cycle(self, tmp_path):
+        """Should preserve bees_version field through read/write cycle."""
+        file_path = tmp_path / "test.md"
+        file_path.write_text("""---
+id: default.bees-250
+type: task
+title: Test Task
+bees_version: '1.1'
+parent: default.bees-abc
+---
+
+Task description.""")
+
+        ticket = read_ticket(file_path)
+
+        # Verify bees_version is preserved
+        assert ticket.bees_version == '1.1'
+        assert isinstance(ticket, Task)
+        assert ticket.id == "default.bees-250"

@@ -36,7 +36,8 @@ def generate_demo_epics() -> dict[str, str]:
         labels=["backend", "security", "high-priority"],
         status="open",
         priority=0,
-        owner="backend-team"
+        owner="backend-team",
+        hive_name="default"
     )
 
     # Epic 2: In progress, frontend
@@ -46,7 +47,8 @@ def generate_demo_epics() -> dict[str, str]:
         labels=["frontend", "ui", "analytics"],
         status="in progress",
         priority=1,
-        owner="frontend-team"
+        owner="frontend-team",
+        hive_name="default"
     )
 
     # Epic 3: Completed, full-stack
@@ -56,7 +58,8 @@ def generate_demo_epics() -> dict[str, str]:
         labels=["backend", "devops", "infrastructure"],
         status="completed",
         priority=0,
-        owner="platform-team"
+        owner="platform-team",
+        hive_name="default"
     )
 
     # Epic 4: Open, low priority, documentation
@@ -66,7 +69,8 @@ def generate_demo_epics() -> dict[str, str]:
         labels=["documentation", "developer-experience"],
         status="open",
         priority=3,
-        owner="docs-team"
+        owner="docs-team",
+        hive_name="default"
     )
 
     # Epic 5: In progress, mobile
@@ -76,7 +80,8 @@ def generate_demo_epics() -> dict[str, str]:
         labels=["mobile", "ios", "android"],
         status="in progress",
         priority=1,
-        owner="mobile-team"
+        owner="mobile-team",
+        hive_name="default"
     )
 
     print(f"✓ Generated {len(epics)} epics")
@@ -102,7 +107,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         labels=["backend", "database", "schema"],
         status="completed",
         priority=0,
-        owner="alice@example.com"
+        owner="alice@example.com",
+        hive_name="default"
     )
 
     tasks["auth_api"] = create_task(
@@ -113,7 +119,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         status="in progress",
         priority=0,
         owner="bob@example.com",
-        up_dependencies=[tasks["auth_db_schema"]]  # Blocked by database schema
+        up_dependencies=[tasks["auth_db_schema"]],  # Blocked by database schema
+        hive_name="default"
     )
 
     tasks["auth_jwt"] = create_task(
@@ -124,7 +131,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         status="open",
         priority=1,
         owner="alice@example.com",
-        up_dependencies=[tasks["auth_api"]]  # Blocked by API implementation
+        up_dependencies=[tasks["auth_api"]],  # Blocked by API implementation
+        hive_name="default"
     )
 
     # Tasks for dashboard epic
@@ -135,7 +143,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "ui", "react"],
         status="completed",
         priority=1,
-        owner="carol@example.com"
+        owner="carol@example.com",
+        hive_name="default"
     )
 
     tasks["dashboard_analytics"] = create_task(
@@ -146,7 +155,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         status="in progress",
         priority=1,
         owner="dave@example.com",
-        up_dependencies=[tasks["dashboard_layout"]]  # Blocked by layout
+        up_dependencies=[tasks["dashboard_layout"]],  # Blocked by layout
+        hive_name="default"
     )
 
     # Tasks for api_core epic (completed)
@@ -157,7 +167,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         labels=["backend", "logging", "monitoring"],
         status="completed",
         priority=0,
-        owner="eve@example.com"
+        owner="eve@example.com",
+        hive_name="default"
     )
 
     tasks["api_error_handling"] = create_task(
@@ -167,7 +178,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         labels=["backend", "error-handling"],
         status="completed",
         priority=0,
-        owner="frank@example.com"
+        owner="frank@example.com",
+        hive_name="default"
     )
 
     # Tasks for docs epic
@@ -178,7 +190,8 @@ def generate_demo_tasks(epics: dict[str, str]) -> dict[str, str]:
         labels=["documentation", "setup"],
         status="open",
         priority=3,
-        owner="grace@example.com"
+        owner="grace@example.com",
+        hive_name="default"
     )
 
     print(f"✓ Generated {len(tasks)} tasks")
@@ -204,7 +217,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["database", "migration"],
         status="completed",
         priority=0,
-        owner="alice@example.com"
+        owner="alice@example.com",
+        hive_name="default"
     )
 
     subtasks["auth_sessions_table"] = create_subtask(
@@ -214,7 +228,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["database", "migration"],
         status="completed",
         priority=0,
-        owner="alice@example.com"
+        owner="alice@example.com",
+        hive_name="default"
     )
 
     # Subtasks for auth_api (in progress)
@@ -225,7 +240,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "api", "endpoint"],
         status="completed",
         priority=0,
-        owner="bob@example.com"
+        owner="bob@example.com",
+        hive_name="default"
     )
 
     subtasks["auth_register_endpoint"] = create_subtask(
@@ -235,7 +251,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "api", "endpoint"],
         status="in progress",
         priority=0,
-        owner="bob@example.com"
+        owner="bob@example.com",
+        hive_name="default"
     )
 
     subtasks["auth_logout_endpoint"] = create_subtask(
@@ -245,7 +262,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "api", "endpoint"],
         status="open",
         priority=1,
-        owner="bob@example.com"
+        owner="bob@example.com",
+        hive_name="default"
     )
 
     # Subtasks for auth_jwt (open)
@@ -256,7 +274,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "security", "jwt"],
         status="open",
         priority=1,
-        owner="alice@example.com"
+        owner="alice@example.com",
+        hive_name="default"
     )
 
     subtasks["jwt_validation"] = create_subtask(
@@ -266,7 +285,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "security", "jwt"],
         status="open",
         priority=1,
-        owner="alice@example.com"
+        owner="alice@example.com",
+        hive_name="default"
     )
 
     # Subtasks for dashboard_layout (completed)
@@ -277,7 +297,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "ui", "component"],
         status="completed",
         priority=1,
-        owner="carol@example.com"
+        owner="carol@example.com",
+        hive_name="default"
     )
 
     subtasks["dashboard_header"] = create_subtask(
@@ -287,7 +308,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "ui", "component"],
         status="completed",
         priority=1,
-        owner="carol@example.com"
+        owner="carol@example.com",
+        hive_name="default"
     )
 
     # Subtasks for dashboard_analytics (in progress)
@@ -298,7 +320,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "charts", "visualization"],
         status="in progress",
         priority=1,
-        owner="dave@example.com"
+        owner="dave@example.com",
+        hive_name="default"
     )
 
     subtasks["analytics_bar_chart"] = create_subtask(
@@ -308,7 +331,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "charts", "visualization"],
         status="open",
         priority=2,
-        owner="dave@example.com"
+        owner="dave@example.com",
+        hive_name="default"
     )
 
     subtasks["analytics_pie_chart"] = create_subtask(
@@ -318,7 +342,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["frontend", "charts", "visualization"],
         status="open",
         priority=2,
-        owner="dave@example.com"
+        owner="dave@example.com",
+        hive_name="default"
     )
 
     # Subtasks for api_logging (completed)
@@ -329,7 +354,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "logging", "configuration"],
         status="completed",
         priority=0,
-        owner="eve@example.com"
+        owner="eve@example.com",
+        hive_name="default"
     )
 
     subtasks["logging_middleware"] = create_subtask(
@@ -339,7 +365,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["backend", "logging", "middleware"],
         status="completed",
         priority=0,
-        owner="eve@example.com"
+        owner="eve@example.com",
+        hive_name="default"
     )
 
     # Subtasks for docs_setup (open)
@@ -350,7 +377,8 @@ def generate_demo_subtasks(tasks: dict[str, str]) -> dict[str, str]:
         labels=["documentation", "setup", "tooling"],
         status="open",
         priority=3,
-        owner="grace@example.com"
+        owner="grace@example.com",
+        hive_name="default"
     )
 
     print(f"✓ Generated {len(subtasks)} subtasks")

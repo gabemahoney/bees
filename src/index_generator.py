@@ -18,8 +18,8 @@ def scan_tickets(
     """
     Scan tickets/ directory and load all ticket metadata.
 
-    Recursively scans the tickets directory structure (epics/, tasks/, subtasks/)
-    and loads all ticket files, grouping them by type. Optionally filters results
+    Scans hive root directories (flat storage) and loads all ticket files,
+    grouping them by type from YAML frontmatter. Optionally filters results
     by status, type, and/or hive.
 
     Args:
@@ -145,9 +145,9 @@ def format_index_markdown(tickets: dict[str, list[Ticket]], include_timestamp: b
             sorted_tickets = sorted(ticket_list, key=lambda t: t.id)
 
             for ticket in sorted_tickets:
-                # Format: - [ticket-id: title](tickets/{type}s/ticket-id.md) (status)
+                # Format: - [ticket-id: title](ticket-id.md) (status)
                 status = ticket.status or "unknown"
-                line = f"- [{ticket.id}: {ticket.title}](tickets/{ticket.type}s/{ticket.id}.md) ({status})"
+                line = f"- [{ticket.id}: {ticket.title}]({ticket.id}.md) ({status})"
 
                 # Add parent info for subtasks
                 if ticket.parent:
@@ -212,15 +212,14 @@ def is_index_stale(hive_name: str | None = None) -> bool:
         # Get index modification time
         index_mtime = index_path.stat().st_mtime
 
-        # Check ticket files in this hive
-        for ticket_type in ["epic", "task", "subtask"]:
-            type_dir = hive_path / f"{ticket_type}s"
-            if not type_dir.exists():
+        # Check ticket files in hive root (flat storage)
+        for ticket_path in hive_path.glob("*.md"):
+            # Skip index.md itself
+            if ticket_path.name == "index.md":
                 continue
-
-            for ticket_path in type_dir.glob("*.md"):
-                if ticket_path.stat().st_mtime > index_mtime:
-                    return True
+            # Check if this is a bees ticket (has bees_version: 1.1)
+            if ticket_path.stat().st_mtime > index_mtime:
+                return True
 
     return False
 

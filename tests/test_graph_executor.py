@@ -214,14 +214,14 @@ class TestMissingTickets:
         with caplog.at_level(logging.WARNING):
             result = executor.traverse(sample_tickets, {'default.bees-xxx'}, 'parent')
         assert result == set()
-        assert "Ticket bees-xxx not found" in caplog.text
+        assert "Ticket default.bees-xxx not found" in caplog.text
 
     def test_mixed_existing_and_nonexistent(self, executor, sample_tickets, caplog):
         with caplog.at_level(logging.WARNING):
             result = executor.traverse(sample_tickets, {'default.bees-tk1', 'default.bees-xxx'}, 'parent')
         # Should return parent of tk1, skip nonexistent
         assert result == {'default.bees-ep1'}
-        assert "Ticket bees-xxx not found" in caplog.text
+        assert "Ticket default.bees-xxx not found" in caplog.text
 
     def test_all_nonexistent_tickets(self, executor, sample_tickets, caplog):
         with caplog.at_level(logging.WARNING):

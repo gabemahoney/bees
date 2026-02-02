@@ -55,9 +55,36 @@ Bees supports multiple "hives" - separate ticket collections within your reposit
 **Hive Structure:**
 
 Each hive contains:
+- **Ticket files** (root directory) - All tickets (epics, tasks, subtasks) stored as `.md` files in hive root with flat storage
 - `/eggs` - Reserved for future features (e.g., ticket templates, pre-configured workflows)
 - `/evicted` - Archived/completed tickets for historical reference
 - `/.hive/identity.json` - Identity marker file containing hive metadata for automatic recovery if the hive is moved
+
+**Flat Storage Architecture:**
+
+Bees version 1.1 uses flat storage architecture:
+- All ticket types (epics, tasks, subtasks) are stored directly in the hive root directory
+- No type-specific subdirectories (`/epics`, `/tasks`, `/subtasks`)
+- Ticket type is determined from the `type` field in YAML frontmatter
+- Each ticket file is named `{ticket_id}.md` (e.g., `backend.bees-abc1.md`)
+- The `bees_version: 1.1` field in YAML frontmatter identifies files as tickets
+
+**Index Link Format:**
+
+The auto-generated `index.md` file uses relative paths that work with the flat storage structure:
+- Links use the format `[ticket-id: title](ticket-id.md)` (relative path from index location)
+- Example: `[backend.bees-abc1: Add login API](backend.bees-abc1.md)`
+- Links work from `{hive_name}/index.md` to `{hive_name}/{ticket_id}.md`
+- No type subdirectories in links (e.g., `tickets/tasks/` is NOT used)
+
+**Test Coverage:**
+
+The `test_generate_demo_tickets.py` test suite validates the flat storage architecture:
+- Verifies all ticket types (epics, tasks, subtasks) are stored in hive root directory (`default/`)
+- Confirms tickets are NOT in old type-specific subdirectories (`default/epics/`, `default/tasks/`, `default/subtasks/`)
+- Tests edge cases like missing ticket files and validates graceful error handling
+- Validates demo ticket generation produces correct relationships, dependencies, and metadata
+- Reference Task bees-kr4km and Epic bees-yuql for implementation details
 
 The `.hive/identity.json` file contains:
 - `normalized_name` - The normalized hive identifier
@@ -226,6 +253,28 @@ All tickets use the hive-prefixed format: `hive_name.bees-abc1`
 - **REQUIRED:** The `hive_name` parameter is mandatory for all `create_ticket()` calls
 - Omitting `hive_name` will result in a `ValueError`
 
+### Schema Versioning
+
+All tickets include a `bees_version` field in their YAML frontmatter for schema versioning:
+
+- **Purpose:** Tracks the schema version at ticket creation time, enabling schema evolution and backward compatibility
+- **Current Version:** 1.1
+- **Location:** YAML frontmatter (automatically set on ticket creation)
+- **Automatic:** The field is automatically added when creating tickets via `create_epic()`, `create_task()`, or `create_subtask()`
+- **Required:** All ticket markdown files MUST include the `bees_version` field. Files without this field will be rejected as invalid Bees tickets.
+
+Example ticket frontmatter:
+```yaml
+---
+id: backend.bees-abc1
+type: task
+title: Example Task
+bees_version: '1.1'
+---
+```
+
+**Validation:** The `read_ticket()` function validates that markdown files contain the `bees_version` field in frontmatter. Files without this field will raise a `ValidationError` with a clear message indicating the file is not a valid Bees ticket. This validation ensures proper ticket identification in the flat storage architecture.
+
 **ID Parsing:**
 
 The `parse_ticket_id()` utility function splits ticket IDs to extract the hive name and base ID:
@@ -244,10 +293,15 @@ The parser handles edge cases:
 
 **Path Resolution:**
 
-All path resolution requires hive-prefixed IDs:
-- Format: `/path/to/{hive_name}/epics/{hive_name}.bees-abc1.md`
+All path resolution requires hive-prefixed IDs and validates tickets using YAML frontmatter:
+- Format: `/path/to/{hive_name}/{hive_name}.bees-abc1.md` (flat storage in hive root)
 - Unprefixed IDs (e.g., `bees-abc1`) are not supported and will raise `ValueError`
 - All ticket IDs must include the hive prefix separated by a dot (e.g., `backend.bees-abc1`)
+- Ticket type is inferred from YAML frontmatter `type` field, not from directory structure
+- The `bees_version` field in YAML frontmatter is required to identify valid tickets
+- Files without `bees_version` are treated as non-ticket markdown files and ignored
+- `infer_ticket_type_from_id()` scans hive root and reads YAML to determine ticket type
+- `list_tickets()` scans hive root and filters by `bees_version` presence and optional `type` field
 
 ## MCP Commands
 

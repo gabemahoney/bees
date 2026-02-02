@@ -27,6 +27,7 @@ class Ticket:
     owner: str | None = None
     priority: int | None = None
     status: str | None = None
+    bees_version: str | None = None
 
 
 @dataclass
