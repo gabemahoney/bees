@@ -191,7 +191,7 @@ update_ticket(ticket_id="task-002", up_dependencies=["task-001"])
 # Delete ticket with children (automatically routes to backend hive, always cascades)
 delete_ticket(ticket_id="backend.bees-abc1")
 
-# Register query
+# Register a static query (validated at registration)
 add_named_query(name="open_tasks", query_yaml="- - type=task\n  - status=open")
 
 # Execute query (all hives)
