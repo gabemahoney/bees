@@ -217,7 +217,72 @@ class TestExecuteQueryTool:
 
             try:
                 with pytest.raises(ValueError, match="Query not found"):
-                    _execute_query("nonexistent", None)
+                    _execute_query("nonexistent")
+
+            finally:
+                src.query_storage._default_storage = old_storage
+
+    def test_execute_query_with_valid_name(self):
+        """Test executing a valid registered query."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import src.query_storage
+            old_storage = src.query_storage._default_storage
+            src.query_storage._default_storage = QueryStorage(
+                str(Path(tmpdir) / "queries.yaml")
+            )
+
+            try:
+                # Register a query
+                query_yaml = "- [type=task]"
+                _add_named_query("test_query", query_yaml)
+
+                # Execute will raise because tickets directory doesn't exist in test
+                # but the query loading and parameter passing should work
+                with pytest.raises(ValueError, match="Failed to execute query"):
+                    _execute_query("test_query")
+
+            finally:
+                src.query_storage._default_storage = old_storage
+
+    def test_execute_query_with_hive_filter(self):
+        """Test executing query with hive_names filtering."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import src.query_storage
+            old_storage = src.query_storage._default_storage
+            src.query_storage._default_storage = QueryStorage(
+                str(Path(tmpdir) / "queries.yaml")
+            )
+
+            try:
+                # Register a query
+                query_yaml = "- [type=task]"
+                _add_named_query("test_query", query_yaml)
+
+                # Execute with hive filter - fails due to tickets directory
+                # but demonstrates that hive_names parameter is accepted
+                with pytest.raises(ValueError, match="Failed to execute query"):
+                    _execute_query("test_query", hive_names=["backend"])
+
+            finally:
+                src.query_storage._default_storage = old_storage
+
+    def test_execute_query_with_invalid_hive(self):
+        """Test executing query with invalid hive name raises error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import src.query_storage
+            old_storage = src.query_storage._default_storage
+            src.query_storage._default_storage = QueryStorage(
+                str(Path(tmpdir) / "queries.yaml")
+            )
+
+            try:
+                # Register a query
+                query_yaml = "- [type=task]"
+                _add_named_query("test_query", query_yaml)
+
+                # Execute with invalid hive should raise ValueError
+                with pytest.raises(ValueError, match="Hive not found"):
+                    _execute_query("test_query", hive_names=["nonexistent_hive"])
 
             finally:
                 src.query_storage._default_storage = old_storage

@@ -130,7 +130,8 @@ Human users do not need to interact with the MCP server. These commands are prov
 - **add_named_query** - `name, query_yaml`
   - Registers reusable queries that can be executed later by `name`
   - All queries are validated when registered
-- **execute_query** - `query_name, params, hive_names`
+- **execute_query** - `query_name, hive_names`
+  - Executes a registered named query
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives
   - Default behavior: all hives included when `hive_names` is omitted
   - Validates that all specified hives exist; returns error if any hive not found

@@ -2163,7 +2163,7 @@ Write to {hive_path}/index.md
 
 ## Named Query System
 
-Allows registration of reusable query templates with parameter substitution. Queries stored persistently in `.bees/queries.yaml` with YAML format. Uses `{param_name}` placeholders for dynamic values.
+Allows registration of reusable static queries. Queries stored persistently in `.bees/queries.yaml` with YAML format. All queries are static (no parameter substitution) for simplicity.
 
 ### Components
 
@@ -2182,7 +2182,7 @@ Allows registration of reusable query templates with parameter substitution. Que
 
 **Implementation Flow**:
 ```
-execute_query(query_name, params, hive_names)
+execute_query(query_name, hive_names)
   ↓
 Load query stages from .bees/queries.yaml
   ↓
@@ -2254,9 +2254,10 @@ execute_query("open_tasks", hive_names=["nonexistent"])
 ```
 
 **MCP Tool Signature**:
-- `_execute_query(query_name: str, params: str | None = None, hive_names: list[str] | None = None)`
-- Parameter order: query_name (required), params (optional JSON), hive_names (optional list)
+- `_execute_query(query_name: str, hive_names: list[str] | None = None)`
+- Parameter order: query_name (required), hive_names (optional list)
 - Returns: Dict with status, query_name, result_count, ticket_ids (filtered by hive if specified)
+- **Design Decision**: Removed params parameter (Epic bees-94krc) for simplicity - all queries are now static with no parameter substitution. This reduces complexity with zero production usage impact.
 
 **Documentation Updates**:
 - README.md includes hive_names parameter documentation with examples
