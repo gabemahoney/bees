@@ -11,7 +11,6 @@ Complete reference for the Bees multi-stage query pipeline system.
 - [Stage Evaluation](#stage-evaluation)
 - [Regex Patterns](#regex-patterns)
 - [Named Queries](#named-queries)
-- [Parameterized Queries](#parameterized-queries)
 - [Performance Considerations](#performance-considerations)
 - [Advanced Patterns](#advanced-patterns)
 
@@ -630,115 +629,6 @@ queries = list_queries()
 print(f"Available: {', '.join(queries)}")
 ```
 
-## Parameterized Queries
-
-Parameterized queries use placeholders for dynamic values at execution time.
-
-### Placeholder Syntax
-
-Use `{param_name}` for placeholders:
-
-```yaml
-# Query template
-parameterized_filter:
-  - ['type={ticket_type}', 'label~{label_pattern}']
-```
-
-### Registering Parameterized Queries
-
-Set `validate=False` to skip validation (placeholders won't validate):
-
-```python
-query_yaml = """
-- ['type={ticket_type}', 'label~{label_pattern}']
-"""
-add_named_query(
-    name="type_label_filter",
-    query_yaml=query_yaml,
-    validate=False  # Required for parameterized queries
-)
-```
-
-### Executing with Parameters
-
-Pass parameter values as JSON string:
-
-```python
-params = '{"ticket_type": "task", "label_pattern": "beta"}'
-result = execute_query("type_label_filter", params=params)
-# Executes: [['type=task', 'label~beta']]
-```
-
-### Parameter Substitution
-
-Parameters are substituted before query execution:
-
-**Template**:
-```yaml
-- ['type={type}', 'label~{label}']
-- ['{relationship}']
-```
-
-**Parameters**:
-```json
-{
-  "type": "epic",
-  "label": "beta",
-  "relationship": "children"
-}
-```
-
-**Executed query**:
-```yaml
-- ['type=epic', 'label~beta']
-- ['children']
-```
-
-### Use Cases
-
-**Reusable search templates**:
-```yaml
-# Template
-search_by_type_and_label:
-  - ['type={type}', 'label~{pattern}']
-
-# Execute with different parameters
-execute_query("search_by_type_and_label",
-              params='{"type": "task", "pattern": "backend"}')
-execute_query("search_by_type_and_label",
-              params='{"type": "epic", "pattern": "feature-.*"}')
-```
-
-**Dynamic relationship traversal**:
-```yaml
-# Template
-traverse_from_id:
-  - ['id={ticket_id}']
-  - ['{direction}']
-
-# Go up
-execute_query("traverse_from_id",
-              params='{"ticket_id": "bees-tk1", "direction": "parent"}')
-
-# Go down
-execute_query("traverse_from_id",
-              params='{"ticket_id": "bees-ep1", "direction": "children"}')
-```
-
-### Parameter Validation
-
-Parameters validated at execution time:
-
-```python
-# Error: Missing required parameter
-execute_query("type_label_filter", params='{}')
-# ValueError: Missing required parameter: ticket_type
-
-# Error: Invalid JSON
-execute_query("type_label_filter", params='not json')
-# ValueError: Invalid JSON in params: ...
-```
-
 ## Performance Considerations
 
 ### Loading Strategy
@@ -904,18 +794,6 @@ Assess change impact:
 - ['label~beta', 'label~^(?!.*closed).*']   # beta AND NOT closed
 ```
 
-### Conditional Filtering
-
-Use parameterized queries with conditional logic in caller:
-
-```python
-# Python code decides which query to run
-if condition:
-    result = execute_query("high_priority_items")
-else:
-    result = execute_query("normal_items")
-```
-
 ### Aggregation Patterns
 
 **Count results**:
@@ -954,19 +832,6 @@ print(f"Open: {epic_count} epics, {task_count} tasks, {subtask_count} subtasks")
 ```yaml
 # Find tickets with no parent, children, or dependencies
 # Requires code to check all relationship fields are empty
-```
-
-### Ranking and Filtering
-
-Use parameterized queries to support dynamic filtering:
-
-```python
-# Priority levels via parameter
-params = '{"priority_pattern": "p[0-2]"}'  # High priority
-result = execute_query("priority_filter", params=params)
-
-params = '{"priority_pattern": "p[3-4]"}'  # Low priority
-result = execute_query("priority_filter", params=params)
 ```
 
 ### Query Composition
