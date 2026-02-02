@@ -2167,9 +2167,9 @@ Allows registration of reusable query templates with parameter substitution. Que
 
 ### Components
 
-**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. Two-mode validation: full validation for static queries, parse-only for parameterized queries (validates at execution after substitution).
+**Query Storage** (`src/query_storage.py`): Manages `.bees/queries.yaml` with save/load/list operations. All queries are validated when saved to ensure correct structure.
 
-**MCP Tools**: The add_named_query function registers queries with optional validation bypass for parameterized templates. The execute_query function executes stored queries by name, performing JSON parameter substitution via regex pattern matching. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries or invalid parameters raise ValueError exceptions.
+**MCP Tools**: The add_named_query function registers queries with validation. Query execution returns a result dictionary containing the count of matching tickets and a sorted list of ticket IDs. Execution failures due to missing queries raise ValueError exceptions.
 
 ### Multi-Hive Query Filtering (Task bees-062t)
 

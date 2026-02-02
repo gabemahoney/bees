@@ -1540,16 +1540,16 @@ delete_ticket = mcp.tool()(_delete_ticket)
 
 def _add_named_query(
     name: str,
-    query_yaml: str,
-    validate: bool = True
+    query_yaml: str
 ) -> Dict[str, Any]:
     """
     Register a new named query for reuse.
 
+    All queries are validated when registered to ensure they have valid structure.
+
     Args:
         name: Name for the query (used to execute it later)
         query_yaml: YAML string representing the query structure
-        validate: Whether to validate query (set False for parameterized queries with placeholders)
 
     Returns:
         dict: Success status and query information
@@ -1572,8 +1572,8 @@ def _add_named_query(
 
     # Validate and save query
     try:
-        # This will validate structure and raise QueryValidationError if invalid (unless validate=False)
-        save_query(name.strip(), query_yaml, validate)
+        # This will validate structure and raise QueryValidationError if invalid
+        save_query(name.strip(), query_yaml)
         logger.info(f"Successfully registered named query: {name}")
 
         return {

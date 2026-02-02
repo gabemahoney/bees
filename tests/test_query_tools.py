@@ -7,7 +7,7 @@ import yaml
 
 from src.query_storage import QueryStorage, save_query, load_query, list_queries, validate_query
 from src.query_parser import QueryValidationError
-from src.mcp_server import _add_named_query, _execute_query, _substitute_query_params
+from src.mcp_server import _add_named_query, _execute_query
 
 
 class TestQueryStorage:
@@ -222,46 +222,7 @@ class TestExecuteQueryTool:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_substitute_query_params(self):
-        """Test parameter substitution in queries."""
-        stages = [
-            ["type=task", "label~{label}"],
-            ["title~{pattern}"]
-        ]
 
-        params = {
-            "label": "beta",
-            "pattern": ".*Test.*"
-        }
-
-        result = _substitute_query_params(stages, params)
-
-        assert result == [
-            ["type=task", "label~beta"],
-            ["title~.*Test.*"]
-        ]
-
-    def test_substitute_missing_param(self):
-        """Test that missing required parameter raises error."""
-        stages = [
-            ["label~{label}"]
-        ]
-
-        params = {}  # Missing "label"
-
-        with pytest.raises(ValueError, match="Missing required parameter"):
-            _substitute_query_params(stages, params)
-
-    def test_substitute_no_params(self):
-        """Test that queries without placeholders work without params."""
-        stages = [
-            ["type=task", "label~beta"]
-        ]
-
-        params = {}
-
-        result = _substitute_query_params(stages, params)
-        assert result == stages
 
 
 class TestEndToEnd:
@@ -293,8 +254,8 @@ class TestEndToEnd:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_parameterized_query(self):
-        """Test workflow with parameterized query."""
+    def test_invalid_query_rejected(self):
+        """Test that invalid queries are always rejected."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -303,21 +264,12 @@ class TestEndToEnd:
             )
 
             try:
-                # Register parameterized query - skip validation for placeholders
-                query_yaml = """
-- - type={type}
-  - label~{label}
+                # Invalid query should be rejected
+                invalid_query = """
+invalid_structure_here
 """
-                result = _add_named_query("typed_label", query_yaml, validate=False)
-                assert result["status"] == "success"
-
-                # Test substitution
-                loaded = load_query("typed_label")
-                substituted = _substitute_query_params(
-                    loaded,
-                    {"type": "task", "label": "beta"}
-                )
-                assert substituted == [["type=task", "label~beta"]]
+                with pytest.raises((ValueError, QueryValidationError)):
+                    _add_named_query("invalid_query", invalid_query)
 
             finally:
                 src.query_storage._default_storage = old_storage

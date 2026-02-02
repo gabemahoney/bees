@@ -126,15 +126,10 @@ Human users do not need to interact with the MCP server. These commands are prov
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
   - Modifies an existing ticket based on the sent parameters
 - **delete_ticket** - `ticket_id`
-  - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
-  - **Ticket ID Format:** `{hive}.bees-{random}` (e.g., `backend.bees-abc1`)
-  - The hive prefix is extracted from the ticket_id and used to route the deletion to the correct hive
-  - **Example:** Deleting `backend.bees-abc1` automatically routes to the `backend` hive
-  - **Cascade Deletion:** Deletion always cascades - deleting a parent ticket will recursively delete all children and grandchildren in the entire subtree
-  - **Error Cases:**
-    - Malformed IDs (no dot separator): Returns error "Malformed ticket ID: Expected format: hive_name.bees-xxxx"
-    - Unknown hives: Returns error "Hive '{hive_prefix}' not found in configuration"
-- **add_named_query** - `name, query_yaml, validate`
+  - Deletes ticket and all child and grandchild tickets
+- **add_named_query** - `name, query_yaml`
+  - Registers reusable queries that can be executed later by `name`
+  - All queries are validated when registered
 - **execute_query** - `query_name, params, hive_names`
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives
   - Default behavior: all hives included when `hive_names` is omitted
