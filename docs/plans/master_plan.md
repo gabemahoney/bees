@@ -1374,6 +1374,83 @@ All errors are raised as `ValueError` to propagate through MCP protocol, with de
 
 **Linter Integration Stub**: The colonize_hive core function includes a placeholder for future linter integration. The linter will validate that no conflicting tickets exist across hives during colonization (e.g., duplicate ticket IDs, conflicting hive names). This is currently stubbed out and logged for future implementation.
 
+### list_hives MCP Tool
+
+**list_hives MCP Tool** (`_list_hives()` in `src/mcp_server.py`) provides visibility into all registered hives in the repository, returning their display names, normalized identifiers, and paths. This tool serves as the foundation for hive management operations, enabling AI agents and users to query existing hive configuration.
+
+**MCP Tool Registration**: The tool is registered with FastMCP using the `mcp.tool()` decorator pattern, following the same approach as other MCP tools. The tool takes no parameters and returns structured hive data.
+
+**Configuration Reading**: The tool reads `.bees/config.json` using `load_bees_config()` from the config module to retrieve all registered hives. This leverages the existing config infrastructure for consistent data access.
+
+**Return Structure**: The tool returns structured JSON with three possible outcomes:
+
+1. **Success with hives**:
+   ```python
+   {
+     'status': 'success',
+     'hives': [
+       {
+         'display_name': 'Back End',       # User-facing name
+         'normalized_name': 'back_end',    # Internal identifier
+         'path': '/absolute/path/to/hive'  # Hive directory location
+       },
+       ...
+     ]
+   }
+   ```
+
+2. **Success with no hives (config exists but empty)**:
+   ```python
+   {
+     'status': 'success',
+     'hives': [],
+     'message': 'No hives configured'
+   }
+   ```
+
+3. **Success with no hives (config doesn't exist)**:
+   ```python
+   {
+     'status': 'success',
+     'hives': [],
+     'message': 'No hives configured'
+   }
+   ```
+
+**Data Fields**: Each hive entry includes three fields:
+- `display_name`: The original display name provided during colonization (preserves capitalization and spaces)
+- `normalized_name`: The internal identifier used in ticket IDs (lowercased, underscored)
+- `path`: Absolute path to the hive directory as registered in config
+
+**Error Handling**: The tool gracefully handles missing or malformed configuration:
+- Missing config file: Returns empty list with "No hives configured" message
+- Empty hives in config: Returns empty list with "No hives configured" message
+- Malformed config (exception): Raises ValueError with "Failed to list hives: {error}" message
+
+This error handling ensures the tool never crashes and provides useful feedback to clients.
+
+**Integration with Hive Management**: The list_hives tool is the first step in the hive management workflow:
+- **list_hives()** → Discover existing hives
+- **rename_hive()** → Modify hive names (future)
+- **abandon_hive()** → Remove from config (future)
+- **sanitize_hive()** → Validate and repair (future)
+
+**Use Cases**:
+- Pre-flight check before creating tickets (verify hive exists)
+- Displaying available hives to users in UI
+- Validating hive references in queries and filters
+- Debugging configuration issues
+- Discovering hive paths for filesystem operations
+
+**Test Coverage**: Comprehensive test suite in `tests/test_mcp_server.py::TestListHives`:
+- Success case with multiple hives
+- Empty list when config doesn't exist
+- Empty list when config exists but has no hives
+- Correct field structure (display_name, normalized_name, path)
+- Exception handling (graceful failure on errors)
+- Single hive edge case
+- Multiple hives (5+) stress test
+
 ## MCP Server Startup and CLI Integration
 
 **Entry point architecture** uses `src/main.py` to separate server initialization from tool implementations, enabling configuration-driven deployment via Poetry scripts and clean testing boundaries. YAML configuration was chosen over .env or JSON formats to support comments, human readability, and nested structures without additional dependencies.

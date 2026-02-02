@@ -339,6 +339,34 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
 
 ## MCP Commands
 
+- **list_hives** - No parameters
+  - Lists all registered hives in the repository
+  - **Returns:**
+    - On success with hives: `{'status': 'success', 'hives': [{'display_name': str, 'normalized_name': str, 'path': str}, ...]}`
+    - On success with no hives: `{'status': 'success', 'hives': [], 'message': 'No hives configured'}`
+  - **Behavior:**
+    - Reads `.bees/config.json` to retrieve all registered hives
+    - Returns empty list with message if config doesn't exist or has no hives
+    - Each hive includes display name, normalized identifier, and absolute path
+  - **Example Response:**
+    ```python
+    {
+      'status': 'success',
+      'hives': [
+        {
+          'display_name': 'Back End',
+          'normalized_name': 'back_end',
+          'path': '/Users/user/projects/myrepo/tickets/backend'
+        },
+        {
+          'display_name': 'Frontend',
+          'normalized_name': 'frontend',
+          'path': '/Users/user/projects/myrepo/tickets/frontend'
+        }
+      ]
+    }
+    ```
+
 - **colonize_hive** - `name, path`
   - Creates a new hive with validation and registration
   - **Parameters:**
@@ -410,6 +438,13 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
 ### Examples
 
 ```python
+# List all registered hives
+list_hives()
+# Returns: {'status': 'success', 'hives': [{'display_name': 'Back End', 'normalized_name': 'back_end', 'path': '...'}, ...]}
+
+# List hives when none configured
+# Returns: {'status': 'success', 'hives': [], 'message': 'No hives configured'}
+
 # Colonize a new hive
 colonize_hive(name="Back End", path="/Users/user/projects/myrepo/tickets/backend")
 # Returns: {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', 'path': '...'}

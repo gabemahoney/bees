@@ -1877,6 +1877,89 @@ def _colonize_hive(
 colonize_hive_tool = mcp.tool()(_colonize_hive)
 
 
+def _list_hives() -> Dict[str, Any]:
+    """
+    List all registered hives in the repository.
+
+    Reads .bees/config.json to retrieve all registered hives and returns
+    structured information about each hive including display name, normalized
+    name, and path.
+
+    Returns:
+        dict: List of hives with their details
+            On success with hives: {
+                'status': 'success',
+                'hives': [
+                    {
+                        'display_name': str,      # User-facing hive name
+                        'normalized_name': str,   # Internal identifier
+                        'path': str              # Absolute path to hive directory
+                    },
+                    ...
+                ]
+            }
+            On success with no hives: {
+                'status': 'success',
+                'hives': [],
+                'message': 'No hives configured'
+            }
+
+    Example:
+        >>> _list_hives()
+        {
+            'status': 'success',
+            'hives': [
+                {
+                    'display_name': 'Back End',
+                    'normalized_name': 'back_end',
+                    'path': '/Users/user/projects/myrepo/tickets/backend'
+                },
+                {
+                    'display_name': 'Frontend',
+                    'normalized_name': 'frontend',
+                    'path': '/Users/user/projects/myrepo/tickets/frontend'
+                }
+            ]
+        }
+    """
+    try:
+        # Load config from .bees/config.json
+        config = load_bees_config()
+
+        # Handle case where config doesn't exist or has no hives
+        if not config or not config.hives:
+            logger.info("No hives configured")
+            return {
+                "status": "success",
+                "hives": [],
+                "message": "No hives configured"
+            }
+
+        # Build list of hives with their details
+        hives_list = []
+        for normalized_name, hive_config in config.hives.items():
+            hives_list.append({
+                "display_name": hive_config.display_name,
+                "normalized_name": normalized_name,
+                "path": hive_config.path
+            })
+
+        logger.info(f"Listed {len(hives_list)} hives")
+        return {
+            "status": "success",
+            "hives": hives_list
+        }
+
+    except Exception as e:
+        error_msg = f"Failed to list hives: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+
+# Register the list_hives tool with FastMCP
+list_hives = mcp.tool()(_list_hives)
+
+
 if __name__ == "__main__":
     logger.info("Running Bees MCP Server directly")
     start_server()

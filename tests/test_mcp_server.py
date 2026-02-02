@@ -2523,3 +2523,186 @@ class TestParseHiveFromTicketId:
         # Edge case: dot at end
         result = parse_hive_from_ticket_id('backend.')
         assert result == 'backend'
+
+
+class TestListHives:
+    """Tests for list_hives MCP tool functionality."""
+
+    @pytest.fixture
+    def temp_repo(self, tmp_path, monkeypatch):
+        """Create temporary repository with config directory."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+
+        config_dir = repo_root / ".bees"
+        config_dir.mkdir()
+
+        monkeypatch.chdir(repo_root)
+        return repo_root
+
+    def test_list_hives_returns_all_hives_from_config(self, temp_repo):
+        """Test list_hives returns correct data when config.json exists with hives."""
+        from src.mcp_server import _list_hives
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        # Create config with multiple hives
+        hive1_path = temp_repo / "hive1"
+        hive1_path.mkdir()
+        hive2_path = temp_repo / "hive2"
+        hive2_path.mkdir()
+
+        config = BeesConfig(hives={
+            "back_end": HiveConfig(
+                display_name="Back End",
+                path=str(hive1_path),
+                created_at="2024-01-01T00:00:00"
+            ),
+            "frontend": HiveConfig(
+                display_name="Frontend",
+                path=str(hive2_path),
+                created_at="2024-01-02T00:00:00"
+            )
+        })
+        save_bees_config(config)
+
+        # Call list_hives
+        result = _list_hives()
+
+        # Verify response structure
+        assert result["status"] == "success"
+        assert "hives" in result
+        assert len(result["hives"]) == 2
+
+        # Verify hive data
+        hives = {h["normalized_name"]: h for h in result["hives"]}
+        assert "back_end" in hives
+        assert "frontend" in hives
+
+        assert hives["back_end"]["display_name"] == "Back End"
+        assert hives["back_end"]["path"] == str(hive1_path)
+
+        assert hives["frontend"]["display_name"] == "Frontend"
+        assert hives["frontend"]["path"] == str(hive2_path)
+
+    def test_list_hives_returns_empty_list_when_no_config(self, temp_repo):
+        """Test list_hives returns empty list with message when config.json doesn't exist."""
+        from src.mcp_server import _list_hives
+
+        # No config.json created - should return empty list
+        result = _list_hives()
+
+        assert result["status"] == "success"
+        assert result["hives"] == []
+        assert result["message"] == "No hives configured"
+
+    def test_list_hives_returns_empty_list_when_no_hives(self, temp_repo):
+        """Test list_hives returns empty list with message when config.json exists but has no hives."""
+        from src.mcp_server import _list_hives
+        from src.config import BeesConfig, save_bees_config
+
+        # Create config with empty hives
+        config = BeesConfig(hives={})
+        save_bees_config(config)
+
+        result = _list_hives()
+
+        assert result["status"] == "success"
+        assert result["hives"] == []
+        assert result["message"] == "No hives configured"
+
+    def test_list_hives_returns_correct_fields(self, temp_repo):
+        """Test all hive fields are returned correctly (display_name, normalized_name, path)."""
+        from src.mcp_server import _list_hives
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        # Create config with a hive
+        hive_path = temp_repo / "tickets"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "test_hive": HiveConfig(
+                display_name="Test Hive",
+                path=str(hive_path),
+                created_at="2024-01-01T00:00:00"
+            )
+        })
+        save_bees_config(config)
+
+        result = _list_hives()
+
+        assert result["status"] == "success"
+        assert len(result["hives"]) == 1
+
+        hive = result["hives"][0]
+        assert hive["display_name"] == "Test Hive"
+        assert hive["normalized_name"] == "test_hive"
+        assert hive["path"] == str(hive_path)
+
+        # Verify only expected fields are present
+        assert set(hive.keys()) == {"display_name", "normalized_name", "path"}
+
+    def test_list_hives_handles_exception(self, temp_repo, monkeypatch):
+        """Test list_hives handles exceptions gracefully."""
+        from src.mcp_server import _list_hives
+
+        # Mock load_bees_config to raise an exception
+        def mock_load_error():
+            raise Exception("Failed to load config")
+
+        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_error)
+
+        # Should raise ValueError with error message
+        with pytest.raises(ValueError, match="Failed to list hives"):
+            _list_hives()
+
+    def test_list_hives_with_single_hive(self, temp_repo):
+        """Test list_hives works correctly with a single hive."""
+        from src.mcp_server import _list_hives
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        hive_path = temp_repo / "single"
+        hive_path.mkdir()
+
+        config = BeesConfig(hives={
+            "single": HiveConfig(
+                display_name="Single",
+                path=str(hive_path),
+                created_at="2024-01-01T00:00:00"
+            )
+        })
+        save_bees_config(config)
+
+        result = _list_hives()
+
+        assert result["status"] == "success"
+        assert len(result["hives"]) == 1
+        assert result["hives"][0]["normalized_name"] == "single"
+
+    def test_list_hives_with_many_hives(self, temp_repo):
+        """Test list_hives works with multiple hives."""
+        from src.mcp_server import _list_hives
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        # Create 5 hives
+        hives = {}
+        for i in range(5):
+            hive_path = temp_repo / f"hive{i}"
+            hive_path.mkdir()
+            hives[f"hive{i}"] = HiveConfig(
+                display_name=f"Hive {i}",
+                path=str(hive_path),
+                created_at=f"2024-01-0{i+1}T00:00:00"
+            )
+
+        config = BeesConfig(hives=hives)
+        save_bees_config(config)
+
+        result = _list_hives()
+
+        assert result["status"] == "success"
+        assert len(result["hives"]) == 5
+
+        # Verify all hives are present
+        normalized_names = {h["normalized_name"] for h in result["hives"]}
+        assert normalized_names == {"hive0", "hive1", "hive2", "hive3", "hive4"}
