@@ -4,32 +4,120 @@ import pytest
 from pathlib import Path
 import tempfile
 import shutil
+import os
 
 from src.mcp_server import _create_ticket
 from src.reader import read_ticket
 from src.paths import get_ticket_path
 from src.id_utils import is_valid_ticket_id
+from src.config import save_bees_config, BeesConfig, HiveConfig
+from datetime import datetime
 
 
 @pytest.fixture
 def temp_tickets_dir():
-    """Create temporary tickets directory."""
+    """Create temporary hive directory with config-based setup."""
+    # Create temp directory structure
     temp_dir = Path(tempfile.mkdtemp())
-    tickets_dir = temp_dir / "tickets"
-    tickets_dir.mkdir()
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
 
-    # Temporarily override TICKETS_DIR
-    import src.paths
-    original_tickets_dir = src.paths.TICKETS_DIR
-    src.paths.TICKETS_DIR = tickets_dir
+    # Save original working directory
+    original_cwd = os.getcwd()
 
-    yield tickets_dir
+    # Change to temp directory
+    os.chdir(temp_dir)
 
-    # Restore original and cleanup
-    src.paths.TICKETS_DIR = original_tickets_dir
+    # Create hive directories for testing
+    backend_dir = temp_dir / "backend"
+    backend_dir.mkdir()
+    frontend_dir = temp_dir / "frontend"
+    frontend_dir.mkdir()
+    test_hive_dir = temp_dir / "test_hive"
+    test_hive_dir.mkdir()
+    my_hive_dir = temp_dir / "my_hive"
+    my_hive_dir.mkdir()
+    front_end_dir = temp_dir / "front_end"
+    front_end_dir.mkdir()
+    back_end_dir = temp_dir / "back_end"
+    back_end_dir.mkdir()
+    myhive_dir = temp_dir / "myhive"
+    myhive_dir.mkdir()
+    test_123_dir = temp_dir / "test_123"
+    test_123_dir.mkdir()
+    test_dir = temp_dir / "test"
+    test_dir.mkdir()
+    a_dir = temp_dir / "a"
+    a_dir.mkdir()
+    _1_dir = temp_dir / "_1"
+    _1_dir.mkdir()
+
+    # Initialize .bees/config.json with test hives
+    config = BeesConfig(
+        hives={
+            'backend': HiveConfig(
+                path=str(backend_dir),
+                display_name='Backend',
+                created_at=datetime.now().isoformat()
+            ),
+            'frontend': HiveConfig(
+                path=str(frontend_dir),
+                display_name='Frontend',
+                created_at=datetime.now().isoformat()
+            ),
+            'test_hive': HiveConfig(
+                path=str(test_hive_dir),
+                display_name='Test Hive',
+                created_at=datetime.now().isoformat()
+            ),
+            'my_hive': HiveConfig(
+                path=str(my_hive_dir),
+                display_name='My Hive',
+                created_at=datetime.now().isoformat()
+            ),
+            'front_end': HiveConfig(
+                path=str(front_end_dir),
+                display_name='Front End',
+                created_at=datetime.now().isoformat()
+            ),
+            'back_end': HiveConfig(
+                path=str(back_end_dir),
+                display_name='Back End',
+                created_at=datetime.now().isoformat()
+            ),
+            'myhive': HiveConfig(
+                path=str(myhive_dir),
+                display_name='MyHive',
+                created_at=datetime.now().isoformat()
+            ),
+            'test_123': HiveConfig(
+                path=str(test_123_dir),
+                display_name='Test-123',
+                created_at=datetime.now().isoformat()
+            ),
+            'test': HiveConfig(
+                path=str(test_dir),
+                display_name='Test',
+                created_at=datetime.now().isoformat()
+            ),
+            'a': HiveConfig(
+                path=str(a_dir),
+                display_name='A',
+                created_at=datetime.now().isoformat()
+            ),
+            '_1': HiveConfig(
+                path=str(_1_dir),
+                display_name='1',
+                created_at=datetime.now().isoformat()
+            ),
+        },
+        allow_cross_hive_dependencies=True,
+        schema_version='1.0'
+    )
+    save_bees_config(config)
+
+    yield temp_dir
+
+    # Restore original working directory and cleanup
+    os.chdir(original_cwd)
     shutil.rmtree(temp_dir)
 
 
@@ -50,9 +138,10 @@ class TestMCPCreateTicketWithHive:
         assert ticket_id.startswith("backend.bees-")
         assert is_valid_ticket_id(ticket_id)
 
-        # Verify file was created and content
+        # Verify file was created and content (flat storage in hive root)
         epic_path = get_ticket_path(ticket_id, "epic")
         assert epic_path.exists()
+        assert epic_path.parent == temp_tickets_dir / "backend"  # Flat storage - file in hive root
         epic = read_ticket(epic_path)
         assert epic.title == "Backend Epic"
 

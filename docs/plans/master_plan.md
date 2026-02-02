@@ -522,24 +522,68 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
 - Security rationale: Prevents creation of invalid IDs that would fail validation regex check
 - Implementation location: `src/mcp_server.py` hive_name validation
 
-**Hive Name Validation in MCP Create Ticket** (Task bees-x97h4):
-- **Why validation is needed**: The `_create_ticket()` MCP tool accepts `hive_name` parameter but previously
-  did not validate it before passing to factory functions. Malformed hive names (whitespace-only, special
-  characters only) could lead to confusing behavior or invalid ticket IDs.
+**Hive Name Validation in MCP Create Ticket** (Tasks bees-x97h4, bees-uol2):
+- **Why validation is needed**: The `_create_ticket()` MCP tool accepts `hive_name` parameter but must
+  validate both the format and existence of the hive. Malformed hive names (whitespace-only, special
+  characters only) or non-existent hives could lead to confusing behavior or invalid ticket IDs.
 - **Where validation occurs**: `_create_ticket()` in `src/mcp_server.py` validates `hive_name` parameter
   before calling `create_epic()`, `create_task()`, or `create_subtask()` factory functions
-- **What is validated**:
-  - Checks if `hive_name` contains at least one alphanumeric character using `re.search(r'[a-zA-Z0-9]', hive_name)`
-  - Raises `ValueError` with descriptive message if validation fails
+- **What is validated** (three-stage validation):
+  1. **Format validation**: Checks if `hive_name` contains at least one alphanumeric character using `re.search(r'[a-zA-Z0-9]', hive_name)`
+  2. **Existence validation** (Task bees-uol2): Verifies hive exists in `.bees/config.json` after normalization
+  3. **Path validation** (Task bees-3c0ja): Validates hive path is accessible and writable
+  - Raises `ValueError` with descriptive message if any validation fails
 - **Validation rules**:
-  - `None` and empty string (`""`) are allowed (treated as no hive prefix)
   - Whitespace-only strings (e.g., `"   "`) are rejected (would normalize to underscores)
   - Special characters only (e.g., `"@#$%"`) are rejected (would normalize to empty)
   - Valid names must have at least one alphanumeric character after normalization
-- **Error messages**: Include the original invalid hive name in error message for debugging:
-  `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
-- **Integration with normalize_hive_name()**: Validation occurs before normalization is used for ID generation,
-  preventing edge cases where normalized names become empty or invalid
+  - **Hive must be registered**: Normalized hive name must exist as a key in `config.hives` dictionary
+- **Error messages**:
+  - Format validation: `"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"`
+  - Existence validation: `"Hive '{hive_name}' (normalized: '{normalized_hive}') does not exist in config. Please create the hive first using colonize_hive."`
+  - Path validation (missing): `"Hive path does not exist: '{path}'. Please create the directory before creating tickets."`
+  - Path validation (not directory): `"Hive path is not a directory: '{path}'. Path must be a directory, not a file."`
+  - Path validation (not writable): `"Hive directory is not writable: '{path}'. Please check directory permissions."`
+  - Path validation (resolution failure): `"Failed to resolve hive path '{path}': {error}"`
+- **Integration with normalize_hive_name()**: Validation occurs in two steps:
+  1. Format check before normalization prevents invalid characters
+  2. Existence check after normalization validates against config registry
+- **Hive path validation architecture** (Task bees-3c0ja):
+  - **When it occurs**: After config existence validation (lines 982-988), before parent validation
+  - **Why this order**: Validates hive is registered first, then validates path accessibility, then proceeds with ticket-specific validation
+  - **Implementation location**: `src/mcp_server.py` lines 990-1033
+  - **Validation steps**:
+    1. Get hive path from config: `hive_path = Path(config.hives[normalized_hive].path)`
+    2. Resolve symlinks: `resolved_path = hive_path.resolve(strict=False)` - handles symlinks gracefully
+    3. Check existence: `resolved_path.exists()` - ensures directory is present
+    4. Check is directory: `resolved_path.is_dir()` - ensures path is not a file
+    5. Test write permissions: Create and remove test file `{uuid}.write_test` - validates write access
+  - **Error handling strategy**:
+    - Path resolution errors (OSError, RuntimeError) → ValueError with resolution failure message
+    - Missing path → ValueError suggesting to create directory
+    - Path is file → ValueError indicating path must be directory
+    - Permission errors (PermissionError, OSError) → ValueError with permission details
+  - **Edge cases handled**:
+    - Symlinks: Resolved to target and validated; broken symlinks caught by existence check
+    - Permission errors: Explicit PermissionError catch for write test
+    - General I/O errors: OSError catch for filesystem issues
+  - **Design rationale**:
+    - Path validation after config check ensures we don't attempt filesystem operations on unregistered hives
+    - Validation before ticket creation prevents creating ticket objects that can't be persisted
+    - Test file approach (vs stat checks) ensures actual write permissions work in practice
+    - UUID in test filename prevents conflicts in concurrent operations
+  - **Test coverage**: Unit tests in `tests/test_create_ticket_hive_validation.py::TestCreateTicketHivePathValidation`:
+    - Missing directory raises ValueError with descriptive message
+    - Path is file (not directory) raises ValueError
+    - Non-writable directory raises ValueError
+    - Valid symlinks succeed (creates ticket in target)
+    - Broken symlinks raise ValueError
+    - Successful validation passes all checks
+    - Error messages are descriptive and actionable
+- **Ticket storage routing** (Task bees-l42j): After all validation passes, ticket is stored in hive directory from config:
+  - Uses `config.hives[normalized_hive].path` to get hive directory
+  - Stores ticket in flat storage at hive root: `{hive_path}/{ticket_id}.md`
+  - Path resolution via `get_ticket_path()` in `src/paths.py` loads config and routes to correct hive
 - **Validation simplification** (Task bees-ur1t5): Originally included redundant check for empty normalized name
   (lines 804-808) after alphanumeric check (lines 798-801). This was removed because `normalize_hive_name()` can
   only return empty string if input has no alphanumeric characters, which is already validated by the regex check.
@@ -577,7 +621,7 @@ The config module (`src/config.py`) provides two parallel APIs for configuration
 
 ### Mandatory Hive Prefix for ID Generation (Task bees-i4vva, Epic bees-ftl9l)
 
-**Purpose**: Remove backward compatibility for unprefixed ticket IDs by making hive_name a required parameter in ID generation functions.
+**Purpose**: Enforce hive-prefixed ticket IDs by making hive_name a required parameter in ID generation functions.
 
 **Architecture Decision**: Required hive_name in ID Generation
 - Design choice: Make `hive_name` a required parameter in `generate_ticket_id()` and `generate_unique_ticket_id()`
@@ -862,9 +906,9 @@ ticket_id: "backend.bees-abc1"
 
 **Architecture Decision**: Version Field in Frontmatter
 - Design choice: Add `bees_version` field to ticket YAML frontmatter, automatically set at ticket creation time
-- Rationale: Enables schema migration tracking, backward compatibility checking, and ticket identification for flat storage (Epic bees-yuql)
+- Rationale: Enables ticket identification for flat storage (Epic bees-yuql) and schema version tracking
 - Current version: `1.1` (corresponds to flat storage schema)
-- Field is optional to maintain backward compatibility with existing tickets created before versioning
+- Field is required for all tickets
 
 **Implementation Components**:
 
@@ -910,11 +954,9 @@ ticket_id: "backend.bees-abc1"
 - **Error Handling**: Clear, actionable error message guides users to add missing field
 - **Integration**: Works with existing schema validation layer (`validate_ticket()`) as pre-validation step
 
-**Backward Compatibility Strategy**:
-- **Breaking Change**: As of Task bees-g31n, tickets MUST include `bees_version` field
-- **Migration Required**: Existing tickets without field will fail to load and must be updated
+**Version Field Requirement**:
+- **Requirement**: All tickets MUST include `bees_version` field (enforced in Task bees-g31n)
 - **Rationale**: Field is essential for flat storage architecture ticket identification
-- **Previous Strategy (Deprecated)**: Earlier versions allowed optional field for backward compatibility; this approach proved insufficient for robust ticket identification in flat storage
 
 **Example Ticket Frontmatter**:
 ```yaml
@@ -932,17 +974,16 @@ created_at: 2026-02-01T12:00:00
 - String version (not int) allows flexibility for minor versions or branches (e.g., "1.1.1", "2.0-beta")
 - Stored in frontmatter (not body) for efficient scanning without parsing full markdown
 - Set at creation time (not dynamically) creates immutable audit trail of when ticket was created
-- Enables future schema evolution: queries can filter by version, migrations can identify legacy tickets
+- Enables future schema evolution: queries can filter by version
 
 **Test Coverage** (Task bees-dxqs):
 - Tests verify ticket_factory sets version in all three create functions
 - Tests verify reader parses and preserves bees_version field
 - Tests verify Ticket model accepts bees_version field
-- Tests verify backward compatibility (tickets without field still parse)
 
-### Legacy Path Routing Removal (Task bees-sl1u6, Epic bees-ftl9l)
+### Hive-Prefixed Path Routing (Task bees-sl1u6, Epic bees-ftl9l)
 
-**Purpose**: Remove backward compatibility for unprefixed ticket IDs in path resolution functions, enforcing hive-based architecture at the path layer.
+**Purpose**: Enforce hive-prefixed ticket IDs in path resolution functions, implementing hive-based architecture at the path layer.
 
 **Architecture Decision**: Fail Fast on Invalid IDs
 - Design choice: Path resolution functions raise ValueError for unprefixed IDs instead of falling back to legacy paths
@@ -981,11 +1022,9 @@ created_at: 2026-02-01T12:00:00
 - Enforces hive-based architecture at foundational path resolution layer
 - Error messages guide users toward correct ID format
 
-**Backward Compatibility Removal**:
-- Previous behavior: Unprefixed IDs routed to `tickets/` default directory
-- New behavior: Unprefixed IDs raise ValueError or return None (depending on function)
-- Breaking change: All path resolution requires hive-prefixed IDs
-- Migration path: Update all ticket IDs to include hive prefix
+**ID Format Requirement**:
+- Unprefixed IDs raise ValueError or return None (depending on function)
+- All path resolution requires hive-prefixed IDs
 
 **Integration with Path Resolution**:
 - Path resolution now enforces hive-based architecture uniformly
@@ -1151,6 +1190,69 @@ frontend/epics/frontend.bees-250.md
 3. **Atomicity**: File operations are atomic to prevent corruption
 4. **Simplicity**: Simple factory functions over complex frameworks
 5. **Extensibility**: Clean module boundaries support future features
+6. **Explicit Write Operations**: Write operations (create/update/delete) fail fast without recovery attempts
+
+## Error Handling Architecture
+
+### Design Decision: Strict Validation for Write Operations
+
+**Context:** The system has two approaches to hive resolution:
+- `scan_for_hive()`: Recovery mechanism that searches for relocated hives using `.hive` markers
+- Config-based lookup: Direct hive resolution using `.bees/config.json`
+
+**Decision:** Write operations (`create_ticket`, `update_ticket`, `delete_ticket`) use STRICT validation and do NOT attempt automatic hive recovery via `scan_for_hive()`.
+
+**Rationale:**
+
+1. **Write vs Read Philosophy:**
+   - Write operations should be explicit and fail fast to prevent unintended data mutations
+   - Read operations can be more forgiving and attempt recovery
+   - Creating tickets in the wrong location due to auto-recovery could cause data integrity issues
+
+2. **Consistency Across Operations:**
+   - `update_ticket()` and `delete_ticket()` already fail fast when hive not in config (via `get_ticket_path()`)
+   - `create_ticket()` follows the same pattern for consistent behavior
+   - All write operations have uniform error handling semantics
+
+3. **Recovery Scope:**
+   - `scan_for_hive()` is designed as a recovery tool for exceptional scenarios (hive relocation)
+   - Normal operations should use registered hives from config
+   - Auto-recovery during writes could mask configuration issues
+
+4. **Error Clarity:**
+   - Explicit errors guide users to fix configuration (run `colonize_hive` to register)
+   - Clear distinction: "hive not registered" vs "hive not found anywhere"
+   - Enhanced error messages provide actionable guidance
+
+**Implementation:**
+
+In `_create_ticket()` (line 982-993):
+```python
+# Validate hive exists in config
+# Design Decision: create_ticket is STRICT and does not attempt hive recovery via scan_for_hive.
+normalized_hive = normalize_hive_name(hive_name)
+config = load_bees_config()
+if not config or normalized_hive not in config.hives:
+    error_msg = (
+        f"Hive '{hive_name}' (normalized: '{normalized_hive}') does not exist in config. "
+        f"Please create the hive first using colonize_hive. "
+        f"If the hive directory exists but isn't registered, you may need to run colonize_hive to register it."
+    )
+    raise ValueError(error_msg)
+```
+
+**Consistency:**
+
+- `get_ticket_path()` in `src/paths.py` (line 75-76): Raises `ValueError` if hive not in config
+- `infer_ticket_type_from_id()` in `src/paths.py` (line 140-141): Returns `None` if hive not in config
+- All path resolution functions fail fast without recovery attempts
+
+**Future Considerations:**
+
+If scan_for_hive recovery is needed for write operations, it should be:
+- Opt-in via explicit parameter (e.g., `allow_recovery=True`)
+- Logged prominently when recovery is attempted
+- Limited to specific use cases (e.g., migration tools, recovery commands)
 
 
 ## MCP Server Architecture
@@ -1946,10 +2048,10 @@ regeneration fails.
 - Path resolution requires hive-prefixed IDs with ValueError for invalid format
 - All tests use hive-prefixed format
 
-**Test Migration Strategy**:
-1. **Updated test fixtures** - All mock ticket data uses `default.bees-xyz` format
-2. **Added validation tests** - Tests verify `hive_name` is required and raises clear errors when missing
-3. **Fixed test fixtures** - All tests use hive-based architecture
+**Test Strategy**:
+1. **Test fixtures** - All mock ticket data uses `default.bees-xyz` format
+2. **Validation tests** - Tests verify `hive_name` is required and raises clear errors when missing
+3. **Hive-based architecture** - All tests use hive-based architecture
 
 **Files Modified**:
 - **tests/test_reader.py** - Updated all ticket IDs to hive-prefixed format

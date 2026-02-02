@@ -16,42 +16,56 @@ from src.paths import get_ticket_path, infer_ticket_type_from_id
 
 @pytest.fixture
 def temp_tickets_dir():
-    """Create temporary tickets directory."""
+    """Create temporary hive directory with config-based setup."""
+    # Create temp directory structure
     temp_dir = Path(tempfile.mkdtemp())
-    tickets_dir = temp_dir / "tickets"
-    tickets_dir.mkdir()
-    (tickets_dir / "epics").mkdir()
-    (tickets_dir / "tasks").mkdir()
-    (tickets_dir / "subtasks").mkdir()
 
-    # Create backend hive directories
-    backend_dir = temp_dir / "backend"
-    backend_dir.mkdir()
-    (backend_dir / "epics").mkdir()
-    (backend_dir / "tasks").mkdir()
-    (backend_dir / "subtasks").mkdir()
-
-    # Create frontend hive directories
-    frontend_dir = temp_dir / "frontend"
-    frontend_dir.mkdir()
-    (frontend_dir / "epics").mkdir()
-    (frontend_dir / "tasks").mkdir()
-    (frontend_dir / "subtasks").mkdir()
-
-    # Temporarily override TICKETS_DIR and change working directory
-    import src.paths
+    # Save original working directory
     import os
-    original_tickets_dir = src.paths.TICKETS_DIR
     original_cwd = os.getcwd()
 
-    src.paths.TICKETS_DIR = tickets_dir
+    # Change to temp directory
     os.chdir(temp_dir)
+
+    # Create hive directories for testing
+    default_dir = temp_dir / "default"
+    default_dir.mkdir()
+    backend_dir = temp_dir / "backend"
+    backend_dir.mkdir()
+    frontend_dir = temp_dir / "frontend"
+    frontend_dir.mkdir()
+
+    # Initialize .bees/config.json with test hives
+    from src.config import save_bees_config, BeesConfig, HiveConfig
+    from datetime import datetime
+
+    config = BeesConfig(
+        hives={
+            'default': HiveConfig(
+                path=str(default_dir),
+                display_name='Default',
+                created_at=datetime.now().isoformat()
+            ),
+            'backend': HiveConfig(
+                path=str(backend_dir),
+                display_name='Backend',
+                created_at=datetime.now().isoformat()
+            ),
+            'frontend': HiveConfig(
+                path=str(frontend_dir),
+                display_name='Frontend',
+                created_at=datetime.now().isoformat()
+            ),
+        },
+        allow_cross_hive_dependencies=True,
+        schema_version='1.0'
+    )
+    save_bees_config(config)
 
     yield temp_dir
 
-    # Restore original and cleanup
+    # Restore original working directory and cleanup
     os.chdir(original_cwd)
-    src.paths.TICKETS_DIR = original_tickets_dir
     shutil.rmtree(temp_dir)
 
 

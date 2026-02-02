@@ -979,6 +979,65 @@ def _create_ticket(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
+    # Validate hive exists in config
+    # Design Decision: create_ticket is STRICT and does not attempt hive recovery via scan_for_hive.
+    # Rationale:
+    #   - Write operations (create/update/delete) should be explicit and fail fast
+    #   - Consistency: update_ticket and delete_ticket also fail fast without recovery attempts
+    #   - scan_for_hive is a recovery mechanism for read operations, not normal write flows
+    #   - Creating tickets requires explicit hive specification to avoid ambiguity
+    # See docs/plans/master_plan.md for full architectural rationale
+    normalized_hive = normalize_hive_name(hive_name)
+    config = load_bees_config()
+    if not config or normalized_hive not in config.hives:
+        # Provide helpful error message guiding users to create hive first
+        # Note: We intentionally do NOT attempt recovery via scan_for_hive (see design decision above)
+        error_msg = (
+            f"Hive '{hive_name}' (normalized: '{normalized_hive}') does not exist in config. "
+            f"Please create the hive first using colonize_hive. "
+            f"If the hive directory exists but isn't registered, you may need to run colonize_hive to register it."
+        )
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate hive path exists and is writable
+    hive_path = Path(config.hives[normalized_hive].path)
+
+    # Resolve symlinks to get the actual path
+    try:
+        resolved_path = hive_path.resolve(strict=False)
+    except (OSError, RuntimeError) as e:
+        error_msg = f"Failed to resolve hive path '{hive_path}': {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Check if path exists
+    if not resolved_path.exists():
+        error_msg = f"Hive path does not exist: '{resolved_path}'. Please create the directory before creating tickets."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Check if path is a directory
+    if not resolved_path.is_dir():
+        error_msg = f"Hive path is not a directory: '{resolved_path}'. Path must be a directory, not a file."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Test write permissions by attempting to create and remove a test file
+    import uuid
+    test_file = resolved_path / f".write_test_{uuid.uuid4().hex[:8]}"
+    try:
+        test_file.touch()
+        test_file.unlink()
+    except PermissionError as e:
+        error_msg = f"Hive directory is not writable: '{resolved_path}'. Please check directory permissions."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except OSError as e:
+        error_msg = f"Failed to write to hive directory '{resolved_path}': {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
     # Validate parent requirements
     if ticket_type == "epic" and parent:
         error_msg = "Epics cannot have a parent"

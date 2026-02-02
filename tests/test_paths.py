@@ -2,6 +2,7 @@
 
 import pytest
 from pathlib import Path
+from datetime import datetime
 from src.paths import (
     get_ticket_path,
     ensure_ticket_directory_exists,
@@ -9,6 +10,40 @@ from src.paths import (
     infer_ticket_type_from_id,
     _parse_ticket_id_for_path,
 )
+from src.config import BeesConfig, HiveConfig, save_bees_config
+
+
+@pytest.fixture
+def setup_hive_config(tmp_path, monkeypatch):
+    """Create hive configuration with backend and frontend hives."""
+    monkeypatch.chdir(tmp_path)
+
+    # Create hive directories
+    backend_dir = tmp_path / "backend"
+    backend_dir.mkdir()
+    frontend_dir = tmp_path / "frontend"
+    frontend_dir.mkdir()
+
+    # Initialize .bees/config.json
+    config = BeesConfig(
+        hives={
+            'backend': HiveConfig(
+                path=str(backend_dir),
+                display_name='Backend',
+                created_at=datetime.now().isoformat()
+            ),
+            'frontend': HiveConfig(
+                path=str(frontend_dir),
+                display_name='Frontend',
+                created_at=datetime.now().isoformat()
+            ),
+        },
+        allow_cross_hive_dependencies=True,
+        schema_version='1.0'
+    )
+    save_bees_config(config)
+
+    return tmp_path
 
 
 class TestParseTicketIdForPath:
@@ -76,42 +111,36 @@ class TestGetTicketPath:
         with pytest.raises(ValueError, match="ticket_id cannot be empty"):
             get_ticket_path("", "epic")
 
-    def test_accepts_any_ticket_type(self, tmp_path, monkeypatch):
+    def test_accepts_any_ticket_type(self, setup_hive_config):
         """Should accept any ticket type (validation removed in flat storage)."""
-        monkeypatch.chdir(tmp_path)
-
         # In flat storage, ticket_type doesn't affect path
         path = get_ticket_path("backend.bees-250", "invalid")  # type: ignore
         # Should not raise, path is always the same
-        assert path == tmp_path / "backend" / "backend.bees-250.md"
+        assert path == setup_hive_config / "backend" / "backend.bees-250.md"
 
-    def test_flat_storage_path_for_epic(self, tmp_path, monkeypatch):
+    def test_flat_storage_path_for_epic(self, setup_hive_config):
         """Should return flat storage path in hive root for epic."""
-        monkeypatch.chdir(tmp_path)
         path = get_ticket_path("backend.bees-abc", "epic")
-        assert path == tmp_path / "backend" / "backend.bees-abc.md"
+        assert path == setup_hive_config / "backend" / "backend.bees-abc.md"
 
-    def test_flat_storage_path_for_task(self, tmp_path, monkeypatch):
+    def test_flat_storage_path_for_task(self, setup_hive_config):
         """Should return flat storage path in hive root for task."""
-        monkeypatch.chdir(tmp_path)
         path = get_ticket_path("backend.bees-xyz", "task")
-        assert path == tmp_path / "backend" / "backend.bees-xyz.md"
+        assert path == setup_hive_config / "backend" / "backend.bees-xyz.md"
 
-    def test_flat_storage_path_for_subtask(self, tmp_path, monkeypatch):
+    def test_flat_storage_path_for_subtask(self, setup_hive_config):
         """Should return flat storage path in hive root for subtask."""
-        monkeypatch.chdir(tmp_path)
         path = get_ticket_path("frontend.bees-123", "subtask")
-        assert path == tmp_path / "frontend" / "frontend.bees-123.md"
+        assert path == setup_hive_config / "frontend" / "frontend.bees-123.md"
 
-    def test_flat_storage_ignores_ticket_type(self, tmp_path, monkeypatch):
+    def test_flat_storage_ignores_ticket_type(self, setup_hive_config):
         """Should return same path regardless of ticket type (flat storage)."""
-        monkeypatch.chdir(tmp_path)
         epic_path = get_ticket_path("backend.bees-abc", "epic")
         task_path = get_ticket_path("backend.bees-abc", "task")
         subtask_path = get_ticket_path("backend.bees-abc", "subtask")
         # All paths should be identical in flat storage
         assert epic_path == task_path == subtask_path
-        assert epic_path == tmp_path / "backend" / "backend.bees-abc.md"
+        assert epic_path == setup_hive_config / "backend" / "backend.bees-abc.md"
 
 
 class TestEnsureTicketDirectoryExists:
@@ -261,12 +290,9 @@ class TestInferTicketTypeFromId:
         ticket_type = infer_ticket_type_from_id("backend.nonexistent-id")
         assert ticket_type is None
 
-    def test_infers_epic_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+    def test_infers_epic_from_yaml_frontmatter(self, setup_hive_config):
         """Should infer type 'epic' from YAML frontmatter in flat storage."""
-        monkeypatch.chdir(tmp_path)
-
-        backend_dir = tmp_path / "backend"
-        backend_dir.mkdir(parents=True)
+        backend_dir = setup_hive_config / "backend"
 
         ticket_file = backend_dir / "backend.bees-abc.md"
         ticket_file.write_text("---\nbees_version: 1.1\ntype: epic\ntitle: Test Epic\n---\n\nBody content")
@@ -274,12 +300,9 @@ class TestInferTicketTypeFromId:
         ticket_type = infer_ticket_type_from_id("backend.bees-abc")
         assert ticket_type == "epic"
 
-    def test_infers_task_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+    def test_infers_task_from_yaml_frontmatter(self, setup_hive_config):
         """Should infer type 'task' from YAML frontmatter in flat storage."""
-        monkeypatch.chdir(tmp_path)
-
-        backend_dir = tmp_path / "backend"
-        backend_dir.mkdir(parents=True)
+        backend_dir = setup_hive_config / "backend"
 
         ticket_file = backend_dir / "backend.bees-xyz.md"
         ticket_file.write_text("---\nbees_version: 1.1\ntype: task\ntitle: Test Task\n---\n\nBody content")
@@ -287,12 +310,9 @@ class TestInferTicketTypeFromId:
         ticket_type = infer_ticket_type_from_id("backend.bees-xyz")
         assert ticket_type == "task"
 
-    def test_infers_subtask_from_yaml_frontmatter(self, tmp_path, monkeypatch):
+    def test_infers_subtask_from_yaml_frontmatter(self, setup_hive_config):
         """Should infer type 'subtask' from YAML frontmatter in flat storage."""
-        monkeypatch.chdir(tmp_path)
-
-        frontend_dir = tmp_path / "frontend"
-        frontend_dir.mkdir(parents=True)
+        frontend_dir = setup_hive_config / "frontend"
 
         ticket_file = frontend_dir / "frontend.bees-123.md"
         ticket_file.write_text("---\nbees_version: 1.1\ntype: subtask\ntitle: Test Subtask\n---\n\nBody content")

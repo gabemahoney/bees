@@ -56,7 +56,7 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
         Path object pointing to the ticket's markdown file in hive root
 
     Raises:
-        ValueError: If ticket_id is empty
+        ValueError: If ticket_id is empty or hive not found in config
 
     Examples:
         >>> get_ticket_path("backend.bees-250", "epic")
@@ -68,9 +68,16 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
     # Parse ticket ID to extract hive name (raises ValueError if unprefixed)
     hive_name, base_id = _parse_ticket_id_for_path(ticket_id)
 
-    # Use hive root directory - flat storage, no subdirectories
-    # Path structure: /path/to/{hive_name}/{hive_name}.bees-abc1.md
-    base_dir = Path.cwd() / hive_name
+    # Load config to get hive path
+    from .config import load_bees_config
+    config = load_bees_config()
+
+    if not config or hive_name not in config.hives:
+        raise ValueError(f"Hive '{hive_name}' not found in config")
+
+    # Use hive root directory from config - flat storage, no subdirectories
+    # Path structure: {hive_path}/{hive_name}.bees-abc1.md
+    base_dir = Path(config.hives[hive_name].path)
     return base_dir / f"{ticket_id}.md"
 
 
@@ -126,8 +133,15 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
         # Invalid ticket ID format
         return None
 
+    # Load config to get hive path
+    from .config import load_bees_config
+    config = load_bees_config()
+
+    if not config or hive_name not in config.hives:
+        return None
+
     # Check hive root directory for ticket file
-    base_dir = Path.cwd() / hive_name
+    base_dir = Path(config.hives[hive_name].path)
     ticket_path = base_dir / f"{ticket_id}.md"
 
     if not ticket_path.exists():

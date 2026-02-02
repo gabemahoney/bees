@@ -16,9 +16,29 @@ from src.paths import get_ticket_path
 @pytest.fixture
 def setup_tickets_dir(tmp_path, monkeypatch):
     """Create temporary tickets directory structure."""
-    # TICKETS_DIR has been removed - tests now use hive-based structure
-    # Just change to tmp_path for test isolation
+    # Change to temp directory
     monkeypatch.chdir(tmp_path)
+
+    # Create default hive directory
+    default_dir = tmp_path / "default"
+    default_dir.mkdir()
+
+    # Initialize .bees/config.json with default hive
+    from src.config import save_bees_config, BeesConfig, HiveConfig
+    from datetime import datetime
+
+    config = BeesConfig(
+        hives={
+            'default': HiveConfig(
+                path=str(default_dir),
+                display_name='Default',
+                created_at=datetime.now().isoformat()
+            ),
+        },
+        allow_cross_hive_dependencies=True,
+        schema_version='1.0'
+    )
+    save_bees_config(config)
 
     yield tmp_path
 

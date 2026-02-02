@@ -79,12 +79,19 @@ The auto-generated `index.md` file uses relative paths that work with the flat s
 
 **Test Coverage:**
 
-The `test_generate_demo_tickets.py` test suite validates the flat storage architecture:
-- Verifies all ticket types (epics, tasks, subtasks) are stored in hive root directory (`default/`)
-- Confirms tickets are NOT in old type-specific subdirectories (`default/epics/`, `default/tasks/`, `default/subtasks/`)
-- Tests edge cases like missing ticket files and validates graceful error handling
-- Validates demo ticket generation produces correct relationships, dependencies, and metadata
-- Reference Task bees-kr4km and Epic bees-yuql for implementation details
+The test suite has been migrated to support flat storage architecture:
+- All test fixtures now use config-based hive setup via `.bees/config.json`
+- Test directories are created per-test using temporary directories with proper hive configuration
+- Tests validate ticket YAML frontmatter includes `bees_version: 1.1` field
+- Flat storage tests confirm all ticket types are stored in hive root (not in type subdirectories)
+- Tests updated: `test_mcp_create_ticket_hive.py`, `test_create_ticket.py`, `test_delete_ticket.py`, `test_mcp_hive_inference.py`, `test_paths.py`
+- Tests requiring refactoring: `test_relationship_sync.py`, `test_writer.py` (marked as skipped with TODO)
+- The `test_generate_demo_tickets.py` test suite validates the flat storage architecture:
+  - Verifies all ticket types (epics, tasks, subtasks) are stored in hive root directory (`default/`)
+  - Confirms tickets are NOT in old type-specific subdirectories (`default/epics/`, `default/tasks/`, `default/subtasks/`)
+  - Tests edge cases like missing ticket files and validates graceful error handling
+  - Validates demo ticket generation produces correct relationships, dependencies, and metadata
+  - Reference Task bees-kr4km and Epic bees-yuql for implementation details
 
 The `.hive/identity.json` file contains:
 - `normalized_name` - The normalized hive identifier
@@ -108,6 +115,33 @@ Examples:
 - `'123project'` → `'_123project'`
 
 Paths must be absolute and within the repository root.
+
+**Hive Path Requirements:**
+
+When creating tickets, the system validates that hive paths are accessible and writable:
+
+- **Path must exist** - The hive directory must exist on the filesystem before tickets can be created
+- **Must be a directory** - The path cannot be a regular file; it must be a directory
+- **Must be writable** - The directory must have write permissions so tickets can be created
+- **Symlinks supported** - Hive paths can be symlinks, but they must point to valid, writable directories
+
+**Common Error Messages:**
+
+If path validation fails, you'll see descriptive error messages:
+
+- `"Hive path does not exist: '/path/to/hive'. Please create the directory before creating tickets."` - The directory doesn't exist; create it with `mkdir -p /path/to/hive`
+- `"Hive path is not a directory: '/path/to/hive'. Path must be a directory, not a file."` - A file exists at the path; remove it or use a different path
+- `"Hive directory is not writable: '/path/to/hive'. Please check directory permissions."` - Fix permissions with `chmod u+w /path/to/hive`
+- `"Failed to resolve hive path '/path/to/hive': [error details]"` - Usually indicates a broken symlink or permission issue
+
+**Troubleshooting:**
+
+If you encounter hive path errors:
+
+1. **Missing directory:** Create the hive directory: `mkdir -p /path/to/hive`
+2. **Permission errors:** Ensure write permissions: `chmod u+w /path/to/hive`
+3. **Broken symlink:** Check symlink target exists: `ls -la /path/to/hive`
+4. **File instead of directory:** Remove file and create directory: `rm /path/to/hive && mkdir /path/to/hive`
 
 **Duplicate Name Detection:**
 
@@ -339,7 +373,12 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
   - **`hive_name` parameter is REQUIRED for all ticket creation**
   - All new tickets must specify a hive; generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
+  - **Validation:** Hive must exist in `.bees/config.json` before creating tickets
+  - The `hive_name` is normalized and checked against registered hives in config
   - Attempting to create a ticket without `hive_name` will raise a `ValueError`
+  - Attempting to create a ticket for a non-existent hive will raise a `ValueError` with message: "Hive '{hive_name}' (normalized: '{normalized}') does not exist in config. Please create the hive first using colonize_hive. If the hive directory exists but isn't registered, you may need to run colonize_hive to register it."
+  - **Design:** create_ticket uses strict validation and does NOT attempt automatic hive recovery. This ensures write operations are explicit and consistent with update_ticket/delete_ticket behavior.
+  - Ticket is stored in the hive directory specified in config (flat storage at hive root)
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
   - Automatically infers hive from `ticket_id` (no hive_name parameter needed)
 - **delete_ticket** - `ticket_id, cascade`
