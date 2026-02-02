@@ -1055,6 +1055,47 @@ End-to-end testing confirmed HTTP transport is production-ready. The testing pro
 
 The server provides custom HTTP endpoints alongside FastMCP's built-in MCP protocol endpoints:
 
+### Hive Colonization MCP Tool
+
+**colonize_hive MCP Tool** (`_colonize_hive()` in `src/mcp_server.py`) exposes hive creation functionality via the MCP protocol, enabling AI agents to create and register new hive directories programmatically.
+
+**MCP Tool Registration**: The tool is registered with FastMCP using the `mcp.tool()` decorator pattern, following the same registration approach as other MCP tools (create_ticket, update_ticket, delete_ticket). Registration occurs immediately after the function definition to ensure tool availability at server startup.
+
+**Parameter Validation**: The wrapper validates two required parameters:
+- `name` (string): Display name for the hive (e.g., "Back End", "Frontend")
+- `path` (string): Absolute directory path where hive should be created
+
+Path validation enforces three requirements:
+1. Path must be absolute (not relative)
+2. Path must exist on filesystem
+3. Path must be within repository root (prevents hives outside git repo)
+
+**Name Normalization**: Display names are normalized using the config system's `normalize_hive_name()` function. Normalization converts to lowercase, replaces non-alphanumeric characters with underscores, and validates the result is non-empty. This ensures consistent hive identification across the system.
+
+**Uniqueness Check**: Before creating a hive, the tool verifies that the normalized name doesn't already exist in the hive registry using `validate_unique_hive_name()` from the config module. This prevents duplicate hive names that would cause ID collision.
+
+**Directory Structure Creation**: Successful validation triggers creation of three components:
+1. `/eggs` subdirectory for future feature storage
+2. `/evicted` subdirectory for completed/archived tickets
+3. `.hive/identity.json` marker file containing:
+   - `normalized_name`: Internal identifier (e.g., "back_end")
+   - `display_name`: Original name provided (e.g., "Back End")
+   - `created_at`: ISO 8601 timestamp
+   - `version`: Schema version for future compatibility
+
+**Config Registration**: After directory structure creation, the hive is registered in `.bees/config.json` using the config module's `register_hive_dict()` and `write_hive_config_dict()` functions. This integration ensures the new hive is immediately available for ticket operations.
+
+**Error Handling**: The wrapper returns structured error responses for validation failures:
+- `validation_error`: Name normalizes to empty string
+- `path_validation_error`: Path is relative, doesn't exist, or outside repo
+- `duplicate_name_error`: Normalized name already exists in registry
+- `filesystem_error`: Cannot create directories or write files
+- `config_error`: Cannot read or write `.bees/config.json`
+
+All errors are raised as `ValueError` to propagate through MCP protocol, with descriptive messages for client-side debugging.
+
+**Linter Integration Stub**: The colonize_hive core function includes a placeholder for future linter integration. The linter will validate that no conflicting tickets exist across hives during colonization (e.g., duplicate ticket IDs, conflicting hive names). This is currently stubbed out and logged for future implementation.
+
 ## MCP Server Startup and CLI Integration
 
 **Entry point architecture** uses `src/main.py` to separate server initialization from tool implementations, enabling configuration-driven deployment via Poetry scripts and clean testing boundaries. YAML configuration was chosen over .env or JSON formats to support comments, human readability, and nested structures without additional dependencies.

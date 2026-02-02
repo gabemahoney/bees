@@ -1673,6 +1673,86 @@ def _generate_index(
 generate_index_tool = mcp.tool()(_generate_index)
 
 
+def _colonize_hive(
+    name: str,
+    path: str
+) -> Dict[str, Any]:
+    """
+    Create and register a new hive at the specified path.
+
+    This MCP tool wrapper exposes the colonize_hive() core function, which:
+    - Normalizes the hive display name
+    - Validates the path is absolute, exists, and within the repository
+    - Checks for duplicate normalized hive names
+    - Creates the hive directory structure (/eggs, /evicted, .hive marker)
+    - Registers the hive in .bees/config.json
+
+    Args:
+        name: Display name for the hive (e.g., 'Back End', 'Frontend')
+               Will be normalized for internal use (e.g., 'back_end', 'frontend')
+        path: Absolute path to the directory where the hive should be created
+              Must be within the repository root
+
+    Returns:
+        dict: Operation result with status and details
+            On success: {
+                'status': 'success',
+                'message': 'Hive created and registered successfully',
+                'normalized_name': str,  # Internal hive identifier
+                'display_name': str,     # Original display name
+                'path': str              # Absolute path to hive directory
+            }
+            On error: {
+                'status': 'error',
+                'message': str,          # Human-readable error description
+                'error_type': str,       # Error category
+                'validation_details': dict  # Additional error context
+            }
+
+    Raises:
+        ValueError: If validation fails or operation cannot be completed
+
+    Example:
+        >>> _colonize_hive('Back End', '/Users/user/projects/myrepo/tickets/backend')
+        {
+            'status': 'success',
+            'message': 'Hive created and registered successfully',
+            'normalized_name': 'back_end',
+            'display_name': 'Back End',
+            'path': '/Users/user/projects/myrepo/tickets/backend'
+        }
+
+    Error Conditions:
+        - Invalid name: Name normalizes to empty string (no alphanumeric chars)
+        - Invalid path: Path is not absolute, doesn't exist, or outside repo
+        - Duplicate name: Normalized name already exists in registry
+        - Filesystem error: Cannot create directories or write files
+        - Config error: Cannot read or write .bees/config.json
+    """
+    try:
+        result = colonize_hive(name=name, path=path)
+
+        # Check if operation succeeded
+        if result.get('status') == 'error':
+            # Core function returned error - raise ValueError to propagate to MCP client
+            error_msg = result.get('message', 'Unknown error')
+            logger.error(f"colonize_hive failed: {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"Successfully colonized hive '{name}' at {path}")
+        return result
+
+    except Exception as e:
+        # Catch unexpected errors and return structured error response
+        error_msg = f"Failed to colonize hive: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+
+# Register the colonize_hive tool with FastMCP
+colonize_hive_tool = mcp.tool()(_colonize_hive)
+
+
 if __name__ == "__main__":
     logger.info("Running Bees MCP Server directly")
     start_server()

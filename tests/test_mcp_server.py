@@ -1868,6 +1868,364 @@ class TestScanForHiveConfigHandling:
         assert result3 == hive_path
 
 
+class TestColonizeHiveMCPIntegration:
+    """Integration tests for colonize_hive MCP tool wrapper."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        config_dir = tmp_path / ".bees"
+        config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_colonize_hive_success_case(self, git_repo_tmp_path):
+        """Test successful colonization via MCP wrapper."""
+        from src.mcp_server import _colonize_hive
+
+        hive_path = git_repo_tmp_path / "backend_hive"
+        hive_path.mkdir()
+
+        result = _colonize_hive("Back End", str(hive_path))
+
+        # Verify success response
+        assert result["status"] == "success"
+        assert result["normalized_name"] == "back_end"
+        assert result["display_name"] == "Back End"
+        assert result["path"] == str(hive_path)
+
+        # Verify directory structure created
+        assert (hive_path / "eggs").exists()
+        assert (hive_path / "evicted").exists()
+        assert (hive_path / ".hive").exists()
+        assert (hive_path / ".hive" / "identity.json").exists()
+
+    def test_colonize_hive_creates_marker(self, git_repo_tmp_path):
+        """Test that MCP wrapper creates .hive marker with correct identity."""
+        from src.mcp_server import _colonize_hive
+        import json
+
+        hive_path = git_repo_tmp_path / "frontend"
+        hive_path.mkdir()
+
+        result = _colonize_hive("Frontend", str(hive_path))
+
+        # Read identity file
+        identity_file = hive_path / ".hive" / "identity.json"
+        with open(identity_file, 'r') as f:
+            identity_data = json.load(f)
+
+        assert identity_data["normalized_name"] == "frontend"
+        assert identity_data["display_name"] == "Frontend"
+        assert "created_at" in identity_data
+        assert "version" in identity_data
+
+    def test_colonize_hive_invalid_path_not_absolute(self, git_repo_tmp_path):
+        """Test error case: path is not absolute."""
+        from src.mcp_server import _colonize_hive
+
+        with pytest.raises(ValueError, match="must be absolute"):
+            _colonize_hive("Test Hive", "relative/path")
+
+    def test_colonize_hive_path_does_not_exist(self, git_repo_tmp_path):
+        """Test error case: path does not exist."""
+        from src.mcp_server import _colonize_hive
+
+        nonexistent = git_repo_tmp_path / "does_not_exist"
+
+        with pytest.raises(ValueError, match="does not exist"):
+            _colonize_hive("Test Hive", str(nonexistent))
+
+    def test_colonize_hive_path_outside_repo(self, tmp_path, git_repo_tmp_path):
+        """Test error case: path is outside repository root."""
+        from src.mcp_server import _colonize_hive
+
+        outside = tmp_path.parent / "outside"
+        outside.mkdir(exist_ok=True)
+
+        with pytest.raises(ValueError, match="within repository root"):
+            _colonize_hive("Test Hive", str(outside))
+
+    def test_colonize_hive_duplicate_name(self, git_repo_tmp_path):
+        """Test error case: duplicate hive name."""
+        from src.mcp_server import _colonize_hive
+
+        hive1_path = git_repo_tmp_path / "hive1"
+        hive1_path.mkdir()
+        hive2_path = git_repo_tmp_path / "hive2"
+        hive2_path.mkdir()
+
+        # Create first hive
+        result1 = _colonize_hive("Test Hive", str(hive1_path))
+        assert result1["status"] == "success"
+
+        # Try to create second hive with same normalized name
+        with pytest.raises(ValueError, match="already exists"):
+            _colonize_hive("Test Hive", str(hive2_path))
+
+    def test_colonize_hive_invalid_name_empty(self, git_repo_tmp_path):
+        """Test error case: name normalizes to empty string."""
+        from src.mcp_server import _colonize_hive
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        with pytest.raises(ValueError, match="empty string"):
+            _colonize_hive("!!!", str(hive_path))
+
+    def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
+        """Test that colonize_hive registers hive in config.json."""
+        from src.mcp_server import _colonize_hive
+        from src.config import load_bees_config
+
+        hive_path = git_repo_tmp_path / "api"
+        hive_path.mkdir()
+
+        result = _colonize_hive("API", str(hive_path))
+
+        # Verify hive is in config
+        config = load_bees_config()
+        assert config is not None
+        assert "api" in config.hives
+        assert config.hives["api"].display_name == "API"
+        assert config.hives["api"].path == str(hive_path)
+
+    def test_colonize_hive_name_normalization(self, git_repo_tmp_path):
+        """Test that MCP wrapper correctly normalizes hive names."""
+        from src.mcp_server import _colonize_hive
+
+        test_cases = [
+            ("Back End", "back_end"),
+            ("UPPERCASE", "uppercase"),
+            ("Multi Word Name", "multi_word_name"),
+            ("API-v2", "api_v2"),
+        ]
+
+        for i, (display_name, expected_normalized) in enumerate(test_cases):
+            hive_path = git_repo_tmp_path / f"hive{i}"
+            hive_path.mkdir()
+
+            result = _colonize_hive(display_name, str(hive_path))
+
+            assert result["normalized_name"] == expected_normalized
+            assert result["display_name"] == display_name
+
+
+class TestColonizeHiveMCPUnit:
+    """Unit tests for colonize_hive MCP wrapper function."""
+
+    def test_colonize_hive_tool_callable(self):
+        """Test that _colonize_hive function is callable."""
+        from src.mcp_server import _colonize_hive
+
+        assert callable(_colonize_hive)
+
+    def test_colonize_hive_accepts_name_and_path_parameters(self, git_repo_tmp_path):
+        """Test that _colonize_hive accepts name and path parameters."""
+        from src.mcp_server import _colonize_hive
+        from inspect import signature
+
+        sig = signature(_colonize_hive)
+        params = list(sig.parameters.keys())
+
+        assert 'name' in params
+        assert 'path' in params
+
+    def test_colonize_hive_parameter_validation_empty_name(self, git_repo_tmp_path):
+        """Test parameter validation for empty name."""
+        from src.mcp_server import _colonize_hive
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        # Empty name should normalize to empty string and raise error
+        with pytest.raises(ValueError):
+            _colonize_hive("", str(hive_path))
+
+    def test_colonize_hive_parameter_validation_invalid_path_format(self):
+        """Test parameter validation for invalid path format (not absolute)."""
+        from src.mcp_server import _colonize_hive
+
+        with pytest.raises(ValueError):
+            _colonize_hive("Test", "relative/path")
+
+    def test_colonize_hive_success_response_structure(self, git_repo_tmp_path):
+        """Test that success response has correct structure."""
+        from src.mcp_server import _colonize_hive
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        result = _colonize_hive("Test", str(hive_path))
+
+        # Verify response structure
+        assert isinstance(result, dict)
+        assert "status" in result
+        assert "normalized_name" in result
+        assert "display_name" in result
+        assert "path" in result
+        assert result["status"] == "success"
+
+    def test_colonize_hive_error_response_raises_value_error(self, git_repo_tmp_path):
+        """Test that error conditions raise ValueError."""
+        from src.mcp_server import _colonize_hive
+
+        # Invalid path should raise ValueError
+        with pytest.raises(ValueError):
+            _colonize_hive("Test", "relative/path")
+
+    def test_colonize_hive_wraps_core_function(self, git_repo_tmp_path):
+        """Test that MCP wrapper calls underlying colonize_hive() core function."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        # Mock the core colonize_hive function
+        with patch('src.mcp_server.colonize_hive') as mock_core:
+            mock_core.return_value = {
+                "status": "success",
+                "normalized_name": "test",
+                "display_name": "Test",
+                "path": str(hive_path)
+            }
+
+            result = _colonize_hive("Test", str(hive_path))
+
+            # Verify core function was called
+            mock_core.assert_called_once_with(name="Test", path=str(hive_path))
+            assert result["status"] == "success"
+
+    def test_colonize_hive_propagates_core_function_errors(self, git_repo_tmp_path):
+        """Test that wrapper propagates errors from core function."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        # Mock core function to return error
+        with patch('src.mcp_server.colonize_hive') as mock_core:
+            mock_core.return_value = {
+                "status": "error",
+                "message": "Test error",
+                "error_type": "test_error"
+            }
+
+            with pytest.raises(ValueError, match="Test error"):
+                _colonize_hive("Test", str(hive_path))
+
+    def test_colonize_hive_handles_unexpected_exceptions(self, git_repo_tmp_path):
+        """Test that wrapper handles unexpected exceptions."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test"
+        hive_path.mkdir()
+
+        # Mock core function to raise unexpected exception
+        with patch('src.mcp_server.colonize_hive', side_effect=RuntimeError("Unexpected")):
+            with pytest.raises(ValueError, match="Failed to colonize hive"):
+                _colonize_hive("Test", str(hive_path))
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        config_dir = tmp_path / ".bees"
+        config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+
+class TestColonizeHiveMCPErrorCases:
+    """Integration tests for colonize_hive error handling."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        config_dir = tmp_path / ".bees"
+        config_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def test_colonize_hive_filesystem_error_eggs_creation(self, git_repo_tmp_path):
+        """Test error case: cannot create /eggs directory."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # Mock Path.mkdir to raise PermissionError on /eggs creation
+        original_mkdir = Path.mkdir
+        def mock_mkdir(self, *args, **kwargs):
+            if self.name == "eggs":
+                raise PermissionError("Permission denied")
+            return original_mkdir(self, *args, **kwargs)
+
+        with patch.object(Path, 'mkdir', mock_mkdir):
+            with pytest.raises(ValueError, match="eggs"):
+                _colonize_hive("Test Hive", str(hive_path))
+
+    def test_colonize_hive_filesystem_error_evicted_creation(self, git_repo_tmp_path):
+        """Test error case: cannot create /evicted directory."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # Mock Path.mkdir to raise OSError on /evicted creation
+        original_mkdir = Path.mkdir
+        def mock_mkdir(self, *args, **kwargs):
+            if self.name == "evicted":
+                raise OSError("Disk full")
+            return original_mkdir(self, *args, **kwargs)
+
+        with patch.object(Path, 'mkdir', mock_mkdir):
+            with pytest.raises(ValueError, match="evicted"):
+                _colonize_hive("Test Hive", str(hive_path))
+
+    def test_colonize_hive_error_writing_identity_file(self, git_repo_tmp_path):
+        """Test error case: cannot write .hive/identity.json file."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # Mock open to raise PermissionError on identity.json write
+        original_open = open
+        def mock_open_func(file, *args, **kwargs):
+            if "identity.json" in str(file):
+                raise PermissionError("Permission denied")
+            return original_open(file, *args, **kwargs)
+
+        with patch('builtins.open', mock_open_func):
+            with pytest.raises(ValueError, match="identity"):
+                _colonize_hive("Test Hive", str(hive_path))
+
+    def test_colonize_hive_config_write_failure(self, git_repo_tmp_path):
+        """Test error case: cannot write config.json."""
+        from src.mcp_server import _colonize_hive
+        from unittest.mock import patch
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # Mock write_hive_config_dict to raise IOError
+        with patch('src.mcp_server.write_hive_config_dict', side_effect=IOError("Disk full")):
+            with pytest.raises(ValueError, match="config"):
+                _colonize_hive("Test Hive", str(hive_path))
+
+
 class TestParseTicketId:
     """Tests for parse_ticket_id() utility function."""
 
