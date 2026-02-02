@@ -2,9 +2,6 @@
 
 import pytest
 from pathlib import Path
-import tempfile
-import shutil
-import os
 
 from src.mcp_server import _create_ticket
 from src.reader import read_ticket
@@ -15,40 +12,36 @@ from datetime import datetime
 
 
 @pytest.fixture
-def temp_tickets_dir():
+def temp_tickets_dir(tmp_path, monkeypatch):
     """Create temporary hive directory with config-based setup."""
-    # Create temp directory structure
-    temp_dir = Path(tempfile.mkdtemp())
-
-    # Save original working directory
-    original_cwd = os.getcwd()
-
-    # Change to temp directory
-    os.chdir(temp_dir)
-
     # Create hive directories for testing
-    backend_dir = temp_dir / "backend"
+    backend_dir = tmp_path / "backend"
     backend_dir.mkdir()
-    frontend_dir = temp_dir / "frontend"
+    frontend_dir = tmp_path / "frontend"
     frontend_dir.mkdir()
-    test_hive_dir = temp_dir / "test_hive"
+    test_hive_dir = tmp_path / "test_hive"
     test_hive_dir.mkdir()
-    my_hive_dir = temp_dir / "my_hive"
+    my_hive_dir = tmp_path / "my_hive"
     my_hive_dir.mkdir()
-    front_end_dir = temp_dir / "front_end"
+    front_end_dir = tmp_path / "front_end"
     front_end_dir.mkdir()
-    back_end_dir = temp_dir / "back_end"
+    back_end_dir = tmp_path / "back_end"
     back_end_dir.mkdir()
-    myhive_dir = temp_dir / "myhive"
+    myhive_dir = tmp_path / "myhive"
     myhive_dir.mkdir()
-    test_123_dir = temp_dir / "test_123"
+    test_123_dir = tmp_path / "test_123"
     test_123_dir.mkdir()
-    test_dir = temp_dir / "test"
+    test_dir = tmp_path / "test"
     test_dir.mkdir()
-    a_dir = temp_dir / "a"
+    a_dir = tmp_path / "a"
     a_dir.mkdir()
-    _1_dir = temp_dir / "_1"
+    _1_dir = tmp_path / "_1"
     _1_dir.mkdir()
+    my_hive_123_dir = tmp_path / "my_hive_123"
+    my_hive_123_dir.mkdir()
+
+    # Change to temp directory FIRST so config saves there
+    monkeypatch.chdir(tmp_path)
 
     # Initialize .bees/config.json with test hives
     config = BeesConfig(
@@ -108,17 +101,18 @@ def temp_tickets_dir():
                 display_name='1',
                 created_at=datetime.now().isoformat()
             ),
+            'my_hive_123': HiveConfig(
+                path=str(my_hive_123_dir),
+                display_name='My Hive 123',
+                created_at=datetime.now().isoformat()
+            ),
         },
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
     save_bees_config(config)
 
-    yield temp_dir
-
-    # Restore original working directory and cleanup
-    os.chdir(original_cwd)
-    shutil.rmtree(temp_dir)
+    yield tmp_path
 
 
 class TestMCPCreateTicketWithHive:

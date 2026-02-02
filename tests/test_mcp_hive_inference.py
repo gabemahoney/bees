@@ -6,8 +6,6 @@ without requiring explicit hive_name parameter.
 
 import pytest
 from pathlib import Path
-import tempfile
-import shutil
 
 from src.mcp_server import _create_ticket, _update_ticket, _delete_ticket
 from src.reader import read_ticket
@@ -15,25 +13,18 @@ from src.paths import get_ticket_path, infer_ticket_type_from_id
 
 
 @pytest.fixture
-def temp_tickets_dir():
+def temp_tickets_dir(tmp_path, monkeypatch):
     """Create temporary hive directory with config-based setup."""
-    # Create temp directory structure
-    temp_dir = Path(tempfile.mkdtemp())
-
-    # Save original working directory
-    import os
-    original_cwd = os.getcwd()
-
-    # Change to temp directory
-    os.chdir(temp_dir)
-
     # Create hive directories for testing
-    default_dir = temp_dir / "default"
+    default_dir = tmp_path / "default"
     default_dir.mkdir()
-    backend_dir = temp_dir / "backend"
+    backend_dir = tmp_path / "backend"
     backend_dir.mkdir()
-    frontend_dir = temp_dir / "frontend"
+    frontend_dir = tmp_path / "frontend"
     frontend_dir.mkdir()
+
+    # Change to temp directory FIRST so config saves there
+    monkeypatch.chdir(tmp_path)
 
     # Initialize .bees/config.json with test hives
     from src.config import save_bees_config, BeesConfig, HiveConfig
@@ -62,11 +53,7 @@ def temp_tickets_dir():
     )
     save_bees_config(config)
 
-    yield temp_dir
-
-    # Restore original working directory and cleanup
-    os.chdir(original_cwd)
-    shutil.rmtree(temp_dir)
+    yield tmp_path
 
 
 class TestUpdateTicketHiveInference:

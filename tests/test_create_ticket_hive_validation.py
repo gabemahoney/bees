@@ -2,29 +2,26 @@
 
 import pytest
 from pathlib import Path
-import tempfile
-import shutil
 import json
+import shutil
 
 from src.mcp_server import _create_ticket
 from src.config import init_bees_config_if_needed
 
 
 @pytest.fixture
-def temp_hive_setup():
+def temp_hive_setup(tmp_path, monkeypatch):
     """Create temporary hive with proper config setup."""
-    temp_dir = Path(tempfile.mkdtemp())
-
     # Create backend hive directory
-    backend_dir = temp_dir / "backend"
+    backend_dir = tmp_path / "backend"
     backend_dir.mkdir()
 
     # Create frontend hive directory
-    frontend_dir = temp_dir / "frontend"
+    frontend_dir = tmp_path / "frontend"
     frontend_dir.mkdir()
 
     # Create .bees config directory
-    bees_config_dir = temp_dir / ".bees"
+    bees_config_dir = tmp_path / ".bees"
     bees_config_dir.mkdir()
 
     # Create config.json with registered hives
@@ -48,20 +45,14 @@ def temp_hive_setup():
         json.dump(config_data, f, indent=2)
 
     # Change to temp directory so config can be loaded
-    import os
-    original_cwd = os.getcwd()
-    os.chdir(temp_dir)
+    monkeypatch.chdir(tmp_path)
 
     yield {
-        "temp_dir": temp_dir,
+        "temp_dir": tmp_path,
         "backend_dir": backend_dir,
         "frontend_dir": frontend_dir,
         "config_path": config_path
     }
-
-    # Restore original directory and cleanup
-    os.chdir(original_cwd)
-    shutil.rmtree(temp_dir)
 
 
 class TestCreateTicketHiveValidation:
