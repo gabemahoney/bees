@@ -2219,6 +2219,55 @@ Return results
 - Uses same ticket ID parsing logic as path resolution (split on first dot)
 - Default behavior: omitting hive_names includes all tickets (not a compatibility feature)
 
+### Free-Form Query Execution (Task bees-1ircz, Epic bees-dgen1)
+
+**Purpose**: Enable one-step ad-hoc query execution without persisting queries to the registry. Complements named queries by providing exploratory query capability without cluttering `.bees/queries.yaml` with temporary or single-use queries.
+
+**Design Decision: Ad-Hoc vs Reusable Queries**
+- Named queries (`add_named_query` + `execute_query`): Two-step process, persists to disk, suitable for reusable queries
+- Freeform queries (`execute_freeform_query`): One-step process, no disk persistence, suitable for ad-hoc exploration
+- Rationale: Separates exploratory workflows from production query registry, prevents registry pollution with temporary queries
+- Alternative rejected: Auto-cleaning temporary queries would add complexity and potential race conditions
+
+**Architecture: Reuse Existing Components**
+- Uses `QueryParser.parse_and_validate()` for validation (same as `add_named_query`)
+- Uses `PipelineEvaluator.execute_query()` for execution (same as `execute_query`)
+- No new validation or execution logic required
+- Only difference: skip the `save_query()` step in workflow
+
+**Implementation Flow**:
+```
+execute_freeform_query(query_yaml, hive_names)
+  ↓
+QueryParser.parse_and_validate(query_yaml)
+  ↓
+[NO disk write - skip save_query()]
+  ↓
+Validate hive existence in .bees/config.json
+  ↓
+PipelineEvaluator.execute_query(stages, hive_names)
+  ↓
+Return results with stages_executed count
+```
+
+**MCP Tool Interface** (`src/mcp_server.py`):
+- Function: `_execute_freeform_query(query_yaml: str, hive_names: list[str] | None = None)`
+- Returns: `{status, result_count, ticket_ids, stages_executed}`
+- Registered with FastMCP via `mcp.tool()` decorator
+- Parameters identical to `execute_query` except `query_yaml` replaces `query_name`
+
+**Error Handling**:
+- Query validation errors: Raises `ValueError` with message "Invalid query structure: {error}"
+- Hive validation errors: Raises `ValueError` with message "Hive not found: {hive_name}. Available hives: {list}"
+- Execution errors: Raises `ValueError` with message "Failed to execute freeform query: {error}"
+- Same error semantics as `execute_query` for consistency
+
+**Integration with Existing Query Infrastructure**:
+- Shares same validation rules as `add_named_query` (no syntax differences)
+- Shares same execution engine as `execute_query` (identical query semantics)
+- Supports hive filtering identically to `execute_query` (same validation and filtering logic)
+- Logging: Info-level for successful execution, error-level for failures
+
 **Default Behavior**:
 - When `hive_names` parameter omitted: all hives included (no filtering)
 - When `hive_names` is empty list: filters to tickets without hive prefix

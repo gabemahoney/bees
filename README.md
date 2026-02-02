@@ -135,6 +135,14 @@ Human users do not need to interact with the MCP server. These commands are prov
   - `hive_names` is optional; when provided, filters results to only tickets from specified hives
   - Default behavior: all hives included when `hive_names` is omitted
   - Validates that all specified hives exist; returns error if any hive not found
+- **execute_freeform_query** - `query_yaml, hive_names`
+  - Executes a YAML query pipeline directly without persisting it to the registry
+  - Enables one-step ad-hoc query execution without cluttering the named query registry
+  - **Parameters:**
+    - `query_yaml` (required): YAML string representing the query pipeline
+    - `hive_names` (optional): List of hive names to filter results
+  - **Returns:** `{status, result_count, ticket_ids, stages_executed}`
+  - Use for exploratory queries; use `add_named_query` + `execute_query` for reusable queries
 - **generate_index** - `status, type, hive_name`
   - `hive_name` is optional; when provided, generates index only for that specific hive
   - When omitted, regenerates indexes for all registered hives
@@ -206,6 +214,18 @@ execute_query(query_name="open_tasks", hive_names=["backend", "frontend"])
 # Error handling: nonexistent hive
 # execute_query(query_name="open_tasks", hive_names=["nonexistent"])
 # Returns: ValueError: Hive not found: nonexistent. Available hives: backend, frontend
+
+# Execute ad-hoc query without persisting (one-step)
+execute_freeform_query(query_yaml="- [type=epic]\n- [children]")
+# Returns: {'status': 'success', 'result_count': 42, 'ticket_ids': ['backend.bees-abc1', ...], 'stages_executed': 2}
+
+# Execute ad-hoc query with hive filter
+execute_freeform_query(query_yaml="- [type=task, status=open]", hive_names=["backend"])
+
+# Compare to named query approach (two-step)
+add_named_query(name="epic_children", query_yaml="- [type=epic]\n- [children]")
+execute_query(query_name="epic_children")
+# Same results, but query is persisted for reuse
 
 # Generate index for all hives
 generate_index()

@@ -1672,6 +1672,93 @@ def _execute_query(
 execute_query = mcp.tool()(_execute_query)
 
 
+def _execute_freeform_query(
+    query_yaml: str,
+    hive_names: list[str] | None = None
+) -> Dict[str, Any]:
+    """
+    Execute a YAML query pipeline directly without persisting it.
+
+    This function enables one-step ad-hoc query execution without polluting
+    the query registry. The query is validated and executed immediately without
+    being saved to disk.
+
+    Args:
+        query_yaml: YAML string representing the query pipeline structure
+        hive_names: Optional list of hive names to filter results (default: None = all hives)
+
+    Returns:
+        dict: Query results with list of matching ticket IDs and metadata
+            {
+                "status": "success",
+                "result_count": int,
+                "ticket_ids": list[str],
+                "stages_executed": int
+            }
+
+    Raises:
+        ValueError: If query structure is invalid, hive not found, or execution fails
+
+    Example:
+        execute_freeform_query("- ['type=epic']\\n- ['children']")
+        execute_freeform_query("- ['type=task', 'status=open']", ["backend"])
+    """
+    # Parse and validate query structure
+    from .query_parser import QueryParser, QueryValidationError
+
+    try:
+        parser = QueryParser()
+        stages = parser.parse_and_validate(query_yaml)
+        logger.info(f"Parsed and validated freeform query with {len(stages)} stages")
+    except QueryValidationError as e:
+        error_msg = f"Invalid query structure: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except Exception as e:
+        error_msg = f"Failed to parse query: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate hive existence if hive_names provided
+    if hive_names:
+        config = load_bees_config()
+        if config is None:
+            error_msg = "No hives configured. Available hives: none"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Check each hive exists
+        for hive_name in hive_names:
+            if hive_name not in config.hives:
+                available_hives = sorted(config.hives.keys())
+                error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+    # Execute query using pipeline evaluator
+    try:
+        evaluator = PipelineEvaluator()
+        result_ids = evaluator.execute_query(stages, hive_names=hive_names)
+
+        logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")
+
+        return {
+            "status": "success",
+            "result_count": len(result_ids),
+            "ticket_ids": sorted(result_ids),
+            "stages_executed": len(stages)
+        }
+
+    except Exception as e:
+        error_msg = f"Failed to execute freeform query: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+
+# Register the execute_freeform_query tool with FastMCP
+execute_freeform_query = mcp.tool()(_execute_freeform_query)
+
+
 def _generate_index(
     status: str | None = None,
     type: str | None = None,
