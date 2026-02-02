@@ -12,11 +12,27 @@ class TestScanTickets:
 
     def test_scan_tickets_empty_directory(self, tmp_path, monkeypatch):
         """Should return empty lists when no tickets exist."""
-        # Create empty tickets directory structure
-        tickets_dir = tmp_path / "tickets"
-        (tickets_dir / "epics").mkdir(parents=True)
-        (tickets_dir / "tasks").mkdir(parents=True)
-        (tickets_dir / "subtasks").mkdir(parents=True)
+        import json
+        
+        # Create empty default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
+        
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = scan_tickets()
 
@@ -28,18 +44,16 @@ class TestScanTickets:
 
     def test_scan_tickets_with_mixed_types(self, tmp_path, monkeypatch):
         """Should group tickets by type correctly."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        subtasks_dir = tickets_dir / "subtasks"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
-        subtasks_dir.mkdir(parents=True)
-
-        # Create sample tickets
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        # Create sample tickets in hive root
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Test Epic 1
 status: open
@@ -49,8 +63,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Epic description.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Test Epic 2
 status: closed
@@ -60,8 +75,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Another epic.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Test Task 1
 status: open
@@ -71,17 +87,34 @@ updated_at: '2026-01-30T12:00:00'
 
 Task description.""")
 
-        (subtasks_dir / "bees-sb1.md").write_text("""---
-id: bees-sb1
+        (default_hive / "default.bees-sb1.md").write_text("""---
+id: default.bees-sb1
+bees_version: '1.1'
 type: subtask
 title: Test Subtask 1
-parent: bees-ts1
+parent: default.bees-ts1
 status: open
 created_at: '2026-01-30T13:00:00'
 updated_at: '2026-01-30T13:00:00'
 ---
 
 Subtask description.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = scan_tickets()
 
@@ -99,13 +132,16 @@ Subtask description.""")
 
     def test_scan_tickets_with_invalid_ticket(self, tmp_path, monkeypatch):
         """Should skip invalid tickets and continue processing."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
         # Create valid ticket
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Valid Epic
 status: open
@@ -116,11 +152,28 @@ updated_at: '2026-01-30T10:00:00'
 Valid.""")
 
         # Create invalid ticket (missing required fields)
-        (epics_dir / "bees-ep2.md").write_text("""---
+        (default_hive / "default.bees-ep2.md").write_text("""---
 type: epic
+bees_version: '1.1'
 ---
 
 Invalid ticket missing id.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Should succeed and return the valid ticket
         with pytest.warns(UserWarning, match="Failed to load ticket"):
@@ -131,13 +184,16 @@ Invalid ticket missing id.""")
 
     def test_scan_tickets_filter_by_status(self, tmp_path, monkeypatch):
         """Should filter tickets by status."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
         # Create tickets with different statuses
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Open Epic
 status: open
@@ -147,8 +203,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Completed Epic
 status: completed
@@ -157,6 +214,22 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Completed.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filter for open only
         result = scan_tickets(status_filter='open')
@@ -170,15 +243,16 @@ Completed.""")
 
     def test_scan_tickets_filter_by_type(self, tmp_path, monkeypatch):
         """Should filter tickets by type."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
         # Create tickets of different types
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Test Epic
 status: open
@@ -188,8 +262,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Epic.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Test Task
 status: open
@@ -198,6 +273,22 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Task.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filter for epics only
         result = scan_tickets(type_filter='epic')
@@ -211,15 +302,16 @@ Task.""")
 
     def test_scan_tickets_combined_filters(self, tmp_path, monkeypatch):
         """Should apply both status and type filters."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
         # Create diverse tickets
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Open Epic
 status: open
@@ -229,8 +321,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open epic.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Completed Epic
 status: completed
@@ -240,8 +333,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Completed epic.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Open Task
 status: open
@@ -250,6 +344,22 @@ updated_at: '2026-01-30T12:00:00'
 ---
 
 Open task.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filter for open epics only
         result = scan_tickets(status_filter='open', type_filter='epic')
@@ -456,16 +566,16 @@ class TestGenerateIndex:
 
     def test_generate_index_end_to_end(self, tmp_path, monkeypatch):
         """Should generate complete index from tickets directory."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
-
-        # Create sample tickets
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        # Create sample tickets in hive root
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Sample Epic
 status: open
@@ -475,8 +585,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Epic body.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Sample Task
 status: open
@@ -485,6 +596,22 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Task body.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -501,10 +628,27 @@ Task body.""")
 
     def test_generate_index_empty_directory(self, tmp_path, monkeypatch):
         """Should generate index with 'No tickets found' for all sections."""
-        tickets_dir = tmp_path / "tickets"
-        (tickets_dir / "epics").mkdir(parents=True)
-        (tickets_dir / "tasks").mkdir(parents=True)
-        (tickets_dir / "subtasks").mkdir(parents=True)
+        import json
+        
+        # Create empty default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -513,12 +657,15 @@ Task body.""")
 
     def test_generate_index_with_status_filter(self, tmp_path, monkeypatch):
         """Should filter index by status."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Open Epic
 status: open
@@ -528,8 +675,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Completed Epic
 status: completed
@@ -539,20 +687,37 @@ updated_at: '2026-01-30T11:00:00'
 
 Completed.""")
 
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
         result = generate_index(status_filter='open')
         assert "[default.bees-ep1: Open Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ep2" not in result
 
     def test_generate_index_with_type_filter(self, tmp_path, monkeypatch):
         """Should filter index by type."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Test Epic
 status: open
@@ -562,8 +727,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Epic.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Test Task
 status: open
@@ -573,20 +739,37 @@ updated_at: '2026-01-30T11:00:00'
 
 Task.""")
 
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
         result = generate_index(type_filter='epic')
         assert "[default.bees-ep1: Test Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ts1" not in result
 
     def test_generate_index_with_combined_filters(self, tmp_path, monkeypatch):
         """Should filter index by both status and type."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Open Epic
 status: open
@@ -596,8 +779,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open epic.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Completed Epic
 status: completed
@@ -607,8 +791,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Completed epic.""")
 
-        (tasks_dir / "bees-ts1.md").write_text("""---
-id: bees-ts1
+        (default_hive / "default.bees-ts1.md").write_text("""---
+id: default.bees-ts1
+bees_version: '1.1'
 type: task
 title: Open Task
 status: open
@@ -618,6 +803,22 @@ updated_at: '2026-01-30T12:00:00'
 
 Open task.""")
 
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
+
         result = generate_index(status_filter='open', type_filter='epic')
         assert "[default.bees-ep1: Open Epic](default.bees-ep1.md) (open)" in result
         assert "default.bees-ep2" not in result
@@ -625,18 +826,16 @@ Open task.""")
 
     def test_flat_paths_for_all_types(self, tmp_path, monkeypatch):
         """Should generate flat paths ({id}.md) for all ticket types."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        subtasks_dir = tickets_dir / "subtasks"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
-        subtasks_dir.mkdir(parents=True)
-
-        # Create one ticket of each type
-        (epics_dir / "bees-ep9.md").write_text("""---
-id: bees-ep9
+        # Create one ticket of each type in hive root
+        (default_hive / "default.bees-ep9.md").write_text("""---
+id: default.bees-ep9
+bees_version: '1.1'
 type: epic
 title: Test Epic
 status: open
@@ -646,8 +845,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Epic.""")
 
-        (tasks_dir / "bees-ts9.md").write_text("""---
-id: bees-ts9
+        (default_hive / "default.bees-ts9.md").write_text("""---
+id: default.bees-ts9
+bees_version: '1.1'
 type: task
 title: Test Task
 status: open
@@ -657,17 +857,34 @@ updated_at: '2026-01-30T11:00:00'
 
 Task.""")
 
-        (subtasks_dir / "bees-sb9.md").write_text("""---
-id: bees-sb9
+        (default_hive / "default.bees-sb9.md").write_text("""---
+id: default.bees-sb9
+bees_version: '1.1'
 type: subtask
 title: Test Subtask
-parent: bees-ts9
+parent: default.bees-ts9
 status: open
 created_at: '2026-01-30T12:00:00'
 updated_at: '2026-01-30T12:00:00'
 ---
 
 Subtask.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -683,18 +900,16 @@ Subtask.""")
 
     def test_flat_paths_with_empty_sections(self, tmp_path, monkeypatch):
         """Should handle empty sections correctly with flat structure."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        tasks_dir = tickets_dir / "tasks"
-        subtasks_dir = tickets_dir / "subtasks"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        epics_dir.mkdir(parents=True)
-        tasks_dir.mkdir(parents=True)
-        subtasks_dir.mkdir(parents=True)
-
-        # Only create epic, leave tasks and subtasks empty
-        (epics_dir / "bees-on1.md").write_text("""---
-id: bees-on1
+        # Only create epic in hive root, no tasks or subtasks
+        (default_hive / "default.bees-on1.md").write_text("""---
+id: default.bees-on1
+bees_version: '1.1'
 type: epic
 title: Only Epic
 status: open
@@ -703,6 +918,22 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 Solo epic.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -714,14 +945,16 @@ Solo epic.""")
 
     def test_flat_paths_with_mixed_statuses(self, tmp_path, monkeypatch):
         """Should use flat paths regardless of ticket status."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        epics_dir.mkdir(parents=True)
-
-        # Create tickets with various statuses
-        (epics_dir / "bees-op1.md").write_text("""---
-id: bees-op1
+        # Create tickets with various statuses in hive root
+        (default_hive / "default.bees-op1.md").write_text("""---
+id: default.bees-op1
+bees_version: '1.1'
 type: epic
 title: Open Epic
 status: open
@@ -731,8 +964,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open.""")
 
-        (epics_dir / "bees-pr1.md").write_text("""---
-id: bees-pr1
+        (default_hive / "default.bees-pr1.md").write_text("""---
+id: default.bees-pr1
+bees_version: '1.1'
 type: epic
 title: In Progress Epic
 status: in_progress
@@ -742,8 +976,9 @@ updated_at: '2026-01-30T11:00:00'
 
 In progress.""")
 
-        (epics_dir / "bees-cl1.md").write_text("""---
-id: bees-cl1
+        (default_hive / "default.bees-cl1.md").write_text("""---
+id: default.bees-cl1
+bees_version: '1.1'
 type: epic
 title: Closed Epic
 status: closed
@@ -752,6 +987,22 @@ updated_at: '2026-01-30T12:00:00'
 ---
 
 Closed.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -762,14 +1013,16 @@ Closed.""")
 
     def test_flat_paths_with_various_ids(self, tmp_path, monkeypatch):
         """Should handle tickets with various ID formats using flat paths."""
-        tickets_dir = tmp_path / "tickets"
-        tasks_dir = tickets_dir / "tasks"
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        tasks_dir.mkdir(parents=True)
-
-        # Create tickets with different ID formats
-        (tasks_dir / "bees-abc.md").write_text("""---
-id: bees-abc
+        # Create tickets with different ID formats in hive root
+        (default_hive / "default.bees-abc.md").write_text("""---
+id: default.bees-abc
+bees_version: '1.1'
 type: task
 title: Alpha ID
 status: open
@@ -779,8 +1032,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Alpha.""")
 
-        (tasks_dir / "bees-123.md").write_text("""---
-id: bees-123
+        (default_hive / "default.bees-123.md").write_text("""---
+id: default.bees-123
+bees_version: '1.1'
 type: task
 title: Numeric ID
 status: open
@@ -790,8 +1044,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Numeric.""")
 
-        (tasks_dir / "bees-x9z.md").write_text("""---
-id: bees-x9z
+        (default_hive / "default.bees-x9z.md").write_text("""---
+id: default.bees-x9z
+bees_version: '1.1'
 type: task
 title: Mixed ID
 status: open
@@ -800,6 +1055,22 @@ updated_at: '2026-01-30T12:00:00'
 ---
 
 Mixed.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         result = generate_index()
 
@@ -814,13 +1085,20 @@ class TestPerHiveIndexGeneration:
 
     def test_scan_tickets_filter_by_hive(self, tmp_path, monkeypatch):
         """Should filter tickets by hive prefix."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create hive directories
+        backend_hive = tmp_path / "backend"
+        frontend_hive = tmp_path / "frontend"
+        default_hive = tmp_path / "default"
+        backend_hive.mkdir()
+        frontend_hive.mkdir()
+        default_hive.mkdir()
 
-        # Create tickets with different hive prefixes
-        (epics_dir / "backend.bees-ep1.md").write_text("""---
+        # Create tickets with different hive prefixes in their respective hives
+        (backend_hive / "backend.bees-ep1.md").write_text("""---
 id: backend.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Backend Epic
 status: open
@@ -830,8 +1108,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Backend epic.""")
 
-        (epics_dir / "frontend.bees-ep2.md").write_text("""---
+        (frontend_hive / "frontend.bees-ep2.md").write_text("""---
 id: frontend.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Frontend Epic
 status: open
@@ -841,8 +1120,9 @@ updated_at: '2026-01-30T11:00:00'
 
 Frontend epic.""")
 
-        (epics_dir / "bees-ep3.md").write_text("""---
-id: bees-ep3
+        (default_hive / "default.bees-ep3.md").write_text("""---
+id: default.bees-ep3
+bees_version: '1.1'
 type: epic
 title: Legacy Epic
 status: open
@@ -851,6 +1131,30 @@ updated_at: '2026-01-30T12:00:00'
 ---
 
 Legacy epic.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                },
+                "frontend": {
+                    "path": str(frontend_hive),
+                    "display_name": "Frontend"
+                },
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filter for backend hive only
         result = scan_tickets(hive_name='backend')
@@ -868,12 +1172,17 @@ Legacy epic.""")
 
     def test_scan_tickets_hive_excludes_legacy(self, tmp_path, monkeypatch):
         """Should exclude legacy tickets when filtering by hive."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create hive directories
+        backend_hive = tmp_path / "backend"
+        default_hive = tmp_path / "default"
+        backend_hive.mkdir()
+        default_hive.mkdir()
 
-        (epics_dir / "backend.bees-ep1.md").write_text("""---
+        (backend_hive / "backend.bees-ep1.md").write_text("""---
 id: backend.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Backend Epic
 status: open
@@ -883,8 +1192,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Backend.""")
 
-        (epics_dir / "bees-ep2.md").write_text("""---
-id: bees-ep2
+        (default_hive / "default.bees-ep2.md").write_text("""---
+id: default.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Legacy Epic
 status: open
@@ -893,6 +1203,26 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Legacy.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                },
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filtering by hive should exclude legacy ticket
         result = scan_tickets(hive_name='backend')
@@ -907,13 +1237,10 @@ Legacy.""")
         backend_hive = tmp_path / "backend"
         backend_hive.mkdir()
 
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
-
-        # Create hive-prefixed ticket
-        (epics_dir / "backend.bees-ep1.md").write_text("""---
+        # Create hive-prefixed ticket in hive root
+        (backend_hive / "backend.bees-ep1.md").write_text("""---
 id: backend.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Backend Epic
 status: open
@@ -962,13 +1289,10 @@ Backend epic.""")
         backend_hive.mkdir()
         frontend_hive.mkdir()
 
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
-
-        # Create tickets in different hives
-        (epics_dir / "backend.bees-ep1.md").write_text("""---
+        # Create tickets in respective hive roots
+        (backend_hive / "backend.bees-ep1.md").write_text("""---
 id: backend.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Backend Epic
 status: open
@@ -978,8 +1302,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Backend.""")
 
-        (epics_dir / "frontend.bees-ep2.md").write_text("""---
+        (frontend_hive / "frontend.bees-ep2.md").write_text("""---
 id: frontend.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Frontend Epic
 status: open
@@ -1030,12 +1355,15 @@ Frontend.""")
 
     def test_generate_index_hive_not_in_config(self, tmp_path, monkeypatch):
         """Should create hive directory and write index when hive not in config."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create newback hive directory
+        newback_hive = tmp_path / "newback"
+        newback_hive.mkdir()
 
-        (epics_dir / "newback.bees-ep1.md").write_text("""---
+        (newback_hive / "newback.bees-ep1.md").write_text("""---
 id: newback.bees-ep1
+bees_version: '1.1'
 type: epic
 title: New Backend Epic
 status: open
@@ -1044,12 +1372,27 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 New backend.""")
+
+        # Create .bees/config.json with newback hive
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "newback": {
+                    "path": str(newback_hive),
+                    "display_name": "New Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
         monkeypatch.chdir(tmp_path)
 
-        # Generate index for hive not in config
+        # Generate index for hive
         result = generate_index(hive_name='newback')
 
-        # Should create hive directory and write index
+        # Should write index to hive directory
         hive_dir = tmp_path / "newback"
         assert hive_dir.exists()
 
@@ -1061,12 +1404,15 @@ New backend.""")
 
     def test_generate_index_no_config_returns_markdown(self, tmp_path, monkeypatch):
         """Should return markdown without writing when no config exists."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create default hive directory
+        default_hive = tmp_path / "default"
+        default_hive.mkdir()
 
-        (epics_dir / "bees-ep1.md").write_text("""---
-id: bees-ep1
+        (default_hive / "default.bees-ep1.md").write_text("""---
+id: default.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Legacy Epic
 status: open
@@ -1075,27 +1421,45 @@ updated_at: '2026-01-30T10:00:00'
 ---
 
 Legacy.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "default": {
+                    "path": str(default_hive),
+                    "display_name": "Default"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
         monkeypatch.chdir(tmp_path)
 
-        # Generate index without config - should return markdown without writing
+        # Generate index - should return markdown and write to hive root
         result = generate_index()
 
         # Should contain the ticket
         assert "default.bees-ep1" in result
         assert "Legacy Epic" in result
 
-        # Should NOT write to disk when no config
-        index_path = tickets_dir / "index.md"
-        assert not index_path.exists()
+        # Should write to hive root when config exists
+        index_path = default_hive / "index.md"
+        assert index_path.exists()
 
     def test_scan_tickets_hive_with_status_filter(self, tmp_path, monkeypatch):
         """Should combine hive and status filters."""
-        tickets_dir = tmp_path / "tickets"
-        epics_dir = tickets_dir / "epics"
-        epics_dir.mkdir(parents=True)
+        import json
+        
+        # Create backend hive directory
+        backend_hive = tmp_path / "backend"
+        backend_hive.mkdir()
 
-        (epics_dir / "backend.bees-ep1.md").write_text("""---
+        (backend_hive / "backend.bees-ep1.md").write_text("""---
 id: backend.bees-ep1
+bees_version: '1.1'
 type: epic
 title: Backend Open Epic
 status: open
@@ -1105,8 +1469,9 @@ updated_at: '2026-01-30T10:00:00'
 
 Open.""")
 
-        (epics_dir / "backend.bees-ep2.md").write_text("""---
+        (backend_hive / "backend.bees-ep2.md").write_text("""---
 id: backend.bees-ep2
+bees_version: '1.1'
 type: epic
 title: Backend Closed Epic
 status: closed
@@ -1115,6 +1480,22 @@ updated_at: '2026-01-30T11:00:00'
 ---
 
 Closed.""")
+
+        # Create .bees/config.json
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config = {
+            "hives": {
+                "backend": {
+                    "path": str(backend_hive),
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        (bees_dir / "config.json").write_text(json.dumps(config))
+        monkeypatch.chdir(tmp_path)
 
         # Filter for backend + open only
         result = scan_tickets(hive_name='backend', status_filter='open')
@@ -1318,6 +1699,7 @@ Epic.""")
         epics_dir.mkdir()
         (epics_dir / "backend.bees-old.md").write_text("""---
 id: backend.bees-old
+bees_version: '1.1'
 type: epic
 ---
 Old style.""")

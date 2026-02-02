@@ -30,6 +30,7 @@ class TestValidateIdFormat:
 
         frontmatter = f"""---
 id: {ticket_id}
+bees_version: '1.1'
 type: {ticket_type}
 title: {title}"""
 
@@ -316,6 +317,7 @@ Body.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Epic 1
 ---
@@ -324,6 +326,7 @@ Body.""")
 
         (epics_dir / "bees-ab2.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Epic 2
 ---
@@ -335,11 +338,11 @@ Body.""")
 
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-abc"
+        assert duplicate_errors[0].ticket_id == "default.bees-abc"
         # Verify complete error message
         error_msg = duplicate_errors[0].message
         assert "Duplicate" in error_msg or "duplicate" in error_msg
-        assert "bees-abc" in error_msg
+        assert "default.bees-abc" in error_msg
 
     def test_duplicate_across_different_types(self, tmp_path):
         """Should detect duplicate IDs across different ticket types."""
@@ -350,6 +353,7 @@ Body.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Epic
 ---
@@ -358,6 +362,7 @@ Body.""")
 
         (tasks_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: task
 title: Task
 parent: bees-xyz
@@ -370,11 +375,11 @@ Body.""")
 
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-abc"
+        assert duplicate_errors[0].ticket_id == "default.bees-abc"
         # Verify complete error message
         error_msg = duplicate_errors[0].message
         assert "Duplicate" in error_msg or "duplicate" in error_msg
-        assert "bees-abc" in error_msg
+        assert "default.bees-abc" in error_msg
 
     def test_duplicate_in_tasks(self, tmp_path):
         """Should detect duplicate IDs in tasks."""
@@ -383,6 +388,7 @@ Body.""")
 
         (tasks_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Task 1
 parent: bees-abc
@@ -392,6 +398,7 @@ Body.""")
 
         (tasks_dir / "bees-xy2.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Task 2
 parent: bees-abc
@@ -404,7 +411,7 @@ Body.""")
 
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-xyz"
+        assert duplicate_errors[0].ticket_id == "default.bees-xyz"
 
     def test_duplicate_in_subtasks(self, tmp_path):
         """Should detect duplicate IDs in subtasks."""
@@ -413,6 +420,7 @@ Body.""")
 
         (subtasks_dir / "bees-123.md").write_text("""---
 id: bees-123
+bees_version: '1.1'
 type: subtask
 title: Subtask 1
 parent: bees-xyz
@@ -422,6 +430,7 @@ Body.""")
 
         (subtasks_dir / "bees-12b.md").write_text("""---
 id: bees-123
+bees_version: '1.1'
 type: subtask
 title: Subtask 2
 parent: bees-xyz
@@ -434,7 +443,7 @@ Body.""")
 
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-123"
+        assert duplicate_errors[0].ticket_id == "default.bees-123"
 
     def test_triple_duplicate(self, tmp_path):
         """Should detect when same ID is used three times."""
@@ -444,6 +453,7 @@ Body.""")
         for i in range(3):
             (epics_dir / f"bees-{i:03d}.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Duplicate
 ---
@@ -457,7 +467,7 @@ Body.""")
         # Implementation reports one error per duplicate occurrence after the first
         # With 3 tickets having the same ID, we get 2 duplicate errors
         assert len(duplicate_errors) == 2
-        assert all(err.ticket_id == "bees-dup" for err in duplicate_errors)
+        assert all(err.ticket_id == "default.bees-dup" for err in duplicate_errors)
 
     def test_multiple_different_duplicates(self, tmp_path):
         """Should detect multiple different duplicate IDs."""
@@ -467,6 +477,7 @@ Body.""")
         # First pair of duplicates
         (epics_dir / "bees-du1.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 1
 ---
@@ -475,6 +486,7 @@ Body.""")
 
         (epics_dir / "bees-du2.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 2
 ---
@@ -484,6 +496,7 @@ Body.""")
         # Second pair of duplicates
         (epics_dir / "bees-ab1.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: ABC 1
 ---
@@ -492,6 +505,7 @@ Body.""")
 
         (epics_dir / "bees-ab2.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: ABC 2
 ---
@@ -504,8 +518,8 @@ Body.""")
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 2
         duplicate_ids = {err.ticket_id for err in duplicate_errors}
-        assert "bees-dup" in duplicate_ids
-        assert "bees-abc" in duplicate_ids
+        assert "default.bees-dup" in duplicate_ids
+        assert "default.bees-abc" in duplicate_ids
 
     def test_mixed_unique_and_duplicate_ids(self, tmp_path):
         """Should detect only duplicates while passing unique IDs in mixed scenario."""
@@ -517,6 +531,7 @@ Body.""")
         # Valid unique IDs
         (epics_dir / "bees-un1.md").write_text("""---
 id: bees-un1
+bees_version: '1.1'
 type: epic
 title: Unique 1
 ---
@@ -525,6 +540,7 @@ Body.""")
 
         (epics_dir / "bees-un2.md").write_text("""---
 id: bees-un2
+bees_version: '1.1'
 type: epic
 title: Unique 2
 ---
@@ -533,6 +549,7 @@ Body.""")
 
         (tasks_dir / "bees-un3.md").write_text("""---
 id: bees-un3
+bees_version: '1.1'
 type: task
 title: Unique 3
 parent: bees-un1
@@ -543,6 +560,7 @@ Body.""")
         # Duplicate IDs
         (epics_dir / "bees-du1.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 1
 ---
@@ -551,6 +569,7 @@ Body.""")
 
         (tasks_dir / "bees-du2.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: task
 title: Dup 2
 parent: bees-un1
@@ -568,7 +587,7 @@ Body.""")
         # Should detect exactly one duplicate
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-dup"
+        assert duplicate_errors[0].ticket_id == "default.bees-dup"
 
     def test_empty_tickets_list(self):
         """Should handle empty tickets list without errors."""
@@ -667,6 +686,7 @@ class TestEdgeCases:
         # Valid unique IDs
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Valid 1
 ---
@@ -675,6 +695,7 @@ Body.""")
 
         (epics_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: epic
 title: Valid 2
 ---
@@ -684,6 +705,7 @@ Body.""")
         # Duplicate ID
         (epics_dir / "bees-du1.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 1
 ---
@@ -692,6 +714,7 @@ Body.""")
 
         (epics_dir / "bees-du2.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 2
 ---
@@ -708,7 +731,7 @@ Body.""")
         # Should have one duplicate error
         duplicate_errors = report.get_errors(error_type="duplicate_id")
         assert len(duplicate_errors) == 1
-        assert duplicate_errors[0].ticket_id == "bees-dup"
+        assert duplicate_errors[0].ticket_id == "default.bees-dup"
 
     def test_boundary_values(self, tmp_path):
         """Test boundary values for ID format."""

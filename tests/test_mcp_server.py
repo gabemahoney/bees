@@ -160,12 +160,28 @@ class TestToolRegistration:
 
     def test_create_ticket_implementation_response(self, tmp_path, monkeypatch):
         """Test that create_ticket returns expected response."""
-        # Setup temp tickets directory
-        tickets_dir = tmp_path / "tickets"
-        tickets_dir.mkdir()
-        (tickets_dir / "epics").mkdir()
-        (tickets_dir / "tasks").mkdir()
-        (tickets_dir / "subtasks").mkdir()
+        import json
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        from datetime import datetime
+        
+        # Change to tmp_path for test isolation
+        monkeypatch.chdir(tmp_path)
+        
+        # Create default hive directory
+        default_hive = tmp_path / "hive"
+        default_hive.mkdir()
+        
+        # Initialize .bees/config.json with hive registration
+        config = BeesConfig(
+            hives={
+                'default': HiveConfig(
+                    path=str(default_hive),
+                    display_name='Default',
+                    created_at=datetime.now().isoformat()
+                )
+            }
+        )
+        save_bees_config(config)
 
         result = _create_ticket(
             hive_name="default",
@@ -186,15 +202,61 @@ class TestToolRegistration:
 
         assert "Invalid ticket_type" in str(exc_info.value)
 
-    def test_create_ticket_validates_epic_parent(self):
+    def test_create_ticket_validates_epic_parent(self, tmp_path, monkeypatch):
         """Test that create_ticket rejects parent for epics."""
+        import json
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        from datetime import datetime
+        
+        # Change to tmp_path for test isolation
+        monkeypatch.chdir(tmp_path)
+        
+        # Create default hive directory
+        default_hive = tmp_path / "hive"
+        default_hive.mkdir()
+        
+        # Initialize .bees/config.json with hive registration
+        config = BeesConfig(
+            hives={
+                'default': HiveConfig(
+                    path=str(default_hive),
+                    display_name='Default',
+                    created_at=datetime.now().isoformat()
+                )
+            }
+        )
+        save_bees_config(config)
+        
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(hive_name="default", ticket_type="epic", title="Test", parent="some-id")
 
         assert "Epics cannot have a parent" in str(exc_info.value)
 
-    def test_create_ticket_validates_subtask_parent(self):
+    def test_create_ticket_validates_subtask_parent(self, tmp_path, monkeypatch):
         """Test that create_ticket requires parent for subtasks."""
+        import json
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        from datetime import datetime
+        
+        # Change to tmp_path for test isolation
+        monkeypatch.chdir(tmp_path)
+        
+        # Create default hive directory
+        default_hive = tmp_path / "hive"
+        default_hive.mkdir()
+        
+        # Initialize .bees/config.json with hive registration
+        config = BeesConfig(
+            hives={
+                'default': HiveConfig(
+                    path=str(default_hive),
+                    display_name='Default',
+                    created_at=datetime.now().isoformat()
+                )
+            }
+        )
+        save_bees_config(config)
+        
         with pytest.raises(ValueError) as exc_info:
             _create_ticket(hive_name="default", ticket_type="subtask", title="Test")
 
@@ -821,6 +883,7 @@ class TestScanForHiveConfigAutoUpdate:
         """Test that scan_for_hive updates config.json when hive is found at new location."""
         from src.mcp_server import scan_for_hive
         from src.config import load_bees_config, save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create initial config with stale path
@@ -831,7 +894,8 @@ class TestScanForHiveConfigAutoUpdate:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(
                 display_name="Test Hive",
-                path=str(old_path)
+                path=str(old_path),
+                created_at=datetime.now().isoformat()
             )
         })
         save_bees_config(config)
@@ -881,6 +945,7 @@ class TestScanForHiveConfigAutoUpdate:
         """Test that scan_for_hive only updates the target hive in config with multiple hives."""
         from src.mcp_server import scan_for_hive
         from src.config import load_bees_config, save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create config with multiple hives
@@ -890,8 +955,8 @@ class TestScanForHiveConfigAutoUpdate:
         hive2_new.mkdir(parents=True)
 
         config = BeesConfig(hives={
-            "hive1": HiveConfig(display_name="Hive 1", path=str(hive1_path)),
-            "hive2": HiveConfig(display_name="Hive 2", path=str(hive2_old))
+            "hive1": HiveConfig(display_name="Hive 1", path=str(hive1_path), created_at=datetime.now().isoformat()),
+            "hive2": HiveConfig(display_name="Hive 2", path=str(hive2_old), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -918,6 +983,7 @@ class TestScanForHiveConfigAutoUpdate:
         """Test that scan_for_hive logs when config is updated."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -928,7 +994,7 @@ class TestScanForHiveConfigAutoUpdate:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -951,6 +1017,7 @@ class TestScanForHiveConfigAutoUpdate:
         """Test that scan_for_hive re-raises config write errors."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create config and hive
@@ -958,7 +1025,7 @@ class TestScanForHiveConfigAutoUpdate:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1089,6 +1156,7 @@ class TestScanForHiveConfigOptimization:
         """Test that scan_for_hive accepts optional config BeesConfig parameter."""
         from src.mcp_server import scan_for_hive
         from src.config import BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create hive
@@ -1105,7 +1173,7 @@ class TestScanForHiveConfigOptimization:
 
         # Call with config parameter
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
         result = scan_for_hive("test_hive", config=config)
 
@@ -1115,6 +1183,7 @@ class TestScanForHiveConfigOptimization:
         """Test that scan_for_hive uses provided config instead of loading from disk."""
         from src.mcp_server import scan_for_hive
         from src.config import BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create hive
@@ -1131,7 +1200,7 @@ class TestScanForHiveConfigOptimization:
 
         # Provide config with registered hive
         config = BeesConfig(hives={
-            "registered_hive": HiveConfig(display_name="Registered Hive", path=str(hive_path))
+            "registered_hive": HiveConfig(display_name="Registered Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
 
         # Mock file open to ensure config not loaded from disk
@@ -1197,6 +1266,7 @@ class TestScanForHiveConfigOptimization:
         """Test that scan_for_hive loads config from disk when not provided."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create config on disk
@@ -1204,7 +1274,7 @@ class TestScanForHiveConfigOptimization:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1313,6 +1383,7 @@ class TestScanForHiveBugFixes:
         """Test that scan_for_hive correctly handles BeesConfig object type."""
         from src.mcp_server import scan_for_hive
         from src.config import BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create hive
@@ -1331,7 +1402,8 @@ class TestScanForHiveBugFixes:
         config = BeesConfig(hives={
             "registered_hive": HiveConfig(
                 display_name="Registered Hive",
-                path=str(hive_path)
+                path=str(hive_path),
+                created_at=datetime.now().isoformat()
             )
         })
 
@@ -1417,6 +1489,7 @@ class TestScanForHiveExceptionHandling:
         """Test that scan_for_hive re-raises IOError when config.json cannot be written."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1427,7 +1500,7 @@ class TestScanForHiveExceptionHandling:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1455,6 +1528,7 @@ class TestScanForHiveExceptionHandling:
         """Test that scan_for_hive re-raises json.JSONDecodeError when config.json cannot be loaded."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1465,7 +1539,7 @@ class TestScanForHiveExceptionHandling:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1493,6 +1567,7 @@ class TestScanForHiveExceptionHandling:
         """Test that scan_for_hive re-raises AttributeError when config object is malformed."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1503,7 +1578,7 @@ class TestScanForHiveExceptionHandling:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1562,6 +1637,7 @@ class TestScanForHiveExceptionHandling:
         """Test that exception handling logs and re-raises expected exception types."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create hive
@@ -1569,7 +1645,7 @@ class TestScanForHiveExceptionHandling:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1619,6 +1695,7 @@ class TestScanForHiveErrorPropagation:
         """Test that scan_for_hive re-raises IOError when save_bees_config fails."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1629,7 +1706,7 @@ class TestScanForHiveErrorPropagation:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1659,6 +1736,7 @@ class TestScanForHiveErrorPropagation:
         """Test that scan_for_hive re-raises JSONDecodeError when config update fails."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1669,7 +1747,7 @@ class TestScanForHiveErrorPropagation:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1699,6 +1777,7 @@ class TestScanForHiveErrorPropagation:
         """Test that scan_for_hive logs error message before re-raising exception."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
         import logging
 
@@ -1709,7 +1788,7 @@ class TestScanForHiveErrorPropagation:
         hive_path.mkdir()
 
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1761,6 +1840,7 @@ class TestScanForHiveConfigHandling:
         """Test scan_for_hive with config=None loads config from disk."""
         from src.mcp_server import scan_for_hive
         from src.config import save_bees_config, BeesConfig, HiveConfig
+        from datetime import datetime
         import json
 
         # Create hive
@@ -1778,7 +1858,7 @@ class TestScanForHiveConfigHandling:
 
         # Save config to disk
         config = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
         save_bees_config(config)
 
@@ -1838,10 +1918,12 @@ class TestScanForHiveConfigHandling:
         }))
 
         # Create config with only hive1 registered
+        from datetime import datetime
         config = BeesConfig(hives={
             "registered_hive": HiveConfig(
                 display_name="Registered Hive",
-                path=str(hive1_path)
+                path=str(hive1_path),
+                created_at=datetime.now().isoformat()
             )
         })
 
@@ -1870,8 +1952,9 @@ class TestScanForHiveConfigHandling:
         }))
 
         # Test 1: config=None with config on disk
+        from datetime import datetime
         config_disk = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
         save_bees_config(config_disk)
         result1 = scan_for_hive("test_hive", config=None)
@@ -1884,7 +1967,7 @@ class TestScanForHiveConfigHandling:
 
         # Test 3: config with populated hives
         config_populated = BeesConfig(hives={
-            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path))
+            "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
         result3 = scan_for_hive("test_hive", config=config_populated)
         assert result3 == hive_path

@@ -61,6 +61,7 @@ class TestTicketScanner:
         # Create test tickets
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Test Epic
 ---
@@ -69,6 +70,7 @@ Epic description.""")
 
         (tasks_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Test Task
 parent: bees-abc
@@ -78,6 +80,7 @@ Task description.""")
 
         (subtasks_dir / "bees-123.md").write_text("""---
 id: bees-123
+bees_version: '1.1'
 type: subtask
 title: Test Subtask
 parent: bees-xyz
@@ -101,6 +104,7 @@ Subtask description.""")
         # Valid ticket
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Valid
 ---
@@ -126,6 +130,7 @@ Body.""")
         for ticket_id in ["default.bees-zzz", "default.bees-aaa", "default.bees-mmm"]:
             (epics_dir / f"{ticket_id}.md").write_text(f"""---
 id: {ticket_id}
+bees_version: '1.1'
 type: epic
 title: Test
 ---
@@ -171,6 +176,7 @@ class TestLinter:
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Test
 ---
@@ -189,6 +195,7 @@ Body.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Test
 ---
@@ -217,6 +224,7 @@ Body.""")
         # Valid ticket
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Valid
 ---
@@ -226,6 +234,7 @@ Body.""")
         # Invalid ID - will be skipped during load
         (tasks_dir / "INVALID-ID.md").write_text("""---
 id: INVALID-ID
+bees_version: '1.1'
 type: task
 title: Invalid
 parent: bees-abc
@@ -248,6 +257,7 @@ Body.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Test 1
 ---
@@ -256,6 +266,7 @@ Body.""")
 
         (epics_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: epic
 title: Test 2
 ---
@@ -279,6 +290,7 @@ Body.""")
         # Create two tickets with same ID
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Epic
 ---
@@ -287,6 +299,7 @@ Body.""")
 
         (tasks_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: task
 title: Task
 parent: bees-xyz
@@ -311,6 +324,7 @@ Body.""")
         for i in range(3):
             (epics_dir / f"bees-{i:03d}.md").write_text(f"""---
 id: bees-{i:03d}
+bees_version: '1.1'
 type: epic
 title: Test {i}
 ---
@@ -330,6 +344,7 @@ Body.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Test
 ---
@@ -359,6 +374,7 @@ Body.""")
         # Duplicate IDs - both have valid format but same ID
         (epics_dir / "bees-dup.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 1
 ---
@@ -367,6 +383,7 @@ Body.""")
 
         (epics_dir / "bees-du2.md").write_text("""---
 id: bees-dup
+bees_version: '1.1'
 type: epic
 title: Dup 2
 ---
@@ -393,6 +410,7 @@ class TestBidirectionalValidation:
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Parent Epic
 children:
@@ -403,6 +421,7 @@ Parent.""")
 
         (tasks_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Child Task
 parent: bees-abc
@@ -427,6 +446,7 @@ Child.""")
         # Parent doesn't list child
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Parent Epic
 ---
@@ -436,6 +456,7 @@ Parent.""")
         # Child lists parent
         (tasks_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Child Task
 parent: bees-abc
@@ -463,6 +484,7 @@ Child.""")
         # Parent lists child
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Parent Epic
 children:
@@ -474,6 +496,7 @@ Parent.""")
         # Child doesn't list parent
         (tasks_dir / "bees-xyz.md").write_text("""---
 id: bees-xyz
+bees_version: '1.1'
 type: task
 title: Child Task
 ---
@@ -499,6 +522,7 @@ Child.""")
 
         (epics_dir / "bees-abc.md").write_text("""---
 id: bees-abc
+bees_version: '1.1'
 type: epic
 title: Parent
 children:
@@ -512,6 +536,7 @@ Parent.""")
         # One valid child
         (tasks_dir / "bees-001.md").write_text("""---
 id: bees-001
+bees_version: '1.1'
 type: task
 title: Child 1
 parent: bees-abc
@@ -522,6 +547,7 @@ Child 1.""")
         # One child missing parent backlink
         (tasks_dir / "bees-002.md").write_text("""---
 id: bees-002
+bees_version: '1.1'
 type: task
 title: Child 2
 ---
@@ -531,6 +557,7 @@ Child 2.""")
         # One child with correct backlink
         (tasks_dir / "bees-003.md").write_text("""---
 id: bees-003
+bees_version: '1.1'
 type: task
 title: Child 3
 parent: bees-abc
@@ -554,6 +581,7 @@ Child 3.""")
 
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Upstream Task
 down_dependencies:
@@ -564,6 +592,7 @@ Upstream.""")
 
         (tasks_dir / "bees-bbb.md").write_text("""---
 id: bees-bbb
+bees_version: '1.1'
 type: task
 title: Downstream Task
 up_dependencies:
@@ -587,6 +616,7 @@ Downstream.""")
         # Upstream doesn't list downstream
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Upstream Task
 ---
@@ -596,6 +626,7 @@ Upstream.""")
         # Downstream lists upstream
         (tasks_dir / "bees-bbb.md").write_text("""---
 id: bees-bbb
+bees_version: '1.1'
 type: task
 title: Downstream Task
 up_dependencies:
@@ -622,6 +653,7 @@ Downstream.""")
         # Upstream lists downstream
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Upstream Task
 down_dependencies:
@@ -633,6 +665,7 @@ Upstream.""")
         # Downstream doesn't list upstream
         (tasks_dir / "bees-bbb.md").write_text("""---
 id: bees-bbb
+bees_version: '1.1'
 type: task
 title: Downstream Task
 ---
@@ -656,6 +689,7 @@ Downstream.""")
 
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Upstream
 down_dependencies:
@@ -669,6 +703,7 @@ Upstream.""")
         # Valid bidirectional
         (tasks_dir / "bees-b01.md").write_text("""---
 id: bees-b01
+bees_version: '1.1'
 type: task
 title: Downstream 1
 up_dependencies:
@@ -680,6 +715,7 @@ Down 1.""")
         # Missing backlink
         (tasks_dir / "bees-b02.md").write_text("""---
 id: bees-b02
+bees_version: '1.1'
 type: task
 title: Downstream 2
 ---
@@ -689,6 +725,7 @@ Down 2.""")
         # Valid bidirectional
         (tasks_dir / "bees-b03.md").write_text("""---
 id: bees-b03
+bees_version: '1.1'
 type: task
 title: Downstream 3
 up_dependencies:
@@ -713,6 +750,7 @@ Down 3.""")
 
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Standalone Task
 ---
@@ -736,6 +774,7 @@ No relationships.""")
         # References nonexistent parent
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Task
 parent: bees-nonexistent
@@ -761,6 +800,7 @@ Task.""")
         # Self-reference in children
         (tasks_dir / "bees-aaa.md").write_text("""---
 id: bees-aaa
+bees_version: '1.1'
 type: task
 title: Self Reference
 children:

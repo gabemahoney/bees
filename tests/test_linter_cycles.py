@@ -511,6 +511,7 @@ class TestCycleDetection:
         """Helper to write a ticket to a markdown file with YAML frontmatter."""
         lines = [
             "---\n",
+            f"bees_version: '1.1'\n",
             f"id: {ticket.id}\n",
             f"type: {ticket.type}\n",
             f"title: {ticket.title}\n",

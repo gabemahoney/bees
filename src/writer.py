@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from .constants import BEES_SCHEMA_VERSION
 from .paths import ensure_ticket_directory_exists, get_ticket_path
 from .types import TicketType
 
@@ -100,6 +101,10 @@ def write_ticket_file(
     # Ensure the directory exists (use parent directory of target path)
     # With flat storage, this creates the hive root directory
     target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Ensure bees_version is present in frontmatter
+    if 'bees_version' not in frontmatter_data:
+        frontmatter_data = {**frontmatter_data, 'bees_version': BEES_SCHEMA_VERSION}
 
     # Serialize frontmatter
     frontmatter = serialize_frontmatter(frontmatter_data)

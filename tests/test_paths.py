@@ -376,10 +376,20 @@ class TestInferTicketTypeFromId:
 
     def test_validates_bees_version_before_type(self, tmp_path, monkeypatch):
         """Should validate bees_version field before returning type."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        import json
+
         monkeypatch.chdir(tmp_path)
 
         backend_dir = tmp_path / "backend"
         backend_dir.mkdir(parents=True)
+
+        # Create hive configuration
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
 
         # Valid ticket with both bees_version and type
         ticket_file = backend_dir / "backend.bees-valid.md"
@@ -399,12 +409,22 @@ class TestLegacyIDRejection:
 
     def test_get_ticket_path_accepts_hive_prefixed_id(self, tmp_path, monkeypatch):
         """Should accept hive-prefixed IDs in get_ticket_path() with flat storage."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        import json
+
         # Mock current working directory
         monkeypatch.chdir(tmp_path)
 
         # Create hive root directory (flat storage)
         hive_dir = tmp_path / "backend"
         hive_dir.mkdir(parents=True)
+
+        # Create hive configuration
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(hive_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
 
         # Should not raise
         path = get_ticket_path("backend.bees-250", "epic")
@@ -417,12 +437,23 @@ class TestLegacyIDRejection:
 
     def test_infer_ticket_type_works_for_hive_prefixed_id(self, tmp_path, monkeypatch):
         """Should work for hive-prefixed IDs in infer_ticket_type_from_id() with flat storage."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        import json
+
         # Mock current working directory
         monkeypatch.chdir(tmp_path)
 
         # Create hive root directory with ticket (flat storage)
         hive_dir = tmp_path / "backend"
         hive_dir.mkdir(parents=True)
+
+        # Create hive configuration
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(hive_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
+
         (hive_dir / "backend.bees-250.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
 
         ticket_type = infer_ticket_type_from_id("backend.bees-250")
@@ -450,7 +481,20 @@ class TestFlatStorageArchitecture:
 
     def test_get_ticket_path_returns_root_path(self, tmp_path, monkeypatch):
         """get_ticket_path() should return path in hive root, not subdirectory."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        import json
+
         monkeypatch.chdir(tmp_path)
+
+        # Create hive directory and configuration
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
 
         path = get_ticket_path("backend.bees-abc", "epic")
         assert path == tmp_path / "backend" / "backend.bees-abc.md"
@@ -461,10 +505,20 @@ class TestFlatStorageArchitecture:
 
     def test_infer_ticket_type_reads_yaml(self, tmp_path, monkeypatch):
         """infer_ticket_type_from_id() should read type from YAML frontmatter."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+        import json
+
         monkeypatch.chdir(tmp_path)
 
         backend_dir = tmp_path / "backend"
         backend_dir.mkdir(parents=True)
+
+        # Create hive configuration
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config)
 
         # Create ticket with epic type in YAML
         ticket_file = backend_dir / "backend.bees-test.md"

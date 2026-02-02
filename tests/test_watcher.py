@@ -452,8 +452,8 @@ class TestStartWatcherWithHives:
         # Configure hives
         config = BeesConfig(
             hives={
-                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
-                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend"),
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at="2026-02-02T10:00:00"),
+                "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
         save_bees_config(config)
@@ -488,8 +488,8 @@ class TestStartWatcherWithHives:
         # Configure hives - frontend path doesn't exist
         config = BeesConfig(
             hives={
-                "backend": HiveConfig(path=str(backend_dir), display_name="Backend"),
-                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend"),
+                "backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at="2026-02-02T10:00:00"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
         save_bees_config(config)
@@ -518,8 +518,8 @@ class TestStartWatcherWithHives:
         # Configure hives with nonexistent paths
         config = BeesConfig(
             hives={
-                "backend": HiveConfig(path=str(tmp_path / "nonexistent1"), display_name="Backend"),
-                "frontend": HiveConfig(path=str(tmp_path / "nonexistent2"), display_name="Frontend"),
+                "backend": HiveConfig(path=str(tmp_path / "nonexistent1"), display_name="Backend", created_at="2026-02-02T10:00:00"),
+                "frontend": HiveConfig(path=str(tmp_path / "nonexistent2"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
         save_bees_config(config)

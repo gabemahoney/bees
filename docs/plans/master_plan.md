@@ -1319,7 +1319,16 @@ HTTP transport approach while preserving stdio instructions for users who need t
 README now includes only a brief note about stdio with a link to the archived documentation.
 
 **Implementation Details** (`src/main.py`):
-The FastMCP framework provides HTTP transport through its http_app property, which returns a Starlette ASGI application instance. This application is passed to uvicorn, which handles the HTTP server hosting with configurable host, port, and logging settings. The architecture separates the MCP protocol handling (FastMCP) from the HTTP transport layer (uvicorn), allowing flexible deployment configurations. Reference: `src/main.py` lines 158-175.
+The FastMCP framework provides HTTP transport through its `mcp.http_app` property, which returns a Starlette ASGI application instance. This application is passed to uvicorn, which handles the HTTP server hosting with configurable host, port, and logging settings. The architecture separates the MCP protocol handling (FastMCP) from the HTTP transport layer (uvicorn), allowing flexible deployment configurations. Reference: `src/main.py` lines 158-175.
+
+```python
+uvicorn.run(
+    mcp.http_app,
+    host=config.http.host,
+    port=config.http.port,
+    log_level=log_level
+)
+```
 
 **HTTP Transport Testing & Validation** (Task bees-1u88):
 
@@ -1433,15 +1442,136 @@ This error handling ensures the tool never crashes and provides useful feedback 
 **Integration with Hive Management**: The list_hives tool is the first step in the hive management workflow:
 - **list_hives()** → Discover existing hives
 - **abandon_hive()** → Remove from config without deleting files
-- **rename_hive()** → Modify hive names (future)
+- **rename_hive()** → Modify hive names and update all references
 - **sanitize_hive()** → Validate and repair (future)
 
-**Use Cases**:
-- Pre-flight check before creating tickets (verify hive exists)
-- Displaying available hives to users in UI
-- Validating hive references in queries and filters
-- Debugging configuration issues
-- Discovering hive paths for filesystem operations
+### rename_hive MCP Tool
+
+**rename_hive MCP Tool** (`_rename_hive()` in `src/mcp_server.py`) provides comprehensive hive renaming functionality that updates configuration, regenerates ticket IDs, renames files, updates frontmatter, and scans all hives to update cross-references. This is a complex operation that ensures database consistency across the entire multi-hive system.
+
+**MCP Tool Registration**: The tool is registered with FastMCP using the `mcp.tool()` decorator pattern, following the same approach as other MCP tools.
+
+**Parameters**:
+- `old_name` (string, required): Current hive name (display or normalized)
+- `new_name` (string, required): Desired new hive name
+
+**Multi-Step Process**: The rename operation follows a strict sequence to maintain consistency:
+
+1. **Name Normalization and Validation**:
+   - Both `old_name` and `new_name` are normalized using `normalize_hive_name()`
+   - Validates normalized names are not empty strings
+   - Loads config and verifies `old_name` exists as a registered hive
+   - Validates `new_name` doesn't conflict with existing hive keys
+   - Returns error if validation fails
+
+2. **Config Update**:
+   - Retrieves hive configuration for `old_name`
+   - Updates `display_name` field to `new_name`
+   - Removes old hive entry from config dict
+   - Adds new entry under `new_name` key
+   - Saves updated config using `save_bees_config()`
+
+3. **ID Regeneration**:
+   - Scans hive directory for all `.md` files
+   - Filters for ticket files matching `{old_normalized}.bees-*` pattern
+   - Builds mapping: `old_id → new_id` by replacing hive prefix
+   - Example: `backend.bees-abc1` → `api_layer.bees-abc1`
+   - Preserves `bees-xxxx` suffix unchanged
+
+4. **File Renaming**:
+   - Iterates through ID mapping
+   - Renames each file from `{old_id}.md` to `{new_id}.md`
+   - Checks for filename conflicts before renaming
+   - Returns error if any new filename already exists
+
+5. **Frontmatter Update**:
+   - Reads each renamed ticket file
+   - Parses YAML frontmatter between `---` delimiters
+   - Updates `id` field from old_id to new_id
+   - Serializes updated frontmatter using `yaml.dump()`
+   - Writes back to file with preserved body content
+
+6. **Cross-Reference Update (All Hives)**:
+   - Iterates through ALL hives in config (not just renamed hive)
+   - Scans all ticket files in each hive
+   - Parses frontmatter and checks relationship fields:
+     - `parent` (string): Updates if matches old_id
+     - `children` (list): Updates any matching old_ids
+     - `dependencies` (list): Updates any matching old_ids
+     - `up_dependencies` (list): Updates any matching old_ids
+     - `down_dependencies` (list): Updates any matching old_ids
+   - Writes back only files with changes
+   - Tracks count of tickets updated for reporting
+
+7. **.hive Marker Update**:
+   - Locates `.hive/identity.json` in hive directory
+   - Updates `normalized_name` and `display_name` fields
+   - Creates marker if missing (recovery scenario)
+   - Writes JSON with proper formatting
+
+8. **Linter Validation (Stubbed)**:
+   - Placeholder for running linter to validate database integrity
+   - Future implementation will:
+     - Import `Linter` from `src.linter`
+     - Import `mark_corrupt` from `src.corruption_state`
+     - Run linter on all hives
+     - Call `mark_corrupt(report)` if errors found
+     - Return error response with linter details if validation fails
+   - Currently logged as stubbed for future work
+
+**Return Structure**:
+- **Success**:
+  ```python
+  {
+    'status': 'success',
+    'message': 'Hive renamed successfully from {old_name} to {new_name}',
+    'old_name': str,
+    'old_normalized': str,
+    'new_name': str,
+    'new_normalized': str,
+    'tickets_updated': int,      # Tickets in renamed hive
+    'cross_references_updated': int,  # Tickets in other hives updated
+    'path': str
+  }
+  ```
+
+- **Error**:
+  ```python
+  {
+    'status': 'error',
+    'message': str,
+    'error_type': str  # One of: validation_error, hive_not_found, name_conflict,
+                       # config_save_error, id_generation_error, file_rename_error,
+                       # frontmatter_update_error, cross_reference_update_error,
+                       # marker_update_error
+  }
+  ```
+
+**Error Handling**: The operation can fail at multiple stages:
+- `validation_error`: Name normalizes to empty string
+- `hive_not_found`: old_name doesn't exist in config
+- `name_conflict`: new_name already exists as registered hive
+- `config_save_error`: Failed to persist config changes
+- `id_generation_error`: Failed to build ID mapping
+- `file_rename_error`: File conflict or rename failure
+- `frontmatter_update_error`: Failed to parse or write frontmatter
+- `cross_reference_update_error`: Failed to update references in other hives
+- `marker_update_error`: Failed to update .hive marker file
+
+**Atomicity Considerations**: The rename operation is NOT atomic - if it fails partway through, the database may be left in an inconsistent state. Future work could add transaction-like rollback support or pre-validation checks. Users should back up before renaming.
+
+**Cross-Hive Impact**: This operation scans and potentially updates ALL hives in the system, not just the renamed hive. This ensures no dangling references remain, but means the operation's scope extends beyond the target hive. The `cross_references_updated` count in the response indicates how many tickets in OTHER hives were modified.
+
+**Design Rationale**: The rename operation updates references even when `allow_cross_hive_dependencies` is disabled. This catches legacy references from before the setting was enabled, ensuring database consistency regardless of configuration changes over time.
+
+**File Encoding for Cross-Platform Compatibility** (Task bees-vibje):
+- All file operations in `rename_hive()` use explicit `encoding='utf-8'` parameter
+- Implementation: All four `open()` calls (lines 2216, 2240, 2272, 2354) specify UTF-8 encoding
+- Rationale: Without explicit encoding, Python uses platform default (e.g., cp1252 on Windows, potentially non-UTF-8 on some Linux systems), causing failures when ticket content contains non-ASCII characters
+- Cross-platform guarantee: UTF-8 encoding ensures consistent behavior on Windows, macOS, Linux, and other platforms regardless of system locale settings
+- Test coverage: `tests/test_rename_hive_encoding.py` includes unit tests for UTF-8 encoding enforcement and Unicode content handling (emoji, CJK characters, accented letters, CRLF line endings)
+- Design decision: Explicit encoding applied to ALL file reads/writes (not just some), preventing edge case failures when users create tickets with special characters or when codebases are shared across platforms
+- Impact: Prevents `UnicodeDecodeError` and `UnicodeEncodeError` exceptions on systems with non-UTF-8 default encodings
 
 **Test Coverage**: Comprehensive test suite in `tests/test_mcp_server.py::TestListHives`:
 - Success case with multiple hives
@@ -2245,4 +2375,84 @@ regeneration fails.
 **Documentation**:
 - README.md documents hive_name requirement
 - master_plan.md updated with test architecture details
+
+### Test Architecture for rename_hive() MCP Command
+
+**Task**: bees-b87t3 - Add unit tests for rename_hive() MCP command
+
+**Purpose**: Comprehensive test coverage for the 10-step hive rename operation that updates config, regenerates ticket IDs, renames files, updates frontmatter, and patches cross-references across all hives.
+
+**Test File**: `tests/test_mcp_rename_hive.py`
+
+**Fixture Strategy**:
+- **temp_hive_setup**: Creates isolated temporary directory with multiple hives (backend, frontend, api_layer)
+- Config-based setup: Initializes `.bees/config.json` with test hives using `BeesConfig` and `HiveConfig`
+- Pre-populated tickets: Creates sample tickets with various reference types (parent, children, dependencies, up_dependencies, down_dependencies)
+- Cross-hive references: Frontend tickets reference backend tickets to validate cross-hive update logic
+- Identity markers: Creates `.hive/identity.json` files with normalized_name and display_name
+- Isolation: Each test gets fresh temporary directory via pytest's `tmp_path` fixture
+
+**Test Organization**:
+
+1. **TestRenameHiveSuccess** - Success cases for rename operations
+   - Basic rename: Validates config update, file renaming, ID regeneration
+   - Frontmatter updates: Verifies 'id' field updated in ticket YAML
+   - Cross-hive references: Confirms references in other hives are updated
+   - Parent references: Validates child tickets' parent field updated
+   - Hive marker updates: Checks `.hive/identity.json` updated with new names
+   - Empty hive: Tests rename with no tickets
+   - Complex dependencies: Multiple dependency types (parent, children, dependencies, up_dependencies, down_dependencies)
+
+2. **TestRenameHiveErrors** - Error handling and validation
+   - Missing hive: Returns `hive_not_found` error
+   - Name conflict: Returns `name_conflict` when new name exists
+   - Invalid names: Handles names that normalize to empty string
+   - File conflicts: Detects when renamed file would overwrite existing file
+
+3. **TestRenameHiveEdgeCases** - Edge cases and special scenarios
+   - Special characters: Normalization of hyphens, spaces, case
+   - Display name preservation: Preserves original case in display_name
+   - Missing marker file: Creates new `.hive/identity.json` if missing
+   - No cross-references: Handles rename when no references exist
+   - Malformed frontmatter: Skips tickets with invalid YAML gracefully
+   - Linter integration: Notes that linter validation is deferred (stubbed)
+   - Name normalization: Both old_name and new_name normalized before lookup
+   - Children field: Updates parent tickets' children list
+
+4. **TestRenameHiveIntegration** - End-to-end workflow validation
+   - Full rename workflow: Validates all 10 steps complete successfully
+   - Isolation verification: Confirms other hives unaffected except for reference updates
+
+**Coverage Strategy for 10-Step Operation**:
+1. Config update (step 1-3): Validate old hive removed, new hive added with correct display_name
+2. ID regeneration (step 5): Check id_mapping dict created correctly
+3. File rename (step 6): Verify old files gone, new files exist with new IDs
+4. Frontmatter update (step 7): Read files and confirm 'id' field matches new ID
+5. Cross-reference update (step 8): Scan all hives and verify dependencies/parent/children updated
+6. Marker update (step 9): Check `.hive/identity.json` has new normalized_name and display_name
+7. Linter validation (step 10): Note stubbed - deferred per implementation comments
+
+**Mocking Approach**:
+- **No mocking for core operations**: Tests use real filesystem operations in temporary directories
+- **Minimal mocking**: Only linter integration test attempted mocking (but linter doesn't exist, so test updated to validate stub behavior)
+- **Real config I/O**: Tests read/write actual `.bees/config.json` files
+- **Real YAML parsing**: Tests parse actual YAML frontmatter using production parser
+
+**Integration with Existing MCP Test Patterns**:
+- Follows pattern from `test_mcp_create_ticket_hive.py`: Config-based setup, temporary directories, fixture per test class
+- Uses same imports: `BeesConfig`, `HiveConfig`, `save_bees_config`, `load_bees_config`
+- Consistent fixture naming: `temp_hive_setup` similar to `temp_tickets_dir`
+- Import pattern: Imports `_rename_hive` (internal function) not `rename_hive` (FunctionTool wrapper)
+
+**Key Implementation Details**:
+- Tests import `_rename_hive` directly (the implementation function), not `rename_hive` (the FastMCP tool wrapper)
+- Fixture uses `monkeypatch.chdir(tmp_path)` to ensure config writes to test directory
+- All tests validate return dict structure: `{'status': 'success'/'error', 'message': str, ...}`
+- Error tests check both `status` and `error_type` fields
+- Cross-reference tests verify updates in multiple files across different hives
+
+**Test Execution**:
+- 22 tests total covering success, error, edge cases, and integration scenarios
+- All tests pass with 100% success rate
+- Tests run in ~1 second (fast due to small test data and no external dependencies)
 

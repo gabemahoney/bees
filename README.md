@@ -92,6 +92,11 @@ The test suite has been migrated to support flat storage architecture:
   - Tests edge cases like missing ticket files and validates graceful error handling
   - Validates demo ticket generation produces correct relationships, dependencies, and metadata
   - Reference Task bees-kr4km and Epic bees-yuql for implementation details
+- The `test_mcp_rename_hive.py` test suite provides comprehensive coverage for hive rename operations:
+  - Success cases: basic rename, cross-hive references, empty hive, complex dependency graphs
+  - Error cases: missing hive, name conflicts, invalid names, file conflicts
+  - Edge cases: special characters, display name preservation, missing marker files, malformed frontmatter
+  - Uses isolated temporary directories with config-based setup and validates all 10 rename steps
 
 The `.hive/identity.json` file contains:
 - `normalized_name` - The normalized hive identifier
@@ -420,6 +425,42 @@ All path resolution requires hive-prefixed IDs and validates tickets using YAML 
     - Clean up config after moving hive to different location
     - Remove outdated hive registration while keeping files for reference
 
+- **rename_hive** - `old_name, new_name`
+  - Renames a hive by updating config, ticket IDs, filenames, and all references
+  - **Parameters:**
+    - `old_name` (required): Current hive name (display or normalized)
+    - `new_name` (required): Desired new hive name
+  - **Returns:**
+    - On success: `{'status': 'success', 'message': str, 'old_name': str, 'new_name': str, 'tickets_updated': int, 'cross_references_updated': int, 'path': str}`
+    - On error: `{'status': 'error', 'message': str, 'error_type': str}`
+  - **Operations Performed:**
+    - Updates config: Changes hive key from old_name to new_name, updates display_name
+    - Regenerates ticket IDs: old_name.bees-* → new_name.bees-*
+    - Renames all ticket files to match new IDs
+    - Updates 'id' field in ticket frontmatter
+    - Scans ALL hives and updates cross-references (dependencies, parent, children fields)
+    - Updates .hive marker file with new display_name
+    - Runs linter validation after rename (stubbed in current implementation)
+  - **Validation:**
+    - Both old_name and new_name are normalized before processing
+    - old_name must exist in config
+    - new_name must not conflict with existing hive names
+    - Names must contain at least one alphanumeric character
+   - **Cross-Platform Compatibility:**
+     - All file operations use UTF-8 encoding for maximum compatibility
+     - Works reliably on Windows, macOS, Linux, and other platforms
+     - Handles special characters, emoji, and non-ASCII content correctly
+   - **Warning:**
+     - This operation affects ALL hives due to cross-reference updates
+     - All tickets referencing the renamed hive's tickets will be updated
+     - Operation cannot be easily undone - consider backing up before renaming
+   - **Error Cases:**
+    - `hive_not_found`: old_name doesn't exist in config
+    - `name_conflict`: new_name already exists
+    - `validation_error`: Invalid name (normalizes to empty string)
+    - `config_save_error`, `id_generation_error`, `file_rename_error`, `frontmatter_update_error`, `cross_reference_update_error`, `marker_update_error`: Various operation failures
+  - **Example:** Renaming "backend" to "api_layer" will change all ticket IDs from backend.bees-* to api_layer.bees-* and update references across all hives
+
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
   - **`hive_name` parameter is REQUIRED for all ticket creation**
   - All new tickets must specify a hive; generates hive-prefixed IDs (e.g., `backend.bees-abc1`)
@@ -478,6 +519,10 @@ colonize_hive(name="Frontend", path="relative/path")
 # Abandon a hive (stop tracking without deleting files)
 abandon_hive(hive_name="Back End")
 # Returns: {'status': 'success', 'message': 'Hive "Back End" abandoned successfully', 'display_name': 'Back End', 'normalized_name': 'back_end', 'path': '/Users/user/projects/myrepo/tickets/backend'}
+
+# Rename a hive (updates config, IDs, filenames, and cross-references)
+rename_hive(old_name="backend", new_name="api_layer")
+# Returns: {'status': 'success', 'message': 'Hive renamed successfully from backend to api_layer', 'old_name': 'backend', 'new_name': 'api_layer', 'tickets_updated': 15, 'cross_references_updated': 8, 'path': '/Users/user/projects/myrepo/tickets/backend'}
 
 # Create an epic (hive_name is required)
 create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout", hive_name="backend")

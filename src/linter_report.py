@@ -31,6 +31,20 @@ class ValidationError:
 
 
 @dataclass
+class FixAction:
+    """Represents a fix action applied during auto-fix mode.
+
+    Attributes:
+        ticket_id: ID of the ticket that was fixed
+        fix_type: Type of fix applied (e.g., 'add_parent', 'add_child', 'add_dependency')
+        description: Human-readable description of the fix
+    """
+    ticket_id: str
+    fix_type: str
+    description: str
+
+
+@dataclass
 class LinterReport:
     """Collection of validation errors with query and formatting capabilities.
 
@@ -39,9 +53,11 @@ class LinterReport:
     - Query errors by various criteria
     - Check if database is corrupt
     - Generate formatted reports (JSON, Markdown)
+    - Track fixes applied during auto-fix mode
     """
 
     errors: List[ValidationError] = field(default_factory=list)
+    fixes: List[FixAction] = field(default_factory=list)
 
     def add_error(self, ticket_id: str, error_type: str, message: str, severity: str = "error") -> None:
         """Add a validation error to the report.
@@ -59,6 +75,21 @@ class LinterReport:
             severity=severity
         )
         self.errors.append(error)
+
+    def add_fix(self, ticket_id: str, fix_type: str, description: str) -> None:
+        """Add a fix action to the report.
+
+        Args:
+            ticket_id: ID of the ticket that was fixed
+            fix_type: Type of fix applied
+            description: Human-readable description of the fix
+        """
+        fix = FixAction(
+            ticket_id=ticket_id,
+            fix_type=fix_type,
+            description=description
+        )
+        self.fixes.append(fix)
 
     def get_errors(self, ticket_id: str = None, error_type: str = None,
                    severity: str = None) -> List[ValidationError]:
@@ -103,6 +134,7 @@ class LinterReport:
             'is_corrupt': self.is_corrupt(),
             'error_count': len(self.get_errors(severity='error')),
             'warning_count': len(self.get_errors(severity='warning')),
+            'fix_count': len(self.fixes),
             'errors': [
                 {
                     'ticket_id': e.ticket_id,
@@ -111,6 +143,14 @@ class LinterReport:
                     'severity': e.severity
                 }
                 for e in self.errors
+            ],
+            'fixes': [
+                {
+                    'ticket_id': f.ticket_id,
+                    'fix_type': f.fix_type,
+                    'description': f.description
+                }
+                for f in self.fixes
             ]
         }
 
