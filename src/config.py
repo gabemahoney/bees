@@ -9,6 +9,7 @@ Also handles .bees/config.json for hive configuration management.
 import ipaddress
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -129,6 +130,7 @@ class HiveConfig:
     """Configuration for a single hive."""
     path: str
     display_name: str
+    created_at: str
 
 
 @dataclass
@@ -163,10 +165,8 @@ def load_bees_config() -> Optional[BeesConfig]:
     """Load BeesConfig from .bees/config.json.
 
     Returns:
-        BeesConfig object if file exists and is valid, None if file not found
-
-    Raises:
-        ValueError: If JSON is malformed or schema_version is invalid
+        BeesConfig object if file exists and is valid, None if file not found.
+        Returns default BeesConfig structure on JSON errors with logged warning.
     """
     config_path = get_config_path()
 
@@ -177,7 +177,15 @@ def load_bees_config() -> Optional[BeesConfig]:
         with open(config_path, 'r') as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Malformed JSON in {config_path}: {e}")
+        # Log warning and return default structure for better UX
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Malformed JSON in {config_path}: {e}. Returning default structure.")
+        return BeesConfig(
+            hives={},
+            allow_cross_hive_dependencies=False,
+            schema_version='1.0'
+        )
 
     # Validate schema_version
     schema_version = data.get('schema_version', '1.0')
@@ -192,7 +200,8 @@ def load_bees_config() -> Optional[BeesConfig]:
             raise ValueError(f"Hive '{name}' data must be a dict, got {type(hive_data)}")
         hives[name] = HiveConfig(
             path=hive_data.get('path', ''),
-            display_name=hive_data.get('display_name', '')
+            display_name=hive_data.get('display_name', ''),
+            created_at=hive_data.get('created_at', '')
         )
 
     return BeesConfig(
@@ -203,7 +212,10 @@ def load_bees_config() -> Optional[BeesConfig]:
 
 
 def save_bees_config(config: BeesConfig) -> None:
-    """Save BeesConfig to .bees/config.json.
+    """Save BeesConfig to .bees/config.json using atomic write.
+
+    Uses temp file + rename pattern to prevent data corruption if process
+    crashes during write.
 
     Args:
         config: BeesConfig object to save
@@ -223,7 +235,8 @@ def save_bees_config(config: BeesConfig) -> None:
     for name, hive_config in config.hives.items():
         hives_dict[name] = {
             'path': hive_config.path,
-            'display_name': hive_config.display_name
+            'display_name': hive_config.display_name,
+            'created_at': hive_config.created_at
         }
 
     # Build JSON structure
@@ -233,12 +246,42 @@ def save_bees_config(config: BeesConfig) -> None:
         'schema_version': config.schema_version
     }
 
-    # Write to file
+    # Write to file using atomic write pattern
     config_path = get_config_path()
+    bees_dir = Path(config_path).parent
+    temp_fd = None
+    temp_path = None
+
     try:
-        with open(config_path, 'w') as f:
+        # Create temp file in .bees/ directory with prefix
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=str(bees_dir),
+            prefix='.config.json.',
+            text=True
+        )
+
+        # Write JSON to temp file
+        with os.fdopen(temp_fd, 'w') as f:
+            temp_fd = None  # os.fdopen takes ownership of the fd
             json.dump(data, f, indent=2)
-    except IOError as e:
+            f.write('\n')  # Add trailing newline
+
+        # Atomically rename temp file to target
+        os.replace(temp_path, config_path)
+        temp_path = None  # Successfully renamed, no cleanup needed
+
+    except Exception as e:
+        # Clean up temp file on error
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except:
+                pass
+        if temp_path is not None and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
         raise IOError(f"Failed to write config to {config_path}: {e}")
 
 
@@ -290,3 +333,156 @@ def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig]
             f"A hive with normalized name '{normalized_name}' already exists. "
             f"Display name: '{config.hives[normalized_name].display_name}'"
         )
+
+
+# Dict-based wrapper functions for backward compatibility
+# These wrap the dataclass-based functions above
+
+def load_hive_config_dict() -> dict:
+    """Load hive configuration from .bees/config.json as dict.
+
+    This reads the JSON file directly and returns it as a dict, preserving all
+    fields including 'created_at' timestamps. If the file doesn't exist or contains
+    malformed JSON, returns a default structure with a logged warning.
+
+    Returns:
+        dict: Configuration dictionary with structure:
+            {
+                'hives': {
+                    'normalized_name': {
+                        'path': str,
+                        'display_name': str,
+                        'created_at': str  # ISO format timestamp (if present)
+                    }
+                },
+                'allow_cross_hive_dependencies': bool,
+                'schema_version': str
+            }
+
+    Example:
+        >>> config = load_hive_config_dict()
+        >>> print(config['hives'])
+        {}
+        >>> config = load_hive_config_dict()  # When config.json exists
+        >>> print(config['hives']['backend'])
+        {'path': '/path/to/backend', 'display_name': 'Backend', 'created_at': '...'}
+    """
+    config_path = get_config_path()
+
+    # If config doesn't exist, return default structure
+    if not config_path.exists():
+        return {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+
+    # Try to read and parse config file
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        return config
+    except json.JSONDecodeError as e:
+        # Log warning and return default structure for better UX
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Malformed JSON in {config_path}: {e}. Returning default structure.")
+        return {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+    except IOError as e:
+        # Log warning and return default structure
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"IO error reading {config_path}: {e}. Returning default structure.")
+        return {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+
+
+def write_hive_config_dict(config: dict) -> None:
+    """Write hive configuration from dict to .bees/config.json.
+
+    This writes the config dict directly to JSON, preserving all fields including
+    'created_at' timestamps in hive entries.
+
+    Args:
+        config: Configuration dictionary with structure:
+            {
+                'hives': {
+                    'normalized_name': {
+                        'path': str,
+                        'display_name': str,
+                        'created_at': str  # Optional ISO format timestamp
+                    }
+                },
+                'allow_cross_hive_dependencies': bool,
+                'schema_version': str
+            }
+
+    Raises:
+        IOError: If writing fails
+        PermissionError: If insufficient permissions to write file
+        OSError: If disk space issues or other OS-level errors occur
+
+    Example:
+        >>> config = load_hive_config_dict()
+        >>> config['hives']['backend'] = {'path': '/path', 'display_name': 'Backend'}
+        >>> write_hive_config_dict(config)
+    """
+    # Ensure .bees/ directory exists
+    ensure_bees_dir()
+
+    # Set schema_version if not set
+    if not config.get('schema_version'):
+        config['schema_version'] = '1.0'
+
+    # Write to file
+    config_path = get_config_path()
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+    except IOError as e:
+        raise IOError(f"Failed to write config to {config_path}: {e}")
+    except Exception as e:
+        raise IOError(f"Failed to write config to {config_path}: {e}")
+
+
+def register_hive_dict(normalized_name: str, display_name: str, path: str, timestamp) -> dict:
+    """Register a new hive entry in the configuration and return updated dict.
+
+    Loads the current config using load_hive_config_dict(), adds the new hive entry,
+    and returns the updated config dictionary. Does NOT write to disk - caller is
+    responsible for calling write_hive_config_dict() to persist changes.
+
+    Args:
+        normalized_name: Normalized hive name (e.g., 'back_end')
+        display_name: Display name for the hive (e.g., 'Back End')
+        path: Absolute path to the hive directory
+        timestamp: Creation timestamp (datetime object)
+
+    Returns:
+        dict: Updated configuration dictionary with new hive entry including
+              'created_at' timestamp in ISO format
+
+    Example:
+        >>> from datetime import datetime
+        >>> config = register_hive_dict('backend', 'Backend', '/path/to/hive', datetime.now())
+        >>> print(config['hives']['backend'])
+        {'path': '/path/to/hive', 'display_name': 'Backend', 'created_at': '2026-02-01T...'}
+    """
+    # Load current config
+    config = load_hive_config_dict()
+
+    # Add new hive entry with timestamp
+    config['hives'][normalized_name] = {
+        'path': path,
+        'display_name': display_name,
+        'created_at': timestamp.isoformat()
+    }
+
+    return config

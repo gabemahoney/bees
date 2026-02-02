@@ -6,6 +6,7 @@ Provides FastMCP server infrastructure with tool registration for ticket operati
 
 import json
 import logging
+import os
 import re
 from dataclasses import asdict
 from datetime import datetime
@@ -20,7 +21,11 @@ from .query_storage import save_query, load_query, list_queries, validate_query
 from .query_parser import QueryValidationError
 from .pipeline import PipelineEvaluator
 from .index_generator import generate_index
-from .config import validate_unique_hive_name, load_bees_config, save_bees_config, HiveConfig, BeesConfig, init_bees_config_if_needed
+from .config import (
+    validate_unique_hive_name, load_bees_config, save_bees_config,
+    HiveConfig, BeesConfig, init_bees_config_if_needed,
+    load_hive_config_dict, write_hive_config_dict, register_hive_dict
+)
 from .id_utils import normalize_hive_name
 
 # Ensure log directory exists
@@ -450,20 +455,37 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
 
         # Step 5: Register hive in config.json
         try:
-            config = init_bees_config_if_needed()
-            config.hives[normalized_name] = HiveConfig(
+            # Get current timestamp for registration
+            creation_timestamp = datetime.now()
+
+            # Register hive in config (updates config dict in memory)
+            config = register_hive_dict(
+                normalized_name=normalized_name,
+                display_name=name,
                 path=str(validated_path),
-                display_name=name
+                timestamp=creation_timestamp
             )
-            save_bees_config(config)
+
+            # Persist config to disk with error handling
+            write_hive_config_dict(config)
             logger.info(f"Registered hive '{normalized_name}' in config.json")
-        except (IOError, ValueError) as e:
+        except (IOError, PermissionError, OSError) as e:
+            return {
+                "status": "error",
+                "message": f"Failed to write config file: {e}",
+                "error_type": "config_write_error",
+                "validation_details": {
+                    "operation": "write_config",
+                    "reason": str(e)
+                }
+            }
+        except Exception as e:
             return {
                 "status": "error",
                 "message": f"Failed to register hive in config: {e}",
                 "error_type": "config_error",
                 "validation_details": {
-                    "operation": "save_config",
+                    "operation": "register_hive",
                     "reason": str(e)
                 }
             }

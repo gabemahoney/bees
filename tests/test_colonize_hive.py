@@ -555,8 +555,8 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['error_type'] == 'duplicate_name_error'
         assert 'already exists' in result['message']
 
-    @patch('src.mcp_server.init_bees_config_if_needed')
-    @patch('src.mcp_server.save_bees_config')
+    @patch('src.mcp_server.write_hive_config_dict')
+    @patch('src.mcp_server.register_hive_dict')
     @patch('src.mcp_server.validate_unique_hive_name')
     @patch('src.mcp_server.validate_hive_path')
     @patch('src.mcp_server.get_repo_root')
@@ -571,16 +571,19 @@ class TestColonizeHiveOrchestrationUnit:
         mock_get_repo,
         mock_validate_path,
         mock_validate_unique,
-        mock_save_config,
-        mock_init_config
+        mock_register_hive,
+        mock_write_config
     ):
         """Test that successful colonization returns correct structure."""
         mock_normalize.return_value = 'backend'
         mock_get_repo.return_value = Path('/repo')
         mock_validate_path.return_value = Path('/repo/tickets')
-        mock_config = MagicMock()
-        mock_config.hives = {}
-        mock_init_config.return_value = mock_config
+        # Mock register_hive_dict to return a config dict
+        mock_register_hive.return_value = {
+            'hives': {'backend': {'path': '/repo/tickets', 'display_name': 'Backend'}},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
 
         result = colonize_hive('Backend', '/repo/tickets')
 

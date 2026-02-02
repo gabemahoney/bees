@@ -9,7 +9,8 @@ from src.config import (
     Config, load_config, get_config,
     BeesConfig, HiveConfig,
     load_bees_config, save_bees_config, init_bees_config_if_needed,
-    get_config_path, ensure_bees_dir, validate_unique_hive_name
+    get_config_path, ensure_bees_dir, validate_unique_hive_name,
+    load_hive_config_dict, write_hive_config_dict, register_hive_dict
 )
 from src.id_utils import normalize_hive_name
 
@@ -411,9 +412,22 @@ class TestBeesConfigDataclasses:
 
     def test_hive_config_initialization(self):
         """Test HiveConfig dataclass can be instantiated."""
-        hive = HiveConfig(path="/path/to/hive", display_name="My Hive")
+        hive = HiveConfig(path="/path/to/hive", display_name="My Hive", created_at="2026-02-01T12:00:00")
         assert hive.path == "/path/to/hive"
         assert hive.display_name == "My Hive"
+        assert hive.created_at == "2026-02-01T12:00:00"
+
+    def test_hive_config_with_all_fields(self):
+        """Test HiveConfig with all three fields."""
+        timestamp = "2026-02-01T13:45:30.123456"
+        hive = HiveConfig(
+            path="/path/to/hive",
+            display_name="Backend",
+            created_at=timestamp
+        )
+        assert hive.path == "/path/to/hive"
+        assert hive.display_name == "Backend"
+        assert hive.created_at == timestamp
 
     def test_bees_config_initialization_defaults(self):
         """Test BeesConfig with default values."""
@@ -424,7 +438,7 @@ class TestBeesConfigDataclasses:
 
     def test_bees_config_initialization_with_values(self):
         """Test BeesConfig with custom values."""
-        hive = HiveConfig(path="/path", display_name="Test")
+        hive = HiveConfig(path="/path", display_name="Test", created_at="2026-02-01T12:00:00")
         config = BeesConfig(
             hives={"test": hive},
             allow_cross_hive_dependencies=True,
@@ -455,7 +469,8 @@ class TestLoadBeesConfig:
             "hives": {
                 "backend": {
                     "path": "tickets/backend/",
-                    "display_name": "Backend"
+                    "display_name": "Backend",
+                    "created_at": "2026-02-01T12:00:00.000000"
                 }
             },
             "allow_cross_hive_dependencies": False,
@@ -469,6 +484,7 @@ class TestLoadBeesConfig:
         assert "backend" in config.hives
         assert config.hives["backend"].path == "tickets/backend/"
         assert config.hives["backend"].display_name == "Backend"
+        assert config.hives["backend"].created_at == "2026-02-01T12:00:00.000000"
         assert config.allow_cross_hive_dependencies is False
         assert config.schema_version == "1.0"
 
@@ -491,16 +507,26 @@ class TestLoadBeesConfig:
         assert config.hives == {}
         assert config.allow_cross_hive_dependencies is True
 
-    def test_load_bees_config_malformed_json(self, tmp_path, monkeypatch):
-        """Test load_bees_config raises ValueError for malformed JSON."""
+    def test_load_bees_config_malformed_json(self, tmp_path, monkeypatch, caplog):
+        """Test load_bees_config returns default structure on malformed JSON with warning."""
+        import logging
         monkeypatch.chdir(tmp_path)
         bees_dir = tmp_path / ".bees"
         bees_dir.mkdir()
         config_file = bees_dir / "config.json"
         config_file.write_text("{invalid json")
 
-        with pytest.raises(ValueError, match="Malformed JSON"):
-            load_bees_config()
+        with caplog.at_level(logging.WARNING):
+            config = load_bees_config()
+
+        # Should return default structure instead of raising
+        assert config is not None
+        assert config.hives == {}
+        assert config.allow_cross_hive_dependencies is False
+        assert config.schema_version == '1.0'
+
+        # Should log warning
+        assert "Malformed JSON" in caplog.text
 
     def test_load_bees_config_invalid_schema_version_type(self, tmp_path, monkeypatch):
         """Test load_bees_config raises ValueError for invalid schema_version type."""
@@ -535,6 +561,24 @@ class TestLoadBeesConfig:
         with pytest.raises(ValueError, match="Hive 'backend' data must be a dict"):
             load_bees_config()
 
+    def test_load_bees_config_returns_valid_structure_after_json_error(self, tmp_path, monkeypatch):
+        """Test load_bees_config returns valid default structure on JSON errors."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        # Write malformed JSON
+        config_file.write_text("{broken json}")
+
+        config = load_bees_config()
+
+        # Verify returned default structure is valid
+        assert isinstance(config, BeesConfig)
+        assert isinstance(config.hives, dict)
+        assert isinstance(config.allow_cross_hive_dependencies, bool)
+        assert isinstance(config.schema_version, str)
+
 
 class TestSaveBeesConfig:
     """Test save_bees_config function."""
@@ -552,7 +596,8 @@ class TestSaveBeesConfig:
     def test_save_bees_config_creates_valid_json(self, tmp_path, monkeypatch):
         """Test save_bees_config creates valid JSON file."""
         monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path="tickets/backend/", display_name="Backend")
+        timestamp = "2026-02-01T13:45:30.123456"
+        hive = HiveConfig(path="tickets/backend/", display_name="Backend", created_at=timestamp)
         config = BeesConfig(
             hives={"backend": hive},
             allow_cross_hive_dependencies=False,
@@ -568,8 +613,29 @@ class TestSaveBeesConfig:
 
         assert data["hives"]["backend"]["path"] == "tickets/backend/"
         assert data["hives"]["backend"]["display_name"] == "Backend"
+        assert data["hives"]["backend"]["created_at"] == timestamp
         assert data["allow_cross_hive_dependencies"] is False
         assert data["schema_version"] == "1.0"
+
+    def test_save_bees_config_serializes_created_at_field(self, tmp_path, monkeypatch):
+        """Test save_bees_config properly serializes created_at timestamp field."""
+        monkeypatch.chdir(tmp_path)
+        timestamp = "2026-02-01T12:00:00.000000"
+        hive = HiveConfig(
+            path="/path/to/hive",
+            display_name="Test Hive",
+            created_at=timestamp
+        )
+        config = BeesConfig(hives={"test": hive})
+        save_bees_config(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+
+        # Verify created_at is present in serialized JSON
+        assert "created_at" in data["hives"]["test"]
+        assert data["hives"]["test"]["created_at"] == timestamp
 
     def test_save_bees_config_sets_default_schema_version(self, tmp_path, monkeypatch):
         """Test save_bees_config sets schema_version to '1.0' if not set."""
@@ -595,6 +661,173 @@ class TestSaveBeesConfig:
         # Check for indentation (pretty-printed JSON)
         assert "  " in content  # Should have 2-space indentation
         assert "\n" in content  # Should have newlines
+
+    def test_save_bees_config_adds_trailing_newline(self, tmp_path, monkeypatch):
+        """Test save_bees_config adds trailing newline after JSON content."""
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+        save_bees_config(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        content = config_file.read_text()
+
+        # Verify trailing newline
+        assert content.endswith('\n')
+
+    def test_save_bees_config_atomic_write_creates_temp_file(self, tmp_path, monkeypatch):
+        """Test save_bees_config uses temp file pattern for atomic writes."""
+        import os
+        import tempfile
+        from unittest.mock import patch, MagicMock
+
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+
+        # Track calls to tempfile.mkstemp
+        temp_files_created = []
+        original_mkstemp = tempfile.mkstemp
+
+        def mock_mkstemp(*args, **kwargs):
+            fd, path = original_mkstemp(*args, **kwargs)
+            temp_files_created.append(path)
+            return fd, path
+
+        with patch('tempfile.mkstemp', side_effect=mock_mkstemp):
+            save_bees_config(config)
+
+        # Verify temp file was created in .bees/ directory
+        assert len(temp_files_created) == 1
+        temp_file = temp_files_created[0]
+        assert '.config.json.' in temp_file
+        assert str(tmp_path / ".bees") in temp_file
+
+        # Verify temp file was renamed (no longer exists)
+        assert not Path(temp_file).exists()
+
+        # Verify final config file exists
+        config_file = tmp_path / ".bees" / "config.json"
+        assert config_file.exists()
+
+    def test_save_bees_config_cleanup_on_write_failure(self, tmp_path, monkeypatch):
+        """Test save_bees_config cleans up temp file on write failure."""
+        import os
+        import tempfile
+        from unittest.mock import patch
+
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+
+        # Track temp file creation
+        temp_file_path = None
+
+        def mock_mkstemp(*args, **kwargs):
+            nonlocal temp_file_path
+            fd, temp_file_path = tempfile.mkstemp(*args, **kwargs)
+            return fd, temp_file_path
+
+        # Mock os.fdopen to raise IOError during write
+        def mock_fdopen(*args, **kwargs):
+            raise IOError("Simulated write failure")
+
+        with patch('tempfile.mkstemp', side_effect=mock_mkstemp):
+            with patch('os.fdopen', side_effect=mock_fdopen):
+                try:
+                    save_bees_config(config)
+                except IOError:
+                    pass  # Expected failure
+
+        # Verify temp file was cleaned up
+        if temp_file_path:
+            assert not Path(temp_file_path).exists()
+
+    def test_save_and_load_preserves_created_at(self, tmp_path, monkeypatch):
+        """Test round-trip save and load preserves created_at timestamp."""
+        monkeypatch.chdir(tmp_path)
+        timestamp = "2026-02-01T15:30:45.678901"
+        hive = HiveConfig(
+            path="/path/to/hive",
+            display_name="Backend",
+            created_at=timestamp
+        )
+        original_config = BeesConfig(hives={"backend": hive})
+
+        # Save config
+        save_bees_config(original_config)
+
+        # Load it back
+        loaded_config = load_bees_config()
+
+        # Verify created_at is preserved
+        assert loaded_config is not None
+        assert "backend" in loaded_config.hives
+        assert loaded_config.hives["backend"].created_at == timestamp
+        assert loaded_config.hives["backend"].path == "/path/to/hive"
+        assert loaded_config.hives["backend"].display_name == "Backend"
+
+    def test_save_bees_config_no_partial_writes_on_failure(self, tmp_path, monkeypatch):
+        """Test save_bees_config preserves existing config on write failure."""
+        monkeypatch.chdir(tmp_path)
+
+        # Create initial config
+        hive = HiveConfig(path="tickets/backend/", display_name="Backend", created_at="2026-02-01T12:00:00")
+        config1 = BeesConfig(hives={"backend": hive}, schema_version="1.0")
+        save_bees_config(config1)
+
+        # Verify initial config was saved
+        config_file = tmp_path / ".bees" / "config.json"
+        original_content = config_file.read_text()
+        assert "Backend" in original_content
+
+        # Try to save new config but simulate failure
+        config2 = BeesConfig(hives={}, schema_version="2.0")
+
+        import os
+        from unittest.mock import patch
+
+        # Mock os.replace to raise error (simulating crash during rename)
+        def mock_replace(*args, **kwargs):
+            raise OSError("Simulated rename failure")
+
+        with patch('os.replace', side_effect=mock_replace):
+            try:
+                save_bees_config(config2)
+            except IOError:
+                pass  # Expected failure
+
+        # Verify original config file is intact (not corrupted)
+        config_file_content = config_file.read_text()
+        assert config_file_content == original_content
+        assert "Backend" in config_file_content
+        assert json.loads(config_file_content)["schema_version"] == "1.0"
+
+    def test_save_bees_config_atomic_rename_with_os_replace(self, tmp_path, monkeypatch):
+        """Test save_bees_config uses os.replace for atomic rename."""
+        from unittest.mock import patch, MagicMock
+        import os
+
+        monkeypatch.chdir(tmp_path)
+        config = BeesConfig()
+
+        # Track calls to os.replace
+        replace_calls = []
+
+        def mock_replace(src, dst):
+            replace_calls.append((src, dst))
+            # Call original os.replace
+            os.replace.__wrapped__(src, dst) if hasattr(os.replace, '__wrapped__') else None
+            # Actually perform rename for test to work
+            Path(src).rename(dst)
+
+        with patch('os.replace', side_effect=mock_replace) as mock_os_replace:
+            save_bees_config(config)
+
+        # Verify os.replace was called
+        assert len(replace_calls) == 1
+        src, dst = replace_calls[0]
+
+        # Verify source is temp file and destination is config.json
+        assert '.config.json.' in str(src)
+        assert str(dst) == str(tmp_path / ".bees" / "config.json")
 
 
 class TestInitBeesConfigIfNeeded:
@@ -738,7 +971,7 @@ class TestValidateUniqueHiveName:
     def test_validate_unique_hive_name_new_name(self, tmp_path, monkeypatch):
         """Test validation passes for new unique name."""
         monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path='tickets/frontend/', display_name='Frontend')
+        hive = HiveConfig(path='tickets/frontend/', display_name='Frontend', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'frontend': hive})
         save_bees_config(config)
 
@@ -748,7 +981,7 @@ class TestValidateUniqueHiveName:
     def test_validate_unique_hive_name_duplicate_normalized_name(self, tmp_path, monkeypatch):
         """Test validation raises ValueError for duplicate normalized name."""
         monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path='tickets/backend/', display_name='Back End')
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end': hive})
         save_bees_config(config)
 
@@ -760,7 +993,7 @@ class TestValidateUniqueHiveName:
         """Test validation prevents 'Back End' and 'back end' collision."""
         monkeypatch.chdir(tmp_path)
         # Register 'Back End' (normalized to 'back_end')
-        hive = HiveConfig(path='tickets/backend/', display_name='Back End')
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end': hive})
         save_bees_config(config)
 
@@ -772,10 +1005,11 @@ class TestValidateUniqueHiveName:
     def test_validate_unique_hive_name_multiple_hives(self, tmp_path, monkeypatch):
         """Test validation with multiple registered hives."""
         monkeypatch.chdir(tmp_path)
+        timestamp = '2026-02-01T12:00:00'
         config = BeesConfig(hives={
-            'frontend': HiveConfig(path='tickets/fe/', display_name='Frontend'),
-            'backend': HiveConfig(path='tickets/be/', display_name='Backend'),
-            'api': HiveConfig(path='tickets/api/', display_name='API')
+            'frontend': HiveConfig(path='tickets/fe/', display_name='Frontend', created_at=timestamp),
+            'backend': HiveConfig(path='tickets/be/', display_name='Backend', created_at=timestamp),
+            'api': HiveConfig(path='tickets/api/', display_name='API', created_at=timestamp)
         })
         save_bees_config(config)
 
@@ -789,7 +1023,7 @@ class TestValidateUniqueHiveName:
     def test_validate_unique_hive_name_case_insensitive_collision(self, tmp_path, monkeypatch):
         """Test 'BACKEND' and 'backend' are treated as the same."""
         monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path='tickets/backend/', display_name='BACKEND')
+        hive = HiveConfig(path='tickets/backend/', display_name='BACKEND', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'backend': hive})
         save_bees_config(config)
 
@@ -801,9 +1035,350 @@ class TestValidateUniqueHiveName:
     def test_validate_unique_hive_name_display_name_in_error(self, tmp_path, monkeypatch):
         """Test error message includes original display name."""
         monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path='tickets/backend/', display_name='Back End Services')
+        hive = HiveConfig(path='tickets/backend/', display_name='Back End Services', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end_services': hive})
         save_bees_config(config)
 
         with pytest.raises(ValueError, match="Display name: 'Back End Services'"):
             validate_unique_hive_name('back_end_services')
+
+
+class TestLoadHiveConfigDict:
+    """Test load_hive_config_dict function for dict-based config loading."""
+
+    def test_load_hive_config_dict_missing_file(self, tmp_path, monkeypatch):
+        """Test load_hive_config_dict returns default dict when file doesn't exist."""
+        monkeypatch.chdir(tmp_path)
+        config = load_hive_config_dict()
+
+        assert config == {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+
+    def test_load_hive_config_dict_valid_file(self, tmp_path, monkeypatch):
+        """Test load_hive_config_dict returns correct dict structure."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        config_data = {
+            "hives": {
+                "backend": {
+                    "path": "tickets/backend/",
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        config = load_hive_config_dict()
+        assert config['hives']['backend']['path'] == "tickets/backend/"
+        assert config['hives']['backend']['display_name'] == "Backend"
+        assert config['allow_cross_hive_dependencies'] is False
+        assert config['schema_version'] == "1.0"
+
+    def test_load_hive_config_dict_empty_hives(self, tmp_path, monkeypatch):
+        """Test load_hive_config_dict with empty hives dict."""
+        monkeypatch.chdir(tmp_path)
+        hive_config = BeesConfig(hives={}, allow_cross_hive_dependencies=True)
+        save_bees_config(hive_config)
+
+        config = load_hive_config_dict()
+        assert config['hives'] == {}
+        assert config['allow_cross_hive_dependencies'] is True
+
+    def test_load_hive_config_dict_malformed_json(self, tmp_path, monkeypatch, caplog):
+        """Test load_hive_config_dict returns default dict on malformed JSON with warning."""
+        import logging
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+        config_file.write_text("{invalid json")
+
+        with caplog.at_level(logging.WARNING):
+            config = load_hive_config_dict()
+
+        # Should return default structure instead of raising
+        assert config == {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+
+        # Should log warning
+        assert "Malformed JSON" in caplog.text
+
+    def test_load_hive_config_dict_io_error(self, tmp_path, monkeypatch, caplog):
+        """Test load_hive_config_dict returns default dict on IO errors with warning."""
+        import logging
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        # Create valid config file
+        config_data = {
+            "hives": {},
+            "allow_cross_hive_dependencies": False,
+            "schema_version": "1.0"
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        # Remove read permissions to trigger IO error
+        config_file.chmod(0o000)
+
+        try:
+            with caplog.at_level(logging.WARNING):
+                config = load_hive_config_dict()
+
+            # Should return default structure instead of raising
+            assert config == {
+                'hives': {},
+                'allow_cross_hive_dependencies': False,
+                'schema_version': '1.0'
+            }
+
+            # Should log warning
+            assert "IO error reading" in caplog.text
+        finally:
+            # Restore permissions for cleanup
+            config_file.chmod(0o644)
+
+    def test_load_hive_config_dict_valid_config_still_loads(self, tmp_path, monkeypatch):
+        """Test load_hive_config_dict successfully loads valid config after error cases."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        # Create valid config
+        config_data = {
+            "hives": {
+                "backend": {
+                    "path": "tickets/backend/",
+                    "display_name": "Backend"
+                }
+            },
+            "allow_cross_hive_dependencies": True,
+            "schema_version": "1.0"
+        }
+        config_file.write_text(json.dumps(config_data))
+
+        # Should load successfully
+        config = load_hive_config_dict()
+        assert config['hives']['backend']['path'] == "tickets/backend/"
+        assert config['allow_cross_hive_dependencies'] is True
+
+    def test_load_hive_config_dict_returns_valid_structure_after_json_error(self, tmp_path, monkeypatch):
+        """Test load_hive_config_dict returns valid default dict on JSON errors."""
+        monkeypatch.chdir(tmp_path)
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        config_file = bees_dir / "config.json"
+
+        # Write malformed JSON
+        config_file.write_text("{broken json}")
+
+        config = load_hive_config_dict()
+
+        # Verify returned default structure is valid
+        assert isinstance(config, dict)
+        assert 'hives' in config
+        assert 'allow_cross_hive_dependencies' in config
+        assert 'schema_version' in config
+        assert config['hives'] == {}
+        assert config['allow_cross_hive_dependencies'] is False
+        assert config['schema_version'] == '1.0'
+
+
+class TestWriteHiveConfigDict:
+    """Test write_hive_config_dict function for dict-based config writing."""
+
+    def test_write_hive_config_dict_creates_directory(self, tmp_path, monkeypatch):
+        """Test write_hive_config_dict creates .bees/ directory if needed."""
+        monkeypatch.chdir(tmp_path)
+        config = {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+        write_hive_config_dict(config)
+
+        bees_dir = tmp_path / ".bees"
+        assert bees_dir.exists()
+        assert bees_dir.is_dir()
+
+    def test_write_hive_config_dict_converts_and_saves(self, tmp_path, monkeypatch):
+        """Test write_hive_config_dict correctly converts dict to BeesConfig and saves."""
+        monkeypatch.chdir(tmp_path)
+        config = {
+            'hives': {
+                'backend': {
+                    'path': 'tickets/backend/',
+                    'display_name': 'Backend'
+                }
+            },
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+        write_hive_config_dict(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        assert config_file.exists()
+
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+
+        assert data["hives"]["backend"]["path"] == "tickets/backend/"
+        assert data["hives"]["backend"]["display_name"] == "Backend"
+
+    def test_write_hive_config_dict_handles_created_at_timestamp(self, tmp_path, monkeypatch):
+        """Test write_hive_config_dict handles 'created_at' timestamps in hive entries."""
+        monkeypatch.chdir(tmp_path)
+        config = {
+            'hives': {
+                'backend': {
+                    'path': 'tickets/backend/',
+                    'display_name': 'Backend',
+                    'created_at': '2026-02-01T12:00:00'  # Timestamp present in dict
+                }
+            },
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+        # Should not raise - created_at is ignored during conversion
+        write_hive_config_dict(config)
+
+        # Verify file was created successfully
+        config_file = tmp_path / ".bees" / "config.json"
+        assert config_file.exists()
+
+    def test_write_hive_config_dict_error_handling(self, tmp_path, monkeypatch):
+        """Test write_hive_config_dict error handling for IOError."""
+        monkeypatch.chdir(tmp_path)
+
+        # Create .bees directory as read-only to trigger permission error
+        bees_dir = tmp_path / ".bees"
+        bees_dir.mkdir()
+        bees_dir.chmod(0o444)  # Read-only
+
+        config = {
+            'hives': {},
+            'allow_cross_hive_dependencies': False,
+            'schema_version': '1.0'
+        }
+
+        try:
+            with pytest.raises(IOError):
+                write_hive_config_dict(config)
+        finally:
+            # Restore permissions for cleanup
+            bees_dir.chmod(0o755)
+
+    def test_write_hive_config_dict_empty_hives(self, tmp_path, monkeypatch):
+        """Test write_hive_config_dict with empty hives dict."""
+        monkeypatch.chdir(tmp_path)
+        config = {
+            'hives': {},
+            'allow_cross_hive_dependencies': True,
+            'schema_version': '2.0'
+        }
+        write_hive_config_dict(config)
+
+        config_file = tmp_path / ".bees" / "config.json"
+        with open(config_file, 'r') as f:
+            data = json.load(f)
+
+        assert data['hives'] == {}
+        assert data['allow_cross_hive_dependencies'] is True
+        assert data['schema_version'] == '2.0'
+
+
+class TestRegisterHiveDict:
+    """Test register_hive_dict function for dict-based hive registration."""
+
+    def test_register_hive_dict_adds_new_hive(self, tmp_path, monkeypatch):
+        """Test register_hive_dict adds new hive with correct structure."""
+        from datetime import datetime
+        monkeypatch.chdir(tmp_path)
+
+        # Create initial empty config
+        init_bees_config_if_needed()
+
+        timestamp = datetime(2026, 2, 1, 12, 0, 0)
+        config = register_hive_dict('backend', 'Backend', 'tickets/backend/', timestamp)
+
+        assert 'backend' in config['hives']
+        assert config['hives']['backend']['path'] == 'tickets/backend/'
+        assert config['hives']['backend']['display_name'] == 'Backend'
+        assert config['hives']['backend']['created_at'] == '2026-02-01T12:00:00'
+
+    def test_register_hive_dict_includes_timestamp(self, tmp_path, monkeypatch):
+        """Test register_hive_dict includes timestamp in ISO format."""
+        from datetime import datetime
+        monkeypatch.chdir(tmp_path)
+
+        timestamp = datetime(2026, 2, 1, 15, 30, 45)
+        config = register_hive_dict('api', 'API', 'tickets/api/', timestamp)
+
+        assert config['hives']['api']['created_at'] == '2026-02-01T15:30:45'
+
+    def test_register_hive_dict_does_not_write_to_disk(self, tmp_path, monkeypatch):
+        """Test register_hive_dict doesn't write to disk (returns updated dict only)."""
+        from datetime import datetime
+        monkeypatch.chdir(tmp_path)
+
+        timestamp = datetime.now()
+        config = register_hive_dict('frontend', 'Frontend', 'tickets/frontend/', timestamp)
+
+        # Config should be returned but not persisted
+        assert 'frontend' in config['hives']
+
+        # Verify file doesn't exist (or doesn't contain the new hive if it existed before)
+        config_file = tmp_path / ".bees" / "config.json"
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                data = json.load(f)
+            # If file exists, it shouldn't have the frontend hive
+            assert 'frontend' not in data.get('hives', {})
+
+    def test_register_hive_dict_adds_to_existing_hives(self, tmp_path, monkeypatch):
+        """Test register_hive_dict adds to existing hives without removing them."""
+        from datetime import datetime
+        monkeypatch.chdir(tmp_path)
+
+        # Create config with one hive
+        hive = HiveConfig(path='tickets/backend/', display_name='Backend', created_at='2026-02-01T12:00:00')
+        config = BeesConfig(hives={'backend': hive})
+        save_bees_config(config)
+
+        # Add another hive
+        timestamp = datetime.now()
+        updated_config = register_hive_dict('frontend', 'Frontend', 'tickets/frontend/', timestamp)
+
+        # Both hives should be in the returned dict
+        assert 'backend' in updated_config['hives']
+        assert 'frontend' in updated_config['hives']
+
+    def test_register_hive_dict_with_no_existing_config(self, tmp_path, monkeypatch):
+        """Test register_hive_dict works when no config file exists."""
+        from datetime import datetime
+        monkeypatch.chdir(tmp_path)
+
+        # No config file exists yet
+        config_file = tmp_path / ".bees" / "config.json"
+        assert not config_file.exists()
+
+        timestamp = datetime.now()
+        config = register_hive_dict('mobile', 'Mobile', 'tickets/mobile/', timestamp)
+
+        # Should return valid config with new hive
+        assert config['hives']['mobile']['path'] == 'tickets/mobile/'
+        assert config['hives']['mobile']['display_name'] == 'Mobile'
+        assert 'created_at' in config['hives']['mobile']

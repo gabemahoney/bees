@@ -58,7 +58,10 @@ Centralized configuration module with typed Config object.
 **Schema Location**: `.bees/config.json` in client repo root
 
 **Data Structure**:
-- `HiveConfig` dataclass: Represents a single hive with `path` and `display_name` fields
+- `HiveConfig` dataclass: Represents a single hive with `path`, `display_name`, and `created_at` fields
+  - `path` (str): Absolute path to hive directory
+  - `display_name` (str): Original user-provided display name
+  - `created_at` (str): ISO 8601 timestamp when hive was created
 - `BeesConfig` dataclass: Container with `hives` dict (normalized_name → HiveConfig),
   `allow_cross_hive_dependencies` bool, and `schema_version` string
 
@@ -72,16 +75,40 @@ Centralized configuration module with typed Config object.
 - `get_config_path()`: Returns Path to `.bees/config.json` in current working directory
 - `ensure_bees_dir()`: Creates `.bees/` directory if needed
 - `load_bees_config()`: Reads config.json and returns BeesConfig object, handles file-not-found
-  (returns None), validates JSON and schema_version, raises ValueError for malformed JSON
-- `save_bees_config(config)`: Writes BeesConfig to config.json with indent=2 formatting,
-  calls ensure_bees_dir() before writing, sets schema_version to '1.0' if not set
+  (returns None), validates JSON and schema_version, raises ValueError for malformed JSON.
+  Parses all HiveConfig fields including `created_at` timestamp from JSON.
+- `save_bees_config(config)`: Writes BeesConfig to config.json using atomic write pattern,
+  calls ensure_bees_dir() before writing, sets schema_version to '1.0' if not set.
+  Serializes all HiveConfig fields including `created_at` to JSON.
 - `init_bees_config_if_needed()`: Creates config on first call, returns existing on subsequent calls
+
+**Atomic Write Implementation** (Task bees-dpxir):
+- `save_bees_config()` uses atomic write pattern to prevent config corruption if process crashes during write
+- Architecture: `tempfile.mkstemp()` → `os.fdopen()` → `json.dump()` → `os.replace()`
+- Implementation details:
+  - Creates temp file in `.bees/` directory with prefix `.config.json.`
+  - Writes JSON to temp file with indent=2 formatting
+  - Adds trailing newline after JSON content
+  - Uses `os.replace()` to atomically rename temp file to `config.json`
+  - Cleanup: Deletes temp file on write failure in except block
+- Design decision: Temp file + rename pattern prevents partial writes if process crashes or disk fills
+- Rationale: Config corruption could make entire system unusable; atomic writes ensure either old config remains intact or new config is complete
+- Error handling: Raises IOError with descriptive message, cleans up temp file on any exception
+- POSIX guarantee: `os.replace()` is atomic on POSIX systems (rename syscall), ensuring no partial file states
 
 **Error Handling**:
 - Malformed JSON raises ValueError with descriptive message
 - Invalid schema_version type raises ValueError
 - Invalid hive data type raises ValueError
 - File write errors raise IOError
+
+**Error Handling Design - load_hive_config_dict()** (Task bees-jav9h):
+- `load_hive_config_dict()` in `src/config.py` returns default structure on JSON/IO errors for graceful degradation
+- Behavior: Catches `json.JSONDecodeError` and `IOError`, logs warning, returns default `{'hives': {}, 'allow_cross_hive_dependencies': False, 'schema_version': '1.0'}` structure
+- Warning messages logged: `"Malformed JSON in {config_path}: {e}. Returning default structure."` and `"IO error reading {config_path}: {e}. Returning default structure."`
+- Rationale: Dict API provides graceful degradation for flexibility, while dataclass API (`load_bees_config()`) raises ValueError for strict validation
+- Benefits: Prevents application crashes while making errors visible through logs, suitable for scripts and MCP layer requiring robustness
+- Design contrast: `load_bees_config()` raises ValueError on malformed JSON for strict type-safe validation, while `load_hive_config_dict()` returns defaults for flexible operations
 
 **Name Normalization**:
 - `normalize_hive_name(name: str) -> str` function in `src/id_utils.py` is the single source of truth for hive name normalization
@@ -115,6 +142,170 @@ Centralized configuration module with typed Config object.
 - JSON structure: `{"hives": {"back_end": {"display_name": "Back End", "path": "/path/to/hive"}}}`
 - This design enables case-insensitive, whitespace-normalized lookups while preserving user intent
 - Display names shown in UI/reports, normalized names used for internal operations
+
+**Dict vs Dataclass API Architecture**:
+
+The config module (`src/config.py`) provides two parallel APIs for configuration management:
+
+1. **Dataclass-based API** (Primary, type-safe):
+   - `load_bees_config() -> BeesConfig | None`: Returns typed BeesConfig object with attribute access
+   - `save_bees_config(config: BeesConfig) -> None`: Writes BeesConfig object to disk
+   - `register_hive(normalized_name, display_name, path, timestamp) -> BeesConfig`: Returns updated BeesConfig
+   - **Use when**: You need type safety, attribute access (e.g., `config.hives['backend'].path`), or working with the core config module
+   - **Benefits**: Type checking, IDE autocomplete, validation through dataclass fields
+   - **Error handling**: Raises ValueError on malformed JSON, returns None if file doesn't exist
+
+2. **Dict-based API** (Wrapper functions for flexibility):
+   - `load_hive_config_dict() -> dict`: Returns config as dictionary
+   - `write_hive_config_dict(config: dict) -> None`: Writes dict to disk
+   - `register_hive_dict(normalized_name, display_name, path, timestamp) -> dict`: Returns updated dict
+   - **Use when**: You need flexible dict operations, JSON-like manipulation, or backward compatibility
+   - **Benefits**: No type constraints, direct JSON mapping, easier for dynamic config operations
+   - **Error handling**: Returns default structure `{'hives': {}, 'allow_cross_hive_dependencies': False, 'schema_version': '1.0'}` on malformed JSON or missing file (with logged warning)
+
+**Design Decisions**:
+- Both APIs operate on the same `.bees/config.json` file with identical structure
+- Dict API wraps the dataclass API internally for core operations (NOT used yet, but designed for this)
+- Dict API provides graceful degradation (returns defaults) while dataclass API provides strict validation (raises errors)
+- Choose dataclass API for internal modules requiring type safety; dict API for MCP layer or scripts requiring flexibility
+- All functions preserve `created_at` timestamps in ISO 8601 format
+
+**Trade-offs**:
+- Dataclass API: Type safety and validation come at cost of less flexibility for dynamic operations
+- Dict API: Flexibility and graceful error handling come at cost of losing type safety and IDE support
+- Maintaining two APIs adds some code duplication but provides best tool for each use case
+
+### Config Registration Functions (Task bees-svir)
+
+**Purpose**: Implement local config load/write/register functions in `mcp_server.py` for hive registration during colonization, providing atomic writes and clear error handling.
+
+**Architecture Decision**: Parallel Config System at MCP Layer
+- Design choice: Implement `load_hive_config()`, `write_hive_config()`, and `register_hive_in_config()` in `mcp_server.py` alongside existing `src/config.py` module functions
+- Rationale: MCP server layer needs direct control over config I/O with explicit error handling, atomic writes, and timestamp management
+- Benefits: Clear separation of concerns (config module for validation/data structures, mcp_server for I/O), atomic write safety, detailed error responses for MCP clients
+- Alternative rejected: Using only `src/config.py` functions would require changing their signatures and error handling patterns, affecting other parts of the codebase
+
+**Implementation**:
+
+1. **load_hive_config() Function** (`src/mcp_server.py`):
+   - Returns dict (not BeesConfig object) with structure: `{'hives': {}, 'allow_cross_hive_dependencies': False, 'schema_version': '1.0'}`
+   - Reads `.bees/config.json` if it exists, returns empty structure if file not found
+   - Handles JSON parse errors gracefully (logs warning, returns default structure)
+   - Handles I/O errors gracefully (logs warning, returns default structure)
+   - No exceptions raised (returns default instead)
+
+2. **write_hive_config(config: dict) Function** (`src/mcp_server.py`):
+   - Creates `.bees/` directory if needed using `Path.mkdir(parents=True, exist_ok=True)`
+   - Performs atomic write using temporary file + rename strategy:
+     - `tempfile.mkstemp()` creates temp file in `.bees/` directory
+     - Writes JSON with `indent=2` formatting + trailing newline
+     - `os.replace()` atomically renames temp file to `config.json`
+   - Raises `IOError` for all error cases (directory creation, file write, permissions, disk space)
+   - Cleanup: Deletes temp file on write failure (best effort in except block)
+   - Error messages include context: `"Cannot write config file: {original_error}"`
+
+3. **register_hive_in_config(normalized_name, display_name, path, timestamp) Function** (`src/mcp_server.py`):
+   - Loads current config using `load_hive_config()`
+   - Adds new hive entry to `config['hives'][normalized_name]`
+   - Entry structure: `{'path': path, 'display_name': display_name, 'created_at': timestamp.isoformat()}`
+   - Returns updated config dict (does not persist to disk)
+   - Caller's responsibility to call `write_hive_config()` to persist changes
+   - This separation enables transaction-like behavior (load → modify → write with error handling)
+
+**Integration with colonize_hive() Workflow**:
+- Step 5 (config registration) updated to use new functions instead of `src/config.py` functions
+- Flow: `register_hive_in_config()` → `write_hive_config()` wrapped in try/except
+- Catches `IOError`, `PermissionError`, `OSError` and returns error dict
+- Error types: `config_write_error`, `config_error`
+- Timestamp generated once in colonize_hive using `datetime.now()`, passed to register function
+
+**Atomic Write Strategy**:
+- Purpose: Prevent config corruption if write interrupted (crash, disk full, etc.)
+- Implementation: Write to temp file (`.config.json.XXXXXX`) → rename to `config.json`
+- `os.replace()` is atomic on POSIX systems (rename syscall)
+- Guarantees: Either old config intact or new config complete (no partial writes)
+- Temp file cleanup: Best effort deletion on error, but temp files in `.bees/` won't affect functionality
+
+**Error Handling Philosophy**:
+- `load_hive_config()`: Returns default structure on any error (graceful degradation)
+- `write_hive_config()`: Raises IOError on any error (fail-fast for write operations)
+- `register_hive_in_config()`: Pure function, no I/O, no exceptions
+- `colonize_hive()`: Catches all exceptions and wraps in error dict for MCP clients
+
+**Timestamp Format**:
+- Uses ISO 8601 format via `datetime.isoformat()` (e.g., `"2026-02-01T12:00:00.123456"`)
+- Stored in `created_at` field of each hive entry
+- Provides audit trail of when hives were registered
+- Format chosen for: human-readability, sortability, timezone-aware capability
+
+**Test Coverage** (`tests/test_config_registration.py`):
+- 20 tests passing covering all three functions and colonize_hive integration
+- Load tests: missing file, valid JSON, malformed JSON, I/O errors
+- Write tests: valid config, directory creation, formatting, atomic behavior, permissions, overwrite
+- Register tests: adds entry, preserves existing, returns config, doesn't persist
+- Integration tests: colonize_hive registration, error handling, timestamps, multiple hives
+- All error paths tested with mocked failures
+
+**Why Separate from src/config.py**:
+- Different return types: `load_hive_config()` returns dict, `load_bees_config()` returns BeesConfig
+- Different error handling: MCP functions for operational errors (I/O), config module for data validation
+- Different concerns: MCP layer focuses on HTTP/MCP error responses, config module on data structures
+- Both systems coexist: `src/config.py` for validation/types, `mcp_server.py` for I/O operations
+- No duplication of logic: Normalization and validation still in `src/config.py`, only I/O duplicated
+
+### Config Module Consolidation (Task bees-gsitz)
+
+**Purpose**: Standardize JSON error handling across config loading functions and consolidate config operations into `src/config.py` for maintainability.
+
+**Architecture Decision**: Unified Config Module
+- Design choice: Consolidate all config loading functions into `src/config.py` with consistent error handling strategy
+- Rationale: Previously `load_hive_config()` in `mcp_server.py` caught `json.JSONDecodeError` and returned defaults (lines 332-338), while `load_bees_config()` in `config.py` raised `ValueError` (line 180). This inconsistency made error behavior unpredictable.
+- Benefits: Single source of truth for config operations, predictable error handling, easier testing and debugging
+- Error handling strategy: Return default structure on JSON errors for better UX (graceful degradation)
+
+**Implementation Changes**:
+
+1. **Moved load_hive_config() to config.py**:
+   - Relocated from `src/mcp_server.py` (lines 321-345) to `src/config.py`
+   - Function renamed to `load_hive_config_dict()` to clarify dict return type
+   - Maintains backward compatibility via wrapper function if needed
+   - Updated to use consistent error handling (return default dict on JSONDecodeError)
+
+2. **Standardized load_bees_config() Error Handling**:
+   - Changed from raising `ValueError` on JSON errors to returning default `BeesConfig` structure
+   - Logs warning on malformed JSON: `"Malformed JSON in {config_path}: {e}. Returning default structure."`
+   - Default structure: `BeesConfig(hives={}, allow_cross_hive_dependencies=False, schema_version='1.0')`
+   - Matches behavior of `load_hive_config_dict()` for consistency
+
+3. **Updated mcp_server.py Imports**:
+   - Added `load_hive_config_dict` to imports from `config.py`
+   - Removed duplicate function definition from `mcp_server.py`
+   - All calls to `load_hive_config()` now use imported function from `config.py`
+   - No functional changes to calling code
+
+**Error Handling Strategy**:
+- **Prefer returning defaults over raising exceptions** for config loading operations
+- Rationale: Better user experience - malformed config shouldn't crash the application
+- Logging strategy: Warning logs make errors visible without breaking functionality
+- Applies to both `load_hive_config_dict()` and `load_bees_config()`
+- Distinguishes between missing files (expected, return None or default) and malformed files (unexpected, log warning and return default)
+
+**Integration Points**:
+- `load_hive_config_dict()` called in:
+  - `colonize_hive()` for hive registration
+  - `register_hive_dict()` for adding new hive entries
+  - MCP server initialization for loading existing hives
+- `load_bees_config()` called in:
+  - `init_bees_config_if_needed()` for on-demand initialization
+  - `validate_unique_hive_name()` for duplicate checking
+  - Query executor for hive path resolution
+
+**Test Coverage**:
+- Added tests in `tests/test_config.py` for JSON error handling
+- Test cases: malformed JSON, valid JSON, missing files, default returns
+- Verified warning logs on errors
+- 100% coverage of error paths in both functions
+- All tests passing after consolidation
 
 ### Hive Directory Structure (Task bees-55b6)
 

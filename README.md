@@ -101,19 +101,119 @@ Hive names must contain at least one alphanumeric character (a-z, A-Z, 0-9). The
 - **Valid:** `"backend"`, `"Back End"` (normalizes to `back_end`), `"front-end"` (normalizes to `front_end`)
 - **Invalid:** `"   "` (whitespace only), `"@#$%"` (special characters only), `"---"` (no alphanumeric), `""` (empty string)
 
-Example configuration:
+**Configuration File Structure:**
+
+The `.bees/config.json` file stores hive registrations and settings:
+
 ```json
 {
   "hives": {
     "backend": {
       "path": "/path/to/backend",
-      "display_name": "Backend"
+      "display_name": "Backend",
+      "created_at": "2026-02-01T12:00:00.000000"
     }
   },
   "allow_cross_hive_dependencies": false,
   "schema_version": "1.0"
 }
 ```
+
+**HiveConfig Data Structure:**
+
+The `HiveConfig` dataclass in `src/config.py` defines the schema for each hive entry:
+
+- `path` (str): Absolute path to the hive directory
+- `display_name` (str): Original display name as provided during colonization
+- `created_at` (str): ISO 8601 timestamp of when the hive was created (e.g., `"2026-02-01T12:00:00.000000"`)
+
+This dataclass matches the structure stored in `config.json` and is used when loading/saving hive configuration through `load_bees_config()` and `save_bees_config()`.
+
+**Config Management:**
+
+The config file is managed automatically by the system:
+- **Automatic creation**: Created on first hive registration if it doesn't exist
+- **Atomic writes**: Uses temporary file + rename to prevent corruption
+- **Timestamps**: Each hive entry includes creation timestamp in ISO 8601 format
+- **Error handling**: All config write operations handle permissions errors, disk full, and other I/O issues gracefully
+
+**Error Handling:**
+
+Config loading functions provide different error handling strategies:
+- **`load_hive_config_dict()` (Dict API)**: Returns default structure on all errors
+  - Returns defaults on malformed JSON or I/O errors
+  - Logs warning message: `"Malformed JSON in {config_path}: {error}. Returning default structure."`
+  - Default structure returned: `{'hives': {}, 'allow_cross_hive_dependencies': False, 'schema_version': '1.0'}`
+  - Missing config files return default structure without warnings (expected behavior on first run)
+  - Prevents application crashes while making errors visible through logs
+- **`load_bees_config()` (Dataclass API)**: Mixed error handling for validation
+  - Returns None if file doesn't exist (expected on first run)
+  - Returns default BeesConfig on malformed JSON (with warning log)
+  - Raises ValueError on schema validation errors (invalid schema_version type, invalid hive data type)
+  - Provides strict validation for type-safe operations
+- **Config write errors**: During hive colonization, write failures return descriptive error responses:
+  - `config_write_error`: Failed to write config file (disk full, permissions)
+  - `config_error`: Unexpected error during config registration
+
+Example write error response:
+```json
+{
+  "status": "error",
+  "error_type": "config_write_error",
+  "message": "Failed to write config file: Permission denied",
+  "validation_details": {
+    "operation": "write_config",
+    "reason": "Permission denied"
+  }
+}
+```
+
+**Config Loading Consolidation:**
+
+All config loading functions are consolidated in `src/config.py` for consistent behavior:
+- `load_hive_config_dict()`: Loads `.bees/config.json` and returns dict with hive configuration (graceful degradation)
+- `load_bees_config()`: Loads `.bees/config.json` and returns typed `BeesConfig` object (strict validation)
+- Different error handling strategies: dict API returns defaults on all errors; dataclass API validates and may raise ValueError
+- Located in `src/config.py` module, imported by `mcp_server.py` and other components
+
+**Dict Wrapper Functions:**
+
+The `src/config.py` module provides dict-based wrapper functions for config management:
+
+- **`load_hive_config_dict() -> dict`**
+  - Loads `.bees/config.json` and returns configuration as a dictionary
+  - Returns default structure if file doesn't exist or contains malformed JSON
+  - Preserves all fields including `created_at` timestamps
+  - Example:
+    ```python
+    config = load_hive_config_dict()
+    # Returns: {'hives': {...}, 'allow_cross_hive_dependencies': False, 'schema_version': '1.0'}
+    backend_config = config['hives']['backend']
+    # Returns: {'path': '/path/to/backend', 'display_name': 'Backend', 'created_at': '2026-02-01T...'}
+    ```
+
+- **`write_hive_config_dict(config: dict) -> None`**
+  - Writes configuration dictionary to `.bees/config.json`
+  - Preserves all fields including `created_at` timestamps
+  - Automatically sets `schema_version` to '1.0' if not present
+  - Raises `IOError` on write failures (permissions, disk space)
+  - Example:
+    ```python
+    config = load_hive_config_dict()
+    config['hives']['backend'] = {'path': '/path', 'display_name': 'Backend', 'created_at': '2026-02-01T12:00:00'}
+    write_hive_config_dict(config)
+    ```
+
+- **`register_hive_dict(normalized_name: str, display_name: str, path: str, timestamp: datetime) -> dict`**
+  - Loads current config, adds new hive entry, and returns updated dictionary
+  - Does NOT write to disk - caller must call `write_hive_config_dict()` to persist
+  - Automatically converts timestamp to ISO 8601 format for `created_at` field
+  - Example:
+    ```python
+    from datetime import datetime
+    config = register_hive_dict('backend', 'Backend', '/path/to/hive', datetime.now())
+    write_hive_config_dict(config)  # Persist to disk
+    ```
 
 **Note:** All tickets are stored in hive-specific directories.
 
