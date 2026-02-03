@@ -17,8 +17,8 @@ down_dependencies:
 - features.bees-egx
 parent: features.bees-gzx
 created_at: '2026-02-03T16:53:21.026405'
-updated_at: '2026-02-03T16:53:26.760062'
-status: open
+updated_at: '2026-02-03T17:45:56.741380'
+status: completed
 bees_version: '1.1'
 ---
 
