@@ -1,9 +1,3 @@
-Do not conflate beads and bees.
-
-Beads is the ticket system we are using to manage work.
-
-Bees is the new ticket system we are actively building.
-
-Beads uses a db and json. Bees uses markdown and MCP.
-
-Dont start working on beads! Its a tool someone else built that we are using.
+You are building the bees ticket management system but also using the bees ticket system.
+Bear this in mind when talking with the user. Sometimes they will be asking you to just use bees.
+Other times they will be asking you to build or debug bees.

@@ -502,36 +502,36 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['error_type'] == 'validation_error'
         assert 'empty string' in result['message']
 
-    @patch('src.mcp_server.get_repo_root')
+    @patch('src.mcp_server.get_repo_root_from_path')
     @patch('src.mcp_server.normalize_hive_name')
     @patch('src.mcp_server.validate_hive_path')
     def test_calls_validate_hive_path(
         self,
         mock_validate_path,
         mock_normalize,
-        mock_get_repo
+        mock_get_repo_from_path
     ):
         """Test that colonize_hive calls validate_hive_path from config system."""
         mock_normalize.return_value = 'backend'
-        mock_get_repo.return_value = Path('/repo')
+        mock_get_repo_from_path.return_value = Path('/repo')
         mock_validate_path.side_effect = ValueError("Path error")
 
         result = colonize_hive('Backend', 'relative/path')
 
         mock_validate_path.assert_called_once_with('relative/path', Path('/repo'))
 
-    @patch('src.mcp_server.get_repo_root')
+    @patch('src.mcp_server.get_repo_root_from_path')
     @patch('src.mcp_server.normalize_hive_name')
     @patch('src.mcp_server.validate_hive_path')
     def test_returns_error_on_invalid_path(
         self,
         mock_validate_path,
         mock_normalize,
-        mock_get_repo
+        mock_get_repo_from_path
     ):
         """Test that colonize_hive returns error on invalid path validation."""
         mock_normalize.return_value = 'backend'
-        mock_get_repo.return_value = Path('/repo')
+        mock_get_repo_from_path.return_value = Path('/repo')
         mock_validate_path.side_effect = ValueError("Path must be absolute")
 
         result = colonize_hive('Backend', 'relative/path')
@@ -542,18 +542,18 @@ class TestColonizeHiveOrchestrationUnit:
 
     @patch('src.mcp_server.validate_unique_hive_name')
     @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root')
+    @patch('src.mcp_server.get_repo_root_from_path')
     @patch('src.mcp_server.normalize_hive_name')
     def test_calls_validate_unique_hive_name(
         self,
         mock_normalize,
-        mock_get_repo,
+        mock_get_repo_from_path,
         mock_validate_path,
         mock_validate_unique
     ):
         """Test that colonize_hive calls validate_unique_hive_name from config system."""
         mock_normalize.return_value = 'backend'
-        mock_get_repo.return_value = Path('/repo')
+        mock_get_repo_from_path.return_value = Path('/repo')
         mock_validate_path.return_value = Path('/repo/tickets')
         mock_validate_unique.side_effect = ValueError("Name exists")
 
@@ -563,18 +563,18 @@ class TestColonizeHiveOrchestrationUnit:
 
     @patch('src.mcp_server.validate_unique_hive_name')
     @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root')
+    @patch('src.mcp_server.get_repo_root_from_path')
     @patch('src.mcp_server.normalize_hive_name')
     def test_returns_error_on_duplicate_name(
         self,
         mock_normalize,
-        mock_get_repo,
+        mock_get_repo_from_path,
         mock_validate_path,
         mock_validate_unique
     ):
         """Test that colonize_hive returns error on duplicate normalized name."""
         mock_normalize.return_value = 'backend'
-        mock_get_repo.return_value = Path('/repo')
+        mock_get_repo_from_path.return_value = Path('/repo')
         mock_validate_path.return_value = Path('/repo/tickets')
         mock_validate_unique.side_effect = ValueError("Hive 'backend' already exists")
 
@@ -588,7 +588,7 @@ class TestColonizeHiveOrchestrationUnit:
     @patch('src.mcp_server.register_hive_dict')
     @patch('src.mcp_server.validate_unique_hive_name')
     @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root')
+    @patch('src.mcp_server.get_repo_root_from_path')
     @patch('src.mcp_server.normalize_hive_name')
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
@@ -597,7 +597,7 @@ class TestColonizeHiveOrchestrationUnit:
         mock_file_open,
         mock_mkdir,
         mock_normalize,
-        mock_get_repo,
+        mock_get_repo_from_path,
         mock_validate_path,
         mock_validate_unique,
         mock_register_hive,
@@ -605,7 +605,7 @@ class TestColonizeHiveOrchestrationUnit:
     ):
         """Test that successful colonization returns correct structure."""
         mock_normalize.return_value = 'backend'
-        mock_get_repo.return_value = Path('/repo')
+        mock_get_repo_from_path.return_value = Path('/repo')
         mock_validate_path.return_value = Path('/repo/tickets')
         # Mock register_hive_dict to return a config dict
         mock_register_hive.return_value = {

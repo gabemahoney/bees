@@ -3,6 +3,7 @@
   - improve make-task and do-task with more instructions - check old tests for broken
 - Is there a watcher? Remove it. Add design requirement of no daemons
 - Clone bees
+- get this working: claude mcp add bees
 - Cross-hive dependency setting should be per hive (stored in .hive)
 - Make-task: Add detailed instructions for docs and tests
 - Add agent that reviews Made Epics, Tasks and Subtasks agains the source docs
@@ -10,6 +11,7 @@
 - Bug: MCP does not start if DB is corrupt. It should start but refuse to respond to commands with a friendly message
 - Add a Feature Reviewer subagent who validates the work conforms to the docs
 - Use bees dependency chains to describe agent workflows (not skills)
+- Optional repo param if roots is not available
 - Egg: An unhatched bee. .eggs/feature/PRD.md SRD.md etc
   - hatch egg == docs-to-epics
 - do-epic skill: if I have suggestions make them Tasks dont just do them!
@@ -23,6 +25,7 @@
     - Hive list
     - Dont delete tickets, just archive the hive
 - A simple tool (or MCP command) for determining the dependency order of a set of tickets
+- Change the bees server mounting prefix from "bees" to an empty string "" or a shorter alternative, which would transform tool names from bees__colonize_hive to just colonize_hive (or b_colonize_hive with a single-letter prefix). This is a simple one-line change in the MCP server configuration where the bees server is mounted.
 - Similar to bd-prime. How to let agents know about features? Make it an MCP method 
   1. Hook Configuration (~/.claude/settings.json):                                                                                       
   {                                                                                                                                      

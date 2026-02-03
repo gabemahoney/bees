@@ -312,10 +312,12 @@ class TestExecuteQueryTool:
                 query_yaml = "- [type=task]"
                 _add_named_query("test_query", query_yaml)
 
-                # Execute will raise because tickets directory doesn't exist in test
-                # but the query loading and parameter passing should work
-                with pytest.raises(ValueError, match="Failed to execute query"):
-                    _execute_query("test_query")
+                # Execute query - should succeed with 0 results since no tickets exist
+                result = _execute_query("test_query")
+                assert result["status"] == "success"
+                assert result["query_name"] == "test_query"
+                assert result["result_count"] == 0
+                assert result["ticket_ids"] == []
 
             finally:
                 src.query_storage._default_storage = old_storage
@@ -334,10 +336,11 @@ class TestExecuteQueryTool:
                 query_yaml = "- [type=task]"
                 _add_named_query("test_query", query_yaml)
 
-                # Execute with hive filter - fails due to tickets directory
-                # but demonstrates that hive_names parameter is accepted
-                with pytest.raises(ValueError, match="Failed to execute query"):
-                    _execute_query("test_query", hive_names=["backend"])
+                # Execute with hive filter - should succeed with 0 results
+                result = _execute_query("test_query", hive_names=["backend"])
+                assert result["status"] == "success"
+                assert result["query_name"] == "test_query"
+                assert result["result_count"] == 0
 
             finally:
                 src.query_storage._default_storage = old_storage
@@ -421,12 +424,13 @@ class TestExecuteFreeformQuery:
 
     def test_execute_freeform_query_with_valid_query(self):
         """Test executing a valid freeform query without persisting."""
-        # This will fail at execution due to missing tickets directory,
-        # but validates that query parsing and validation work
+        # Should succeed with 0 results since no tickets exist
         query_yaml = "- [type=task]"
         
-        with pytest.raises(ValueError, match="Failed to execute freeform query"):
-            _execute_freeform_query(query_yaml)
+        result = _execute_freeform_query(query_yaml)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
+        assert result["ticket_ids"] == []
 
     def test_execute_freeform_query_with_invalid_yaml_syntax(self):
         """Test that invalid YAML syntax raises QueryValidationError."""
@@ -439,9 +443,10 @@ class TestExecuteFreeformQuery:
         """Test executing freeform query with hive_names parameter."""
         query_yaml = "- [type=task]"
         
-        # Will fail due to missing tickets, but demonstrates hive_names parameter works
-        with pytest.raises(ValueError, match="Failed to execute freeform query"):
-            _execute_freeform_query(query_yaml, hive_names=["backend"])
+        # Should succeed with 0 results since no tickets exist
+        result = _execute_freeform_query(query_yaml, hive_names=["backend"])
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
 
     def test_execute_freeform_query_with_nonexistent_hive(self):
         """Test that non-existent hive raises ValueError with available hives message."""
@@ -463,9 +468,10 @@ class TestExecuteFreeformQuery:
 - [children]
 """
         
-        # Will fail at execution, but validates multi-stage parsing works
-        with pytest.raises(ValueError, match="Failed to execute freeform query"):
-            _execute_freeform_query(multi_stage_query)
+        # Should succeed with 0 results since no tickets exist
+        result = _execute_freeform_query(multi_stage_query)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
 
     def test_execute_freeform_query_validation_errors(self):
         """Test that query validation errors are caught and reported."""

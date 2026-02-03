@@ -1,11 +1,5 @@
 {
-  "hives": {
-    "backend": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-515/test_update_ticket_routes_to_c0/tickets",
-      "display_name": "Backend",
-      "created_at": "2026-02-02T17:54:01.735488"
-    }
-  },
+  "hives": {},
   "allow_cross_hive_dependencies": false,
   "schema_version": "1.0"
 }

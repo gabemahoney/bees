@@ -158,26 +158,71 @@ def get_repo_root_from_path(start_path: Path) -> Path:
     raise ValueError(f"Not in a git repository - no .git directory found starting from {start_path}")
 
 
-def get_repo_root() -> Path:
+async def get_client_repo_root(ctx: Context) -> Path:
     """
-    Find the git repository root by walking up directories.
+    Extract repository root from MCP client context.
+    
+    Args:
+        ctx: FastMCP Context object provided by MCP client
+        
+    Returns:
+        Path: Repository root directory from client
+        
+    Raises:
+        ValueError: If client doesn't provide roots or roots list is empty
+        
+    Example:
+        >>> ctx = get_context()  # From MCP client
+        >>> repo = await get_client_repo_root(ctx)
+        >>> print(repo)
+        /Users/user/projects/finance-tracker
+    """
+    roots = await ctx.list_roots()
+    
+    if not roots or len(roots) == 0:
+        raise ValueError(
+            "Unable to determine repository location. "
+            "Please use an MCP client that supports the roots protocol "
+            "(like Claude Desktop or OpenCode)."
+        )
+    
+    # Take first root and convert FileUrl to Path
+    first_root = roots[0]
+    root_uri_str = str(first_root.uri)
+    
+    # Strip file:// prefix if present
+    if root_uri_str.startswith("file://"):
+        root_path = root_uri_str[7:]  # Remove "file://"
+    else:
+        root_path = root_uri_str
+    
+    return Path(root_path)
 
-    Starts from the current working directory and walks up the directory tree
-    looking for a .git directory. Returns the path to the repository root
-    when found.
 
+async def get_repo_root(ctx: Context) -> Path:
+    """
+    Find the git repository root from MCP client context.
+    
+    Uses the MCP roots protocol to get the client's working directory,
+    then walks up looking for .git directory.
+    
+    Args:
+        ctx: FastMCP Context object provided by MCP client
+        
     Returns:
         Path: Absolute path to the git repository root
-
+        
     Raises:
-        ValueError: If not in a git repository (no .git directory found)
-
+        ValueError: If client doesn't provide roots or not in a git repository
+        
     Example:
-        >>> repo_root = get_repo_root()
+        >>> ctx = get_context()
+        >>> repo_root = await get_repo_root(ctx)
         >>> print(repo_root)
         /Users/username/projects/myrepo
     """
-    return get_repo_root_from_path(Path.cwd())
+    client_root = await get_client_repo_root(ctx)
+    return get_repo_root_from_path(client_root)
 
 
 def validate_hive_path(path: str, repo_root: Path) -> Path:
@@ -270,7 +315,7 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
         PosixPath('/Users/user/projects/myrepo/tickets')
     """
     try:
-        repo_root = get_repo_root()
+        repo_root = get_repo_root_from_path(Path.cwd())
     except ValueError as e:
         logger.error(f"Cannot scan for hive: {e}")
         raise

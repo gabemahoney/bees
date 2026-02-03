@@ -146,18 +146,41 @@ BEES_CONFIG_DIR = ".bees"
 BEES_CONFIG_FILENAME = "config.json"
 
 
-def get_config_path() -> Path:
+def get_config_path(repo_root: Path | None = None) -> Path:
     """Get the path to the .bees/config.json file.
 
+    Args:
+        repo_root: Optional repository root path. If not provided, uses get_repo_root()
+
     Returns:
-        Path to the config file in the current working directory
+        Path to the config file in the git repository root
     """
-    return Path.cwd() / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
+    if repo_root is None:
+        from .mcp_server import get_repo_root
+        try:
+            repo_root = get_repo_root()
+        except ValueError:
+            # Fallback to cwd if not in a git repo (for backward compatibility)
+            repo_root = Path.cwd()
+    
+    return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
 
 
-def ensure_bees_dir() -> None:
-    """Create .bees/ directory if it doesn't exist."""
-    bees_dir = Path.cwd() / BEES_CONFIG_DIR
+def ensure_bees_dir(repo_root: Path | None = None) -> None:
+    """Create .bees/ directory if it doesn't exist in the git repository root.
+    
+    Args:
+        repo_root: Optional repository root path. If not provided, uses get_repo_root()
+    """
+    if repo_root is None:
+        from .mcp_server import get_repo_root
+        try:
+            repo_root = get_repo_root()
+        except ValueError:
+            # Fallback to cwd if not in a git repo (for backward compatibility)
+            repo_root = Path.cwd()
+    
+    bees_dir = repo_root / BEES_CONFIG_DIR
     bees_dir.mkdir(exist_ok=True)
 
 
@@ -338,12 +361,15 @@ def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig]
 # Dict-based wrapper functions for backward compatibility
 # These wrap the dataclass-based functions above
 
-def load_hive_config_dict() -> dict:
+def load_hive_config_dict(repo_root: Path | None = None) -> dict:
     """Load hive configuration from .bees/config.json as dict.
 
     This reads the JSON file directly and returns it as a dict, preserving all
     fields including 'created_at' timestamps. If the file doesn't exist or contains
     malformed JSON, returns a default structure with a logged warning.
+
+    Args:
+        repo_root: Optional repository root path. If not provided, uses get_repo_root()
 
     Returns:
         dict: Configuration dictionary with structure:
@@ -367,7 +393,7 @@ def load_hive_config_dict() -> dict:
         >>> print(config['hives']['backend'])
         {'path': '/path/to/backend', 'display_name': 'Backend', 'created_at': '...'}
     """
-    config_path = get_config_path()
+    config_path = get_config_path(repo_root)
 
     # If config doesn't exist, return default structure
     if not config_path.exists():
@@ -404,7 +430,7 @@ def load_hive_config_dict() -> dict:
         }
 
 
-def write_hive_config_dict(config: dict) -> None:
+def write_hive_config_dict(config: dict, repo_root: Path | None = None) -> None:
     """Write hive configuration from dict to .bees/config.json.
 
     This writes the config dict directly to JSON, preserving all fields including
@@ -423,6 +449,7 @@ def write_hive_config_dict(config: dict) -> None:
                 'allow_cross_hive_dependencies': bool,
                 'schema_version': str
             }
+        repo_root: Optional repository root path. If not provided, uses get_repo_root()
 
     Raises:
         IOError: If writing fails
@@ -435,14 +462,14 @@ def write_hive_config_dict(config: dict) -> None:
         >>> write_hive_config_dict(config)
     """
     # Ensure .bees/ directory exists
-    ensure_bees_dir()
+    ensure_bees_dir(repo_root)
 
     # Set schema_version if not set
     if not config.get('schema_version'):
         config['schema_version'] = '1.0'
 
     # Write to file
-    config_path = get_config_path()
+    config_path = get_config_path(repo_root)
     try:
         with open(config_path, 'w') as f:
             json.dump(config, f, indent=2)
@@ -452,7 +479,7 @@ def write_hive_config_dict(config: dict) -> None:
         raise IOError(f"Failed to write config to {config_path}: {e}")
 
 
-def register_hive_dict(normalized_name: str, display_name: str, path: str, timestamp) -> dict:
+def register_hive_dict(normalized_name: str, display_name: str, path: str, timestamp, repo_root: Path | None = None) -> dict:
     """Register a new hive entry in the configuration and return updated dict.
 
     Loads the current config using load_hive_config_dict(), adds the new hive entry,
@@ -464,6 +491,7 @@ def register_hive_dict(normalized_name: str, display_name: str, path: str, times
         display_name: Display name for the hive (e.g., 'Back End')
         path: Absolute path to the hive directory
         timestamp: Creation timestamp (datetime object)
+        repo_root: Optional repository root path. If not provided, uses get_repo_root()
 
     Returns:
         dict: Updated configuration dictionary with new hive entry including
@@ -476,7 +504,7 @@ def register_hive_dict(normalized_name: str, display_name: str, path: str, times
         {'path': '/path/to/hive', 'display_name': 'Backend', 'created_at': '2026-02-01T...'}
     """
     # Load current config
-    config = load_hive_config_dict()
+    config = load_hive_config_dict(repo_root)
 
     # Add new hive entry with timestamp
     config['hives'][normalized_name] = {

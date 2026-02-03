@@ -791,16 +791,16 @@ class TestValidateHivePath:
         with pytest.raises(ValueError, match="must be absolute.*relative path"):
             validate_hive_path("tickets/backend", repo_root)
 
-    def test_validate_hive_path_nonexistent_path_fails(self, tmp_path):
-        """Test validation rejects non-existent paths."""
+    def test_validate_hive_path_nonexistent_parent_fails(self, tmp_path):
+        """Test validation rejects paths whose parent directory doesn't exist."""
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
 
-        # Path doesn't exist
-        nonexistent = repo_root / "does_not_exist"
+        # Parent directory doesn't exist
+        nonexistent_parent = repo_root / "does_not_exist" / "child"
 
-        with pytest.raises(ValueError, match="does not exist"):
-            validate_hive_path(str(nonexistent), repo_root)
+        with pytest.raises(ValueError, match="Parent directory does not exist"):
+            validate_hive_path(str(nonexistent_parent), repo_root)
 
     def test_validate_hive_path_outside_repo_fails(self, tmp_path):
         """Test validation rejects paths outside repository root."""
@@ -2035,13 +2035,14 @@ class TestColonizeHiveMCPIntegration:
             _colonize_hive("Test Hive", "relative/path")
 
     def test_colonize_hive_path_does_not_exist(self, git_repo_tmp_path):
-        """Test error case: path does not exist."""
+        """Test error case: parent directory does not exist."""
         from src.mcp_server import _colonize_hive
 
-        nonexistent = git_repo_tmp_path / "does_not_exist"
+        # Path with non-existent parent should fail
+        nonexistent_parent = git_repo_tmp_path / "does_not_exist" / "nested"
 
-        with pytest.raises(ValueError, match="does not exist"):
-            _colonize_hive("Test Hive", str(nonexistent))
+        with pytest.raises(ValueError, match="Parent directory does not exist"):
+            _colonize_hive("Test Hive", str(nonexistent_parent))
 
     def test_colonize_hive_path_outside_repo(self, tmp_path, git_repo_tmp_path):
         """Test error case: path is outside repository root."""
@@ -2050,7 +2051,7 @@ class TestColonizeHiveMCPIntegration:
         outside = tmp_path.parent / "outside"
         outside.mkdir(exist_ok=True)
 
-        with pytest.raises(ValueError, match="within repository root"):
+        with pytest.raises(ValueError, match="(within repository root|Not in a git repository)"):
             _colonize_hive("Test Hive", str(outside))
 
     def test_colonize_hive_duplicate_name(self, git_repo_tmp_path):
