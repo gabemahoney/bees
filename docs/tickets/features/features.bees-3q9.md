@@ -17,12 +17,12 @@ description: "Clean up master_plan.md by removing sections that have been extrac
   \ docs/architecture/storage.md\n\nAcceptance Criteria:\n- All extracted sections\
   \ removed from master_plan.md\n- Cross-reference added\n- Document remains coherent\n\
   - No broken internal links"
-parent: features.bees-u9o
 up_dependencies:
 - features.bees-gau
-status: open
+parent: features.bees-u9o
 created_at: '2026-02-03T16:53:00.442783'
-updated_at: '2026-02-03T16:53:00.442787'
+updated_at: '2026-02-03T17:23:10.641562'
+status: completed
 bees_version: '1.1'
 ---
 

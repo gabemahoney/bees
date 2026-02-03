@@ -134,9 +134,13 @@ See `docs/architecture/configuration.md` for detailed configuration architecture
 - Easy to add new validation steps (just call another function)
 - MCP tools get consistent error structure across all operations
 
+**Storage Architecture**: See `docs/architecture/storage.md` for detailed documentation of hive directory structure (eggs/, evicted/, .hive/), identity markers, and storage rationale.
+
 ### Hive ID System
 
 **Purpose**: Namespace ticket IDs by hive to prevent collisions and enable multi-hive support within a single repository.
+
+**Storage Architecture**: See `docs/architecture/storage.md` for ticket ID format, pattern validation, and hive namespacing overview.
 
 **ID Format**:
 - Without hive: `bees-abc` (3 alphanumeric characters)
@@ -588,6 +592,8 @@ ticket_id: "backend.bees-abc1"
 
 **Purpose**: Add schema versioning to ticket YAML frontmatter for future-proof ticket identification and schema evolution support in flat storage architecture.
 
+**Storage Architecture**: See `docs/architecture/storage.md` for architectural overview of ticket schema versioning, `bees_version` field purpose, and integration with flat storage.
+
 **Architecture Decision**: Version Field in Frontmatter
 - Design choice: Add `bees_version` field to ticket YAML frontmatter, automatically set at ticket creation time
 - Rationale: Enables ticket identification for flat storage (Epic bees-yuql) and schema version tracking
@@ -830,76 +836,14 @@ tickets back into typed objects, enabling both read and write operations.
 
 ## Flat Storage Architecture (bees_version 1.1)
 
-**Design Decision**: Bees version 1.1 migrated from hierarchical storage (type-specific subdirectories) to flat storage where all tickets are stored in hive root directory.
+**Storage Architecture**: See `docs/architecture/storage.md` for comprehensive documentation of hive directory structure, identity markers, ticket schema versioning, and flat storage design.
 
-**Implementation Changes**:
-
-1. **get_ticket_path()** (`src/paths.py`):
-   - Returns: `{hive_root}/{ticket_id}.md` (e.g., `backend/backend.bees-abc1.md`)
-   - Ticket type parameter is kept for API compatibility but no longer affects path resolution
-   - No subdirectories: all tickets (epics, tasks, subtasks) in same directory
-
-2. **infer_ticket_type_from_id()** (`src/paths.py`):
-   - Reads ticket file from hive root: `{hive_root}/{ticket_id}.md`
-   - Parses YAML frontmatter to extract `type` field
-   - Validates `bees_version` field presence to confirm file is a valid ticket
-   - Returns type from frontmatter, not from directory location
-   - Returns None if file doesn't exist, YAML cannot be parsed, or `bees_version` field is missing
-
-3. **list_tickets()** (`src/paths.py`):
-   - Scans hive root directory directly: `{hive_root}/*.md`
-   - No subdirectory traversal
-   - Validates `bees_version` field presence for all markdown files
-   - Only returns files with valid `bees_version` field (ignores non-ticket markdown files)
-   - When filtering by type, reads YAML frontmatter from each file and checks `type` field
-   - Uses `yaml.safe_load()` to parse frontmatter between `---` delimiters
-
-4. **ensure_ticket_directory_exists()** (`src/paths.py`):
-   - Simplified to create hive root directory only
-   - Signature: `ensure_ticket_directory_exists(hive_name: str) -> None`
-   - No ticket_type parameter (removed in flat storage)
-
-5. **_load_tickets()** (`src/pipeline.py`):
-   - Scans hive root directory only: `{hive_root}/*.md`
-   - No recursive subdirectory scanning (removes subdirs list: ['epics', 'tasks', 'subtasks'])
-   - Filters files by `bees_version` field presence (skips markdown files without it)
-   - Explicitly skips subdirectories like `/eggs` and `/evicted` via parent directory check
-   - Preserves existing YAML parsing and normalization logic
-   - Calls `_build_reverse_relationships()` after loading to establish bidirectional links
-   - **Performance**: O(n) where n = number of .md files in hive root (no recursion overhead)
-   - **Design rationale**: Flat scanning faster than recursive traversal, simpler logic, bees_version field provides reliable ticket identification
-
-6. **Type-Specific Directory References Removed**:
-   - Removed `get_ticket_directory()` function and `type_to_dir` mapping
-   - Updated docstrings in `src/writer.py`, `src/pipeline.py`, `src/reader.py`, `src/parser.py`
-   - Updated `extract_existing_ids_from_directory()` to scan hive root instead of subdirectories
-   - Removed all references to epics/, tasks/, subtasks/ subdirectories in error messages and comments
-
-**Rationale**:
-- Simplifies path resolution logic (no type-to-directory mapping needed)
-- Reduces directory nesting (one less level)
-- Type information now comes from YAML frontmatter (single source of truth)
-- All ticket types treated uniformly by filesystem
-- Enables easier migration and refactoring (type changes don't require file moves)
-
-**Schema Version Field**:
-- All tickets include `bees_version: 1.1` in YAML frontmatter
-- Identifies markdown files as Bees tickets
-- Enables backward compatibility if future schema changes are needed
-- Automatically set during ticket creation via `create_ticket()`
-
-**Path Examples**:
-```
-# Flat storage (bees_version 1.1)
-backend/backend.bees-abc1.md
-backend/backend.bees-xyz9.md
-frontend/frontend.bees-250.md
-
-# Legacy hierarchical (bees_version 1.0) - no longer supported
-backend/epics/backend.bees-abc1.md
-backend/tasks/backend.bees-xyz9.md
-frontend/epics/frontend.bees-250.md
-```
+**Key Points for Implementation**:
+- All tickets stored at hive root: `{hive_root}/{ticket_id}.md`
+- Type information comes from YAML frontmatter, not directory location
+- `bees_version` field required in all ticket frontmatter for identification
+- Functions like `get_ticket_path()`, `list_tickets()`, `infer_ticket_type_from_id()` implement flat storage
+- Legacy hierarchical storage (epics/, tasks/, subtasks/ subdirectories) no longer supported
 
 ## Design Principles
 
