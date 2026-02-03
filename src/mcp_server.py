@@ -178,22 +178,27 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
     """
     try:
         roots = await ctx.list_roots()
-        
+
         if not roots or len(roots) == 0:
             logger.warning("Client returned empty roots list")
             return None
-        
+
+        # Log all roots for debugging
+        logger.info(f"Client provided {len(roots)} root(s):")
+        for i, root in enumerate(roots):
+            logger.info(f"  Root {i}: {root.uri}")
+
         # Take first root and convert FileUrl to Path
         first_root = roots[0]
         root_uri_str = str(first_root.uri)
-        
+
         # Strip file:// prefix if present
         if root_uri_str.startswith("file://"):
             root_path = root_uri_str[7:]  # Remove "file://"
         else:
             root_path = root_uri_str
-        
-        logger.info(f"Got client repo root from roots protocol: {root_path}")
+
+        logger.info(f"Using first root as client repo root: {root_path}")
         return Path(root_path)
         
     except Exception as e:
@@ -203,36 +208,45 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         return None
 
 
-async def get_repo_root(ctx: Context | None) -> Path:
+async def get_repo_root(ctx: Context | None) -> Path | None:
     """
-    Find the git repository root, preferring MCP client context when available.
-    
-    If client supports roots protocol, uses that. Otherwise falls back to cwd.
-    
+    Find the git repository root from MCP client context.
+
+    When called with MCP context, uses the roots protocol. If the client
+    doesn't support roots or the protocol fails, returns None so the caller
+    can implement appropriate fallback logic (since MCP server runs in a
+    different repo than the client, we can't just use server's cwd).
+
     Args:
         ctx: FastMCP Context object (optional, auto-injected by FastMCP)
-        
+
     Returns:
-        Path: Absolute path to the git repository root
-        
+        Path if repo root can be determined, None if roots protocol unavailable
+
     Raises:
-        ValueError: If not in a git repository
-        
+        ValueError: If not in a git repository (only when ctx is None)
+
     Example:
         >>> ctx = get_context()
         >>> repo_root = await get_repo_root(ctx)
-        >>> print(repo_root)
-        /Users/username/projects/myrepo
+        >>> if repo_root:
+        >>>     print(repo_root)
+        >>> else:
+        >>>     # Handle roots protocol unavailable
     """
     if ctx:
         client_root = await get_client_repo_root(ctx)
         if client_root:
             # Client supports roots - use it
-            return get_repo_root_from_path(client_root)
+            repo_root = get_repo_root_from_path(client_root)
+            logger.info(f"Using client repo root from MCP context: {repo_root}")
+            return repo_root
         else:
-            # Client doesn't support roots - fall back to cwd
-            logger.info("Falling back to cwd since client doesn't support roots")
-            return get_repo_root_from_path(Path.cwd())
+            # Client doesn't support roots protocol or list_roots() failed
+            # Return None so caller can implement appropriate fallback
+            # (We can't fall back to server's cwd since MCP server runs in different repo)
+            logger.warning("MCP client doesn't support roots protocol or list_roots() failed")
+            return None
     else:
         # No context (tests, CLI) - use cwd
         return get_repo_root_from_path(Path.cwd())
@@ -467,19 +481,36 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
 
         # Step 2: Validate path using client's repo root from context
         try:
-            # Get repo root from MCP context (client's repo) or fall back to hive path for non-MCP
+            # Get repo root from MCP context (client's repo) or use hive path
             hive_path = Path(path)
             if ctx:
-                # MCP tool call - use client's repo root from context
+                # MCP tool call - try client's repo root from context first
                 repo_root = await get_repo_root(ctx)
-                logger.info(f"Using client repo root from context: {repo_root}")
+
+                if repo_root:
+                    logger.info(f"colonize_hive: Got repo root from MCP context: {repo_root}")
+
+                    # Verify the hive path is within the detected repo root
+                    # If not, the context may have returned wrong repo - use hive path instead
+                    try:
+                        hive_path.resolve(strict=False).relative_to(repo_root.resolve())
+                    except ValueError:
+                        # Hive path is outside detected repo root - use hive path to find correct repo
+                        logger.warning(f"colonize_hive: Hive path {hive_path} outside repo root {repo_root}, using hive path")
+                        repo_root = get_repo_root_from_path(hive_path)
+                        logger.info(f"colonize_hive: Found repo root from hive path: {repo_root}")
+                else:
+                    # Roots protocol unavailable - use hive path to find repo
+                    logger.warning("colonize_hive: Roots protocol unavailable, using hive path to find repo root")
+                    repo_root = get_repo_root_from_path(hive_path)
+                    logger.info(f"colonize_hive: Found repo root from hive path: {repo_root}")
             else:
                 # Non-MCP call (tests, CLI) - find repo root from hive path
                 repo_root = get_repo_root_from_path(hive_path)
-                logger.info(f"Found repo root from hive path: {repo_root}")
-            
+                logger.info(f"colonize_hive: Found repo root from hive path: {repo_root}")
+
             validated_path = validate_hive_path(path, repo_root)
-            logger.info(f"Validated hive path: {validated_path}")
+            logger.info(f"colonize_hive: Validated hive path: {validated_path}")
         except ValueError as e:
             return {
                 "status": "error",
@@ -609,7 +640,8 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
             # Persist config to disk with error handling
             # Pass repo_root to ensure .bees/config.json is created in the correct repo
             write_hive_config_dict(config, repo_root)
-            logger.info(f"Registered hive '{normalized_name}' in config.json at {repo_root / '.bees/config.json'}")
+            logger.info(f"colonize_hive: Registered hive '{normalized_name}' in config at {repo_root / '.bees/config.json'}")
+            logger.info(f"colonize_hive: Final repo root used: {repo_root}")
         except (IOError, PermissionError, OSError) as e:
             return {
                 "status": "error",
@@ -1124,18 +1156,72 @@ async def _create_ticket(
     #   - Creating tickets requires explicit hive specification to avoid ambiguity
     # See docs/plans/master_plan.md for full architectural rationale
     normalized_hive = normalize_hive_name(hive_name)
-    
+
     # Get client's repo root from MCP context
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            # Roots protocol unavailable - cannot determine client repo
+            error_msg = (
+                "Cannot determine client repository root - MCP roots protocol unavailable. "
+                "The bees MCP server cannot fall back to server's working directory since it "
+                "runs in a different repository than the client. Please ensure your MCP client "
+                "supports the roots protocol (list_roots)."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        logger.info(f"create_ticket: Using repo root from MCP context: {repo_root}")
+    else:
+        # Non-MCP call (tests, CLI)
+        repo_root = get_repo_root_from_path(Path.cwd())
+        logger.info(f"create_ticket: Using repo root from cwd: {repo_root}")
+
     config = load_bees_config(repo_root)
+    config_path = repo_root / '.bees/config.json'
+    logger.info(f"create_ticket: Loaded config from {config_path}")
+    logger.info(f"create_ticket: Config exists: {config_path.exists()}")
+    logger.info(f"create_ticket: Config hives: {list(config.hives.keys()) if config else 'None'}")
+    logger.info(f"create_ticket: Looking for hive: '{normalized_hive}'")
+
     if not config or normalized_hive not in config.hives:
         # Provide helpful error message guiding users to create hive first
         # Note: We intentionally do NOT attempt recovery via scan_for_hive (see design decision above)
+        config_path = repo_root / '.bees/config.json'
+        available_hives = list(config.hives.keys()) if config else []
+
+        # Enhanced error message to help diagnose MCP context issues
+        cwd = Path.cwd()
         error_msg = (
-            f"Hive '{hive_name}' (normalized: '{normalized_hive}') does not exist in config. "
-            f"Please create the hive first using colonize_hive. "
-            f"If the hive directory exists but isn't registered, you may need to run colonize_hive to register it."
+            f"Hive '{hive_name}' (normalized: '{normalized_hive}') not found in config.\n"
+            f"  Repo root (from MCP context): {repo_root}\n"
+            f"  Config path: {config_path}\n"
+            f"  MCP server cwd: {cwd}\n"
+            f"  Available hives in this config: {available_hives}\n"
         )
+
+        # If MCP server cwd != repo_root, this may indicate a context issue
+        if ctx and cwd != repo_root:
+            # Check if there's a config in cwd that has the hive
+            cwd_config_path = cwd / '.bees/config.json'
+            if cwd_config_path.exists():
+                cwd_config = load_bees_config(cwd)
+                if cwd_config:
+                    error_msg += (
+                        f"\n"
+                        f"NOTE: MCP server is running from {cwd} but detected client repo at {repo_root}.\n"
+                        f"  Config also found at: {cwd_config_path}\n"
+                        f"  Hives in MCP server repo: {list(cwd_config.hives.keys())}\n"
+                        f"\n"
+                        f"This suggests a possible MCP context issue where the client repo root\n"
+                        f"was not correctly detected. The hive may have been created in a different repo.\n"
+                    )
+
+        error_msg += (
+            f"\n"
+            f"Please create the hive first using colonize_hive in the correct repository.\n"
+            f"If the hive directory exists but isn't registered, run colonize_hive to register it."
+        )
+
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -1242,7 +1328,8 @@ async def _create_ticket(
                 owner=owner,
                 priority=priority,
                 status=status or "open",
-                hive_name=hive_name
+                hive_name=hive_name,
+                repo_root=repo_root
             )
         elif ticket_type == "task":
             ticket_id = create_task(
@@ -1255,7 +1342,8 @@ async def _create_ticket(
                 owner=owner,
                 priority=priority,
                 status=status or "open",
-                hive_name=hive_name
+                hive_name=hive_name,
+                repo_root=repo_root
             )
         elif ticket_type == "subtask":
             # Type checker: parent is guaranteed to be str due to validation at line 1113-1116
@@ -1270,7 +1358,8 @@ async def _create_ticket(
                 owner=owner,
                 priority=priority,
                 status=status or "open",
-                hive_name=hive_name
+                hive_name=hive_name,
+                repo_root=repo_root
             )
         else:
             # Should never reach here due to earlier validation
@@ -1585,7 +1674,15 @@ async def _delete_ticket(
 
     # Validate hive exists in config using normalize_name for lookup
     normalized_hive = normalize_hive_name(hive_prefix)
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+
+    # Get repo root
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+    else:
+        repo_root = get_repo_root_from_path(Path.cwd())
+
     config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         error_msg = f"Hive '{hive_prefix}' not found in configuration"
@@ -1760,7 +1857,14 @@ async def _execute_query(
 
     # Validate hive existence if hive_names provided
     if hive_names:
-        repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+        # Get repo root
+        if ctx:
+            repo_root = await get_repo_root(ctx)
+            if not repo_root:
+                raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+        else:
+            repo_root = get_repo_root_from_path(Path.cwd())
+
         config = load_bees_config(repo_root)
         if config is None:
             error_msg = "No hives configured. Available hives: none"
@@ -1848,7 +1952,14 @@ async def _execute_freeform_query(
 
     # Validate hive existence if hive_names provided
     if hive_names:
-        repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+        # Get repo root
+        if ctx:
+            repo_root = await get_repo_root(ctx)
+            if not repo_root:
+                raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+        else:
+            repo_root = get_repo_root_from_path(Path.cwd())
+
         config = load_bees_config(repo_root)
         if config is None:
             error_msg = "No hives configured. Available hives: none"
@@ -1941,7 +2052,15 @@ async def _show_ticket(ticket_id: str, ctx: Context | None = None) -> Dict[str, 
 
     # Validate hive exists in config using normalize_name for lookup
     normalized_hive = normalize_hive_name(hive_prefix)
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+
+    # Get repo root
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+    else:
+        repo_root = get_repo_root_from_path(Path.cwd())
+
     config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         error_msg = f"Hive '{hive_prefix}' (normalized: '{normalized_hive}') not found in configuration"
@@ -2274,7 +2393,14 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
 
     # Load config from .bees/config.json
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    # Get repo root
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+    else:
+        repo_root = get_repo_root_from_path(Path.cwd())
+
     config = load_bees_config(repo_root)
 
     # Check if hive exists
@@ -2370,7 +2496,14 @@ async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None)
         }
 
     # Step 2: Load config and validate old hive exists
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    # Get repo root
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+    else:
+        repo_root = get_repo_root_from_path(Path.cwd())
+
     config = load_bees_config(repo_root)
     if not config or normalized_old not in config.hives:
         return {
@@ -2745,9 +2878,16 @@ async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str
     normalized = normalize_hive_name(hive_name)
     
     # Load config
-    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    # Get repo root
+    if ctx:
+        repo_root = await get_repo_root(ctx)
+        if not repo_root:
+            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+    else:
+        repo_root = get_repo_root_from_path(Path.cwd())
+
     config = load_bees_config(repo_root)
-    
+
     # Check if hive is registered
     if not config or normalized not in config.hives:
         return {

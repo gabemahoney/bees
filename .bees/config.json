@@ -1,5 +1,11 @@
 {
-  "hives": {},
+  "hives": {
+    "features": {
+      "path": "/Users/gmahoney/projects/bees/docs/tickets/features",
+      "display_name": "features",
+      "created_at": "2026-02-03T06:28:11.531664"
+    }
+  },
   "allow_cross_hive_dependencies": false,
   "schema_version": "1.0"
 }

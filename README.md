@@ -29,7 +29,7 @@ Add the following to your `~/.claude.json`:
 ```json
 {
   "mcpServers": {
-    "bees": {
+    "🐝": {
       "type": "http",
       "url": "http://127.0.0.1:8000/mcp"
     }
@@ -48,7 +48,7 @@ Add the following to your `opencode.json` (project root) or `~/.config/opencode/
 ```json
 {
   "mcp": {
-    "bees": {
+    "🐝": {
       "type": "remote",
       "url": "http://127.0.0.1:8000/mcp"
     }
