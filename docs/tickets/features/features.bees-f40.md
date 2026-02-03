@@ -49,9 +49,9 @@ description: 'Update the docstrings for query execution MCP tools that use repo_
   Acceptance: Both docstrings updated with repo_root parameter documentation and usage
   examples.'
 parent: features.bees-61r
-status: open
 created_at: '2026-02-03T06:57:47.475010'
-updated_at: '2026-02-03T06:57:47.475013'
+updated_at: '2026-02-03T13:05:47.038934'
+status: completed
 bees_version: '1.1'
 ---
 

@@ -1107,11 +1107,45 @@ created_at: 2026-02-01T12:00:00
 - Integration: Called during hive colonization via `colonize_hive()` before config updates
 
 **Repository Root Detection**:
-- `get_repo_root() -> Path` in `src/mcp_server.py` finds git repository root for boundary validation
-- Algorithm: Walks up directory tree from `Path.cwd()` using `.parent` until `.git` directory found
-- Returns absolute Path to repository root
-- Raises ValueError if not in a git repository (no .git directory found)
+- `get_repo_root(ctx, repo_root) -> Path | None` in `src/mcp_server.py` finds git repository root for boundary validation
+- Implements a fallback chain to support MCP clients with or without roots protocol:
+  1. **Priority 1**: If `repo_root` parameter is provided, validates and uses it directly
+  2. **Priority 2**: If `ctx` (FastMCP Context) is provided, attempts to use MCP roots protocol via `get_client_repo_root(ctx)`
+  3. **Fallback behavior**: If both methods fail (no `repo_root` parameter AND no roots support), returns None
+- All 11 MCP tool functions accept optional `repo_root: str | None = None` parameter:
+  - Ticket operations: `_create_ticket`, `_update_ticket`, `_delete_ticket`, `_show_ticket`
+  - Query operations: `_execute_query`, `_execute_freeform_query`
+  - Hive operations: `_colonize_hive`, `_list_hives`, `_abandon_hive`, `_rename_hive`, `_sanitize_hive`
+- Each tool function passes `repo_root` to `get_repo_root(ctx, repo_root=repo_root)` for consistent fallback behavior
+- Design rationale:
+  - Prioritizes explicit `repo_root` parameter over automatic detection to support clients without roots protocol
+  - Maintains backward compatibility with roots-enabled clients (they never need to provide `repo_root`)
+  - Returns None when neither method succeeds, allowing callers to handle unavailable repo root gracefully
+  - Raises ValueError only for truly invalid inputs (non-absolute paths, invalid git repositories)
 - Used by `validate_hive_path()` to determine allowed path boundaries
+
+**MCP Roots Protocol Support**:
+- The MCP roots protocol is an optional protocol that allows MCP servers to automatically detect which repository the client is working in
+- **Implementation**: `get_client_repo_root(ctx) -> Path | None` in `src/mcp_server.py`
+  - Attempts to read `ctx.roots` from FastMCP Context
+  - Returns the first root URI from the roots list if available
+  - Returns None if roots protocol is not supported by the client (instead of raising an error)
+- **Client compatibility**:
+  - ✅ Roots-enabled clients (Claude Desktop, OpenCode): Never need to provide `repo_root` parameter
+  - ⚠️ Basic MCP clients without roots support: Must provide `repo_root` parameter explicitly
+- **Architecture decision - Optional Context Parameter**:
+  - All MCP tool functions accept `ctx: Context | None = None` to support both client types
+  - When `ctx=None`, the function falls back to using the explicit `repo_root` parameter
+  - This design allows the same function signature to work for all MCP clients
+- **Docstring documentation**:
+  - All 11 MCP tool functions have been updated with consistent documentation
+  - Each docstring includes explanation of both `repo_root` and `ctx` parameters
+  - Usage examples show both scenarios (with and without roots protocol support)
+  - Standard wording: "For MCP clients that don't support roots protocol, this will be None"
+- **How MCP clients should detect and use**:
+  - Roots-enabled clients: Simply call tools without any repo_root parameter
+  - Non-roots clients: Detect that `ctx.roots` is unavailable and provide `repo_root="/path/to/repo"` in all tool calls
+  - The server automatically handles the fallback chain transparently
 
 ### CLI ↔ Linter
 
@@ -1296,6 +1330,43 @@ If scan_for_hive recovery is needed for write operations, it should be:
 
 
 ## MCP Server Architecture
+
+### Recent Changes (2026-02-03)
+
+**Error Handling Strategy for `get_repo_root()` (2026-02-03)**:
+- Changed `get_repo_root()` to return None instead of raising ValueError when roots protocol is unavailable
+- **Rationale**:
+  - All MCP tool callers check `if resolved_repo_root:` expecting None as valid return
+  - Related function `get_client_repo_root()` returns None (not ValueError) when roots unavailable
+  - Returning None is more Pythonic for "optional value not available" scenarios
+  - ValueError reserved for truly invalid inputs (non-absolute paths, invalid git repositories)
+- **Return Values**:
+  - Returns `Path` when repo root successfully determined (via repo_root parameter, roots protocol, or cwd)
+  - Returns `None` when roots protocol unavailable and no repo_root parameter provided
+  - Raises `ValueError` only for invalid inputs (non-absolute path, non-git directory)
+- **Documentation updated**: Docstring, README.md, and master_plan.md reflect new behavior
+- Related test updates: `test_get_client_repo_root_raises_on_empty_roots` changed to expect None return
+
+**Test Coverage for `repo_root` Parameter (2026-02-03)**:
+- Task features.bees-v4d added comprehensive test coverage for repo_root parameter across all MCP functions
+- **Test Strategy**:
+  - All tests verify functions accept `repo_root` parameter with `ctx=None` (simulating roots protocol unavailable)
+  - Tests use actual test repository hive ("bugs" or "features") to pass hive validation
+  - Expected errors validated (ticket not found, hive not found, etc.) to confirm repo_root was used
+  - Error message patterns matched flexibly to handle multiple validation layers
+- **Functions with Test Coverage**:
+  1. `_update_ticket` - test_update_ticket_with_explicit_repo_root
+  2. `_delete_ticket` - test_delete_ticket_with_explicit_repo_root
+  3. `_execute_query` - test_execute_query_with_explicit_repo_root
+  4. `_execute_freeform_query` - test_execute_freeform_query_with_explicit_repo_root
+  5. `_show_ticket` - test_show_ticket_with_explicit_repo_root
+  6. `_abandon_hive` - test_abandon_hive_with_explicit_repo_root
+  7. `_rename_hive` - test_rename_hive_with_explicit_repo_root
+  8. `_sanitize_hive` - test_sanitize_hive_with_explicit_repo_root
+- **Test File**: All tests added to `tests/test_mcp_roots.py` as Phase 5 tests
+- **Architectural Decision**: Tests validate fallback mechanism by using `ctx=None` to force repo_root parameter usage
+- **Error Handling**: Tests account for different error types (_rename_hive and _sanitize_hive return error dicts, others raise ValueError)
+- **Documentation updated**: README.md includes testing section, master_plan.md documents test strategy
 
 ### Overview
 

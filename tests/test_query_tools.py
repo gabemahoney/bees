@@ -282,7 +282,7 @@ class TestAddNamedQueryTool:
 class TestExecuteQueryTool:
     """Tests for execute_query MCP tool."""
 
-    def test_execute_nonexistent_query(self):
+    async def test_execute_nonexistent_query(self):
         """Test that executing nonexistent query raises error."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
@@ -293,12 +293,12 @@ class TestExecuteQueryTool:
 
             try:
                 with pytest.raises(ValueError, match="Query not found"):
-                    _execute_query("nonexistent")
+                    await _execute_query("nonexistent")
 
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_execute_query_with_valid_name(self):
+    async def test_execute_query_with_valid_name(self):
         """Test executing a valid registered query."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
@@ -313,7 +313,7 @@ class TestExecuteQueryTool:
                 _add_named_query("test_query", query_yaml)
 
                 # Execute query - should succeed with 0 results since no tickets exist
-                result = _execute_query("test_query")
+                result = await _execute_query("test_query")
                 assert result["status"] == "success"
                 assert result["query_name"] == "test_query"
                 assert result["result_count"] == 0
@@ -322,7 +322,7 @@ class TestExecuteQueryTool:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_execute_query_with_hive_filter(self):
+    async def test_execute_query_with_hive_filter(self):
         """Test executing query with hive_names filtering."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
@@ -337,7 +337,7 @@ class TestExecuteQueryTool:
                 _add_named_query("test_query", query_yaml)
 
                 # Execute with hive filter - should succeed with 0 results
-                result = _execute_query("test_query", hive_names=["backend"])
+                result = await _execute_query("test_query", hive_names=["backend"])
                 assert result["status"] == "success"
                 assert result["query_name"] == "test_query"
                 assert result["result_count"] == 0
@@ -345,7 +345,7 @@ class TestExecuteQueryTool:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_execute_query_with_invalid_hive(self):
+    async def test_execute_query_with_invalid_hive(self):
         """Test executing query with invalid hive name raises error."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
@@ -361,7 +361,7 @@ class TestExecuteQueryTool:
 
                 # Execute with invalid hive should raise ValueError
                 with pytest.raises(ValueError, match="Hive not found"):
-                    _execute_query("test_query", hive_names=["nonexistent_hive"])
+                    await _execute_query("test_query", hive_names=["nonexistent_hive"])
 
             finally:
                 src.query_storage._default_storage = old_storage
@@ -422,38 +422,38 @@ invalid_structure_here
 class TestExecuteFreeformQuery:
     """Tests for execute_freeform_query MCP tool."""
 
-    def test_execute_freeform_query_with_valid_query(self):
+    async def test_execute_freeform_query_with_valid_query(self):
         """Test executing a valid freeform query without persisting."""
         # Should succeed with 0 results since no tickets exist
         query_yaml = "- [type=task]"
         
-        result = _execute_freeform_query(query_yaml)
+        result = await _execute_freeform_query(query_yaml)
         assert result["status"] == "success"
         assert result["result_count"] == 0
         assert result["ticket_ids"] == []
 
-    def test_execute_freeform_query_with_invalid_yaml_syntax(self):
+    async def test_execute_freeform_query_with_invalid_yaml_syntax(self):
         """Test that invalid YAML syntax raises QueryValidationError."""
         invalid_yaml = "- [type=task\n  missing bracket"
         
         with pytest.raises(ValueError, match="Invalid query structure"):
-            _execute_freeform_query(invalid_yaml)
+            await _execute_freeform_query(invalid_yaml)
 
-    def test_execute_freeform_query_with_hive_filter(self):
+    async def test_execute_freeform_query_with_hive_filter(self):
         """Test executing freeform query with hive_names parameter."""
         query_yaml = "- [type=task]"
         
         # Should succeed with 0 results since no tickets exist
-        result = _execute_freeform_query(query_yaml, hive_names=["backend"])
+        result = await _execute_freeform_query(query_yaml, hive_names=["backend"])
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
-    def test_execute_freeform_query_with_nonexistent_hive(self):
+    async def test_execute_freeform_query_with_nonexistent_hive(self):
         """Test that non-existent hive raises ValueError with available hives message."""
         query_yaml = "- [type=epic]"
         
         with pytest.raises(ValueError, match="Hive not found.*nonexistent_hive"):
-            _execute_freeform_query(query_yaml, hive_names=["nonexistent_hive"])
+            await _execute_freeform_query(query_yaml, hive_names=["nonexistent_hive"])
 
     def test_execute_freeform_query_empty_result_set(self):
         """Test that empty result set returns status=success with result_count=0."""
@@ -461,7 +461,7 @@ class TestExecuteFreeformQuery:
         # and verify the structure would work based on other tests
         pass
 
-    def test_execute_freeform_query_multi_stage(self):
+    async def test_execute_freeform_query_multi_stage(self):
         """Test executing multi-stage freeform query."""
         multi_stage_query = """
 - [type=epic]
@@ -469,17 +469,17 @@ class TestExecuteFreeformQuery:
 """
         
         # Should succeed with 0 results since no tickets exist
-        result = _execute_freeform_query(multi_stage_query)
+        result = await _execute_freeform_query(multi_stage_query)
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
-    def test_execute_freeform_query_validation_errors(self):
+    async def test_execute_freeform_query_validation_errors(self):
         """Test that query validation errors are caught and reported."""
         # Invalid query structure (not a list)
         invalid_query = "type=task"
 
         with pytest.raises(ValueError, match="Invalid query structure"):
-            _execute_freeform_query(invalid_query)
+            await _execute_freeform_query(invalid_query)
 
     @pytest.mark.asyncio
     async def test_execute_freeform_query_with_parent_filter(self):

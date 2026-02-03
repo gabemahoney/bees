@@ -48,9 +48,9 @@ description: 'Update the docstring for the core colonize_hive_core() function th
   Acceptance: colonize_hive_core docstring updated with repo_root parameter documentation
   and usage examples.'
 parent: features.bees-61r
-status: open
 created_at: '2026-02-03T06:58:03.204971'
-updated_at: '2026-02-03T06:58:03.204976'
+updated_at: '2026-02-03T13:07:34.503368'
+status: completed
 bees_version: '1.1'
 ---
 

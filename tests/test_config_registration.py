@@ -329,12 +329,12 @@ class TestColonizeHiveConfigIntegration:
         monkeypatch.chdir(repo_root)
         return repo_root
 
-    def test_colonize_registers_hive_in_config(self, temp_repo):
+    async def test_colonize_registers_hive_in_config(self, temp_repo):
         """Test that colonize_hive successfully registers hive in config.json."""
         hive_path = temp_repo / "tickets"
         hive_path.mkdir()
 
-        result = colonize_hive('Backend', str(hive_path))
+        result = await colonize_hive('Backend', str(hive_path))
 
         assert result['status'] == 'success'
 
@@ -349,7 +349,7 @@ class TestColonizeHiveConfigIntegration:
         assert config['hives']['backend']['display_name'] == 'Backend'
         assert 'created_at' in config['hives']['backend']
 
-    def test_colonize_handles_config_write_error(self, temp_repo, monkeypatch):
+    async def test_colonize_handles_config_write_error(self, temp_repo, monkeypatch):
         """Test that colonize_hive handles config write errors gracefully."""
         hive_path = temp_repo / "tickets"
         hive_path.mkdir()
@@ -360,13 +360,13 @@ class TestColonizeHiveConfigIntegration:
 
         monkeypatch.setattr("src.mcp_server.write_hive_config_dict", mock_write_error)
 
-        result = colonize_hive('Backend', str(hive_path))
+        result = await colonize_hive('Backend', str(hive_path))
 
         assert result['status'] == 'error'
         assert 'config_write_error' in result['error_type']
         assert 'Disk full' in result['message']
 
-    def test_colonize_handles_permission_error(self, temp_repo, monkeypatch):
+    async def test_colonize_handles_permission_error(self, temp_repo, monkeypatch):
         """Test that colonize_hive handles PermissionError when writing config."""
         hive_path = temp_repo / "tickets"
         hive_path.mkdir()
@@ -377,18 +377,18 @@ class TestColonizeHiveConfigIntegration:
 
         monkeypatch.setattr("src.mcp_server.write_hive_config_dict", mock_permission_error)
 
-        result = colonize_hive('Backend', str(hive_path))
+        result = await colonize_hive('Backend', str(hive_path))
 
         assert result['status'] == 'error'
         assert 'Permission denied' in result['message']
 
-    def test_colonize_config_includes_timestamp(self, temp_repo):
+    async def test_colonize_config_includes_timestamp(self, temp_repo):
         """Test that colonize_hive includes timestamp in config entry."""
         hive_path = temp_repo / "tickets"
         hive_path.mkdir()
 
         before = datetime.now()
-        result = colonize_hive('Backend', str(hive_path))
+        result = await colonize_hive('Backend', str(hive_path))
         after = datetime.now()
 
         assert result['status'] == 'success'
@@ -400,7 +400,7 @@ class TestColonizeHiveConfigIntegration:
         created_at = datetime.fromisoformat(config['hives']['backend']['created_at'])
         assert before <= created_at <= after
 
-    def test_colonize_multiple_hives(self, temp_repo):
+    async def test_colonize_multiple_hives(self, temp_repo):
         """Test colonizing multiple hives updates config correctly."""
         hive1_path = temp_repo / "backend"
         hive1_path.mkdir()
@@ -408,11 +408,11 @@ class TestColonizeHiveConfigIntegration:
         hive2_path.mkdir()
 
         # Colonize first hive
-        result1 = colonize_hive('Backend', str(hive1_path))
+        result1 = await colonize_hive('Backend', str(hive1_path))
         assert result1['status'] == 'success'
 
         # Colonize second hive
-        result2 = colonize_hive('Frontend', str(hive2_path))
+        result2 = await colonize_hive('Frontend', str(hive2_path))
         assert result2['status'] == 'success'
 
         # Verify both in config

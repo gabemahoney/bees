@@ -155,32 +155,34 @@ def get_config_path(repo_root: Path | None = None) -> Path:
 
     Returns:
         Path to the config file in the git repository root
-        
+
     Raises:
         ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
-        from .mcp_server import get_repo_root_from_path
-        # For non-MCP usage (tests, CLI), try to find git repo from cwd
-        repo_root = get_repo_root_from_path(Path.cwd())
-    
+        raise ValueError(
+            "repo_root is required. Your MCP client does not support the roots protocol. "
+            "Please provide repo_root explicitly when calling this tool."
+        )
+
     return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
 
 
 def ensure_bees_dir(repo_root: Path | None = None) -> None:
     """Create .bees/ directory if it doesn't exist in the git repository root.
-    
+
     Args:
         repo_root: Optional repository root path. If not provided, tries to find git repo from cwd.
                    MCP tools MUST pass explicit repo_root from context.
-                   
+
     Raises:
         ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
-        from .mcp_server import get_repo_root_from_path
-        # For non-MCP usage (tests, CLI), try to find git repo from cwd
-        repo_root = get_repo_root_from_path(Path.cwd())
+        raise ValueError(
+            "repo_root is required. Your MCP client does not support the roots protocol. "
+            "Please provide repo_root explicitly when calling this tool."
+        )
     
     bees_dir = repo_root / BEES_CONFIG_DIR
     bees_dir.mkdir(exist_ok=True)

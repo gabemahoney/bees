@@ -102,7 +102,7 @@ def ensure_ticket_directory_exists(hive_name: str) -> None:
     hive_dir.mkdir(parents=True, exist_ok=True)
 
 
-def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
+def infer_ticket_type_from_id(ticket_id: str, repo_root: Path | None = None) -> TicketType | None:
     """
     Infer ticket type from its ID by reading YAML frontmatter from ticket file.
 
@@ -113,6 +113,7 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
 
     Args:
         ticket_id: The ticket ID (must have hive prefix, e.g., "backend.bees-250")
+        repo_root: Optional repository root path
 
     Returns:
         The ticket type ('epic', 'task', or 'subtask') if found, None if not found
@@ -136,7 +137,7 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
 
     # Load config to get hive path
     from .config import load_bees_config
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if not config or hive_name not in config.hives:
         return None
@@ -175,7 +176,7 @@ def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
 
 
 
-def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
+def list_tickets(ticket_type: TicketType | None = None, repo_root: Path | None = None) -> list[Path]:
     """
     List all ticket files from all configured hives, optionally filtered by type.
 
@@ -184,6 +185,7 @@ def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
 
     Args:
         ticket_type: Optional ticket type to filter by. If None, returns all tickets.
+        repo_root: Optional repository root path
 
     Returns:
         List of Path objects pointing to ticket markdown files across all hives
@@ -200,7 +202,7 @@ def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
     all_tickets = []
 
     # Load hive configuration
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if not config or not config.hives:
         # No hives configured - return empty list

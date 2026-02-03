@@ -160,7 +160,7 @@ def format_index_markdown(tickets: dict[str, list[Ticket]], include_timestamp: b
     return "\n".join(lines)
 
 
-def is_index_stale(hive_name: str | None = None) -> bool:
+def is_index_stale(hive_name: str | None = None, repo_root: Path | None = None) -> bool:
     """
     Check if index.md files are stale (older than ticket files).
 
@@ -169,6 +169,7 @@ def is_index_stale(hive_name: str | None = None) -> bool:
 
     Args:
         hive_name: Optional hive name to check. If None, checks all hives.
+        repo_root: Optional repository root path
 
     Returns:
         True if any index needs regeneration, False if all indexes are up-to-date
@@ -182,7 +183,7 @@ def is_index_stale(hive_name: str | None = None) -> bool:
     from .config import load_bees_config
     from pathlib import Path
 
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if not config or not config.hives:
         # No hives configured - nothing to check
@@ -227,7 +228,8 @@ def is_index_stale(hive_name: str | None = None) -> bool:
 def generate_index(
     status_filter: str | None = None,
     type_filter: str | None = None,
-    hive_name: str | None = None
+    hive_name: str | None = None,
+    repo_root: Path | None = None
 ) -> str:
     """
     Generate complete markdown index for all tickets and write to disk.
@@ -249,6 +251,7 @@ def generate_index(
         hive_name: Optional hive name to generate index for specific hive only.
                    If provided, generates index only for that hive.
                    If omitted, generates indexes for all hives.
+        repo_root: Optional repository root path
 
     Returns:
         Complete markdown index as a string (for single hive or last hive processed)
@@ -266,7 +269,7 @@ def generate_index(
     from .config import load_bees_config
     from pathlib import Path
 
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if hive_name:
         # Generate index for specific hive

@@ -12,14 +12,15 @@ git clone https://github.com/gabemahoney/bees.git
 
 ### MCP Client Requirements
 
-The bees MCP server requires clients to support the **MCP Roots Protocol**. This protocol allows the server to know which repository the client is working in, ensuring all operations target the correct repository.
+The bees MCP server works best with clients that support the **MCP Roots Protocol**. This protocol allows the server to automatically detect which repository the client is working in.
 
 **Supported Clients:**
-- ✅ Claude Desktop (official MCP client)
-- ✅ OpenCode
-- ❌ Basic MCP clients without roots support
+- ✅ Claude Desktop (official MCP client) - Full roots protocol support
+- ✅ OpenCode - Full roots protocol support
 
-If you see an error like "Unable to determine repository location", ensure your MCP client supports and is configured to send roots.
+### Testing
+
+Comprehensive test coverage for the repo_root parameter fallback mechanism is available in `tests/test_mcp_roots.py`. All MCP tools with the repo_root parameter have test coverage verifying they work correctly when ctx=None (i.e., when the roots protocol is unavailable).
 
 ## Quick Start
 

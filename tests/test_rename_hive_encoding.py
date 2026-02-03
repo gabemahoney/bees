@@ -19,7 +19,7 @@ class TestRenameHiveEncoding:
     @patch('src.mcp_server.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
-    def test_read_ticket_uses_utf8_encoding(
+    async def test_read_ticket_uses_utf8_encoding(
         self, mock_glob, mock_file, mock_normalize, mock_load_config, mock_save_config
     ):
         """Test that reading ticket files uses UTF-8 encoding."""
@@ -45,7 +45,7 @@ class TestRenameHiveEncoding:
         mock_file.return_value.read.return_value = file_content
         
         # Execute rename
-        _rename_hive(old_name="old_hive", new_name="new_hive")
+        await _rename_hive(old_name="old_hive", new_name="new_hive")
         
         # Verify open() was called with encoding='utf-8' for read operations
         read_calls = [c for c in mock_file.call_args_list if 'r' in str(c)]
@@ -59,7 +59,7 @@ class TestRenameHiveEncoding:
     @patch('src.mcp_server.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
-    def test_write_ticket_uses_utf8_encoding(
+    async def test_write_ticket_uses_utf8_encoding(
         self, mock_glob, mock_file, mock_normalize, mock_load_config, mock_save_config
     ):
         """Test that writing ticket files uses UTF-8 encoding."""
@@ -85,7 +85,7 @@ class TestRenameHiveEncoding:
         mock_file.return_value.read.return_value = file_content
         
         # Execute rename
-        _rename_hive(old_name="old_hive", new_name="new_hive")
+        await _rename_hive(old_name="old_hive", new_name="new_hive")
         
         # Verify open() was called with encoding='utf-8' for write operations
         write_calls = [c for c in mock_file.call_args_list if 'w' in str(c)]
@@ -100,7 +100,7 @@ class TestRenameHiveEncoding:
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     @patch('pathlib.Path.rename')
-    def test_unicode_content_handling(
+    async def test_unicode_content_handling(
         self, mock_rename, mock_glob, mock_file, mock_normalize, 
         mock_load_config, mock_save_config
     ):
@@ -133,7 +133,7 @@ class TestRenameHiveEncoding:
         mock_file.return_value.read.return_value = unicode_content
         
         # Execute rename
-        result = _rename_hive(old_name="test_hive", new_name="unicode_hive")
+        result = await _rename_hive(old_name="test_hive", new_name="unicode_hive")
         
         # Should not error with Unicode content when UTF-8 encoding is used
         assert result is not None
@@ -143,7 +143,7 @@ class TestRenameHiveEncoding:
     @patch('src.mcp_server.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
-    def test_all_open_calls_have_encoding(
+    async def test_all_open_calls_have_encoding(
         self, mock_glob, mock_file, mock_normalize, mock_load_config, mock_save_config
     ):
         """Test that ALL open() calls in rename_hive specify encoding parameter."""
@@ -186,7 +186,7 @@ class TestRenameHiveEncoding:
         mock_file.return_value.read.side_effect = [content1, content1, content2]
         
         # Execute rename
-        _rename_hive(old_name="hive1", new_name="renamed_hive")
+        await _rename_hive(old_name="hive1", new_name="renamed_hive")
         
         # Verify ALL open() calls have encoding parameter
         for call_args in mock_file.call_args_list:
@@ -207,7 +207,7 @@ class TestRenameHiveIdentityJsonEncoding:
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
-    def test_identity_json_read_uses_utf8(
+    async def test_identity_json_read_uses_utf8(
         self, mock_glob, mock_exists, mock_file, mock_normalize, 
         mock_load_config, mock_save_config
     ):
@@ -234,7 +234,7 @@ class TestRenameHiveIdentityJsonEncoding:
         mock_file.return_value.read.return_value = identity_content
         
         # Execute rename
-        _rename_hive(old_name="old_hive", new_name="new_hive")
+        await _rename_hive(old_name="old_hive", new_name="new_hive")
         
         # Find the identity.json read call (line 2375)
         identity_read_calls = [
@@ -254,7 +254,7 @@ class TestRenameHiveIdentityJsonEncoding:
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
-    def test_identity_json_write_uses_utf8_update(
+    async def test_identity_json_write_uses_utf8_update(
         self, mock_glob, mock_exists, mock_file, mock_normalize,
         mock_load_config, mock_save_config
     ):
@@ -281,7 +281,7 @@ class TestRenameHiveIdentityJsonEncoding:
         mock_file.return_value.read.return_value = identity_content
         
         # Execute rename
-        _rename_hive(old_name="old_hive", new_name="new_hive")
+        await _rename_hive(old_name="old_hive", new_name="new_hive")
         
         # Find the identity.json write call
         identity_write_calls = [
@@ -302,7 +302,7 @@ class TestRenameHiveIdentityJsonEncoding:
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.mkdir')
     @patch('pathlib.Path.glob')
-    def test_identity_json_write_uses_utf8_create(
+    async def test_identity_json_write_uses_utf8_create(
         self, mock_glob, mock_mkdir, mock_exists, mock_file, mock_normalize,
         mock_load_config, mock_save_config
     ):
@@ -325,7 +325,7 @@ class TestRenameHiveIdentityJsonEncoding:
         mock_exists.return_value = False
         
         # Execute rename
-        _rename_hive(old_name="old_hive", new_name="new_hive")
+        await _rename_hive(old_name="old_hive", new_name="new_hive")
         
         # Find the identity.json write call
         identity_write_calls = [
@@ -345,7 +345,7 @@ class TestRenameHiveIdentityJsonEncoding:
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
-    def test_identity_json_with_non_ascii_display_name(
+    async def test_identity_json_with_non_ascii_display_name(
         self, mock_glob, mock_exists, mock_file, mock_normalize,
         mock_load_config, mock_save_config
     ):
@@ -372,7 +372,7 @@ class TestRenameHiveIdentityJsonEncoding:
         mock_file.return_value.read.return_value = identity_content
         
         # Rename with non-ASCII display name
-        result = _rename_hive(old_name="test_hive", new_name="🐝 Café Hive")
+        result = await _rename_hive(old_name="test_hive", new_name="🐝 Café Hive")
         
         # Should not error with non-ASCII characters when UTF-8 is used
         assert result is not None
@@ -387,7 +387,7 @@ class TestRenameHiveCrossPlatform:
     @patch('src.mcp_server.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
-    def test_windows_line_endings(
+    async def test_windows_line_endings(
         self, mock_glob, mock_file, mock_normalize, mock_load_config, mock_save_config
     ):
         """Test handling of Windows line endings (CRLF) in ticket files."""
@@ -413,7 +413,7 @@ class TestRenameHiveCrossPlatform:
         mock_file.return_value.read.return_value = windows_content
         
         # Execute rename - should handle CRLF without errors
-        result = _rename_hive(old_name="win_hive", new_name="cross_platform")
+        result = await _rename_hive(old_name="win_hive", new_name="cross_platform")
         
         # Should complete without encoding errors
         assert result is not None

@@ -32,12 +32,12 @@ description: 'Document the repo_root fallback mechanism in master_plan.md, inclu
 
   Acceptance: master_plan.md contains comprehensive documentation of the repo_root
   fallback architecture and implementation.'
-parent: features.bees-61r
 up_dependencies:
 - features.bees-6sr
-status: open
+parent: features.bees-61r
 created_at: '2026-02-03T06:58:22.865557'
-updated_at: '2026-02-03T06:58:22.865562'
+updated_at: '2026-02-03T13:08:58.714830'
+status: completed
 bees_version: '1.1'
 ---
 

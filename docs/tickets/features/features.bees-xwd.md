@@ -23,9 +23,9 @@ description: '**Context**: Part of Epic features.bees-h0a to support clients wit
   **Acceptance**: All 3 functions accept repo_root parameter and pass it through to
   get_repo_root()'
 parent: features.bees-lmo
-status: open
 created_at: '2026-02-03T06:41:31.176391'
-updated_at: '2026-02-03T06:41:31.176393'
+updated_at: '2026-02-03T12:30:48.126196'
+status: completed
 bees_version: '1.1'
 ---
 

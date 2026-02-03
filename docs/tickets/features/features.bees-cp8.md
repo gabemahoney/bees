@@ -51,9 +51,9 @@ description: 'Update the docstrings for ticket viewing and hive management MCP t
   Acceptance: All three docstrings updated with repo_root parameter documentation
   and usage examples.'
 parent: features.bees-61r
-status: open
 created_at: '2026-02-03T06:57:52.648028'
-updated_at: '2026-02-03T06:57:52.648036'
+updated_at: '2026-02-03T13:06:32.076240'
+status: completed
 bees_version: '1.1'
 ---
 

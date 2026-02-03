@@ -51,7 +51,7 @@ def temp_tickets_dir(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config)
+    save_bees_config(config, repo_root=tmp_path)
 
     yield tmp_path
 
@@ -59,10 +59,10 @@ def temp_tickets_dir(tmp_path, monkeypatch):
 class TestUpdateTicketHiveInference:
     """Tests that update_ticket() infers hive from ticket ID."""
 
-    def test_update_legacy_ticket_without_hive(self, temp_tickets_dir):
+    async def test_update_legacy_ticket_without_hive(self, temp_tickets_dir):
         """Should update ticket in default hive correctly."""
         # Create ticket in default hive
-        create_result = _create_ticket(
+        create_result = await _create_ticket(
             ticket_type="epic",
             title="Original Title",
             hive_name="default"
@@ -71,7 +71,7 @@ class TestUpdateTicketHiveInference:
         assert ticket_id.startswith("default.bees-")
 
         # Update the ticket
-        update_result = _update_ticket(
+        update_result = await _update_ticket(
             ticket_id=ticket_id,
             title="Updated Title"
         )
@@ -84,10 +84,10 @@ class TestUpdateTicketHiveInference:
         updated_ticket = read_ticket(ticket_path)
         assert updated_ticket.title == "Updated Title"
 
-    def test_update_hive_prefixed_ticket(self, temp_tickets_dir):
+    async def test_update_hive_prefixed_ticket(self, temp_tickets_dir):
         """Should update hive-prefixed ticket by inferring hive from ID."""
         # Create ticket with hive
-        create_result = _create_ticket(
+        create_result = await _create_ticket(
             ticket_type="epic",
             title="Original Title",
             hive_name="backend"
@@ -96,7 +96,7 @@ class TestUpdateTicketHiveInference:
         assert ticket_id.startswith("backend.bees-")
 
         # Update the ticket - no hive_name parameter needed
-        update_result = _update_ticket(
+        update_result = await _update_ticket(
             ticket_id=ticket_id,
             title="Updated Title"
         )
@@ -110,17 +110,17 @@ class TestUpdateTicketHiveInference:
         assert updated_ticket.title == "Updated Title"
         assert updated_ticket.id == ticket_id
 
-    def test_update_different_hives(self, temp_tickets_dir):
+    async def test_update_different_hives(self, temp_tickets_dir):
         """Should update tickets in different hives correctly."""
         # Create tickets in different hives
-        backend_result = _create_ticket(
+        backend_result = await _create_ticket(
             ticket_type="epic",
             title="Backend Epic",
             hive_name="backend"
         )
         backend_id = backend_result["ticket_id"]
 
-        frontend_result = _create_ticket(
+        frontend_result = await _create_ticket(
             ticket_type="epic",
             title="Frontend Epic",
             hive_name="frontend"
@@ -128,8 +128,8 @@ class TestUpdateTicketHiveInference:
         frontend_id = frontend_result["ticket_id"]
 
         # Update both tickets
-        _update_ticket(backend_id, title="Updated Backend")
-        _update_ticket(frontend_id, title="Updated Frontend")
+        await _update_ticket(backend_id, title="Updated Backend")
+        await _update_ticket(frontend_id, title="Updated Frontend")
 
         # Verify both were updated correctly
         backend_ticket = read_ticket(get_ticket_path(backend_id, "epic"))
@@ -138,17 +138,17 @@ class TestUpdateTicketHiveInference:
         frontend_ticket = read_ticket(get_ticket_path(frontend_id, "epic"))
         assert frontend_ticket.title == "Updated Frontend"
 
-    def test_update_with_relationships_in_hive(self, temp_tickets_dir):
+    async def test_update_with_relationships_in_hive(self, temp_tickets_dir):
         """Should handle relationship updates with hive-prefixed IDs."""
         # Create parent and child in backend hive
-        parent_result = _create_ticket(
+        parent_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="backend"
         )
         parent_id = parent_result["ticket_id"]
 
-        child_result = _create_ticket(
+        child_result = await _create_ticket(
             ticket_type="task",
             title="Child Task",
             parent=parent_id,
@@ -157,7 +157,7 @@ class TestUpdateTicketHiveInference:
         child_id = child_result["ticket_id"]
 
         # Update child's description
-        _update_ticket(child_id, description="Updated description")
+        await _update_ticket(child_id, description="Updated description")
 
         # Verify update
         child_ticket = read_ticket(get_ticket_path(child_id, "task"))
@@ -168,10 +168,10 @@ class TestUpdateTicketHiveInference:
 class TestDeleteTicketHiveInference:
     """Tests that delete_ticket() infers hive from ticket ID."""
 
-    def test_delete_legacy_ticket_without_hive(self, temp_tickets_dir):
+    async def test_delete_legacy_ticket_without_hive(self, temp_tickets_dir):
         """Should delete ticket in default hive correctly."""
         # Create ticket in default hive
-        create_result = _create_ticket(
+        create_result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
             hive_name="default"
@@ -184,7 +184,7 @@ class TestDeleteTicketHiveInference:
         assert ticket_path.exists()
 
         # Delete the ticket
-        delete_result = _delete_ticket(ticket_id=ticket_id)
+        delete_result = await _delete_ticket(ticket_id=ticket_id)
 
         assert delete_result["status"] == "success"
         assert delete_result["ticket_id"] == ticket_id
@@ -192,10 +192,10 @@ class TestDeleteTicketHiveInference:
         # Verify ticket was deleted
         assert not ticket_path.exists()
 
-    def test_delete_hive_prefixed_ticket(self, temp_tickets_dir):
+    async def test_delete_hive_prefixed_ticket(self, temp_tickets_dir):
         """Should delete hive-prefixed ticket by inferring hive from ID."""
         # Create ticket with hive
-        create_result = _create_ticket(
+        create_result = await _create_ticket(
             ticket_type="epic",
             title="Backend Epic",
             hive_name="backend"
@@ -208,7 +208,7 @@ class TestDeleteTicketHiveInference:
         assert ticket_path.exists()
 
         # Delete the ticket - no hive_name parameter needed
-        delete_result = _delete_ticket(ticket_id=ticket_id)
+        delete_result = await _delete_ticket(ticket_id=ticket_id)
 
         assert delete_result["status"] == "success"
         assert delete_result["ticket_id"] == ticket_id
@@ -216,17 +216,17 @@ class TestDeleteTicketHiveInference:
         # Verify ticket was deleted from correct hive directory
         assert not ticket_path.exists()
 
-    def test_delete_from_different_hives(self, temp_tickets_dir):
+    async def test_delete_from_different_hives(self, temp_tickets_dir):
         """Should delete tickets from different hives correctly."""
         # Create tickets in different hives
-        backend_result = _create_ticket(
+        backend_result = await _create_ticket(
             ticket_type="epic",
             title="Backend Epic",
             hive_name="backend"
         )
         backend_id = backend_result["ticket_id"]
 
-        frontend_result = _create_ticket(
+        frontend_result = await _create_ticket(
             ticket_type="epic",
             title="Frontend Epic",
             hive_name="frontend"
@@ -234,23 +234,23 @@ class TestDeleteTicketHiveInference:
         frontend_id = frontend_result["ticket_id"]
 
         # Delete backend ticket
-        _delete_ticket(ticket_id=backend_id)
+        await _delete_ticket(ticket_id=backend_id)
 
         # Verify backend deleted, frontend still exists
         assert not get_ticket_path(backend_id, "epic").exists()
         assert get_ticket_path(frontend_id, "epic").exists()
 
-    def test_delete_with_cascade_in_hive(self, temp_tickets_dir):
+    async def test_delete_with_cascade_in_hive(self, temp_tickets_dir):
         """Should handle cascade delete with hive-prefixed IDs."""
         # Create parent and children in backend hive
-        parent_result = _create_ticket(
+        parent_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="backend"
         )
         parent_id = parent_result["ticket_id"]
 
-        child1_result = _create_ticket(
+        child1_result = await _create_ticket(
             ticket_type="task",
             title="Child Task 1",
             parent=parent_id,
@@ -258,7 +258,7 @@ class TestDeleteTicketHiveInference:
         )
         child1_id = child1_result["ticket_id"]
 
-        child2_result = _create_ticket(
+        child2_result = await _create_ticket(
             ticket_type="task",
             title="Child Task 2",
             parent=parent_id,
@@ -272,7 +272,7 @@ class TestDeleteTicketHiveInference:
         assert get_ticket_path(child2_id, "task").exists()
 
         # Delete parent (always cascades)
-        _delete_ticket(ticket_id=parent_id)
+        await _delete_ticket(ticket_id=parent_id)
 
         # Verify all deleted
         assert not get_ticket_path(parent_id, "epic").exists()
@@ -283,20 +283,20 @@ class TestDeleteTicketHiveInference:
 class TestBackwardCompatibility:
     """Tests backward compatibility between legacy and hive-prefixed IDs."""
 
-    def test_mixed_id_formats_in_system(self, temp_tickets_dir):
+    async def test_mixed_id_formats_in_system(self, temp_tickets_dir):
         """Should support multiple hive-prefixed IDs simultaneously."""
         # Create tickets in different hives
-        default_epic = _create_ticket(
+        default_epic = (await _create_ticket(
             ticket_type="epic",
             title="Default Epic",
             hive_name="default"
-        )["ticket_id"]
+        ))["ticket_id"]
 
-        hive_epic = _create_ticket(
+        hive_epic = (await _create_ticket(
             ticket_type="epic",
             title="Hive Epic",
             hive_name="backend"
-        )["ticket_id"]
+        ))["ticket_id"]
 
         # Both should be valid
         assert default_epic.startswith("default.bees-")
@@ -307,21 +307,21 @@ class TestBackwardCompatibility:
         assert infer_ticket_type_from_id(hive_epic) == "epic"
 
         # Both should be updatable
-        _update_ticket(default_epic, title="Updated Default")
-        _update_ticket(hive_epic, title="Updated Hive")
+        await _update_ticket(default_epic, title="Updated Default")
+        await _update_ticket(hive_epic, title="Updated Hive")
 
         # Both should be deletable
-        _delete_ticket(ticket_id=default_epic)
-        _delete_ticket(ticket_id=hive_epic)
+        await _delete_ticket(ticket_id=default_epic)
+        await _delete_ticket(ticket_id=hive_epic)
 
         # Verify both deleted
         assert not get_ticket_path(default_epic, "epic").exists()
         assert not get_ticket_path(hive_epic, "epic").exists()
 
-    def test_cross_hive_relationships(self, temp_tickets_dir):
+    async def test_cross_hive_relationships(self, temp_tickets_dir):
         """Should support relationships between different hives."""
         # Create parent in default hive
-        parent_result = _create_ticket(
+        parent_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="default"
@@ -329,7 +329,7 @@ class TestBackwardCompatibility:
         parent_id = parent_result["ticket_id"]
 
         # Create child in backend hive
-        child_result = _create_ticket(
+        child_result = await _create_ticket(
             ticket_type="task",
             title="Child Task",
             parent=parent_id,
@@ -342,8 +342,8 @@ class TestBackwardCompatibility:
         assert child_ticket.parent == parent_id
 
         # Update should work across hives
-        _update_ticket(parent_id, title="Updated Parent")
-        _update_ticket(child_id, title="Updated Child")
+        await _update_ticket(parent_id, title="Updated Parent")
+        await _update_ticket(child_id, title="Updated Child")
 
         # Verify updates
         parent_ticket = read_ticket(get_ticket_path(parent_id, "epic"))

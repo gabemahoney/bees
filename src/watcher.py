@@ -120,7 +120,7 @@ class TicketChangeHandler(FileSystemEventHandler):
             self.pending_regeneration = False
 
 
-def start_watcher(debounce_seconds: float = 2.0):
+def start_watcher(debounce_seconds: float = 2.0, repo_root: Path | None = None):
     """
     Start file system watcher for all hive directories.
 
@@ -129,6 +129,7 @@ def start_watcher(debounce_seconds: float = 2.0):
 
     Args:
         debounce_seconds: Time to wait before regenerating after last change
+        repo_root: Optional repository root path
 
     Examples:
         >>> start_watcher()  # Blocks until interrupted
@@ -141,7 +142,7 @@ def start_watcher(debounce_seconds: float = 2.0):
     from .config import load_bees_config
 
     # Load hive configuration
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if not config or not config.hives:
         raise ValueError("No hives configured in .bees/config.json. Cannot start watcher.")

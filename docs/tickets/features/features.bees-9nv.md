@@ -31,12 +31,12 @@ description: 'Add documentation to README.md explaining the repo_root parameter 
 
   Acceptance: README.md contains clear documentation about repo_root parameter and
   when to use it.'
-parent: features.bees-61r
 up_dependencies:
 - features.bees-6sr
-status: open
+parent: features.bees-61r
 created_at: '2026-02-03T06:58:16.467352'
-updated_at: '2026-02-03T06:58:16.467356'
+updated_at: '2026-02-03T13:08:11.370159'
+status: completed
 bees_version: '1.1'
 ---
 

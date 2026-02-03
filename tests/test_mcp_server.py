@@ -17,7 +17,7 @@ from src.mcp_server import (
     _update_ticket,
     _delete_ticket,
     _server_running,
-    get_repo_root,
+    get_repo_root_from_path,
     validate_hive_path,
     parse_ticket_id,
     parse_hive_from_ticket_id
@@ -158,7 +158,7 @@ class TestToolRegistration:
         """Test that delete_ticket tool schema is registered."""
         assert callable(_delete_ticket)
 
-    def test_create_ticket_implementation_response(self, tmp_path, monkeypatch):
+    async def test_create_ticket_implementation_response(self, tmp_path, monkeypatch):
         """Test that create_ticket returns expected response."""
         import json
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -181,9 +181,9 @@ class TestToolRegistration:
                 )
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
-        result = _create_ticket(
+        result = await _create_ticket(
             hive_name="default",
             ticket_type="task",
             title="Test Task"
@@ -195,14 +195,14 @@ class TestToolRegistration:
         assert "ticket_type" in result
         assert result["ticket_type"] == "task"
 
-    def test_create_ticket_validates_type(self):
+    async def test_create_ticket_validates_type(self):
         """Test that create_ticket validates ticket_type parameter."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(hive_name="default", ticket_type="invalid", title="Test")
+            await _create_ticket(hive_name="default", ticket_type="invalid", title="Test")
 
         assert "Invalid ticket_type" in str(exc_info.value)
 
-    def test_create_ticket_validates_epic_parent(self, tmp_path, monkeypatch):
+    async def test_create_ticket_validates_epic_parent(self, tmp_path, monkeypatch):
         """Test that create_ticket rejects parent for epics."""
         import json
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -225,14 +225,14 @@ class TestToolRegistration:
                 )
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
         
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(hive_name="default", ticket_type="epic", title="Test", parent="some-id")
+            await _create_ticket(hive_name="default", ticket_type="epic", title="Test", parent="some-id")
 
         assert "Epics cannot have a parent" in str(exc_info.value)
 
-    def test_create_ticket_validates_subtask_parent(self, tmp_path, monkeypatch):
+    async def test_create_ticket_validates_subtask_parent(self, tmp_path, monkeypatch):
         """Test that create_ticket requires parent for subtasks."""
         import json
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -255,10 +255,10 @@ class TestToolRegistration:
                 )
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
         
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(hive_name="default", ticket_type="subtask", title="Test")
+            await _create_ticket(hive_name="default", ticket_type="subtask", title="Test")
 
         assert "Subtasks must have a parent" in str(exc_info.value)
 
@@ -327,11 +327,11 @@ class TestUpdateTicket:
                 )
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         return tmp_path
 
-    def test_update_ticket_basic_fields(self, temp_tickets_dir):
+    async def test_update_ticket_basic_fields(self, temp_tickets_dir):
         """Test updating basic fields (title, labels, status, owner, priority)."""
         from src.ticket_factory import create_epic
         from src.reader import read_ticket
@@ -349,7 +349,7 @@ class TestUpdateTicket:
         )
 
         # Update basic fields
-        result = _update_ticket(
+        result = await _update_ticket(
             ticket_id=epic_id,
             title="Updated Title",
             description="Updated description",
@@ -373,24 +373,24 @@ class TestUpdateTicket:
         assert epic.owner == "bob@example.com"
         assert epic.priority == 0
 
-    def test_update_ticket_nonexistent(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent(self, temp_tickets_dir):
         """Test updating a non-existent ticket raises ValueError."""
         with pytest.raises(ValueError, match="Ticket does not exist"):
-            _update_ticket(ticket_id="default.bees-nonexistent", title="Test")
+            await _update_ticket(ticket_id="default.bees-nonexistent", title="Test")
 
-    def test_update_ticket_empty_title(self, temp_tickets_dir):
+    async def test_update_ticket_empty_title(self, temp_tickets_dir):
         """Test updating with empty title raises ValueError."""
         from src.ticket_factory import create_epic
 
         epic_id = create_epic(hive_name="default", title="Original Title")
 
         with pytest.raises(ValueError, match="Ticket title cannot be empty"):
-            _update_ticket(ticket_id=epic_id, title="")
+            await _update_ticket(ticket_id=epic_id, title="")
 
         with pytest.raises(ValueError, match="Ticket title cannot be empty"):
-            _update_ticket(ticket_id=epic_id, title="   ")
+            await _update_ticket(ticket_id=epic_id, title="   ")
 
-    def test_update_ticket_add_parent(self, temp_tickets_dir):
+    async def test_update_ticket_add_parent(self, temp_tickets_dir):
         """Test adding a parent relationship with bidirectional updates."""
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
@@ -401,7 +401,7 @@ class TestUpdateTicket:
         task_id = create_task(hive_name="default", title="Child Task")
 
         # Add parent to task
-        result = _update_ticket(ticket_id=task_id, parent=epic_id)
+        result = await _update_ticket(ticket_id=task_id, parent=epic_id)
 
         assert result["status"] == "success"
 
@@ -414,7 +414,7 @@ class TestUpdateTicket:
         epic = read_ticket(epic_path)
         assert task_id in epic.children
 
-    def test_update_ticket_remove_parent(self, temp_tickets_dir):
+    async def test_update_ticket_remove_parent(self, temp_tickets_dir):
         """Test removing a parent relationship with bidirectional updates."""
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
@@ -434,7 +434,7 @@ class TestUpdateTicket:
         assert task_id in epic.children
 
         # Remove parent
-        result = _update_ticket(ticket_id=task_id, parent=None)
+        result = await _update_ticket(ticket_id=task_id, parent=None)
 
         assert result["status"] == "success"
 
@@ -446,7 +446,7 @@ class TestUpdateTicket:
         epic = read_ticket(epic_path)
         assert task_id not in (epic.children or [])
 
-    def test_update_ticket_add_children(self, temp_tickets_dir):
+    async def test_update_ticket_add_children(self, temp_tickets_dir):
         """Test adding children with bidirectional updates."""
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
@@ -458,7 +458,7 @@ class TestUpdateTicket:
         task2_id = create_task(hive_name="default", title="Child Task 2")
 
         # Add children to epic
-        result = _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
+        result = await _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
 
         assert result["status"] == "success"
 
@@ -476,7 +476,7 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task2.parent == epic_id
 
-    def test_update_ticket_remove_children(self, temp_tickets_dir):
+    async def test_update_ticket_remove_children(self, temp_tickets_dir):
         """Test removing children with bidirectional updates."""
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
@@ -493,7 +493,7 @@ class TestUpdateTicket:
         _add_child_to_parent(task2_id, epic_id)
 
         # Remove all children
-        result = _update_ticket(ticket_id=epic_id, children=[])
+        result = await _update_ticket(ticket_id=epic_id, children=[])
 
         assert result["status"] == "success"
 
@@ -510,7 +510,7 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task2.parent is None
 
-    def test_update_ticket_add_dependencies(self, temp_tickets_dir):
+    async def test_update_ticket_add_dependencies(self, temp_tickets_dir):
         """Test adding dependencies with bidirectional updates."""
         from src.ticket_factory import create_task
         from src.reader import read_ticket
@@ -522,7 +522,7 @@ class TestUpdateTicket:
         task3_id = create_task(hive_name="default", title="Task 3 (blocked)")
 
         # Add dependencies
-        result = _update_ticket(
+        result = await _update_ticket(
             ticket_id=task1_id,
             up_dependencies=[task2_id],      # task2 blocks task1
             down_dependencies=[task3_id]     # task1 blocks task3
@@ -544,7 +544,7 @@ class TestUpdateTicket:
         task3 = read_ticket(task3_path)
         assert task1_id in task3.up_dependencies
 
-    def test_update_ticket_remove_dependencies(self, temp_tickets_dir):
+    async def test_update_ticket_remove_dependencies(self, temp_tickets_dir):
         """Test removing dependencies with bidirectional updates."""
         from src.ticket_factory import create_task
         from src.reader import read_ticket
@@ -559,7 +559,7 @@ class TestUpdateTicket:
         task2_id = create_task(hive_name="default", title="Task 2")
 
         # Add dependency first
-        _update_ticket(ticket_id=task1_id, up_dependencies=[task2_id])
+        await _update_ticket(ticket_id=task1_id, up_dependencies=[task2_id])
 
         # Verify initial state
         task1_path = get_ticket_path(task1_id, "task")
@@ -567,7 +567,7 @@ class TestUpdateTicket:
         assert task2_id in task1.up_dependencies
 
         # Remove dependencies
-        result = _update_ticket(ticket_id=task1_id, up_dependencies=[])
+        result = await _update_ticket(ticket_id=task1_id, up_dependencies=[])
 
         assert result["status"] == "success"
 
@@ -579,37 +579,37 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task1_id not in (task2.down_dependencies or [])
 
-    def test_update_ticket_nonexistent_parent(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_parent(self, temp_tickets_dir):
         """Test updating with non-existent parent raises ValueError."""
         from src.ticket_factory import create_task
 
         task_id = create_task(hive_name="default", title="Test Task")
 
         with pytest.raises(ValueError, match="Parent ticket does not exist"):
-            _update_ticket(ticket_id=task_id, parent="bees-nonexistent")
+            await _update_ticket(ticket_id=task_id, parent="bees-nonexistent")
 
-    def test_update_ticket_nonexistent_child(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_child(self, temp_tickets_dir):
         """Test updating with non-existent child raises ValueError."""
         from src.ticket_factory import create_epic
 
         epic_id = create_epic(hive_name="default", title="Test Epic")
 
         with pytest.raises(ValueError, match="Child ticket does not exist"):
-            _update_ticket(ticket_id=epic_id, children=["bees-nonexistent"])
+            await _update_ticket(ticket_id=epic_id, children=["bees-nonexistent"])
 
-    def test_update_ticket_nonexistent_dependency(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_dependency(self, temp_tickets_dir):
         """Test updating with non-existent dependency raises ValueError."""
         from src.ticket_factory import create_task
 
         task_id = create_task(hive_name="default", title="Test Task")
 
         with pytest.raises(ValueError, match="Dependency ticket does not exist"):
-            _update_ticket(ticket_id=task_id, up_dependencies=["bees-nonexistent"])
+            await _update_ticket(ticket_id=task_id, up_dependencies=["bees-nonexistent"])
 
         with pytest.raises(ValueError, match="Dependency ticket does not exist"):
-            _update_ticket(ticket_id=task_id, down_dependencies=["bees-nonexistent"])
+            await _update_ticket(ticket_id=task_id, down_dependencies=["bees-nonexistent"])
 
-    def test_update_ticket_circular_dependency(self, temp_tickets_dir):
+    async def test_update_ticket_circular_dependency(self, temp_tickets_dir):
         """Test updating with circular dependency raises ValueError."""
         from src.ticket_factory import create_task
 
@@ -617,13 +617,13 @@ class TestUpdateTicket:
         task2_id = create_task(hive_name="default", title="Task 2")
 
         with pytest.raises(ValueError, match="Circular dependency detected"):
-            _update_ticket(
+            await _update_ticket(
                 ticket_id=task1_id,
                 up_dependencies=[task2_id],
                 down_dependencies=[task2_id]
             )
 
-    def test_update_ticket_partial_update(self, temp_tickets_dir):
+    async def test_update_ticket_partial_update(self, temp_tickets_dir):
         """Test that partial updates only modify specified fields."""
         from src.ticket_factory import create_epic
         from src.reader import read_ticket
@@ -640,7 +640,7 @@ class TestUpdateTicket:
         )
 
         # Update only title and status
-        result = _update_ticket(
+        result = await _update_ticket(
             ticket_id=epic_id,
             title="Updated Title",
             status="in_progress"
@@ -659,7 +659,7 @@ class TestUpdateTicket:
         assert epic.owner == "alice@example.com"  # Unchanged
         assert epic.priority == 2  # Unchanged
 
-    def test_update_ticket_bidirectional_consistency(self, temp_tickets_dir):
+    async def test_update_ticket_bidirectional_consistency(self, temp_tickets_dir):
         """Test comprehensive bidirectional consistency across multiple updates."""
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
@@ -672,10 +672,10 @@ class TestUpdateTicket:
         task3_id = create_task(hive_name="default", title="Task 3")
 
         # Add task1 and task2 as children of epic
-        _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
+        await _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
 
         # Make task3 depend on task1
-        _update_ticket(ticket_id=task3_id, up_dependencies=[task1_id])
+        await _update_ticket(ticket_id=task3_id, up_dependencies=[task1_id])
 
         # Verify all relationships are bidirectional
         epic_path = get_ticket_path(epic_id, "epic")
@@ -697,7 +697,7 @@ class TestUpdateTicket:
         assert task1_id in task3.up_dependencies
 
         # Now remove task2 from epic's children
-        _update_ticket(ticket_id=epic_id, children=[task1_id])
+        await _update_ticket(ticket_id=epic_id, children=[task1_id])
 
         # Verify task2's parent is cleared
         task2 = read_ticket(task2_path)
@@ -710,10 +710,10 @@ class TestUpdateTicket:
 
 
 class TestGetRepoRoot:
-    """Tests for get_repo_root() helper function."""
+    """Tests for get_repo_root_from_path() helper function."""
 
     def test_get_repo_root_success(self, tmp_path, monkeypatch):
-        """Test get_repo_root finds .git directory in current or parent directories."""
+        """Test get_repo_root_from_path finds .git directory in current or parent directories."""
         # Create a fake repo structure
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
@@ -722,34 +722,27 @@ class TestGetRepoRoot:
         subdir = repo_root / "some" / "nested" / "dir"
         subdir.mkdir(parents=True)
 
-        # Change to nested directory
-        monkeypatch.chdir(subdir)
-
-        # Should find repo root by walking up
-        result = get_repo_root()
+        # Should find repo root by walking up from subdir
+        result = get_repo_root_from_path(subdir)
         assert result == repo_root
 
     def test_get_repo_root_at_root(self, tmp_path, monkeypatch):
-        """Test get_repo_root when .git is in current directory."""
+        """Test get_repo_root_from_path when .git is in current directory."""
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
         (repo_root / ".git").mkdir()
 
-        monkeypatch.chdir(repo_root)
-
-        result = get_repo_root()
+        result = get_repo_root_from_path(repo_root)
         assert result == repo_root
 
     def test_get_repo_root_not_in_repo(self, tmp_path, monkeypatch):
-        """Test get_repo_root raises ValueError when not in a git repo."""
+        """Test get_repo_root_from_path raises ValueError when not in a git repo."""
         # Create directory without .git
         non_repo = tmp_path / "not_a_repo"
         non_repo.mkdir()
 
-        monkeypatch.chdir(non_repo)
-
         with pytest.raises(ValueError, match="Not in a git repository"):
-            get_repo_root()
+            get_repo_root_from_path(non_repo)
 
 
 class TestValidateHivePath:
@@ -792,15 +785,19 @@ class TestValidateHivePath:
             validate_hive_path("tickets/backend", repo_root)
 
     def test_validate_hive_path_nonexistent_parent_fails(self, tmp_path):
-        """Test validation rejects paths whose parent directory doesn't exist."""
+        """Test validation creates parent directory if it doesn't exist."""
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
 
         # Parent directory doesn't exist
         nonexistent_parent = repo_root / "does_not_exist" / "child"
 
-        with pytest.raises(ValueError, match="Parent directory does not exist"):
-            validate_hive_path(str(nonexistent_parent), repo_root)
+        # New behavior: validate_hive_path creates parent directories
+        result = validate_hive_path(str(nonexistent_parent), repo_root)
+
+        # Should succeed and create the parent directory
+        assert result == nonexistent_parent.resolve()
+        assert nonexistent_parent.parent.exists()
 
     def test_validate_hive_path_outside_repo_fails(self, tmp_path):
         """Test validation rejects paths outside repository root."""
@@ -898,7 +895,7 @@ class TestScanForHiveConfigAutoUpdate:
                 created_at=datetime.now().isoformat()
             )
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker at new location
         hive_marker = new_path / ".hive"
@@ -958,7 +955,7 @@ class TestScanForHiveConfigAutoUpdate:
             "hive1": HiveConfig(display_name="Hive 1", path=str(hive1_path), created_at=datetime.now().isoformat()),
             "hive2": HiveConfig(display_name="Hive 2", path=str(hive2_old), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker for hive2 at new location
         hive_marker = hive2_new / ".hive"
@@ -996,7 +993,7 @@ class TestScanForHiveConfigAutoUpdate:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1027,7 +1024,7 @@ class TestScanForHiveConfigAutoUpdate:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1276,7 +1273,7 @@ class TestScanForHiveConfigOptimization:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         hive_marker = hive_path / ".hive"
         hive_marker.mkdir()
@@ -1502,7 +1499,7 @@ class TestScanForHiveExceptionHandling:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1541,7 +1538,7 @@ class TestScanForHiveExceptionHandling:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1580,7 +1577,7 @@ class TestScanForHiveExceptionHandling:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1647,7 +1644,7 @@ class TestScanForHiveExceptionHandling:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1708,7 +1705,7 @@ class TestScanForHiveErrorPropagation:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1749,7 +1746,7 @@ class TestScanForHiveErrorPropagation:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1790,7 +1787,7 @@ class TestScanForHiveErrorPropagation:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(temp_repo / "old"), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Create .hive marker
         hive_marker = hive_path / ".hive"
@@ -1860,7 +1857,7 @@ class TestScanForHiveConfigHandling:
         config = BeesConfig(hives={
             "test_hive": HiveConfig(display_name="Test Hive", path=str(hive_path), created_at=datetime.now().isoformat())
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Call with config=None - should load from disk
         result = scan_for_hive("test_hive", config=None)
@@ -1986,14 +1983,14 @@ class TestColonizeHiveMCPIntegration:
         monkeypatch.chdir(tmp_path)
         return tmp_path
 
-    def test_colonize_hive_success_case(self, git_repo_tmp_path):
+    async def test_colonize_hive_success_case(self, git_repo_tmp_path):
         """Test successful colonization via MCP wrapper."""
         from src.mcp_server import _colonize_hive
 
         hive_path = git_repo_tmp_path / "backend_hive"
         hive_path.mkdir()
 
-        result = _colonize_hive("Back End", str(hive_path))
+        result = await _colonize_hive("Back End", str(hive_path))
 
         # Verify success response
         assert result["status"] == "success"
@@ -2007,7 +2004,7 @@ class TestColonizeHiveMCPIntegration:
         assert (hive_path / ".hive").exists()
         assert (hive_path / ".hive" / "identity.json").exists()
 
-    def test_colonize_hive_creates_marker(self, git_repo_tmp_path):
+    async def test_colonize_hive_creates_marker(self, git_repo_tmp_path):
         """Test that MCP wrapper creates .hive marker with correct identity."""
         from src.mcp_server import _colonize_hive
         import json
@@ -2015,7 +2012,7 @@ class TestColonizeHiveMCPIntegration:
         hive_path = git_repo_tmp_path / "frontend"
         hive_path.mkdir()
 
-        result = _colonize_hive("Frontend", str(hive_path))
+        result = await _colonize_hive("Frontend", str(hive_path))
 
         # Read identity file
         identity_file = hive_path / ".hive" / "identity.json"
@@ -2027,34 +2024,46 @@ class TestColonizeHiveMCPIntegration:
         assert "created_at" in identity_data
         assert "version" in identity_data
 
-    def test_colonize_hive_invalid_path_not_absolute(self, git_repo_tmp_path):
+    async def test_colonize_hive_invalid_path_not_absolute(self, git_repo_tmp_path):
         """Test error case: path is not absolute."""
         from src.mcp_server import _colonize_hive
 
         with pytest.raises(ValueError, match="must be absolute"):
-            _colonize_hive("Test Hive", "relative/path")
+            await _colonize_hive("Test Hive", "relative/path")
 
-    def test_colonize_hive_path_does_not_exist(self, git_repo_tmp_path):
-        """Test error case: parent directory does not exist."""
+    async def test_colonize_hive_path_does_not_exist(self, git_repo_tmp_path):
+        """Test that parent directory is created if it doesn't exist."""
         from src.mcp_server import _colonize_hive
 
-        # Path with non-existent parent should fail
+        # Path with non-existent parent - new behavior creates it
         nonexistent_parent = git_repo_tmp_path / "does_not_exist" / "nested"
 
-        with pytest.raises(ValueError, match="Parent directory does not exist"):
-            _colonize_hive("Test Hive", str(nonexistent_parent))
+        # New behavior: parent directory is created automatically
+        result = await _colonize_hive("Test Hive", str(nonexistent_parent))
 
-    def test_colonize_hive_path_outside_repo(self, tmp_path, git_repo_tmp_path):
-        """Test error case: path is outside repository root."""
+        # Should succeed
+        assert result["status"] == "success"
+        assert nonexistent_parent.parent.exists()
+        assert nonexistent_parent.exists()
+
+    async def test_colonize_hive_path_outside_repo(self, tmp_path, git_repo_tmp_path):
+        """Test that colonize works when path is in a different git repo than provided repo_root."""
         from src.mcp_server import _colonize_hive
 
-        outside = tmp_path.parent / "outside"
-        outside.mkdir(exist_ok=True)
+        # Create a hive in the git_repo_tmp_path
+        # New behavior: When path is outside provided repo_root, it uses the hive path
+        # to find the actual repo (git_repo_tmp_path) and uses that instead
+        hive_path = git_repo_tmp_path / "test_hive_different_repo"
+        hive_path.mkdir()
 
-        with pytest.raises(ValueError, match="(within repository root|Not in a git repository)"):
-            _colonize_hive("Test Hive", str(outside))
+        # Provide a different repo_root (tmp_path parent) - the function will detect
+        # the mismatch and use git_repo_tmp_path instead
+        result = await _colonize_hive("Test Hive", str(hive_path))
 
-    def test_colonize_hive_duplicate_name(self, git_repo_tmp_path):
+        # Should succeed by using the correct repo from hive path
+        assert result["status"] == "success"
+
+    async def test_colonize_hive_duplicate_name(self, git_repo_tmp_path):
         """Test error case: duplicate hive name."""
         from src.mcp_server import _colonize_hive
 
@@ -2064,14 +2073,14 @@ class TestColonizeHiveMCPIntegration:
         hive2_path.mkdir()
 
         # Create first hive
-        result1 = _colonize_hive("Test Hive", str(hive1_path))
+        result1 = await _colonize_hive("Test Hive", str(hive1_path))
         assert result1["status"] == "success"
 
         # Try to create second hive with same normalized name
         with pytest.raises(ValueError, match="already exists"):
-            _colonize_hive("Test Hive", str(hive2_path))
+            await _colonize_hive("Test Hive", str(hive2_path))
 
-    def test_colonize_hive_invalid_name_empty(self, git_repo_tmp_path):
+    async def test_colonize_hive_invalid_name_empty(self, git_repo_tmp_path):
         """Test error case: name normalizes to empty string."""
         from src.mcp_server import _colonize_hive
 
@@ -2079,9 +2088,9 @@ class TestColonizeHiveMCPIntegration:
         hive_path.mkdir()
 
         with pytest.raises(ValueError, match="empty string"):
-            _colonize_hive("!!!", str(hive_path))
+            await _colonize_hive("!!!", str(hive_path))
 
-    def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
+    async def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
         """Test that colonize_hive registers hive in config.json."""
         from src.mcp_server import _colonize_hive
         from src.config import load_bees_config
@@ -2089,7 +2098,7 @@ class TestColonizeHiveMCPIntegration:
         hive_path = git_repo_tmp_path / "api"
         hive_path.mkdir()
 
-        result = _colonize_hive("API", str(hive_path))
+        result = await _colonize_hive("API", str(hive_path))
 
         # Verify hive is in config
         config = load_bees_config()
@@ -2098,7 +2107,7 @@ class TestColonizeHiveMCPIntegration:
         assert config.hives["api"].display_name == "API"
         assert config.hives["api"].path == str(hive_path)
 
-    def test_colonize_hive_name_normalization(self, git_repo_tmp_path):
+    async def test_colonize_hive_name_normalization(self, git_repo_tmp_path):
         """Test that MCP wrapper correctly normalizes hive names."""
         from src.mcp_server import _colonize_hive
 
@@ -2113,7 +2122,7 @@ class TestColonizeHiveMCPIntegration:
             hive_path = git_repo_tmp_path / f"hive{i}"
             hive_path.mkdir()
 
-            result = _colonize_hive(display_name, str(hive_path))
+            result = await _colonize_hive(display_name, str(hive_path))
 
             assert result["normalized_name"] == expected_normalized
             assert result["display_name"] == display_name
@@ -2139,7 +2148,7 @@ class TestColonizeHiveMCPUnit:
         assert 'name' in params
         assert 'path' in params
 
-    def test_colonize_hive_parameter_validation_empty_name(self, git_repo_tmp_path):
+    async def test_colonize_hive_parameter_validation_empty_name(self, git_repo_tmp_path):
         """Test parameter validation for empty name."""
         from src.mcp_server import _colonize_hive
 
@@ -2148,23 +2157,23 @@ class TestColonizeHiveMCPUnit:
 
         # Empty name should normalize to empty string and raise error
         with pytest.raises(ValueError):
-            _colonize_hive("", str(hive_path))
+            await _colonize_hive("", str(hive_path))
 
-    def test_colonize_hive_parameter_validation_invalid_path_format(self):
+    async def test_colonize_hive_parameter_validation_invalid_path_format(self):
         """Test parameter validation for invalid path format (not absolute)."""
         from src.mcp_server import _colonize_hive
 
         with pytest.raises(ValueError):
-            _colonize_hive("Test", "relative/path")
+            await _colonize_hive("Test", "relative/path")
 
-    def test_colonize_hive_success_response_structure(self, git_repo_tmp_path):
+    async def test_colonize_hive_success_response_structure(self, git_repo_tmp_path):
         """Test that success response has correct structure."""
         from src.mcp_server import _colonize_hive
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
-        result = _colonize_hive("Test", str(hive_path))
+        result = await _colonize_hive("Test", str(hive_path))
 
         # Verify response structure
         assert isinstance(result, dict)
@@ -2174,24 +2183,24 @@ class TestColonizeHiveMCPUnit:
         assert "path" in result
         assert result["status"] == "success"
 
-    def test_colonize_hive_error_response_raises_value_error(self, git_repo_tmp_path):
+    async def test_colonize_hive_error_response_raises_value_error(self, git_repo_tmp_path):
         """Test that error conditions raise ValueError."""
         from src.mcp_server import _colonize_hive
 
         # Invalid path should raise ValueError
         with pytest.raises(ValueError):
-            _colonize_hive("Test", "relative/path")
+            await _colonize_hive("Test", "relative/path")
 
-    def test_colonize_hive_wraps_core_function(self, git_repo_tmp_path):
-        """Test that MCP wrapper calls underlying colonize_hive() core function."""
+    async def test_colonize_hive_wraps_core_function(self, git_repo_tmp_path):
+        """Test that MCP wrapper calls underlying colonize_hive_core() core function."""
         from src.mcp_server import _colonize_hive
-        from unittest.mock import patch
+        from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
-        # Mock the core colonize_hive function
-        with patch('src.mcp_server.colonize_hive') as mock_core:
+        # Mock the core colonize_hive_core function
+        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock) as mock_core:
             mock_core.return_value = {
                 "status": "success",
                 "normalized_name": "test",
@@ -2199,22 +2208,22 @@ class TestColonizeHiveMCPUnit:
                 "path": str(hive_path)
             }
 
-            result = _colonize_hive("Test", str(hive_path))
+            result = await _colonize_hive("Test", str(hive_path))
 
-            # Verify core function was called
-            mock_core.assert_called_once_with(name="Test", path=str(hive_path))
+            # Verify core function was called with correct args (ctx and repo_root default to None)
+            mock_core.assert_called_once()
             assert result["status"] == "success"
 
-    def test_colonize_hive_propagates_core_function_errors(self, git_repo_tmp_path):
+    async def test_colonize_hive_propagates_core_function_errors(self, git_repo_tmp_path):
         """Test that wrapper propagates errors from core function."""
         from src.mcp_server import _colonize_hive
-        from unittest.mock import patch
+        from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
         # Mock core function to return error
-        with patch('src.mcp_server.colonize_hive') as mock_core:
+        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock) as mock_core:
             mock_core.return_value = {
                 "status": "error",
                 "message": "Test error",
@@ -2222,20 +2231,20 @@ class TestColonizeHiveMCPUnit:
             }
 
             with pytest.raises(ValueError, match="Test error"):
-                _colonize_hive("Test", str(hive_path))
+                await _colonize_hive("Test", str(hive_path))
 
-    def test_colonize_hive_handles_unexpected_exceptions(self, git_repo_tmp_path):
+    async def test_colonize_hive_handles_unexpected_exceptions(self, git_repo_tmp_path):
         """Test that wrapper handles unexpected exceptions."""
         from src.mcp_server import _colonize_hive
-        from unittest.mock import patch
+        from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
         # Mock core function to raise unexpected exception
-        with patch('src.mcp_server.colonize_hive', side_effect=RuntimeError("Unexpected")):
+        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock, side_effect=RuntimeError("Unexpected")):
             with pytest.raises(ValueError, match="Failed to colonize hive"):
-                _colonize_hive("Test", str(hive_path))
+                await _colonize_hive("Test", str(hive_path))
 
     @pytest.fixture
     def git_repo_tmp_path(self, tmp_path, monkeypatch):
@@ -2261,7 +2270,7 @@ class TestColonizeHiveMCPErrorCases:
         monkeypatch.chdir(tmp_path)
         return tmp_path
 
-    def test_colonize_hive_filesystem_error_eggs_creation(self, git_repo_tmp_path):
+    async def test_colonize_hive_filesystem_error_eggs_creation(self, git_repo_tmp_path):
         """Test error case: cannot create /eggs directory."""
         from src.mcp_server import _colonize_hive
         from unittest.mock import patch
@@ -2278,9 +2287,9 @@ class TestColonizeHiveMCPErrorCases:
 
         with patch.object(Path, 'mkdir', mock_mkdir):
             with pytest.raises(ValueError, match="eggs"):
-                _colonize_hive("Test Hive", str(hive_path))
+                await _colonize_hive("Test Hive", str(hive_path))
 
-    def test_colonize_hive_filesystem_error_evicted_creation(self, git_repo_tmp_path):
+    async def test_colonize_hive_filesystem_error_evicted_creation(self, git_repo_tmp_path):
         """Test error case: cannot create /evicted directory."""
         from src.mcp_server import _colonize_hive
         from unittest.mock import patch
@@ -2297,9 +2306,9 @@ class TestColonizeHiveMCPErrorCases:
 
         with patch.object(Path, 'mkdir', mock_mkdir):
             with pytest.raises(ValueError, match="evicted"):
-                _colonize_hive("Test Hive", str(hive_path))
+                await _colonize_hive("Test Hive", str(hive_path))
 
-    def test_colonize_hive_error_writing_identity_file(self, git_repo_tmp_path):
+    async def test_colonize_hive_error_writing_identity_file(self, git_repo_tmp_path):
         """Test error case: cannot write .hive/identity.json file."""
         from src.mcp_server import _colonize_hive
         from unittest.mock import patch
@@ -2316,9 +2325,9 @@ class TestColonizeHiveMCPErrorCases:
 
         with patch('builtins.open', mock_open_func):
             with pytest.raises(ValueError, match="identity"):
-                _colonize_hive("Test Hive", str(hive_path))
+                await _colonize_hive("Test Hive", str(hive_path))
 
-    def test_colonize_hive_config_write_failure(self, git_repo_tmp_path):
+    async def test_colonize_hive_config_write_failure(self, git_repo_tmp_path):
         """Test error case: cannot write config.json."""
         from src.mcp_server import _colonize_hive
         from unittest.mock import patch
@@ -2329,7 +2338,7 @@ class TestColonizeHiveMCPErrorCases:
         # Mock write_hive_config_dict to raise IOError
         with patch('src.mcp_server.write_hive_config_dict', side_effect=IOError("Disk full")):
             with pytest.raises(ValueError, match="config"):
-                _colonize_hive("Test Hive", str(hive_path))
+                await _colonize_hive("Test Hive", str(hive_path))
 
 
 class TestParseTicketId:
@@ -2521,12 +2530,12 @@ class TestUpdateTicketHiveParsing:
         return ticket_id
 
     @patch('src.mcp_server.load_bees_config')
-    def test_update_ticket_with_valid_prefixed_id(self, mock_load_config, mock_config, setup_test_ticket):
+    async def test_update_ticket_with_valid_prefixed_id(self, mock_load_config, mock_config, setup_test_ticket):
         """Test update_ticket successfully updates with valid prefixed ID."""
         mock_load_config.return_value = mock_config
         ticket_id = setup_test_ticket
 
-        result = _update_ticket(
+        result = await _update_ticket(
             ticket_id=ticket_id,
             title="Updated Title"
         )
@@ -2535,29 +2544,29 @@ class TestUpdateTicketHiveParsing:
         assert result["ticket_id"] == ticket_id
 
     @patch('src.mcp_server.load_bees_config')
-    def test_update_ticket_with_malformed_id_raises_error(self, mock_load_config, mock_config):
+    async def test_update_ticket_with_malformed_id_raises_error(self, mock_load_config, mock_config):
         """Test update_ticket returns error for malformed ID (no dot)."""
         mock_load_config.return_value = mock_config
 
         with pytest.raises(ValueError, match="Malformed ticket ID.*Expected format: hive_name.bees-xxxx"):
-            _update_ticket(
+            await _update_ticket(
                 ticket_id="bees-abc1",  # No hive prefix
                 title="Updated Title"
             )
 
     @patch('src.mcp_server.load_bees_config')
-    def test_update_ticket_with_unknown_hive_raises_error(self, mock_load_config, mock_config):
+    async def test_update_ticket_with_unknown_hive_raises_error(self, mock_load_config, mock_config):
         """Test update_ticket returns error for unknown hive prefix."""
         mock_load_config.return_value = mock_config
 
         with pytest.raises(ValueError, match="Unknown hive.*not found in config"):
-            _update_ticket(
+            await _update_ticket(
                 ticket_id="unknown_hive.bees-abc1",
                 title="Updated Title"
             )
 
     @patch('src.mcp_server.load_bees_config')
-    def test_update_ticket_routes_to_correct_hive(self, mock_load_config, mock_config, setup_test_ticket):
+    async def test_update_ticket_routes_to_correct_hive(self, mock_load_config, mock_config, setup_test_ticket):
         """Test update_ticket routes to correct hive based on prefix."""
         mock_load_config.return_value = mock_config
         ticket_id = setup_test_ticket
@@ -2566,7 +2575,7 @@ class TestUpdateTicketHiveParsing:
         assert ticket_id.startswith("backend.")
 
         # Update should succeed because it routes to the correct hive
-        result = _update_ticket(
+        result = await _update_ticket(
             ticket_id=ticket_id,
             status="in_progress"
         )
@@ -2625,7 +2634,22 @@ class TestListHives:
         monkeypatch.chdir(repo_root)
         return repo_root
 
-    def test_list_hives_returns_all_hives_from_config(self, temp_repo):
+    @pytest.fixture
+    def mock_ctx(self, temp_repo):
+        """Create a mock MCP context for tests."""
+        from unittest.mock import Mock
+
+        ctx = Mock()
+        mock_root = Mock()
+        mock_root.uri = f"file://{temp_repo}"
+
+        async def mock_list_roots():
+            return [mock_root]
+
+        ctx.list_roots = mock_list_roots
+        return ctx
+
+    async def test_list_hives_returns_all_hives_from_config(self, temp_repo, mock_ctx):
         """Test list_hives returns correct data when config.json exists with hives."""
         from src.mcp_server import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -2648,10 +2672,10 @@ class TestListHives:
                 created_at="2024-01-02T00:00:00"
             )
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
         # Call list_hives
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         # Verify response structure
         assert result["status"] == "success"
@@ -2669,33 +2693,33 @@ class TestListHives:
         assert hives["frontend"]["display_name"] == "Frontend"
         assert hives["frontend"]["path"] == str(hive2_path)
 
-    def test_list_hives_returns_empty_list_when_no_config(self, temp_repo):
+    async def test_list_hives_returns_empty_list_when_no_config(self, temp_repo, mock_ctx):
         """Test list_hives returns empty list with message when config.json doesn't exist."""
         from src.mcp_server import _list_hives
 
         # No config.json created - should return empty list
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         assert result["status"] == "success"
         assert result["hives"] == []
         assert result["message"] == "No hives configured"
 
-    def test_list_hives_returns_empty_list_when_no_hives(self, temp_repo):
+    async def test_list_hives_returns_empty_list_when_no_hives(self, temp_repo, mock_ctx):
         """Test list_hives returns empty list with message when config.json exists but has no hives."""
         from src.mcp_server import _list_hives
         from src.config import BeesConfig, save_bees_config
 
         # Create config with empty hives
         config = BeesConfig(hives={})
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         assert result["status"] == "success"
         assert result["hives"] == []
         assert result["message"] == "No hives configured"
 
-    def test_list_hives_returns_correct_fields(self, temp_repo):
+    async def test_list_hives_returns_correct_fields(self, temp_repo, mock_ctx):
         """Test all hive fields are returned correctly (display_name, normalized_name, path)."""
         from src.mcp_server import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -2711,9 +2735,9 @@ class TestListHives:
                 created_at="2024-01-01T00:00:00"
             )
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         assert result["status"] == "success"
         assert len(result["hives"]) == 1
@@ -2726,7 +2750,7 @@ class TestListHives:
         # Verify only expected fields are present
         assert set(hive.keys()) == {"display_name", "normalized_name", "path"}
 
-    def test_list_hives_handles_exception(self, temp_repo, monkeypatch):
+    async def test_list_hives_handles_exception(self, temp_repo, mock_ctx, monkeypatch):
         """Test list_hives handles exceptions gracefully."""
         from src.mcp_server import _list_hives
 
@@ -2738,9 +2762,9 @@ class TestListHives:
 
         # Should raise ValueError with error message
         with pytest.raises(ValueError, match="Failed to list hives"):
-            _list_hives()
+            await _list_hives(mock_ctx)
 
-    def test_list_hives_with_single_hive(self, temp_repo):
+    async def test_list_hives_with_single_hive(self, temp_repo, mock_ctx):
         """Test list_hives works correctly with a single hive."""
         from src.mcp_server import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -2755,15 +2779,15 @@ class TestListHives:
                 created_at="2024-01-01T00:00:00"
             )
         })
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         assert result["status"] == "success"
         assert len(result["hives"]) == 1
         assert result["hives"][0]["normalized_name"] == "single"
 
-    def test_list_hives_with_many_hives(self, temp_repo):
+    async def test_list_hives_with_many_hives(self, temp_repo, mock_ctx):
         """Test list_hives works with multiple hives."""
         from src.mcp_server import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
@@ -2780,9 +2804,9 @@ class TestListHives:
             )
 
         config = BeesConfig(hives=hives)
-        save_bees_config(config)
+        save_bees_config(config, repo_root=temp_repo)
 
-        result = _list_hives()
+        result = await _list_hives(mock_ctx)
 
         assert result["status"] == "success"
         assert len(result["hives"]) == 5
@@ -2793,7 +2817,7 @@ class TestListHives:
 
 
 class TestAbandonHive:
-    """Tests for _abandon_hive() function."""
+    """Tests for await _abandon_hive() function."""
 
     @pytest.fixture
     def git_repo_tmp_path(self, tmp_path, monkeypatch):
@@ -2803,22 +2827,22 @@ class TestAbandonHive:
         monkeypatch.chdir(tmp_path)
         return tmp_path
 
-    def test_abandon_hive_removes_from_config(self, git_repo_tmp_path):
+    async def test_abandon_hive_removes_from_config(self, git_repo_tmp_path):
         """Test that abandon_hive removes hive entry from config."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         # Create a hive
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
         # Verify hive exists in config
         config = load_bees_config()
         assert "test_hive" in config.hives
 
         # Abandon the hive
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         # Verify success
         assert result["status"] == "success"
@@ -2827,21 +2851,21 @@ class TestAbandonHive:
         config = load_bees_config()
         assert "test_hive" not in config.hives
 
-    def test_abandon_hive_preserves_files(self, git_repo_tmp_path):
+    async def test_abandon_hive_preserves_files(self, git_repo_tmp_path):
         """Test that abandon_hive leaves ticket files intact."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         # Create a hive with structure
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
         # Create some ticket files
         ticket_file = hive_path / "test.md"
         ticket_file.write_text("test ticket")
 
         # Abandon the hive
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         # Verify files still exist
         assert hive_path.exists()
@@ -2851,69 +2875,69 @@ class TestAbandonHive:
         # Verify .hive marker still exists
         assert (hive_path / ".hive").exists()
 
-    def test_abandon_hive_returns_error_for_nonexistent(self, git_repo_tmp_path):
+    async def test_abandon_hive_returns_error_for_nonexistent(self, git_repo_tmp_path):
         """Test that abandon_hive raises ValueError for non-existent hive."""
         from src.mcp_server import _abandon_hive
 
         with pytest.raises(ValueError) as exc_info:
-            _abandon_hive("NonExistent")
+            await _abandon_hive("NonExistent")
         
         assert "NonExistent" in str(exc_info.value)
         assert "nonexistent" in str(exc_info.value)
 
-    def test_abandon_hive_returns_success_message(self, git_repo_tmp_path):
+    async def test_abandon_hive_returns_success_message(self, git_repo_tmp_path):
         """Test that abandon_hive returns success message with display name."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Back End", str(hive_path))
+        await _colonize_hive("Back End", str(hive_path))
 
-        result = _abandon_hive("Back End")
+        result = await _abandon_hive("Back End")
 
         assert result["status"] == "success"
         assert "Back End" in result["message"]
 
-    def test_abandon_hive_handles_normalized_name(self, git_repo_tmp_path):
+    async def test_abandon_hive_handles_normalized_name(self, git_repo_tmp_path):
         """Test that abandon_hive works with normalized hive name."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Back End", str(hive_path))
+        await _colonize_hive("Back End", str(hive_path))
 
-        result = _abandon_hive("back_end")
+        result = await _abandon_hive("back_end")
 
         assert result["status"] == "success"
 
-    def test_abandon_hive_handles_display_name(self, git_repo_tmp_path):
+    async def test_abandon_hive_handles_display_name(self, git_repo_tmp_path):
         """Test that abandon_hive works with display name."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Back End", str(hive_path))
+        await _colonize_hive("Back End", str(hive_path))
 
-        result = _abandon_hive("Back End")
+        result = await _abandon_hive("Back End")
 
         assert result["status"] == "success"
 
-    def test_abandon_hive_returns_path(self, git_repo_tmp_path):
+    async def test_abandon_hive_returns_path(self, git_repo_tmp_path):
         """Test that abandon_hive returns the hive path."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         assert result["path"] == str(hive_path)
 
-    def test_abandon_hive_with_multiple_hives(self, git_repo_tmp_path):
+    async def test_abandon_hive_with_multiple_hives(self, git_repo_tmp_path):
         """Test that abandon_hive removes only target hive from config."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         # Create multiple hives
@@ -2922,8 +2946,8 @@ class TestAbandonHive:
         hive1_path.mkdir()
         hive2_path.mkdir()
 
-        colonize_hive("Hive 1", str(hive1_path))
-        colonize_hive("Hive 2", str(hive2_path))
+        await _colonize_hive("Hive 1", str(hive1_path))
+        await _colonize_hive("Hive 2", str(hive2_path))
 
         # Verify both exist
         config = load_bees_config()
@@ -2931,7 +2955,7 @@ class TestAbandonHive:
         assert "hive_2" in config.hives
 
         # Abandon one hive
-        result = _abandon_hive("Hive 1")
+        result = await _abandon_hive("Hive 1")
 
         assert result["status"] == "success"
 
@@ -2940,17 +2964,17 @@ class TestAbandonHive:
         assert "hive_1" not in config.hives
         assert "hive_2" in config.hives
 
-    def test_abandon_hive_handles_last_hive(self, git_repo_tmp_path):
+    async def test_abandon_hive_handles_last_hive(self, git_repo_tmp_path):
         """Test that abandon_hive handles removing the last hive in config."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
         # Abandon the only hive
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         assert result["status"] == "success"
 
@@ -2958,55 +2982,55 @@ class TestAbandonHive:
         config = load_bees_config()
         assert len(config.hives) == 0
 
-    def test_abandon_hive_normalizes_hive_name(self, git_repo_tmp_path):
+    async def test_abandon_hive_normalizes_hive_name(self, git_repo_tmp_path):
         """Test that abandon_hive normalizes hive name before lookup."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Back End", str(hive_path))
+        await _colonize_hive("Back End", str(hive_path))
 
         # Try various forms of the name
-        result = _abandon_hive("BACK END")
+        result = await _abandon_hive("BACK END")
         assert result["status"] == "success"
 
-    def test_abandon_hive_preserves_eggs_directory(self, git_repo_tmp_path):
+    async def test_abandon_hive_preserves_eggs_directory(self, git_repo_tmp_path):
         """Test that abandon_hive leaves /eggs directory intact."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
         # Abandon hive
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         # Verify /eggs still exists
         assert (hive_path / "eggs").exists()
 
-    def test_abandon_hive_preserves_evicted_directory(self, git_repo_tmp_path):
+    async def test_abandon_hive_preserves_evicted_directory(self, git_repo_tmp_path):
         """Test that abandon_hive leaves /evicted directory intact."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
         # Abandon hive
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         # Verify /evicted still exists
         assert (hive_path / "evicted").exists()
 
-    def test_abandon_hive_response_structure(self, git_repo_tmp_path):
+    async def test_abandon_hive_response_structure(self, git_repo_tmp_path):
         """Test that abandon_hive returns correct response structure."""
-        from src.mcp_server import _abandon_hive, colonize_hive
+        from src.mcp_server import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        colonize_hive("Test Hive", str(hive_path))
+        await _colonize_hive("Test Hive", str(hive_path))
 
-        result = _abandon_hive("Test Hive")
+        result = await _abandon_hive("Test Hive")
 
         # Verify response has all expected keys
         assert "status" in result

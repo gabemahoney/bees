@@ -40,7 +40,7 @@ def temp_hive_setup(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config)
+    save_bees_config(config, repo_root=tmp_path)
     
     # Create sample tickets in backend hive
     ticket1_path = backend_dir / "backend.bees-abc1.md"
@@ -98,11 +98,11 @@ Frontend ticket body
 class TestRenameHiveSuccess:
     """Tests for successful rename_hive() operations."""
     
-    def test_basic_rename(self, temp_hive_setup):
+    async def test_basic_rename(self, temp_hive_setup):
         """Should successfully rename hive with basic operation."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         assert result["status"] == "success"
         assert result["old_name"] == "backend"
@@ -121,11 +121,11 @@ class TestRenameHiveSuccess:
         assert not (backend_dir / "backend.bees-xyz2.md").exists()
         assert (backend_dir / "api_layer.bees-xyz2.md").exists()
     
-    def test_rename_updates_ticket_ids_in_frontmatter(self, temp_hive_setup):
+    async def test_rename_updates_ticket_ids_in_frontmatter(self, temp_hive_setup):
         """Should update 'id' field in ticket frontmatter."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Read renamed ticket and verify ID updated
         ticket_path = backend_dir / "api_layer.bees-abc1.md"
@@ -134,11 +134,11 @@ class TestRenameHiveSuccess:
         assert "id: api_layer.bees-abc1" in content
         assert "id: backend.bees-abc1" not in content
     
-    def test_rename_updates_cross_hive_references(self, temp_hive_setup):
+    async def test_rename_updates_cross_hive_references(self, temp_hive_setup):
         """Should update references to renamed tickets in other hives."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Read frontend ticket and verify references updated
         frontend_ticket_path = frontend_dir / "frontend.bees-def3.md"
@@ -149,11 +149,11 @@ class TestRenameHiveSuccess:
         assert "backend.bees-abc1" not in content
         assert "backend.bees-xyz2" not in content
     
-    def test_rename_updates_parent_references(self, temp_hive_setup):
+    async def test_rename_updates_parent_references(self, temp_hive_setup):
         """Should update parent field in child tickets."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Read child ticket and verify parent updated
         ticket_path = backend_dir / "api_layer.bees-xyz2.md"
@@ -162,11 +162,11 @@ class TestRenameHiveSuccess:
         assert "parent: api_layer.bees-abc1" in content
         assert "parent: backend.bees-abc1" not in content
     
-    def test_rename_updates_hive_marker(self, temp_hive_setup):
+    async def test_rename_updates_hive_marker(self, temp_hive_setup):
         """Should update .hive/identity.json with new name."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Read identity file
         identity_path = backend_dir / ".hive" / "identity.json"
@@ -176,7 +176,7 @@ class TestRenameHiveSuccess:
         assert identity["normalized_name"] == "api_layer"
         assert identity["display_name"] == "api_layer"
     
-    def test_rename_empty_hive(self, temp_hive_setup):
+    async def test_rename_empty_hive(self, temp_hive_setup):
         """Should successfully rename hive with no tickets."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -184,7 +184,7 @@ class TestRenameHiveSuccess:
         for ticket_file in frontend_dir.glob("*.md"):
             ticket_file.unlink()
         
-        result = _rename_hive("frontend", "ui_layer")
+        result = await _rename_hive("frontend", "ui_layer")
         
         assert result["status"] == "success"
         assert result["old_name"] == "frontend"
@@ -195,7 +195,7 @@ class TestRenameHiveSuccess:
         assert "frontend" not in config.hives
         assert "ui_layer" in config.hives
     
-    def test_rename_with_complex_dependencies(self, temp_hive_setup):
+    async def test_rename_with_complex_dependencies(self, temp_hive_setup):
         """Should handle complex dependency graphs correctly."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -220,7 +220,7 @@ created_at: '2024-01-01T00:00:00'
 Complex dependencies
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify all dependency fields updated
         content = (backend_dir / "api_layer.bees-test3.md").read_text()
@@ -233,48 +233,48 @@ Complex dependencies
 class TestRenameHiveErrors:
     """Tests for error cases in rename_hive()."""
     
-    def test_missing_hive_error(self, temp_hive_setup):
+    async def test_missing_hive_error(self, temp_hive_setup):
         """Should return error when old hive doesn't exist."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("nonexistent", "new_name")
+        result = await _rename_hive("nonexistent", "new_name")
         
         assert result["status"] == "error"
         assert result["error_type"] == "hive_not_found"
         assert "nonexistent" in result["message"]
     
-    def test_name_conflict_error(self, temp_hive_setup):
+    async def test_name_conflict_error(self, temp_hive_setup):
         """Should return error when new name conflicts with existing hive."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("backend", "frontend")
+        result = await _rename_hive("backend", "frontend")
         
         assert result["status"] == "error"
         assert result["error_type"] == "name_conflict"
         assert "already exists" in result["message"]
     
-    def test_invalid_old_name_empty_after_normalization(self, temp_hive_setup):
+    async def test_invalid_old_name_empty_after_normalization(self, temp_hive_setup):
         """Should return error when old name normalizes to empty string."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("---", "new_name")
+        result = await _rename_hive("---", "new_name")
         
         assert result["status"] == "error"
         # When normalized name is empty, hive lookup fails with hive_not_found
         assert result["error_type"] == "hive_not_found"
         assert "does not exist" in result["message"]
     
-    def test_invalid_new_name_empty_after_normalization(self, temp_hive_setup):
+    async def test_invalid_new_name_empty_after_normalization(self, temp_hive_setup):
         """Should return error when new name normalizes to empty string."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("backend", "!!!")
+        result = await _rename_hive("backend", "!!!")
         
         assert result["status"] == "error"
         assert result["error_type"] == "validation_error"
         assert "normalizes to empty string" in result["message"]
     
-    def test_file_conflict_error(self, temp_hive_setup):
+    async def test_file_conflict_error(self, temp_hive_setup):
         """Should return error when renamed file would conflict with existing file."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -282,7 +282,7 @@ class TestRenameHiveErrors:
         conflict_file = backend_dir / "api_layer.bees-abc1.md"
         conflict_file.write_text("---\nid: api_layer.bees-abc1\n---\nConflict")
         
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         assert result["status"] == "error"
         assert result["error_type"] == "file_conflict"
@@ -292,11 +292,11 @@ class TestRenameHiveErrors:
 class TestRenameHiveEdgeCases:
     """Tests for edge cases in rename_hive()."""
     
-    def test_rename_with_special_characters(self, temp_hive_setup):
+    async def test_rename_with_special_characters(self, temp_hive_setup):
         """Should normalize special characters in hive names."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        result = _rename_hive("backend", "API-Layer")
+        result = await _rename_hive("backend", "API-Layer")
         
         assert result["status"] == "success"
         
@@ -305,16 +305,16 @@ class TestRenameHiveEdgeCases:
         assert "api_layer" in config.hives
         assert config.hives["api_layer"].display_name == "API-Layer"
     
-    def test_rename_preserves_display_name_case(self, temp_hive_setup):
+    async def test_rename_preserves_display_name_case(self, temp_hive_setup):
         """Should preserve case in display_name while normalizing key."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
-        _rename_hive("backend", "API Layer")
+        await _rename_hive("backend", "API Layer")
         
         config = load_bees_config()
         assert config.hives["api_layer"].display_name == "API Layer"
     
-    def test_rename_handles_missing_marker_file(self, temp_hive_setup):
+    async def test_rename_handles_missing_marker_file(self, temp_hive_setup):
         """Should handle missing .hive/identity.json gracefully."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -322,25 +322,25 @@ class TestRenameHiveEdgeCases:
         identity_path = backend_dir / ".hive" / "identity.json"
         identity_path.unlink()
         
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         # Should still succeed and create new marker
         assert result["status"] == "success"
         assert identity_path.exists()
     
-    def test_rename_with_no_cross_references(self, temp_hive_setup):
+    async def test_rename_with_no_cross_references(self, temp_hive_setup):
         """Should handle rename when no cross-references exist."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
         # Remove frontend ticket (which has cross-references)
         (frontend_dir / "frontend.bees-def3.md").unlink()
         
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         assert result["status"] == "success"
         assert result["tickets_updated"] >= 0
     
-    def test_rename_with_malformed_frontmatter(self, temp_hive_setup):
+    async def test_rename_with_malformed_frontmatter(self, temp_hive_setup):
         """Should handle tickets with malformed frontmatter gracefully."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -348,33 +348,33 @@ class TestRenameHiveEdgeCases:
         bad_ticket = backend_dir / "backend.bees-bad.md"
         bad_ticket.write_text("No frontmatter here\nJust plain text")
         
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         # Should still succeed, skipping malformed ticket
         assert result["status"] == "success"
     
-    def test_rename_linter_integration_deferred(self, temp_hive_setup):
+    async def test_rename_linter_integration_deferred(self, temp_hive_setup):
         """Linter integration is deferred to future work (per implementation comments)."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
         # Rename should succeed even though linter is stubbed
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         assert result["status"] == "success"
         # Note: Full linter integration deferred per src/mcp_server.py:2407-2415
     
-    def test_rename_normalizes_both_names(self, temp_hive_setup):
+    async def test_rename_normalizes_both_names(self, temp_hive_setup):
         """Should normalize both old and new names for lookup."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
         # Use non-normalized old name
-        result = _rename_hive("Back End", "api_layer")
+        result = await _rename_hive("Back End", "api_layer")
         
         # Should fail because "Back End" normalizes to "back_end", not "backend"
         assert result["status"] == "error"
         assert result["error_type"] == "hive_not_found"
     
-    def test_rename_handles_children_field(self, temp_hive_setup):
+    async def test_rename_handles_children_field(self, temp_hive_setup):
         """Should update children field in parent tickets."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -392,7 +392,7 @@ created_at: '2024-01-01T00:00:00'
 Test ticket 1 body
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify children updated
         content = (backend_dir / "api_layer.bees-abc1.md").read_text()
@@ -403,7 +403,7 @@ Test ticket 1 body
 class TestRenameHiveChildrenFieldBugFix:
     """Tests for children field update bug fix (bees-crw6l)."""
     
-    def test_children_update_when_parent_unchanged(self, temp_hive_setup):
+    async def test_children_update_when_parent_unchanged(self, temp_hive_setup):
         """Should update children field even when parent field doesn't change."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -422,7 +422,7 @@ created_at: '2024-01-01T00:00:00'
 Parent ticket with children only
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify children list was updated despite no parent field change
         content = (backend_dir / "api_layer.bees-parent.md").read_text()
@@ -431,7 +431,7 @@ Parent ticket with children only
         assert "- backend.bees-abc1" not in content
         assert "- backend.bees-xyz2" not in content
     
-    def test_parent_update_when_children_unchanged(self, temp_hive_setup):
+    async def test_parent_update_when_children_unchanged(self, temp_hive_setup):
         """Should update parent field even when children list doesn't change."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -450,7 +450,7 @@ created_at: '2024-01-01T00:00:00'
 Child with cross-hive children
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify parent was updated despite children list having no mapped IDs
         content = (backend_dir / "api_layer.bees-child.md").read_text()
@@ -459,7 +459,7 @@ Child with cross-hive children
         # Children should remain unchanged
         assert "- frontend.bees-def3" in content
     
-    def test_both_parent_and_children_update(self, temp_hive_setup):
+    async def test_both_parent_and_children_update(self, temp_hive_setup):
         """Should update both parent and children when both need changes."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -478,7 +478,7 @@ created_at: '2024-01-01T00:00:00'
 Middle ticket
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify both fields updated
         content = (backend_dir / "api_layer.bees-middle.md").read_text()
@@ -487,7 +487,7 @@ Middle ticket
         assert "backend.bees-abc1" not in content
         assert "backend.bees-xyz2" not in content
     
-    def test_neither_parent_nor_children_update(self, temp_hive_setup):
+    async def test_neither_parent_nor_children_update(self, temp_hive_setup):
         """Should handle case where neither parent nor children need updates."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -506,7 +506,7 @@ created_at: '2024-01-01T00:00:00'
 Cross-hive references
 """)
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Verify neither field changed (but ticket ID did)
         content = (backend_dir / "api_layer.bees-cross.md").read_text()
@@ -518,12 +518,12 @@ Cross-hive references
 class TestRenameHiveIntegration:
     """Integration tests verifying end-to-end rename operations."""
     
-    def test_full_rename_workflow(self, temp_hive_setup):
+    async def test_full_rename_workflow(self, temp_hive_setup):
         """Should complete full rename workflow successfully."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
         # Perform rename
-        result = _rename_hive("backend", "api_layer")
+        result = await _rename_hive("backend", "api_layer")
         
         assert result["status"] == "success"
         
@@ -554,7 +554,7 @@ class TestRenameHiveIntegration:
             identity = json.load(f)
         assert identity["normalized_name"] == "api_layer"
     
-    def test_rename_does_not_affect_other_hives(self, temp_hive_setup):
+    async def test_rename_does_not_affect_other_hives(self, temp_hive_setup):
         """Should not modify tickets in other hives except references."""
         tmp_path, backend_dir, frontend_dir, api_layer_dir = temp_hive_setup
         
@@ -562,7 +562,7 @@ class TestRenameHiveIntegration:
         frontend_ticket_path = frontend_dir / "frontend.bees-def3.md"
         original_content = frontend_ticket_path.read_text()
         
-        _rename_hive("backend", "api_layer")
+        await _rename_hive("backend", "api_layer")
         
         # Frontend ticket ID should remain unchanged
         assert frontend_ticket_path.exists()

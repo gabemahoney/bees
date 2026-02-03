@@ -15,7 +15,7 @@ from src.config import load_bees_config
 class TestShowTicket:
     """Tests for the show_ticket MCP command."""
 
-    def test_show_ticket_epic(self, tmp_path):
+    async def test_show_ticket_epic(self, tmp_path):
         """Test showing an epic ticket."""
         # Create a test epic
         ticket_id = create_epic(
@@ -29,7 +29,7 @@ class TestShowTicket:
         )
 
         # Show the ticket
-        result = _show_ticket(ticket_id)
+        result = await _show_ticket(ticket_id)
 
         # Verify result structure
         assert result["status"] == "success"
@@ -47,7 +47,7 @@ class TestShowTicket:
         assert result["updated_at"] is not None
         assert result["bees_version"] is not None  # Version varies by config
 
-    def test_show_ticket_task(self, tmp_path):
+    async def test_show_ticket_task(self, tmp_path):
         """Test showing a task ticket."""
         # Create an epic first (as parent)
         epic_id = create_epic(
@@ -66,7 +66,7 @@ class TestShowTicket:
         )
 
         # Show the task
-        result = _show_ticket(task_id)
+        result = await _show_ticket(task_id)
 
         # Verify result
         assert result["status"] == "success"
@@ -77,27 +77,27 @@ class TestShowTicket:
         assert result["parent"] == epic_id
         assert result["ticket_status"] == "in_progress"
 
-    def test_show_ticket_nonexistent(self, tmp_path):
+    async def test_show_ticket_nonexistent(self, tmp_path):
         """Test showing a ticket that doesn't exist."""
         with pytest.raises(ValueError, match="Ticket does not exist"):
-            _show_ticket("backend.bees-9999")
+            await _show_ticket("backend.bees-9999")
 
-    def test_show_ticket_empty_id(self, tmp_path):
+    async def test_show_ticket_empty_id(self, tmp_path):
         """Test showing a ticket with empty ID."""
         with pytest.raises(ValueError, match="ticket_id cannot be empty"):
-            _show_ticket("")
+            await _show_ticket("")
 
-    def test_show_ticket_malformed_id(self, tmp_path):
+    async def test_show_ticket_malformed_id(self, tmp_path):
         """Test showing a ticket with malformed ID (no hive prefix)."""
         with pytest.raises(ValueError, match="Malformed ticket ID"):
-            _show_ticket("bees-abc1")
+            await _show_ticket("bees-abc1")
 
-    def test_show_ticket_invalid_hive(self, tmp_path):
+    async def test_show_ticket_invalid_hive(self, tmp_path):
         """Test showing a ticket from non-existent hive."""
         with pytest.raises(ValueError, match="not found in configuration"):
-            _show_ticket("nonexistent.bees-abc1")
+            await _show_ticket("nonexistent.bees-abc1")
 
-    def test_show_ticket_with_dependencies(self, tmp_path):
+    async def test_show_ticket_with_dependencies(self, tmp_path):
         """Test showing a ticket with dependencies."""
         # Create blocking ticket
         blocking_id = create_task(
@@ -113,13 +113,13 @@ class TestShowTicket:
         )
 
         # Show the ticket
-        result = _show_ticket(ticket_id)
+        result = await _show_ticket(ticket_id)
 
         # Verify dependencies are included
         assert result["up_dependencies"] == [blocking_id]
         assert blocking_id in result["up_dependencies"]
 
-    def test_show_ticket_preserves_all_fields(self, tmp_path):
+    async def test_show_ticket_preserves_all_fields(self, tmp_path):
         """Test that show_ticket returns all ticket fields."""
         # Create a ticket with many fields set
         ticket_id = create_epic(
@@ -132,7 +132,7 @@ class TestShowTicket:
             hive_name="backend"
         )
 
-        result = _show_ticket(ticket_id)
+        result = await _show_ticket(ticket_id)
 
         # Verify all expected fields are present
         expected_fields = [
@@ -145,14 +145,14 @@ class TestShowTicket:
         for field in expected_fields:
             assert field in result, f"Missing field: {field}"
 
-    def test_show_ticket_datetime_serialization(self, tmp_path):
+    async def test_show_ticket_datetime_serialization(self, tmp_path):
         """Test that datetime fields are properly serialized to ISO format."""
         ticket_id = create_epic(
             title="Time Test",
             hive_name="backend"
         )
 
-        result = _show_ticket(ticket_id)
+        result = await _show_ticket(ticket_id)
 
         # Verify datetime fields are ISO formatted strings
         assert isinstance(result["created_at"], str)

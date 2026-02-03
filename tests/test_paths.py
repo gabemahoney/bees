@@ -41,7 +41,7 @@ def setup_hive_config(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config)
+    save_bees_config(config, repo_root=tmp_path)
 
     return tmp_path
 
@@ -207,7 +207,7 @@ class TestListTickets:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         tickets = list_tickets("subtask")
         assert tickets == []
@@ -223,7 +223,7 @@ class TestListTickets:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         tickets = list_tickets("task")
         assert tickets == []
@@ -247,7 +247,7 @@ class TestListTickets:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         tickets = list_tickets("epic")
         names = [t.name for t in tickets]
@@ -389,7 +389,7 @@ class TestInferTicketTypeFromId:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Valid ticket with both bees_version and type
         ticket_file = backend_dir / "backend.bees-valid.md"
@@ -424,7 +424,7 @@ class TestLegacyIDRejection:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(hive_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should not raise
         path = get_ticket_path("backend.bees-250", "epic")
@@ -452,7 +452,7 @@ class TestLegacyIDRejection:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(hive_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         (hive_dir / "backend.bees-250.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
 
@@ -494,7 +494,7 @@ class TestFlatStorageArchitecture:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         path = get_ticket_path("backend.bees-abc", "epic")
         assert path == tmp_path / "backend" / "backend.bees-abc.md"
@@ -518,7 +518,7 @@ class TestFlatStorageArchitecture:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Create ticket with epic type in YAML
         ticket_file = backend_dir / "backend.bees-test.md"
@@ -561,7 +561,7 @@ class TestFlatStorageArchitecture:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # List all tickets
         all_tickets = list_tickets()
@@ -605,7 +605,7 @@ class TestListTicketsFromHives:
                 "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend", created_at=now),
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # List all tickets
         tickets = list_tickets()
@@ -633,7 +633,7 @@ class TestListTicketsFromHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # List only epics
         epics = list_tickets("epic")
@@ -668,7 +668,7 @@ class TestListTicketsFromHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should only return the valid ticket
         tickets = list_tickets()
@@ -694,7 +694,7 @@ class TestListTicketsFromHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should only return valid epic (with bees_version)
         epics = list_tickets("epic")
@@ -722,7 +722,7 @@ class TestListTicketsFromHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should only return root ticket, not eggs ticket
         tickets = list_tickets()
@@ -750,7 +750,7 @@ class TestListTicketsFromHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should only return root ticket, not evicted ticket
         tickets = list_tickets()

@@ -24,9 +24,9 @@ description: '**Context**: The supported clients list currently excludes clients
   **Acceptance**: Clients list accurately reflects current support status with fallback,
   users understand their options.'
 parent: features.bees-uen
-status: open
 created_at: '2026-02-03T06:41:33.012320'
-updated_at: '2026-02-03T06:41:33.012322'
+updated_at: '2026-02-03T13:11:39.470365'
+status: completed
 bees_version: '1.1'
 ---
 

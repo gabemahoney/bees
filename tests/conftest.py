@@ -3,6 +3,72 @@
 import json
 import pytest
 from pathlib import Path
+from unittest.mock import patch
+
+
+@pytest.fixture(autouse=True)
+def mock_git_repo_check(request, monkeypatch):
+    """
+    Mock git repository check and auto-inject repo_root for all tests.
+
+    Tests create temp directories that aren't git repos, but the new
+    repo_root parameter validation checks for .git directories.
+    This fixture mocks get_repo_root_from_path to return the current
+    working directory as if it were a valid git repo.
+
+    Also patches config functions to use Path.cwd() as default repo_root,
+    since tests don't have MCP context and should use their tmp_path.
+
+    Tests that need real git validation can use the marker:
+        @pytest.mark.needs_real_git_check
+    """
+    # Skip mocking for tests that need real git validation
+    if 'needs_real_git_check' in request.keywords:
+        return
+
+    def mock_get_repo_root(start_path: Path) -> Path:
+        """Walk up from start_path to find a directory containing .git or .bees, or return cwd."""
+        current = start_path.resolve()
+
+        # Walk up looking for .git or .bees directory
+        while current != current.parent:
+            if (current / '.git').exists() or (current / '.bees').exists():
+                return current
+            current = current.parent
+
+        # Check root directory
+        if (current / '.git').exists() or (current / '.bees').exists():
+            return current
+
+        # If no .git or .bees found, assume current working directory is the repo root
+        # This handles test cases where we create subdirectories but haven't created .git yet
+        return Path.cwd().resolve()
+
+    monkeypatch.setattr(
+        "src.mcp_server.get_repo_root_from_path",
+        mock_get_repo_root
+    )
+
+    # Patch get_config_path and ensure_bees_dir to use Path.cwd() when repo_root is None
+    from src.config import get_config_path as original_get_config_path
+    from src.config import ensure_bees_dir as original_ensure_bees_dir
+    from src.config import BEES_CONFIG_DIR, BEES_CONFIG_FILENAME
+
+    def patched_get_config_path(repo_root: Path | None = None) -> Path:
+        if repo_root is None:
+            repo_root = Path.cwd()
+        return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
+
+    def patched_ensure_bees_dir(repo_root: Path | None = None) -> None:
+        if repo_root is None:
+            repo_root = Path.cwd()
+        bees_dir = repo_root / BEES_CONFIG_DIR
+        bees_dir.mkdir(exist_ok=True)
+
+    # Patch both in src.config and any places that might have imported it
+    import src.config
+    monkeypatch.setattr(src.config, "get_config_path", patched_get_config_path)
+    monkeypatch.setattr(src.config, "ensure_bees_dir", patched_ensure_bees_dir)
 
 
 @pytest.fixture
@@ -74,5 +140,34 @@ def isolated_bees_env(tmp_path, monkeypatch):
     
     helper = BeesTestHelper(tmp_path)
     yield helper
-    
+
     # Optional: cleanup happens automatically with tmp_path
+
+
+@pytest.fixture
+def mock_mcp_context(tmp_path):
+    """
+    Create a mock MCP Context that returns tmp_path as the repo root.
+
+    This is used for testing MCP functions that require a ctx parameter.
+    The mock context's list_roots() method returns the tmp_path directory.
+    """
+    from unittest.mock import Mock
+
+    def create_mock_context(repo_path=None):
+        """Create a mock context for the given repo path (defaults to tmp_path)."""
+        if repo_path is None:
+            repo_path = tmp_path
+
+        ctx = Mock()
+        mock_root = Mock()
+        mock_root.uri = f"file://{repo_path}"
+
+        # Mock the async list_roots method
+        async def mock_list_roots():
+            return [mock_root]
+
+        ctx.list_roots = mock_list_roots
+        return ctx
+
+    return create_mock_context

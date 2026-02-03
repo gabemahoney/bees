@@ -27,6 +27,10 @@ description: 'Currently 11 MCP tools (_create_ticket, _update_ticket, _delete_ti
 
 
   Epic: features.bees-h0a'
+down_dependencies:
+- features.bees-o0l
+- features.bees-4ju
+- features.bees-cyh
 parent: features.bees-h0a
 children:
 - features.bees-jsp
@@ -38,9 +42,9 @@ children:
 - features.bees-cmd
 - features.bees-0i0
 created_at: '2026-02-03T06:40:56.157691'
-updated_at: '2026-02-03T06:41:47.301506'
+updated_at: '2026-02-03T12:35:29.016342'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

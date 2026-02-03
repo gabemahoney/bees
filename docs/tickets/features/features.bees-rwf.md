@@ -27,9 +27,9 @@ description: '**Context**: Users with clients that don''t support roots protocol
   **Acceptance**: Users can copy-paste the example and understand when/how to use
   explicit repo_root parameter.'
 parent: features.bees-uen
-status: open
 created_at: '2026-02-03T06:41:38.653523'
-updated_at: '2026-02-03T06:41:38.653527'
+updated_at: '2026-02-03T13:11:39.972952'
+status: completed
 bees_version: '1.1'
 ---
 

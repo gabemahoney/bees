@@ -14,7 +14,7 @@ from src.query_storage import QueryStorage, save_query
 class TestMultiHiveQueryValidation:
     """Tests for hive existence validation in execute_query."""
 
-    def test_execute_query_validates_hive_exists(self, monkeypatch):
+    async def test_execute_query_validates_hive_exists(self, monkeypatch):
         """Test that execute_query validates specified hive exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
@@ -63,12 +63,12 @@ class TestMultiHiveQueryValidation:
 
                 # Test with nonexistent hive
                 with pytest.raises(ValueError, match="Hive not found: nonexistent"):
-                    _execute_query("test_query", hive_names=["nonexistent"])
+                    await _execute_query("test_query", hive_names=["nonexistent"])
 
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_execute_query_lists_available_hives_on_error(self, monkeypatch):
+    async def test_execute_query_lists_available_hives_on_error(self, monkeypatch):
         """Test that error message lists available hives."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
@@ -127,12 +127,12 @@ class TestMultiHiveQueryValidation:
 
                 # Test with nonexistent hive - should list available hives
                 with pytest.raises(ValueError, match="Available hives: backend, frontend"):
-                    _execute_query("test_query", hive_names=["nonexistent"])
+                    await _execute_query("test_query", hive_names=["nonexistent"])
 
             finally:
                 src.query_storage._default_storage = old_storage
 
-    def test_execute_query_error_when_no_config(self, monkeypatch):
+    async def test_execute_query_error_when_no_config(self, monkeypatch):
         """Test error handling when no hive config exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
@@ -150,7 +150,7 @@ class TestMultiHiveQueryValidation:
 
                 # Test with hive_names when no config exists
                 with pytest.raises(ValueError, match="Available hives: none"):
-                    _execute_query("test_query", hive_names=["backend"])
+                    await _execute_query("test_query", hive_names=["backend"])
 
             finally:
                 src.query_storage._default_storage = old_storage

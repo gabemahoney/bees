@@ -456,7 +456,7 @@ class TestStartWatcherWithHives:
                 "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Mock observer
         mock_observer = Mock()
@@ -492,7 +492,7 @@ class TestStartWatcherWithHives:
                 "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Mock observer
         mock_observer = Mock()
@@ -522,7 +522,7 @@ class TestStartWatcherWithHives:
                 "frontend": HiveConfig(path=str(tmp_path / "nonexistent2"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root=tmp_path)
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="No valid hive directories found"):

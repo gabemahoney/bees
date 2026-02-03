@@ -24,12 +24,12 @@ description: '**Context**: After implementing repo_root parameter fallback for a
 
   **Acceptance**: README clearly documents repo_root parameter and when/how to use
   it'
-parent: features.bees-lmo
 up_dependencies:
 - features.bees-jsp
-status: open
+parent: features.bees-lmo
 created_at: '2026-02-03T06:41:39.260430'
-updated_at: '2026-02-03T06:41:39.260434'
+updated_at: '2026-02-03T12:32:40.282545'
+status: completed
 bees_version: '1.1'
 ---
 

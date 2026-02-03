@@ -24,12 +24,12 @@ description: '**Context**: Document the architectural decision to support MCP cl
 
   **Acceptance**: master_plan.md documents the repo_root fallback architecture and
   design decisions'
-parent: features.bees-lmo
 up_dependencies:
 - features.bees-jsp
-status: open
+parent: features.bees-lmo
 created_at: '2026-02-03T06:41:43.155319'
-updated_at: '2026-02-03T06:41:43.155323'
+updated_at: '2026-02-03T12:32:40.676536'
+status: completed
 bees_version: '1.1'
 ---
 

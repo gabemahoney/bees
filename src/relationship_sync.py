@@ -56,7 +56,7 @@ def validate_ticket_exists(ticket_id: str) -> bool:
     )
 
 
-def validate_parent_child_relationship(parent_id: str, child_id: str) -> None:
+def validate_parent_child_relationship(parent_id: str, child_id: str, repo_root: Path | None = None) -> None:
     """
     Ensure type hierarchy is valid for parent-child relationships.
 
@@ -68,14 +68,15 @@ def validate_parent_child_relationship(parent_id: str, child_id: str) -> None:
     Args:
         parent_id: The ID of the parent ticket
         child_id: The ID of the child ticket
+        repo_root: Optional repository root path
 
     Raises:
         ValueError: If relationship violates type hierarchy
         FileNotFoundError: If either ticket doesn't exist
     """
     # Infer types from file locations (lightweight - no full ticket load)
-    parent_type = infer_ticket_type_from_id(parent_id)
-    child_type = infer_ticket_type_from_id(child_id)
+    parent_type = infer_ticket_type_from_id(parent_id, repo_root)
+    child_type = infer_ticket_type_from_id(child_id, repo_root)
 
     # Check tickets exist
     if parent_type is None:

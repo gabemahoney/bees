@@ -38,7 +38,7 @@ def setup_tickets_dir(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config)
+    save_bees_config(config, repo_root=tmp_path)
 
     yield tmp_path
 
@@ -46,9 +46,9 @@ def setup_tickets_dir(tmp_path, monkeypatch):
 class TestCreateEpic:
     """Tests for creating epic tickets."""
 
-    def test_create_epic_without_parent_success(self, setup_tickets_dir):
+    async def test_create_epic_without_parent_success(self, setup_tickets_dir):
         """Test creating an epic without parent (valid case)."""
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
             description="Test epic description",
@@ -74,10 +74,10 @@ class TestCreateEpic:
         assert "test" in ticket.labels
         assert ticket.priority == 0
 
-    def test_create_epic_with_parent_fails(self, setup_tickets_dir):
+    async def test_create_epic_with_parent_fails(self, setup_tickets_dir):
         """Test that creating an epic with parent raises error."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="epic",
                 title="Test Epic",
                 parent="bees-xyz",
@@ -86,10 +86,10 @@ class TestCreateEpic:
 
         assert "Epics cannot have a parent" in str(exc_info.value)
 
-    def test_create_epic_with_dependencies(self, setup_tickets_dir):
+    async def test_create_epic_with_dependencies(self, setup_tickets_dir):
         """Test creating epic with up/down dependencies."""
         # First create a dependency epic
-        dep_result = _create_ticket(
+        dep_result = await _create_ticket(
             ticket_type="epic",
             title="Dependency Epic",
             hive_name="default"
@@ -97,7 +97,7 @@ class TestCreateEpic:
         dep_id = dep_result["ticket_id"]
 
         # Create epic with dependency
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
             up_dependencies=[dep_id],
@@ -118,10 +118,10 @@ class TestCreateEpic:
 class TestCreateTask:
     """Tests for creating task tickets."""
 
-    def test_create_task_with_parent_success(self, setup_tickets_dir):
+    async def test_create_task_with_parent_success(self, setup_tickets_dir):
         """Test creating a task with parent epic."""
         # First create parent epic
-        epic_result = _create_ticket(
+        epic_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="default"
@@ -129,7 +129,7 @@ class TestCreateTask:
         epic_id = epic_result["ticket_id"]
 
         # Create task with parent
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="task",
             title="Test Task",
             parent=epic_id,
@@ -150,9 +150,9 @@ class TestCreateTask:
         epic = read_ticket(get_ticket_path(epic_id, "epic"))
         assert task_id in epic.children
 
-    def test_create_task_without_parent_success(self, setup_tickets_dir):
+    async def test_create_task_without_parent_success(self, setup_tickets_dir):
         """Test creating a task without parent (valid case)."""
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="task",
             title="Standalone Task",
             hive_name="default"
@@ -164,10 +164,10 @@ class TestCreateTask:
         task = read_ticket(get_ticket_path(task_id, "task"))
         assert task.parent is None or task.parent == ""
 
-    def test_create_task_with_nonexistent_parent_fails(self, setup_tickets_dir):
+    async def test_create_task_with_nonexistent_parent_fails(self, setup_tickets_dir):
         """Test that creating task with non-existent parent fails."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="task",
                 title="Test Task",
                 parent="bees-nonexistent",
@@ -180,10 +180,10 @@ class TestCreateTask:
 class TestCreateSubtask:
     """Tests for creating subtask tickets."""
 
-    def test_create_subtask_with_parent_success(self, setup_tickets_dir):
+    async def test_create_subtask_with_parent_success(self, setup_tickets_dir):
         """Test creating subtask with required parent task."""
         # Create parent task
-        task_result = _create_ticket(
+        task_result = await _create_ticket(
             ticket_type="task",
             title="Parent Task",
             hive_name="default"
@@ -191,7 +191,7 @@ class TestCreateSubtask:
         task_id = task_result["ticket_id"]
 
         # Create subtask with parent
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="subtask",
             title="Test Subtask",
             parent=task_id,
@@ -211,10 +211,10 @@ class TestCreateSubtask:
         task = read_ticket(get_ticket_path(task_id, "task"))
         assert subtask_id in task.children
 
-    def test_create_subtask_without_parent_fails(self, setup_tickets_dir):
+    async def test_create_subtask_without_parent_fails(self, setup_tickets_dir):
         """Test that creating subtask without parent fails."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="subtask",
                 title="Test Subtask",
                 hive_name="default"
@@ -226,10 +226,10 @@ class TestCreateSubtask:
 class TestBidirectionalRelationships:
     """Tests for bidirectional relationship updates."""
 
-    def test_parent_children_bidirectional_update(self, setup_tickets_dir):
+    async def test_parent_children_bidirectional_update(self, setup_tickets_dir):
         """Test that parent's children array is updated when creating child."""
         # Create parent
-        parent_result = _create_ticket(
+        parent_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="default"
@@ -237,7 +237,7 @@ class TestBidirectionalRelationships:
         parent_id = parent_result["ticket_id"]
 
         # Create child
-        child_result = _create_ticket(
+        child_result = await _create_ticket(
             ticket_type="task",
             title="Child Task",
             parent=parent_id,
@@ -252,10 +252,10 @@ class TestBidirectionalRelationships:
         assert child.parent == parent_id
         assert child_id in parent.children
 
-    def test_up_dependencies_bidirectional_update(self, setup_tickets_dir):
+    async def test_up_dependencies_bidirectional_update(self, setup_tickets_dir):
         """Test that up_dependencies updates blocking ticket's down_dependencies."""
         # Create blocking ticket
-        blocking_result = _create_ticket(
+        blocking_result = await _create_ticket(
             ticket_type="task",
             title="Blocking Task",
             hive_name="default"
@@ -263,7 +263,7 @@ class TestBidirectionalRelationships:
         blocking_id = blocking_result["ticket_id"]
 
         # Create dependent ticket
-        dependent_result = _create_ticket(
+        dependent_result = await _create_ticket(
             ticket_type="task",
             title="Dependent Task",
             up_dependencies=[blocking_id],
@@ -278,10 +278,10 @@ class TestBidirectionalRelationships:
         assert blocking_id in dependent.up_dependencies
         assert dependent_id in blocking.down_dependencies
 
-    def test_down_dependencies_bidirectional_update(self, setup_tickets_dir):
+    async def test_down_dependencies_bidirectional_update(self, setup_tickets_dir):
         """Test that down_dependencies updates blocked ticket's up_dependencies."""
         # Create blocked ticket
-        blocked_result = _create_ticket(
+        blocked_result = await _create_ticket(
             ticket_type="task",
             title="Blocked Task",
             hive_name="default"
@@ -289,7 +289,7 @@ class TestBidirectionalRelationships:
         blocked_id = blocked_result["ticket_id"]
 
         # Create blocking ticket
-        blocking_result = _create_ticket(
+        blocking_result = await _create_ticket(
             ticket_type="task",
             title="Blocking Task",
             down_dependencies=[blocked_id],
@@ -304,10 +304,10 @@ class TestBidirectionalRelationships:
         assert blocked_id in blocking.down_dependencies
         assert blocking_id in blocked.up_dependencies
 
-    def test_multiple_children_bidirectional_update(self, setup_tickets_dir):
+    async def test_multiple_children_bidirectional_update(self, setup_tickets_dir):
         """Test creating multiple children updates parent correctly."""
         # Create parent
-        parent_result = _create_ticket(
+        parent_result = await _create_ticket(
             ticket_type="epic",
             title="Parent Epic",
             hive_name="default"
@@ -315,7 +315,7 @@ class TestBidirectionalRelationships:
         parent_id = parent_result["ticket_id"]
 
         # Create multiple children
-        child1_result = _create_ticket(
+        child1_result = await _create_ticket(
             ticket_type="task",
             title="Child 1",
             parent=parent_id,
@@ -323,7 +323,7 @@ class TestBidirectionalRelationships:
         )
         child1_id = child1_result["ticket_id"]
 
-        child2_result = _create_ticket(
+        child2_result = await _create_ticket(
             ticket_type="task",
             title="Child 2",
             parent=parent_id,
@@ -340,10 +340,10 @@ class TestBidirectionalRelationships:
 class TestValidation:
     """Tests for input validation and error handling."""
 
-    def test_empty_title_fails(self, setup_tickets_dir):
+    async def test_empty_title_fails(self, setup_tickets_dir):
         """Test that empty title raises error."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="epic",
                 title="",
                 hive_name="default"
@@ -351,10 +351,10 @@ class TestValidation:
 
         assert "Ticket title cannot be empty" in str(exc_info.value)
 
-    def test_whitespace_only_title_fails(self, setup_tickets_dir):
+    async def test_whitespace_only_title_fails(self, setup_tickets_dir):
         """Test that whitespace-only title raises error."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="epic",
                 title="   ",
                 hive_name="default"
@@ -362,10 +362,10 @@ class TestValidation:
 
         assert "Ticket title cannot be empty" in str(exc_info.value)
 
-    def test_invalid_ticket_type_fails(self, setup_tickets_dir):
+    async def test_invalid_ticket_type_fails(self, setup_tickets_dir):
         """Test that invalid ticket_type raises error."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="invalid",
                 title="Test",
                 hive_name="default"
@@ -373,10 +373,10 @@ class TestValidation:
 
         assert "Invalid ticket_type" in str(exc_info.value)
 
-    def test_nonexistent_dependency_fails(self, setup_tickets_dir):
+    async def test_nonexistent_dependency_fails(self, setup_tickets_dir):
         """Test that non-existent dependency raises error."""
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="task",
                 title="Test Task",
                 up_dependencies=["bees-nonexistent"],
@@ -385,10 +385,10 @@ class TestValidation:
 
         assert "Dependency ticket does not exist" in str(exc_info.value)
 
-    def test_circular_dependency_fails(self, setup_tickets_dir):
+    async def test_circular_dependency_fails(self, setup_tickets_dir):
         """Test that circular dependency (same ticket in up and down) fails."""
         # Create a task
-        task_result = _create_ticket(
+        task_result = await _create_ticket(
             ticket_type="task",
             title="Existing Task",
             hive_name="default"
@@ -397,7 +397,7 @@ class TestValidation:
 
         # Try to create ticket with task_id in both up and down dependencies
         with pytest.raises(ValueError) as exc_info:
-            _create_ticket(
+            await _create_ticket(
                 ticket_type="task",
                 title="Test Task",
                 up_dependencies=[task_id],
@@ -411,9 +411,9 @@ class TestValidation:
 class TestEdgeCases:
     """Tests for edge cases and special scenarios."""
 
-    def test_create_ticket_with_all_optional_fields(self, setup_tickets_dir):
+    async def test_create_ticket_with_all_optional_fields(self, setup_tickets_dir):
         """Test creating ticket with all optional fields populated."""
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Full Epic",
             description="Full description",
@@ -435,9 +435,9 @@ class TestEdgeCases:
         assert ticket.priority == 2
         assert ticket.status == "in_progress"
 
-    def test_create_ticket_with_minimal_fields(self, setup_tickets_dir):
+    async def test_create_ticket_with_minimal_fields(self, setup_tickets_dir):
         """Test creating ticket with only required fields."""
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Minimal Epic",
             hive_name="default"
@@ -449,9 +449,9 @@ class TestEdgeCases:
         ticket = read_ticket(get_ticket_path(ticket_id, "epic"))
         assert ticket.title == "Minimal Epic"
 
-    def test_create_ticket_with_unicode_title(self, setup_tickets_dir):
+    async def test_create_ticket_with_unicode_title(self, setup_tickets_dir):
         """Test creating ticket with unicode characters in title."""
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Unicode Test: 你好 🚀",
             hive_name="default"
@@ -463,11 +463,11 @@ class TestEdgeCases:
         ticket = read_ticket(get_ticket_path(ticket_id, "epic"))
         assert ticket.title == "Unicode Test: 你好 🚀"
 
-    def test_create_ticket_with_long_description(self, setup_tickets_dir):
+    async def test_create_ticket_with_long_description(self, setup_tickets_dir):
         """Test creating ticket with very long description."""
         long_description = "x" * 10000
 
-        result = _create_ticket(
+        result = await _create_ticket(
             ticket_type="epic",
             title="Long Description Test",
             description=long_description,

@@ -50,7 +50,7 @@ def temp_hive_config(tmp_path, monkeypatch):
         json.dump(config_data, f)
 
     # Mock get_config_path to return our temporary config file
-    monkeypatch.setattr(src.config, 'get_config_path', lambda: config_file)
+    monkeypatch.setattr(src.config, 'get_config_path', lambda repo_root=None: config_file)
 
     # Clear the hive config cache
     if hasattr(src.config, '_hive_config_cache'):

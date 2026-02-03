@@ -49,9 +49,9 @@ description: 'Update the docstring for the _generate_index() MCP tool that uses 
   Acceptance: _generate_index docstring updated with repo_root parameter documentation
   and usage examples (or skipped if function doesn''t actually need repo_root).'
 parent: features.bees-61r
-status: open
 created_at: '2026-02-03T06:58:08.925198'
-updated_at: '2026-02-03T06:58:08.925203'
+updated_at: '2026-02-03T13:07:51.730044'
+status: completed
 bees_version: '1.1'
 ---
 

@@ -25,12 +25,12 @@ description: '**Context**: Need to test the repo_root parameter fallback logic a
 
   **Acceptance**: Tests cover all three fallback scenarios and verify proper error
   messages'
-parent: features.bees-lmo
 up_dependencies:
 - features.bees-jsp
-status: open
+parent: features.bees-lmo
 created_at: '2026-02-03T06:41:47.298529'
-updated_at: '2026-02-03T06:41:47.298537'
+updated_at: '2026-02-03T12:32:41.245669'
+status: completed
 bees_version: '1.1'
 ---
 

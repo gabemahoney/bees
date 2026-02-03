@@ -12,12 +12,12 @@ description: "Execute the full test suite to verify that docstring updates haven
   \ appear pre-existing, fix them to ensure clean test suite.\n\nFiles: All test files\
   \ in tests/\n\nParent Task: features.bees-61r (Update MCP tool docstrings to document\
   \ repo_root fallback)\n\nAcceptance: All unit tests pass successfully with no failures."
-parent: features.bees-61r
 up_dependencies:
 - features.bees-uj5
-status: open
+parent: features.bees-61r
 created_at: '2026-02-03T06:58:47.970182'
-updated_at: '2026-02-03T06:58:47.970187'
+updated_at: '2026-02-03T13:10:54.748304'
+status: completed
 bees_version: '1.1'
 ---
 
