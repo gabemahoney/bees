@@ -2124,7 +2124,7 @@ async def _colonize_hive(
 
 
 # Register the colonize_hive tool with FastMCP
-colonize_hive_tool = mcp.tool()(_colonize_hive)
+colonize_hive = mcp.tool()(_colonize_hive)
 
 
 async def _list_hives(ctx: Context) -> Dict[str, Any]:
