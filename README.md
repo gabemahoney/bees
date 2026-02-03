@@ -8,6 +8,19 @@ Bees is an MCP server that implements a markdown-based ticket management system.
 git clone https://github.com/gabemahoney/bees.git
 ```
 
+## Requirements
+
+### MCP Client Requirements
+
+The bees MCP server requires clients to support the **MCP Roots Protocol**. This protocol allows the server to know which repository the client is working in, ensuring all operations target the correct repository.
+
+**Supported Clients:**
+- ✅ Claude Desktop (official MCP client)
+- ✅ OpenCode
+- ❌ Basic MCP clients without roots support
+
+If you see an error like "Unable to determine repository location", ensure your MCP client supports and is configured to send roots.
+
 ## Quick Start
 
 ### Configure Claude Code
