@@ -177,7 +177,14 @@ async def get_client_repo_root(ctx: Context) -> Path:
         >>> print(repo)
         /Users/user/projects/finance-tracker
     """
-    roots = await ctx.list_roots()
+    try:
+        roots = await ctx.list_roots()
+    except Exception as e:
+        logger.error(f"Error calling ctx.list_roots(): {e}")
+        raise ValueError(
+            f"Failed to get roots from MCP client: {e}. "
+            "Please use an MCP client that supports the roots protocol."
+        )
     
     if not roots or len(roots) == 0:
         raise ValueError(
@@ -196,6 +203,7 @@ async def get_client_repo_root(ctx: Context) -> Path:
     else:
         root_path = root_uri_str
     
+    logger.info(f"Got client repo root: {root_path}")
     return Path(root_path)
 
 
