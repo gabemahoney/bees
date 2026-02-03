@@ -1293,7 +1293,7 @@ create_ticket = mcp.tool()(_create_ticket)
 # Use a string constant as sentinel instead of object() to avoid Pydantic JSON schema warnings
 _UNSET: Literal["__UNSET__"] = "__UNSET__"
 
-def _update_ticket(
+async def _update_ticket(
     ticket_id: str,
     title: str | None | Literal["__UNSET__"] = _UNSET,
     description: str | None | Literal["__UNSET__"] = _UNSET,
@@ -1304,7 +1304,8 @@ def _update_ticket(
     labels: list[str] | None | Literal["__UNSET__"] = _UNSET,
     owner: str | None | Literal["__UNSET__"] = _UNSET,
     priority: int | None | Literal["__UNSET__"] = _UNSET,
-    status: str | None | Literal["__UNSET__"] = _UNSET
+    status: str | None | Literal["__UNSET__"] = _UNSET,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Update an existing ticket.
@@ -1321,6 +1322,7 @@ def _update_ticket(
         owner: New owner/assignee
         priority: New priority level
         status: New status
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Updated ticket information
@@ -1532,8 +1534,9 @@ def _update_ticket(
 update_ticket = mcp.tool()(_update_ticket)
 
 
-def _delete_ticket(
-    ticket_id: str
+async def _delete_ticket(
+    ticket_id: str,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Delete a ticket and clean up relationships in related tickets.
@@ -1543,6 +1546,7 @@ def _delete_ticket(
 
     Args:
         ticket_id: ID of the ticket to delete (required)
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Deletion status and information about cleaned relationships
@@ -1568,7 +1572,8 @@ def _delete_ticket(
 
     # Validate hive exists in config using normalize_name for lookup
     normalized_hive = normalize_hive_name(hive_prefix)
-    config = load_bees_config()
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         error_msg = f"Hive '{hive_prefix}' not found in configuration"
         logger.error(error_msg)
@@ -1598,7 +1603,7 @@ def _delete_ticket(
     if ticket.children:
         for child_id in ticket.children:
             try:
-                _delete_ticket(child_id)
+                await _delete_ticket(child_id, ctx)
                 logger.info(f"Cascade deleted child ticket: {child_id}")
             except Exception as e:
                 logger.warning(f"Failed to cascade delete child {child_id}: {e}")
@@ -1700,9 +1705,10 @@ def _add_named_query(
 add_named_query = mcp.tool()(_add_named_query)
 
 
-def _execute_query(
+async def _execute_query(
     query_name: str,
-    hive_names: list[str] | None = None
+    hive_names: list[str] | None = None,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Execute a named query.
@@ -1710,6 +1716,7 @@ def _execute_query(
     Args:
         query_name: Name of the registered query to execute
         hive_names: Optional list of hive names to filter results (default: None = all hives)
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Query results with list of matching ticket IDs and metadata
@@ -1740,7 +1747,8 @@ def _execute_query(
 
     # Validate hive existence if hive_names provided
     if hive_names:
-        config = load_bees_config()
+        repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+        config = load_bees_config(repo_root)
         if config is None:
             error_msg = "No hives configured. Available hives: none"
             logger.error(error_msg)
@@ -1776,9 +1784,10 @@ def _execute_query(
 execute_query = mcp.tool()(_execute_query)
 
 
-def _execute_freeform_query(
+async def _execute_freeform_query(
     query_yaml: str,
-    hive_names: list[str] | None = None
+    hive_names: list[str] | None = None,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Execute a YAML query pipeline directly without persisting it.
@@ -1790,6 +1799,7 @@ def _execute_freeform_query(
     Args:
         query_yaml: YAML string representing the query pipeline structure
         hive_names: Optional list of hive names to filter results (default: None = all hives)
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Query results with list of matching ticket IDs and metadata
@@ -1825,7 +1835,8 @@ def _execute_freeform_query(
 
     # Validate hive existence if hive_names provided
     if hive_names:
-        config = load_bees_config()
+        repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+        config = load_bees_config(repo_root)
         if config is None:
             error_msg = "No hives configured. Available hives: none"
             logger.error(error_msg)
@@ -1863,12 +1874,13 @@ def _execute_freeform_query(
 execute_freeform_query = mcp.tool()(_execute_freeform_query)
 
 
-def _show_ticket(ticket_id: str) -> Dict[str, Any]:
+async def _show_ticket(ticket_id: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Retrieve and return ticket data by ticket ID.
 
     Args:
         ticket_id: The ID of the ticket to retrieve (e.g., 'backend.bees-abc1')
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Ticket data including all fields
@@ -1914,9 +1926,10 @@ def _show_ticket(ticket_id: str) -> Dict[str, Any]:
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Validate hive exists in config
+    # Validate hive exists in config using normalize_name for lookup
     normalized_hive = normalize_hive_name(hive_prefix)
-    config = load_bees_config()
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         error_msg = f"Hive '{hive_prefix}' (normalized: '{normalized_hive}') not found in configuration"
         logger.error(error_msg)
@@ -2203,7 +2216,7 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
 list_hives = mcp.tool()(_list_hives)
 
 
-def _abandon_hive(hive_name: str) -> Dict[str, Any]:
+async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Stop tracking a hive without deleting ticket files.
 
@@ -2213,6 +2226,7 @@ def _abandon_hive(hive_name: str) -> Dict[str, Any]:
 
     Args:
         hive_name: Display name or normalized name of the hive to abandon
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Operation result with status and details
@@ -2247,7 +2261,8 @@ def _abandon_hive(hive_name: str) -> Dict[str, Any]:
     logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
 
     # Load config from .bees/config.json
-    config = load_bees_config()
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
 
     # Check if hive exists
     if not config or normalized_name not in config.hives:
@@ -2264,7 +2279,7 @@ def _abandon_hive(hive_name: str) -> Dict[str, Any]:
     del config.hives[normalized_name]
 
     # Save updated config
-    save_bees_config(config)
+    save_bees_config(config, repo_root)
     logger.info(f"Removed hive '{normalized_name}' from config.json")
 
     # Success response
@@ -2281,7 +2296,7 @@ def _abandon_hive(hive_name: str) -> Dict[str, Any]:
 abandon_hive = mcp.tool()(_abandon_hive)
 
 
-def _rename_hive(old_name: str, new_name: str) -> Dict[str, Any]:
+async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Rename a hive by updating its name in config, regenerating ticket IDs, and updating all references.
 
@@ -2297,6 +2312,7 @@ def _rename_hive(old_name: str, new_name: str) -> Dict[str, Any]:
     Args:
         old_name: Current hive name (will be normalized for lookup)
         new_name: Desired new hive name (will be normalized and validated for uniqueness)
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Success/error status with operation details
@@ -2341,7 +2357,8 @@ def _rename_hive(old_name: str, new_name: str) -> Dict[str, Any]:
         }
 
     # Step 2: Load config and validate old hive exists
-    config = load_bees_config()
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
     if not config or normalized_old not in config.hives:
         return {
             "status": "error",
@@ -2373,7 +2390,7 @@ def _rename_hive(old_name: str, new_name: str) -> Dict[str, Any]:
     
     # Save updated config
     try:
-        save_bees_config(config)
+        save_bees_config(config, repo_root)
         logger.info(f"Updated config: renamed hive from '{normalized_old}' to '{normalized_new}'")
     except Exception as e:
         return {
@@ -2676,7 +2693,7 @@ def _rename_hive(old_name: str, new_name: str) -> Dict[str, Any]:
 rename_hive = mcp.tool()(_rename_hive)
 
 
-def _sanitize_hive(hive_name: str) -> Dict[str, Any]:
+async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Validate and auto-fix malformed tickets in a hive.
     
@@ -2688,6 +2705,7 @@ def _sanitize_hive(hive_name: str) -> Dict[str, Any]:
     
     Args:
         hive_name: Display name or normalized form of hive to sanitize
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
         
     Returns:
         Dict with:
@@ -2714,7 +2732,8 @@ def _sanitize_hive(hive_name: str) -> Dict[str, Any]:
     normalized = normalize_hive_name(hive_name)
     
     # Load config
-    config = load_bees_config()
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
     
     # Check if hive is registered
     if not config or normalized not in config.hives:
