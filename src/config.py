@@ -150,18 +150,19 @@ def get_config_path(repo_root: Path | None = None) -> Path:
     """Get the path to the .bees/config.json file.
 
     Args:
-        repo_root: Optional repository root path. If not provided, uses get_repo_root()
+        repo_root: Optional repository root path. If not provided, tries to find git repo from cwd.
+                   MCP tools MUST pass explicit repo_root from context.
 
     Returns:
         Path to the config file in the git repository root
+        
+    Raises:
+        ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
-        from .mcp_server import get_repo_root
-        try:
-            repo_root = get_repo_root()
-        except ValueError:
-            # Fallback to cwd if not in a git repo (for backward compatibility)
-            repo_root = Path.cwd()
+        from .mcp_server import get_repo_root_from_path
+        # For non-MCP usage (tests, CLI), try to find git repo from cwd
+        repo_root = get_repo_root_from_path(Path.cwd())
     
     return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
 
@@ -170,28 +171,32 @@ def ensure_bees_dir(repo_root: Path | None = None) -> None:
     """Create .bees/ directory if it doesn't exist in the git repository root.
     
     Args:
-        repo_root: Optional repository root path. If not provided, uses get_repo_root()
+        repo_root: Optional repository root path. If not provided, tries to find git repo from cwd.
+                   MCP tools MUST pass explicit repo_root from context.
+                   
+    Raises:
+        ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
-        from .mcp_server import get_repo_root
-        try:
-            repo_root = get_repo_root()
-        except ValueError:
-            # Fallback to cwd if not in a git repo (for backward compatibility)
-            repo_root = Path.cwd()
+        from .mcp_server import get_repo_root_from_path
+        # For non-MCP usage (tests, CLI), try to find git repo from cwd
+        repo_root = get_repo_root_from_path(Path.cwd())
     
     bees_dir = repo_root / BEES_CONFIG_DIR
     bees_dir.mkdir(exist_ok=True)
 
 
-def load_bees_config() -> Optional[BeesConfig]:
+def load_bees_config(repo_root: Path | None = None) -> Optional[BeesConfig]:
     """Load BeesConfig from .bees/config.json.
+
+    Args:
+        repo_root: Optional repository root path. If not provided, uses get_repo_root_from_path(Path.cwd())
 
     Returns:
         BeesConfig object if file exists and is valid, None if file not found.
         Returns default BeesConfig structure on JSON errors with logged warning.
     """
-    config_path = get_config_path()
+    config_path = get_config_path(repo_root)
 
     if not config_path.exists():
         return None
@@ -234,7 +239,7 @@ def load_bees_config() -> Optional[BeesConfig]:
     )
 
 
-def save_bees_config(config: BeesConfig) -> None:
+def save_bees_config(config: BeesConfig, repo_root: Path | None = None) -> None:
     """Save BeesConfig to .bees/config.json using atomic write.
 
     Uses temp file + rename pattern to prevent data corruption if process
@@ -242,12 +247,13 @@ def save_bees_config(config: BeesConfig) -> None:
 
     Args:
         config: BeesConfig object to save
+        repo_root: Optional repository root path. If not provided, uses get_repo_root_from_path(Path.cwd())
 
     Raises:
         IOError: If writing fails
     """
     # Ensure .bees/ directory exists
-    ensure_bees_dir()
+    ensure_bees_dir(repo_root)
 
     # Set schema_version if not set
     if not config.schema_version:
@@ -270,7 +276,7 @@ def save_bees_config(config: BeesConfig) -> None:
     }
 
     # Write to file using atomic write pattern
-    config_path = get_config_path()
+    config_path = get_config_path(repo_root)
     bees_dir = Path(config_path).parent
     temp_fd = None
     temp_path = None
@@ -308,13 +314,16 @@ def save_bees_config(config: BeesConfig) -> None:
         raise IOError(f"Failed to write config to {config_path}: {e}")
 
 
-def init_bees_config_if_needed() -> BeesConfig:
+def init_bees_config_if_needed(repo_root: Path | None = None) -> BeesConfig:
     """Initialize .bees/config.json on-demand if it doesn't exist.
+
+    Args:
+        repo_root: Optional repository root path. If not provided, uses get_repo_root_from_path(Path.cwd())
 
     Returns:
         BeesConfig object (either loaded from file or newly created)
     """
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
 
     if config is None:
         # Create new config with defaults
@@ -323,17 +332,18 @@ def init_bees_config_if_needed() -> BeesConfig:
             allow_cross_hive_dependencies=False,
             schema_version='1.0'
         )
-        save_bees_config(config)
+        save_bees_config(config, repo_root)
 
     return config
 
 
-def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig] = None) -> None:
+def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig] = None, repo_root: Path | None = None) -> None:
     """Validate that a normalized hive name is unique.
 
     Args:
         normalized_name: The normalized name to check (e.g., 'back_end')
         config: BeesConfig object to check against (loads from disk if None)
+        repo_root: Optional repository root path. If not provided, uses get_repo_root_from_path(Path.cwd())
 
     Raises:
         ValueError: If the normalized name already exists in the hive registry
@@ -344,7 +354,7 @@ def validate_unique_hive_name(normalized_name: str, config: Optional[BeesConfig]
         they normalize to the same key.
     """
     if config is None:
-        config = load_bees_config()
+        config = load_bees_config(repo_root)
 
     # If no config exists yet, name is unique by default
     if config is None:
