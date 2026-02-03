@@ -1034,7 +1034,7 @@ def _health_check() -> Dict[str, Any]:
 
 
 # Register the health_check tool with FastMCP
-health_check = mcp.tool()(_health_check)
+health_check = mcp.tool(name="health_check")(_health_check)
 
 
 # Tool stubs - implementations will be added in later tasks
@@ -1287,7 +1287,7 @@ async def _create_ticket(
 
 
 # Register the create_ticket tool with FastMCP
-create_ticket = mcp.tool()(_create_ticket)
+create_ticket = mcp.tool(name="create_ticket")(_create_ticket)
 
 
 # Use a string constant as sentinel instead of object() to avoid Pydantic JSON schema warnings
@@ -1531,7 +1531,7 @@ async def _update_ticket(
 
 
 # Register the update_ticket tool with FastMCP
-update_ticket = mcp.tool()(_update_ticket)
+update_ticket = mcp.tool(name="update_ticket")(_update_ticket)
 
 
 async def _delete_ticket(
@@ -1644,7 +1644,7 @@ async def _delete_ticket(
 
 
 # Register the delete_ticket tool with FastMCP
-delete_ticket = mcp.tool()(_delete_ticket)
+delete_ticket = mcp.tool(name="delete_ticket")(_delete_ticket)
 
 
 def _add_named_query(
@@ -1702,7 +1702,7 @@ def _add_named_query(
 
 
 # Register the add_named_query tool with FastMCP
-add_named_query = mcp.tool()(_add_named_query)
+add_named_query = mcp.tool(name="add_named_query")(_add_named_query)
 
 
 async def _execute_query(
@@ -1781,7 +1781,7 @@ async def _execute_query(
         logger.error(error_msg)
         raise ValueError(error_msg)
 # Register the execute_query tool with FastMCP
-execute_query = mcp.tool()(_execute_query)
+execute_query = mcp.tool(name="execute_query")(_execute_query)
 
 
 async def _execute_freeform_query(
@@ -1871,7 +1871,7 @@ async def _execute_freeform_query(
 
 
 # Register the execute_freeform_query tool with FastMCP
-execute_freeform_query = mcp.tool()(_execute_freeform_query)
+execute_freeform_query = mcp.tool(name="execute_freeform_query")(_execute_freeform_query)
 
 
 async def _show_ticket(ticket_id: str, ctx: Context | None = None) -> Dict[str, Any]:
@@ -1981,7 +1981,7 @@ async def _show_ticket(ticket_id: str, ctx: Context | None = None) -> Dict[str, 
 
 
 # Register the show_ticket tool with FastMCP
-show_ticket = mcp.tool()(_show_ticket)
+show_ticket = mcp.tool(name="show_ticket")(_show_ticket)
 
 
 def _generate_index(
@@ -2037,7 +2037,7 @@ def _generate_index(
 
 
 # Register the generate_index tool with FastMCP
-generate_index_tool = mcp.tool()(_generate_index)
+generate_index_tool = mcp.tool(name="generate_index")(_generate_index)
 
 
 async def _colonize_hive(
@@ -2124,7 +2124,7 @@ async def _colonize_hive(
 
 
 # Register the colonize_hive tool with FastMCP
-colonize_hive = mcp.tool()(_colonize_hive)
+colonize_hive = mcp.tool(name="colonize_hive")(_colonize_hive)
 
 
 async def _list_hives(ctx: Context) -> Dict[str, Any]:
@@ -2213,7 +2213,7 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
 
 
 # Register the list_hives tool with FastMCP
-list_hives = mcp.tool()(_list_hives)
+list_hives = mcp.tool(name="list_hives")(_list_hives)
 
 
 async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
@@ -2293,7 +2293,7 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
 
 
 # Register the abandon_hive tool with FastMCP
-abandon_hive = mcp.tool()(_abandon_hive)
+abandon_hive = mcp.tool(name="abandon_hive")(_abandon_hive)
 
 
 async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None) -> Dict[str, Any]:
@@ -2690,7 +2690,7 @@ async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None)
 
 
 # Register the rename_hive tool with FastMCP
-rename_hive = mcp.tool()(_rename_hive)
+rename_hive = mcp.tool(name="rename_hive")(_rename_hive)
 
 
 async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
@@ -2833,7 +2833,7 @@ async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str
 
 
 # Register the sanitize_hive tool with FastMCP
-sanitize_hive = mcp.tool()(_sanitize_hive)
+sanitize_hive = mcp.tool(name="sanitize_hive")(_sanitize_hive)
 
 
 def _help() -> Dict[str, Any]:
@@ -3060,7 +3060,7 @@ QUERIES
 
 
 # Register the help tool with FastMCP
-help = mcp.tool()(_help)
+help = mcp.tool(name="help")(_help)
 
 
 if __name__ == "__main__":
