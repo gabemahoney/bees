@@ -32,8 +32,8 @@ down_dependencies:
 - features.bees-kio
 parent: features.bees-xdg
 created_at: '2026-02-03T16:53:09.966708'
-updated_at: '2026-02-03T16:53:18.451976'
-status: open
+updated_at: '2026-02-03T17:41:53.518787'
+status: completed
 bees_version: '1.1'
 ---
 

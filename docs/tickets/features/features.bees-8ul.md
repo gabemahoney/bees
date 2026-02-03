@@ -69,8 +69,8 @@ down_dependencies:
 - features.bees-nw0
 parent: features.bees-xdg
 created_at: '2026-02-03T16:53:25.463635'
-updated_at: '2026-02-03T16:53:33.499707'
-status: open
+updated_at: '2026-02-03T17:43:10.312646'
+status: completed
 bees_version: '1.1'
 ---
 
