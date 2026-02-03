@@ -1718,7 +1718,7 @@ before execution, preventing runtime errors and providing clear error messages.
 
 **Core Responsibilities**:
 - Parse YAML query structure into list of stages
-- Validate search terms (type=, id=, title~, label~)
+- Validate search terms (type=, id=, title~, label~, parent=)
 - Validate graph terms (children, parent, up_dependencies, down_dependencies)
 - Enforce stage purity (no mixing search and graph terms)
 - Validate regex patterns are compilable
@@ -1754,11 +1754,11 @@ ticket data using exact match and regex patterns.
 match ALL terms to be included in results.
 
 **Integration**: Called by PipelineEvaluator when executing search stages
-(stages containing type=, id=, title~, label~ terms).
+(stages containing type=, id=, title~, label~, parent= terms).
 
 
 **SearchExecutor Class**:
-- Four filter methods (one per search term type)
+- Five filter methods (one per search term type)
 - One execute method (orchestrates AND logic)
 - Stateless design (no instance state)
 - Pure functions (no side effects)
@@ -1788,6 +1788,11 @@ Regex match on `title` field.
 **4. filter_by_label_regex(tickets, regex_pattern) → Set[str]**
 
 Regex match on ANY label in `labels` array.
+
+
+**5. filter_by_parent(tickets, parent_value) → Set[str]**
+
+Exact match on `parent` field. Allows filtering tickets by parent ID in single-stage queries (e.g., `parent=features.bees-d3s` finds all tasks with that parent). Both `parent` (graph term for traversal) and `parent=` (search term for filtering) are now supported, improving query intuitiveness and reducing need for two-stage queries.
 
 
 ### Execute Method AND Logic

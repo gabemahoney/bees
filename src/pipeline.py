@@ -199,7 +199,7 @@ class PipelineEvaluator:
         if not stage:
             raise ValueError("Cannot determine type of empty stage")
 
-        search_prefixes = {'type=', 'id=', 'title~', 'label~'}
+        search_prefixes = {'type=', 'id=', 'title~', 'label~', 'parent='}
         graph_terms = {'parent', 'children', 'up_dependencies', 'down_dependencies'}
 
         has_search = any(

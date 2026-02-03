@@ -246,6 +246,12 @@ execute_freeform_query(query_yaml="- [type=epic]\n- [children]")
 # Execute ad-hoc query with hive filter
 execute_freeform_query(query_yaml="- [type=task, status=open]", hive_names=["backend"])
 
+# Find all tasks with a specific parent
+execute_freeform_query(query_yaml="- [parent=features.bees-d3s]")
+
+# Combine parent= with other search terms
+execute_freeform_query(query_yaml="- [type=task, parent=features.bees-d3s]")
+
 # Compare to named query approach (two-step)
 add_named_query(name="epic_children", query_yaml="- [type=epic]\n- [children]")
 execute_query(query_name="epic_children")

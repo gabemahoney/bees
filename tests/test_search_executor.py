@@ -20,18 +20,21 @@ def sample_tickets():
             'issue_type': 'task',
             'title': 'Implement OAuth Login',
             'labels': ['backend', 'api'],
+            'parent': 'bees-ep1',
         },
         'bees-tk2': {
             'id': 'bees-tk2',
             'issue_type': 'task',
             'title': 'Build User Profile API',
             'labels': ['backend', 'api', 'beta'],
+            'parent': 'bees-ep1',
         },
         'bees-st1': {
             'id': 'bees-st1',
             'issue_type': 'subtask',
             'title': 'Write OAuth tests',
             'labels': ['testing', 'preview'],
+            'parent': 'bees-tk1',
         },
         'bees-ep2': {
             'id': 'bees-ep2',
@@ -43,6 +46,7 @@ def sample_tickets():
             'id': 'bees-nolabels',
             'issue_type': 'task',
             'title': 'Task without labels',
+            'parent': 'bees-ep2',
         },
     }
 
@@ -91,6 +95,42 @@ class TestFilterById:
     def test_filter_empty_tickets(self, executor):
         result = executor.filter_by_id({}, 'bees-ep1')
         assert result == set()
+
+
+class TestFilterByParent:
+    """Tests for filter_by_parent method."""
+
+    def test_filter_existing_parent(self, executor, sample_tickets):
+        """Should find tickets with a specific parent."""
+        result = executor.filter_by_parent(sample_tickets, 'bees-ep1')
+        assert result == {'bees-tk1', 'bees-tk2'}
+
+    def test_filter_nonexistent_parent(self, executor, sample_tickets):
+        """Should handle parent ID that doesn't exist."""
+        result = executor.filter_by_parent(sample_tickets, 'bees-xxx')
+        assert result == set()
+
+    def test_filter_no_parent(self, executor, sample_tickets):
+        """Should handle filtering by None parent - matches tickets with parent=None."""
+        result = executor.filter_by_parent(sample_tickets, None)
+        # Epics bees-ep1 and bees-ep2 don't have parent field in sample_tickets
+        # but their parent field would be None if accessed via .get('parent')
+        assert result == {'bees-ep1', 'bees-ep2'}
+
+    def test_filter_empty_tickets(self, executor):
+        """Should handle empty ticket dict."""
+        result = executor.filter_by_parent({}, 'bees-ep1')
+        assert result == set()
+
+    def test_filter_single_child(self, executor, sample_tickets):
+        """Should find ticket with single child."""
+        result = executor.filter_by_parent(sample_tickets, 'bees-tk1')
+        assert result == {'bees-st1'}
+
+    def test_filter_different_parent(self, executor, sample_tickets):
+        """Should correctly filter by different parent."""
+        result = executor.filter_by_parent(sample_tickets, 'bees-ep2')
+        assert result == {'bees-nolabels'}
 
 
 class TestFilterByTitleRegex:
@@ -181,10 +221,41 @@ class TestExecute:
         result = executor.execute(sample_tickets, ['label~beta'])
         assert result == {'bees-ep1', 'bees-tk2'}
 
+    def test_single_parent_filter(self, executor, sample_tickets):
+        """Should filter by parent= term."""
+        result = executor.execute(sample_tickets, ['parent=bees-ep1'])
+        assert result == {'bees-tk1', 'bees-tk2'}
+
     def test_and_logic_two_filters(self, executor, sample_tickets):
         # Type=task AND label~beta
         result = executor.execute(sample_tickets, ['type=task', 'label~beta'])
         assert result == {'bees-tk2'}
+
+    def test_parent_combined_with_type(self, executor, sample_tickets):
+        """Should combine parent= with type= filter."""
+        result = executor.execute(sample_tickets, ['type=task', 'parent=bees-ep1'])
+        assert result == {'bees-tk1', 'bees-tk2'}
+
+    def test_parent_combined_with_label(self, executor, sample_tickets):
+        """Should combine parent= with label~ filter."""
+        result = executor.execute(sample_tickets, ['parent=bees-ep1', 'label~api'])
+        assert result == {'bees-tk1', 'bees-tk2'}
+
+    def test_parent_combined_multiple_filters(self, executor, sample_tickets):
+        """Should combine parent= with multiple other filters."""
+        result = executor.execute(sample_tickets, ['type=task', 'parent=bees-ep1', 'label~beta'])
+        assert result == {'bees-tk2'}
+
+    def test_parent_nonexistent_returns_empty(self, executor, sample_tickets):
+        """Should return empty set when no tickets have specified parent."""
+        result = executor.execute(sample_tickets, ['parent=bees-xxx'])
+        assert result == set()
+
+    def test_parent_short_circuit_empty(self, executor, sample_tickets):
+        """Should short-circuit when parent= filter returns empty set."""
+        # parent=bees-xxx returns empty, should not process subsequent filters
+        result = executor.execute(sample_tickets, ['parent=bees-xxx', 'label~beta'])
+        assert result == set()
 
     def test_and_logic_three_filters(self, executor, sample_tickets):
         # Type=task AND label~backend AND title~API

@@ -322,6 +322,50 @@ class TestQueryExecution:
         assert 'bees-tk1' in results
         assert 'bees-tk2' in results
 
+    def test_single_parent_filter(self, pipeline):
+        """Test execution of single parent= search filter."""
+        stages = [['parent=bees-ep1']]
+        results = pipeline.execute_query(stages)
+
+        # Should return both tasks with parent bees-ep1
+        assert len(results) == 2
+        assert 'bees-tk1' in results
+        assert 'bees-tk2' in results
+
+    def test_parent_filter_combined_with_type(self, pipeline):
+        """Test parent= filter combined with type= filter."""
+        stages = [['parent=bees-ep1', 'type=task']]
+        results = pipeline.execute_query(stages)
+
+        # Should return both tasks with parent bees-ep1 and type=task
+        assert len(results) == 2
+        assert 'bees-tk1' in results
+        assert 'bees-tk2' in results
+
+    def test_parent_filter_combined_with_label(self, pipeline):
+        """Test parent= filter combined with label~ filter."""
+        stages = [['parent=bees-ep1', 'label~api']]
+        results = pipeline.execute_query(stages)
+
+        # Both bees-tk1 and bees-tk2 have parent=bees-ep1 and api label
+        assert len(results) == 2
+        assert 'bees-tk1' in results
+        assert 'bees-tk2' in results
+
+    def test_parent_filter_in_multistage_pipeline(self, pipeline):
+        """Test parent= filter in multi-stage query with result passing."""
+        # Stage 1: Get all children of bees-ep1 using parent= filter
+        # Stage 2: Traverse back to their parent
+        stages = [
+            ['parent=bees-ep1'],
+            ['parent']
+        ]
+        results = pipeline.execute_query(stages)
+
+        # Stage 1 gets bees-tk1 and bees-tk2, stage 2 gets their parent
+        assert len(results) == 1
+        assert 'bees-ep1' in results
+
 
 class TestBatchExecution:
     """Test batch query execution with cached ticket data."""

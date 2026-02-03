@@ -27,6 +27,7 @@ class QueryParser:
     - id=<value>
     - title~<regex>
     - label~<regex>
+    - parent=<value>
 
     Graph terms:
     - down_dependencies
@@ -36,7 +37,7 @@ class QueryParser:
     """
 
     # Valid search term prefixes
-    SEARCH_TERMS = {'type=', 'id=', 'title~', 'label~'}
+    SEARCH_TERMS = {'type=', 'id=', 'title~', 'label~', 'parent='}
 
     # Valid graph term names
     GRAPH_TERMS = {'down_dependencies', 'up_dependencies', 'parent', 'children'}
@@ -186,6 +187,14 @@ class QueryParser:
                     f"Stage {stage_idx}: id= term missing value"
                 )
             # ID format validation could be added here
+
+        elif term.startswith('parent='):
+            value = term[7:]  # Skip 'parent='
+            if not value:
+                raise QueryValidationError(
+                    f"Stage {stage_idx}: parent= term missing value"
+                )
+            # Optional: Add ticket ID format validation if needed
 
         elif term.startswith('title~') or term.startswith('label~'):
             prefix_len = 6 if term.startswith('title~') else 6  # Both are 6 chars

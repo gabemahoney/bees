@@ -477,6 +477,50 @@ class TestExecuteFreeformQuery:
         """Test that query validation errors are caught and reported."""
         # Invalid query structure (not a list)
         invalid_query = "type=task"
-        
+
         with pytest.raises(ValueError, match="Invalid query structure"):
             _execute_freeform_query(invalid_query)
+
+    @pytest.mark.asyncio
+    async def test_execute_freeform_query_with_parent_filter(self):
+        """Test freeform query with parent= search term."""
+        query_yaml = "- [parent=some-epic-id]"
+
+        # Should succeed with 0 results since no tickets exist
+        result = await _execute_freeform_query(query_yaml)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
+        assert result["ticket_ids"] == []
+
+    @pytest.mark.asyncio
+    async def test_execute_freeform_query_parent_combined_with_type(self):
+        """Test freeform query with parent= combined with type= filter."""
+        query_yaml = "- [type=task, parent=epic-123]"
+
+        # Should succeed with 0 results since no tickets exist
+        result = await _execute_freeform_query(query_yaml)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_execute_freeform_query_parent_combined_with_label(self):
+        """Test freeform query with parent= combined with label~ filter."""
+        query_yaml = "- [parent=epic-123, label~beta]"
+
+        # Should succeed with 0 results since no tickets exist
+        result = await _execute_freeform_query(query_yaml)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_execute_freeform_query_parent_in_multistage(self):
+        """Test freeform query with parent= in multi-stage pipeline."""
+        multi_stage_query = """
+- [parent=epic-123]
+- [parent]
+"""
+
+        # Should succeed with 0 results since no tickets exist
+        result = await _execute_freeform_query(multi_stage_query)
+        assert result["status"] == "success"
+        assert result["result_count"] == 0

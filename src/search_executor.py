@@ -16,6 +16,7 @@ class SearchExecutor:
     - id= (exact match on ticket ID)
     - title~ (regex match on title)
     - label~ (regex match on any label)
+    - parent= (exact match on parent field)
 
     All filters in a stage are ANDed together - tickets must match ALL terms.
     """
@@ -49,6 +50,22 @@ class SearchExecutor:
         if id_value in tickets:
             return {id_value}
         return set()
+
+    def filter_by_parent(self, tickets: Dict[str, Dict[str, Any]], parent_value: str) -> Set[str]:
+        """Filter tickets by exact match on parent field.
+
+        Args:
+            tickets: Dict mapping ticket_id -> ticket data
+            parent_value: Parent ticket ID to match
+
+        Returns:
+            Set of ticket IDs where parent matches parent_value
+        """
+        matching_ids = set()
+        for ticket_id, ticket_data in tickets.items():
+            if ticket_data.get('parent') == parent_value:
+                matching_ids.add(ticket_id)
+        return matching_ids
 
     def filter_by_title_regex(self, tickets: Dict[str, Dict[str, Any]], regex_pattern: str) -> Set[str]:
         """Filter tickets by regex match on title field.
@@ -127,13 +144,15 @@ class SearchExecutor:
         # Apply each filter sequentially (AND logic via intersection)
         for term in search_terms:
             if '=' in term:
-                # Exact match terms: type=, id=
+                # Exact match terms: type=, id=, parent=
                 term_name, term_value = term.split('=', 1)
 
                 if term_name == 'type':
                     matching_ids = self.filter_by_type(tickets, term_value)
                 elif term_name == 'id':
                     matching_ids = self.filter_by_id(tickets, term_value)
+                elif term_name == 'parent':
+                    matching_ids = self.filter_by_parent(tickets, term_value)
                 else:
                     raise ValueError(f"Unknown exact match term: {term_name}")
 

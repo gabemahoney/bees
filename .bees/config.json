@@ -1,9 +1,14 @@
 {
   "hives": {
+    "bugs": {
+      "path": "/Users/gmahoney/projects/bees/docs/tickets/bugs",
+      "display_name": "bugs",
+      "created_at": "2026-02-03T07:25:36.220549"
+    },
     "features": {
       "path": "/Users/gmahoney/projects/bees/docs/tickets/features",
       "display_name": "features",
-      "created_at": "2026-02-03T06:28:11.531664"
+      "created_at": "2026-02-03T07:25:36.220549"
     }
   },
   "allow_cross_hive_dependencies": false,

@@ -214,6 +214,58 @@ class TestSearchTermValidation:
         stages = parser.parse(query)
         parser.validate(stages)
 
+    def test_valid_parent_term(self):
+        """Should accept valid parent= terms."""
+        parser = QueryParser()
+        queries = [
+            [['parent=bugs.bees-abc']],
+            [['parent=features.bees-d3s']],
+            [['parent=backend.bees-123']]
+        ]
+
+        for query in queries:
+            stages = parser.parse(query)
+            parser.validate(stages)
+
+    def test_empty_parent_value_raises_error(self):
+        """Should reject empty parent value."""
+        parser = QueryParser()
+        query = [['parent=']]
+
+        stages = parser.parse(query)
+        with pytest.raises(QueryValidationError, match="parent= term missing value"):
+            parser.validate(stages)
+
+    def test_parent_in_search_stage(self):
+        """Should allow parent= in search stage."""
+        parser = QueryParser()
+        query = [['type=task', 'parent=bugs.bees-abc']]
+
+        stages = parser.parse(query)
+        parser.validate(stages)
+
+    def test_parent_combined_with_other_search_terms(self):
+        """Should allow parent= combined with other search terms."""
+        parser = QueryParser()
+        queries = [
+            [['type=task', 'parent=epic-1']],
+            [['parent=epic-1', 'label~open']],
+            [['type=subtask', 'parent=task-5', 'label~p0']]
+        ]
+
+        for query in queries:
+            stages = parser.parse(query)
+            parser.validate(stages)
+
+    def test_parent_not_mixed_with_graph_terms(self):
+        """Should reject parent= mixed with graph terms (stage purity)."""
+        parser = QueryParser()
+        query = [['parent=epic-1', 'children']]
+
+        stages = parser.parse(query)
+        with pytest.raises(QueryValidationError, match="Cannot mix search and graph terms"):
+            parser.validate(stages)
+
 
 class TestGraphTermValidation:
     """Tests for graph term validation."""
@@ -442,6 +494,18 @@ class TestErrorMessages:
 
         assert "Unknown term" in str(exc_info.value)
         assert "unknown_term" in str(exc_info.value)
+
+    def test_unknown_term_includes_parent_in_error(self):
+        """Should include parent= in valid search terms list in error message."""
+        parser = QueryParser()
+        query = [['unknown_term']]
+
+        stages = parser.parse(query)
+        with pytest.raises(QueryValidationError) as exc_info:
+            parser.validate(stages)
+
+        error_msg = str(exc_info.value)
+        assert "parent=" in error_msg
 
     def test_invalid_regex_error_message(self):
         """Should provide clear error for invalid regex."""
