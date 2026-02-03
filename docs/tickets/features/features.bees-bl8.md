@@ -74,8 +74,9 @@ children:
 - features.bees-avl
 - features.bees-xdg
 - features.bees-gzx
+- features.bees-vxp
 created_at: '2026-02-03T16:46:30.052016'
-updated_at: '2026-02-03T16:52:21.953252'
+updated_at: '2026-02-03T17:13:27.919443'
 priority: 2
 status: open
 bees_version: '1.1'
