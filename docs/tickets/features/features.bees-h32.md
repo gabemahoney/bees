@@ -31,8 +31,8 @@ down_dependencies:
 - features.bees-mwg
 parent: features.bees-avl
 created_at: '2026-02-03T16:53:21.989545'
-updated_at: '2026-02-03T16:53:41.425983'
-status: open
+updated_at: '2026-02-03T17:37:28.125177'
+status: completed
 bees_version: '1.1'
 ---
 

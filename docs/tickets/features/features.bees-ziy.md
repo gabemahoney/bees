@@ -34,12 +34,12 @@ description: 'Update README.md to reference the new docs/architecture/validation
   - Reference added if appropriate section exists
 
   - No changes if not needed'
-parent: features.bees-avl
 up_dependencies:
 - features.bees-q7i
-status: open
+parent: features.bees-avl
 created_at: '2026-02-03T16:54:03.505939'
-updated_at: '2026-02-03T16:54:03.505943'
+updated_at: '2026-02-03T17:40:33.123270'
+status: completed
 bees_version: '1.1'
 ---
 
