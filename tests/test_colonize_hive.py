@@ -11,7 +11,7 @@ import pytest
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
-from src.mcp_server import colonize_hive, scan_for_hive
+from src.mcp_server import colonize_hive_core as colonize_hive, scan_for_hive
 
 
 class TestColonizeHive:
@@ -319,7 +319,7 @@ class TestColonizeHive:
     def test_linter_stub_code_exists_in_source(self):
         """Test that linter stub TODO comment exists in colonize_hive source code."""
         import inspect
-        from src.mcp_server import colonize_hive
+        from src.mcp_server import colonize_hive_core as colonize_hive
 
         # Get source code of colonize_hive function
         source = inspect.getsource(colonize_hive)

@@ -17,7 +17,7 @@ from src.config import (
     write_hive_config_dict,
     register_hive_dict
 )
-from src.mcp_server import colonize_hive
+from src.mcp_server import colonize_hive_core as colonize_hive
 
 
 class TestLoadHiveConfigDict:

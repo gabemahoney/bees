@@ -399,11 +399,11 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
     return found_hive_path
 
 
-async def colonize_hive(name: str, path: str, ctx: Context | None = None) -> Dict[str, Any]:
+async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
 
-    This is an orchestration function that coordinates validation and hive setup:
+    This is the core implementation that coordinates validation and hive setup:
     - Normalizes the hive display name using the config system
     - Validates the path is absolute, exists, and within the repo
     - Checks for duplicate normalized hive names in the registry
@@ -432,7 +432,7 @@ async def colonize_hive(name: str, path: str, ctx: Context | None = None) -> Dic
             }
 
     Example:
-        >>> await colonize_hive('Back End', '/Users/user/projects/myrepo/tickets', ctx)
+        >>> await colonize_hive_core('Back End', '/Users/user/projects/myrepo/tickets', ctx)
         {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', ...}
     """
     try:
@@ -2104,7 +2104,7 @@ async def _colonize_hive(
         - Config error: Cannot read or write .bees/config.json
     """
     try:
-        result = await colonize_hive(name=name, path=path, ctx=ctx)
+        result = await colonize_hive_core(name=name, path=path, ctx=ctx)
 
         # Check if operation succeeded
         if result.get('status') == 'error':

@@ -155,7 +155,7 @@ async def test_create_ticket_uses_context():
 @pytest.mark.asyncio
 async def test_colonize_hive_uses_context():
     """Test that colonize_hive uses client context."""
-    from src.mcp_server import colonize_hive
+    from src.mcp_server import colonize_hive_core
     import tempfile
     
     ctx = Mock()
@@ -171,7 +171,7 @@ async def test_colonize_hive_uses_context():
     
     # Try to colonize with an invalid path (outside repo) - should fail validation
     with tempfile.TemporaryDirectory() as tmpdir:
-        result = await colonize_hive(
+        result = await colonize_hive_core(
             name="Test Hive",
             path=tmpdir,  # Path outside repo
             ctx=ctx
