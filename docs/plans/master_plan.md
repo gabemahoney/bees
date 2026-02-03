@@ -29,10 +29,10 @@ Bees is a markdown-based ticket management system with four core modules:
    - All tickets must reside in hive-specific directories
    - Functions require hive-prefixed IDs (e.g., "backend.bees-abc") or hive_name parameter
 
-4. **Query System** (`src/query_parser.py`, `src/search_executor.py`)
+4. **Query System** - See [docs/architecture/queries.md](../architecture/queries.md)
    - Multi-stage query pipeline with search and graph terms
-   - In-memory ticket filtering with AND/OR semantics
-   - Regex-based pattern matching
+   - In-memory ticket filtering and relationship traversal
+   - Query parser, search executor, graph executor, pipeline evaluator
 
 5. **Configuration Module** (`src/config.py`)
    - Centralized configuration management
@@ -1360,134 +1360,14 @@ Uses `infer_ticket_type_from_id()` from paths module for lightweight type checki
 - Relationship history/audit log
 
 
-## Query Parser Architecture
+## Query System Architecture
 
-### Overview (Task bees-j15d)
+The query system implements a multi-stage pipeline for filtering and traversing tickets. Queries consist of sequential stages, with each stage either filtering tickets using search terms (type=, id=, title~, label~, parent=) or traversing relationships using graph terms (parent, children, up_dependencies, down_dependencies). All tickets are loaded once into memory for efficient execution. The system includes query parser validation, search executor (AND logic filtering), graph executor (relationship traversal), and pipeline evaluator (orchestration).
 
-The Query Parser (`src/query_parser.py`) validates YAML query structures for the multi-stage
-query pipeline system. It enforces strict validation rules to ensure queries are well-formed
-before execution, preventing runtime errors and providing clear error messages.
-
-**Core Responsibilities**:
-- Parse YAML query structure into list of stages
-- Validate search terms (type=, id=, title~, label~, parent=)
-- Validate graph terms (children, parent, up_dependencies, down_dependencies)
-- Enforce stage purity (no mixing search and graph terms)
-- Validate regex patterns are compilable
+**For complete architecture details, see [docs/architecture/queries.md](../architecture/queries.md)**
 
 
-**Design Principles**:
-- Stages evaluated sequentially in order
-- Results from stage N passed to stage N+1
-- Terms within a stage are ANDed together
-- Results deduplicated after each stage
-- Empty result set short-circuits pipeline
-
-
-**Regex Features Supported**:
-- Case-insensitive flags: `(?i)beta`
-- Alternation (OR): `beta|alpha|preview`
-- Negative lookahead (NOT): `^(?!.*closed).*`
-- Character classes: `p[0-4]`
-- Anchors: `^start`, `end$`
-
-
-## Search Executor Architecture
-
-The Search Executor (`src/search_executor.py`) implements in-memory filtering of
-tickets using search terms with AND semantics. Part of the query pipeline system.
-
-### Design Overview
-
-**Purpose**: Execute search stages from query pipeline by filtering in-memory
-ticket data using exact match and regex patterns.
-
-**Key Principle**: All search terms in a stage are ANDed together - a ticket must
-match ALL terms to be included in results.
-
-**Integration**: Called by PipelineEvaluator when executing search stages
-(stages containing type=, id=, title~, label~, parent= terms).
-
-
-**SearchExecutor Class**:
-- Five filter methods (one per search term type)
-- One execute method (orchestrates AND logic)
-- Stateless design (no instance state)
-- Pure functions (no side effects)
-
-**Data Structure**:
-- Input: `Dict[str, Dict[str, Any]]` - ticket_id → ticket data
-- Output: `Set[str]` - set of matching ticket IDs
-- In-memory operation (no disk I/O)
-
-### Filter Methods
-
-**1. filter_by_type(tickets, type_value) → Set[str]**
-
-Exact match on `issue_type` field.
-
-
-**2. filter_by_id(tickets, id_value) → Set[str]**
-
-Exact match on ticket ID (dict key).
-
-
-**3. filter_by_title_regex(tickets, regex_pattern) → Set[str]**
-
-Regex match on `title` field.
-
-
-**4. filter_by_label_regex(tickets, regex_pattern) → Set[str]**
-
-Regex match on ANY label in `labels` array.
-
-
-**5. filter_by_parent(tickets, parent_value) → Set[str]**
-
-Exact match on `parent` field. Allows filtering tickets by parent ID in single-stage queries (e.g., `parent=features.bees-d3s` finds all tasks with that parent). Both `parent` (graph term for traversal) and `parent=` (search term for filtering) are now supported, improving query intuitiveness and reducing need for two-stage queries.
-
-
-### Execute Method AND Logic
-
-**execute(tickets, search_terms) → Set[str]**
-
-Orchestrates multi-term filtering with AND semantics.
-
-
-## Graph Executor Architecture
-
-The Graph Executor (`src/graph_executor.py`) implements in-memory traversal of ticket relationships (parent, children, up_dependencies, down_dependencies) for the query pipeline. Zero disk I/O - all operations use pre-loaded ticket data. Single `traverse()` method handles all relationship types via parameterization with graceful error handling.
-
-### Relationship Type Handling
-
-**1. parent** - Single value traversal
-
-
-**2. children** - List traversal
-
-
-**3. up_dependencies** - List traversal (blockers)
-
-
-**4. down_dependencies** - List traversal (blocked)
-
-
-**Why not recursive traversal**:
-- Graph executor only does single-hop traversal
-- Multi-hop queries use multiple graph stages
-- Keeps executor simple and predictable
-- Allows pipeline to control traversal depth
-
-**Why no disk I/O**:
-- All tickets pre-loaded by PipelineEvaluator
-- Relationship data already parsed from YAML
-- Executor just looks up fields in memory
-- Orders of magnitude faster than disk reads
-
-### Integration
-
-Pipeline loads all tickets once and routes to appropriate executor based on stage type. Graceful error handling returns partial results for missing tickets rather than failing query. Time complexity is O(n) where n is input ticket count.
-
+## Pipeline Evaluator Architecture
 
 ### Overview
 

@@ -44,12 +44,12 @@ description: 'Review the completed docs/architecture/queries.md document to ensu
   - Clear architectural overview
 
   - References to source files included'
-parent: features.bees-ni4
 up_dependencies:
 - features.bees-uqq
-status: open
+parent: features.bees-ni4
 created_at: '2026-02-03T16:53:25.054372'
-updated_at: '2026-02-03T16:53:25.054378'
+updated_at: '2026-02-03T17:28:09.144580'
+status: completed
 bees_version: '1.1'
 ---
 

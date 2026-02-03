@@ -43,6 +43,7 @@ description: 'Extract query system architecture covering multi-stage pipeline, s
   Epic: features.bees-bl8'
 down_dependencies:
 - features.bees-gzx
+- features.bees-em3
 parent: features.bees-bl8
 children:
 - features.bees-yh4
@@ -52,9 +53,9 @@ children:
 - features.bees-uqq
 - features.bees-1g3
 created_at: '2026-02-03T16:52:05.179561'
-updated_at: '2026-02-03T16:53:25.058456'
+updated_at: '2026-02-03T17:29:22.293834'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

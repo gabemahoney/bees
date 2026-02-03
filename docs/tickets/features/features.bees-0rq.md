@@ -43,8 +43,8 @@ down_dependencies:
 - features.bees-nqv
 parent: features.bees-ni4
 created_at: '2026-02-03T16:53:03.279870'
-updated_at: '2026-02-03T16:53:08.877532'
-status: open
+updated_at: '2026-02-03T17:27:58.823535'
+status: completed
 bees_version: '1.1'
 ---
 

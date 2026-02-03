@@ -41,8 +41,8 @@ down_dependencies:
 - features.bees-p5y
 parent: features.bees-ni4
 created_at: '2026-02-03T16:53:08.872209'
-updated_at: '2026-02-03T16:53:13.316717'
-status: open
+updated_at: '2026-02-03T17:27:59.315086'
+status: completed
 bees_version: '1.1'
 ---
 
