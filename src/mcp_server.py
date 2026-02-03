@@ -399,7 +399,7 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
     return found_hive_path
 
 
-def colonize_hive(name: str, path: str) -> Dict[str, Any]:
+async def colonize_hive(name: str, path: str, ctx: Context | None = None) -> Dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
 
@@ -413,6 +413,7 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
     Args:
         name: Display name for the hive (e.g., 'Back End')
         path: Absolute path where the hive should be created
+        ctx: FastMCP Context (auto-injected when called from MCP, gets client's repo root)
 
     Returns:
         dict: Success/error status with validation details
@@ -431,7 +432,7 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
             }
 
     Example:
-        >>> colonize_hive('Back End', '/Users/user/projects/myrepo/tickets')
+        >>> await colonize_hive('Back End', '/Users/user/projects/myrepo/tickets', ctx)
         {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', ...}
     """
     try:
@@ -451,15 +452,21 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
                 }
             }
 
-        # Step 2: Validate path and find repo root from the hive path
+        # Step 2: Validate path using client's repo root from context
         try:
-            # Find repo root from the hive path itself, not from cwd
-            # This ensures we work with the correct repo even if MCP server is running elsewhere
+            # Get repo root from MCP context (client's repo) or fall back to hive path for non-MCP
             hive_path = Path(path)
-            repo_root = get_repo_root_from_path(hive_path)
+            if ctx:
+                # MCP tool call - use client's repo root from context
+                repo_root = await get_repo_root(ctx)
+                logger.info(f"Using client repo root from context: {repo_root}")
+            else:
+                # Non-MCP call (tests, CLI) - find repo root from hive path
+                repo_root = get_repo_root_from_path(hive_path)
+                logger.info(f"Found repo root from hive path: {repo_root}")
+            
             validated_path = validate_hive_path(path, repo_root)
             logger.info(f"Validated hive path: {validated_path}")
-            logger.info(f"Found repo root from hive path: {repo_root}")
         except ValueError as e:
             return {
                 "status": "error",
@@ -474,7 +481,7 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
 
         # Step 3: Check for duplicate normalized names using config system
         try:
-            validate_unique_hive_name(normalized_name)
+            validate_unique_hive_name(normalized_name, repo_root=repo_root)
             logger.info(f"Validated unique hive name: {normalized_name}")
         except ValueError as e:
             return {
@@ -1032,7 +1039,7 @@ health_check = mcp.tool()(_health_check)
 
 # Tool stubs - implementations will be added in later tasks
 
-def _create_ticket(
+async def _create_ticket(
     ticket_type: str,
     title: str,
     hive_name: str,
@@ -1044,7 +1051,8 @@ def _create_ticket(
     labels: list[str] | None = None,
     owner: str | None = None,
     priority: int | None = None,
-    status: str | None = None
+    status: str | None = None,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Create a new ticket (epic, task, or subtask).
@@ -1062,6 +1070,7 @@ def _create_ticket(
         owner: Owner/assignee of the ticket
         priority: Priority level (typically 0-4)
         status: Status of the ticket (e.g., 'open', 'in_progress', 'completed')
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: Created ticket information including ticket_id
@@ -1102,7 +1111,10 @@ def _create_ticket(
     #   - Creating tickets requires explicit hive specification to avoid ambiguity
     # See docs/plans/master_plan.md for full architectural rationale
     normalized_hive = normalize_hive_name(hive_name)
-    config = load_bees_config()
+    
+    # Get client's repo root from MCP context
+    repo_root = await get_repo_root(ctx) if ctx else get_repo_root_from_path(Path.cwd())
+    config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         # Provide helpful error message guiding users to create hive first
         # Note: We intentionally do NOT attempt recovery via scan_for_hive (see design decision above)
@@ -2015,9 +2027,10 @@ def _generate_index(
 generate_index_tool = mcp.tool()(_generate_index)
 
 
-def _colonize_hive(
+async def _colonize_hive(
     name: str,
-    path: str
+    path: str,
+    ctx: Context | None = None
 ) -> Dict[str, Any]:
     """
     Create and register a new hive at the specified path.
@@ -2078,7 +2091,7 @@ def _colonize_hive(
         - Config error: Cannot read or write .bees/config.json
     """
     try:
-        result = colonize_hive(name=name, path=path)
+        result = await colonize_hive(name=name, path=path, ctx=ctx)
 
         # Check if operation succeeded
         if result.get('status') == 'error':
@@ -2101,13 +2114,16 @@ def _colonize_hive(
 colonize_hive_tool = mcp.tool()(_colonize_hive)
 
 
-def _list_hives() -> Dict[str, Any]:
+async def _list_hives(ctx: Context) -> Dict[str, Any]:
     """
     List all registered hives in the repository.
 
-    Reads .bees/config.json to retrieve all registered hives and returns
-    structured information about each hive including display name, normalized
-    name, and path.
+    Reads .bees/config.json from the client's repository to retrieve all 
+    registered hives and returns structured information about each hive 
+    including display name, normalized name, and path.
+
+    Args:
+        ctx: FastMCP Context (auto-injected, gets client's repo root)
 
     Returns:
         dict: List of hives with their details
@@ -2129,7 +2145,7 @@ def _list_hives() -> Dict[str, Any]:
             }
 
     Example:
-        >>> _list_hives()
+        >>> await _list_hives(ctx)
         {
             'status': 'success',
             'hives': [
@@ -2147,8 +2163,11 @@ def _list_hives() -> Dict[str, Any]:
         }
     """
     try:
-        # Load config from .bees/config.json
-        config = load_bees_config()
+        # Get client's repo root from MCP context
+        repo_root = await get_repo_root(ctx)
+        
+        # Load config from client's .bees/config.json
+        config = load_bees_config(repo_root)
 
         # Handle case where config doesn't exist or has no hives
         if not config or not config.hives:
