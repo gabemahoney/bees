@@ -1759,6 +1759,114 @@ def _execute_freeform_query(
 execute_freeform_query = mcp.tool()(_execute_freeform_query)
 
 
+def _show_ticket(ticket_id: str) -> Dict[str, Any]:
+    """
+    Retrieve and return ticket data by ticket ID.
+
+    Args:
+        ticket_id: The ID of the ticket to retrieve (e.g., 'backend.bees-abc1')
+
+    Returns:
+        dict: Ticket data including all fields
+            {
+                "status": "success",
+                "ticket_id": str,
+                "ticket_type": str,
+                "title": str,
+                "description": str,
+                "labels": list[str],
+                "parent": str | None,
+                "children": list[str] | None,
+                "up_dependencies": list[str] | None,
+                "down_dependencies": list[str] | None,
+                "owner": str | None,
+                "priority": int | None,
+                "ticket_status": str,
+                "created_at": str,
+                "updated_at": str,
+                "created_by": str | None,
+                "bees_version": str
+            }
+
+    Raises:
+        ValueError: If ticket doesn't exist or ticket_id is malformed
+
+    Example:
+        >>> _show_ticket('backend.bees-abc1')
+        {'status': 'success', 'ticket_id': 'backend.bees-abc1', ...}
+    """
+    # Validate ticket_id is not empty
+    if not ticket_id or not ticket_id.strip():
+        error_msg = "ticket_id cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Parse hive from ticket_id
+    hive_prefix = parse_hive_from_ticket_id(ticket_id)
+
+    # Return error if hive prefix is None (malformed ID)
+    if hive_prefix is None:
+        error_msg = f"Malformed ticket ID: '{ticket_id}'. Expected format: hive_name.bees-xxxx"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate hive exists in config
+    normalized_hive = normalize_hive_name(hive_prefix)
+    config = load_bees_config()
+    if not config or normalized_hive not in config.hives:
+        error_msg = f"Hive '{hive_prefix}' (normalized: '{normalized_hive}') not found in configuration"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Infer ticket type from ID
+    ticket_type = infer_ticket_type_from_id(ticket_id)
+    if not ticket_type:
+        error_msg = f"Ticket does not exist: {ticket_id}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Get ticket path and read ticket
+    ticket_path = get_ticket_path(ticket_id, ticket_type)
+    try:
+        ticket = read_ticket(ticket_path)
+    except FileNotFoundError:
+        error_msg = f"Ticket file not found: {ticket_id}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    except Exception as e:
+        error_msg = f"Failed to read ticket {ticket_id}: {e}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Convert ticket to dict for JSON serialization
+    ticket_data = {
+        "status": "success",
+        "ticket_id": ticket.id,
+        "ticket_type": ticket.type,
+        "title": ticket.title,
+        "description": ticket.description,
+        "labels": ticket.labels,
+        "parent": ticket.parent,
+        "children": ticket.children,
+        "up_dependencies": ticket.up_dependencies,
+        "down_dependencies": ticket.down_dependencies,
+        "owner": ticket.owner,
+        "priority": ticket.priority,
+        "ticket_status": ticket.status,
+        "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+        "updated_at": ticket.updated_at.isoformat() if ticket.updated_at else None,
+        "created_by": ticket.created_by,
+        "bees_version": ticket.bees_version
+    }
+
+    logger.info(f"Successfully retrieved ticket: {ticket_id}")
+    return ticket_data
+
+
+# Register the show_ticket tool with FastMCP
+show_ticket = mcp.tool()(_show_ticket)
+
+
 def _generate_index(
     status: str | None = None,
     type: str | None = None,
@@ -2590,6 +2698,225 @@ def _sanitize_hive(hive_name: str) -> Dict[str, Any]:
 
 # Register the sanitize_hive tool with FastMCP
 sanitize_hive = mcp.tool()(_sanitize_hive)
+
+
+def _help() -> Dict[str, Any]:
+    """
+    Display available MCP tools and their parameters.
+    
+    Returns comprehensive list of all available Bees MCP commands with their
+    parameters, types, and brief descriptions—similar to --help output.
+    
+    HIVES
+    - Isolated ticket directories within repo, tracked in .bees/config.json
+    - Identity marker: .hive/identity.json contains normalized_name, display_name, created_at
+    - Tickets stored flat at hive root
+    - Naming: Display name normalized (lowercase, spaces→underscores, special chars removed)
+    - Config keys and ticket ID prefixes use normalized names
+    - Discovery: Primary lookup in config.json, fallback scan_for_hive() for .hive markers
+    
+    TICKET TYPES
+    - Epic: Top-level, optional children array, no parent field allowed
+    - Task: Mid-level, required parent (Epic), optional children (Subtasks)
+    - Subtask: Leaf-level, required parent (Task), children always empty
+    - ID format: {hive_normalized}.bees-{3char} (e.g., backend.bees-abc)
+    - Schema: Markdown with YAML frontmatter, bees_version field marks valid tickets
+    
+    PARENT/CHILD RELATIONSHIPS
+    - Valid pairs: Epic↔Task, Task↔Subtask
+    - Bidirectional sync: Setting A.parent=B auto-updates B.children to include A
+    - Bidirectional sync: Setting A.children=[C] auto-updates C.parent=A
+    - Update behavior: Removing A from B.children nullifies A.parent (except subtasks)
+    - Delete cascade: Deleting parent recursively deletes entire child subtree
+    - Delete cleanup: Removes deleted ticket from parent's children array
+    - Subtask constraint: parent field cannot be nullified (required)
+    
+    DEPENDENCIES
+    - up_dependencies: Tickets this one depends on (blockers)
+    - down_dependencies: Tickets depending on this one (blocked items)
+    - Bidirectional sync: Setting A.up_dependencies=[B] auto-updates B.down_dependencies=[A]
+    - Same-type restriction: Epics→Epics, Tasks→Tasks, Subtasks→Subtasks only
+    - Circular detection: Validates no direct or transitive cycles
+    - Delete cleanup: Removes deleted ticket from all related dependency arrays
+    
+    QUERIES
+    - Multi-stage pipeline: Each stage filters or traverses previous result set
+    - Search terms (AND logic): type=, id=, title~regex, label~regex
+    - Graph terms (traversal): parent, children, up_dependencies, down_dependencies
+    - Stage purity: Each stage is ONLY search OR ONLY graph, never mixed
+    - Named queries: Stored as YAML in .bees/queries/, validated on save
+    
+    Returns:
+        dict: Contains 'commands' list with command details and 'concepts' with technical reference
+    """
+    commands = [
+        {
+            "name": "health_check",
+            "description": "Check MCP server health status",
+            "parameters": []
+        },
+        {
+            "name": "create_ticket",
+            "description": "Create a new ticket (epic, task, or subtask)",
+            "parameters": [
+                {"name": "ticket_type", "type": "str", "required": True, "description": "Type: epic, task, or subtask"},
+                {"name": "title", "type": "str", "required": True, "description": "Ticket title"},
+                {"name": "hive_name", "type": "str", "required": True, "description": "Hive name for ticket"},
+                {"name": "description", "type": "str", "required": False, "description": "Detailed description"},
+                {"name": "parent", "type": "str", "required": False, "description": "Parent ticket ID"},
+                {"name": "children", "type": "list[str]", "required": False, "description": "Child ticket IDs"},
+                {"name": "up_dependencies", "type": "list[str]", "required": False, "description": "Blocking ticket IDs"},
+                {"name": "down_dependencies", "type": "list[str]", "required": False, "description": "Blocked ticket IDs"},
+                {"name": "labels", "type": "list[str]", "required": False, "description": "Label strings"},
+                {"name": "owner", "type": "str", "required": False, "description": "Owner/assignee"},
+                {"name": "priority", "type": "int", "required": False, "description": "Priority level"},
+                {"name": "status", "type": "str", "required": False, "description": "Status"}
+            ]
+        },
+        {
+            "name": "update_ticket",
+            "description": "Update an existing ticket",
+            "parameters": [
+                {"name": "ticket_id", "type": "str", "required": True, "description": "Ticket ID to update"},
+                {"name": "title", "type": "str", "required": False, "description": "New title"},
+                {"name": "description", "type": "str", "required": False, "description": "New description"},
+                {"name": "parent", "type": "str", "required": False, "description": "New parent ID"},
+                {"name": "children", "type": "list[str]", "required": False, "description": "New children IDs"},
+                {"name": "up_dependencies", "type": "list[str]", "required": False, "description": "New blocking IDs"},
+                {"name": "down_dependencies", "type": "list[str]", "required": False, "description": "New blocked IDs"},
+                {"name": "labels", "type": "list[str]", "required": False, "description": "New labels"},
+                {"name": "owner", "type": "str", "required": False, "description": "New owner"},
+                {"name": "priority", "type": "int", "required": False, "description": "New priority"},
+                {"name": "status", "type": "str", "required": False, "description": "New status"}
+            ]
+        },
+        {
+            "name": "delete_ticket",
+            "description": "Delete a ticket and cascade to children",
+            "parameters": [
+                {"name": "ticket_id", "type": "str", "required": True, "description": "Ticket ID to delete"}
+            ]
+        },
+        {
+            "name": "add_named_query",
+            "description": "Register a named query for reuse",
+            "parameters": [
+                {"name": "name", "type": "str", "required": True, "description": "Query name"},
+                {"name": "query_yaml", "type": "str", "required": True, "description": "YAML query structure"}
+            ]
+        },
+        {
+            "name": "execute_query",
+            "description": "Execute a named query",
+            "parameters": [
+                {"name": "query_name", "type": "str", "required": True, "description": "Name of saved query"},
+                {"name": "hive_names", "type": "list[str]", "required": False, "description": "Hives to search"}
+            ]
+        },
+        {
+            "name": "execute_freeform_query",
+            "description": "Execute a query from YAML string",
+            "parameters": [
+                {"name": "query_yaml", "type": "str", "required": True, "description": "YAML query pipeline"},
+                {"name": "hive_names", "type": "list[str]", "required": False, "description": "Hives to search"}
+            ]
+        },
+        {
+            "name": "generate_index",
+            "description": "Generate markdown index of tickets",
+            "parameters": [
+                {"name": "status", "type": "str", "required": False, "description": "Status filter"},
+                {"name": "type", "type": "str", "required": False, "description": "Type filter"},
+                {"name": "hive_name", "type": "str", "required": False, "description": "Hive to index"}
+            ]
+        },
+        {
+            "name": "colonize_hive",
+            "description": "Create and register a new hive",
+            "parameters": [
+                {"name": "name", "type": "str", "required": True, "description": "Display name for hive"},
+                {"name": "path", "type": "str", "required": True, "description": "Absolute path to hive directory"}
+            ]
+        },
+        {
+            "name": "list_hives",
+            "description": "List all registered hives with ticket counts",
+            "parameters": []
+        },
+        {
+            "name": "abandon_hive",
+            "description": "Unregister a hive (files unchanged)",
+            "parameters": [
+                {"name": "hive_name", "type": "str", "required": True, "description": "Hive to abandon"}
+            ]
+        },
+        {
+            "name": "rename_hive",
+            "description": "Rename hive and update all ticket IDs",
+            "parameters": [
+                {"name": "old_name", "type": "str", "required": True, "description": "Current hive name"},
+                {"name": "new_name", "type": "str", "required": True, "description": "New hive name"}
+            ]
+        },
+        {
+            "name": "sanitize_hive",
+            "description": "Validate and auto-fix malformed tickets in hive",
+            "parameters": [
+                {"name": "hive_name", "type": "str", "required": True, "description": "Hive to sanitize"}
+            ]
+        }
+    ]
+    
+    concepts = """
+HIVES
+- Isolated ticket directories within repo, tracked in .bees/config.json
+- Identity marker: .hive/identity.json contains normalized_name, display_name, created_at
+- Tickets stored flat at hive root
+- Naming: Display name normalized (lowercase, spaces→underscores, special chars removed)
+- Config keys and ticket ID prefixes use normalized names
+- Discovery: Primary lookup in config.json, fallback scan_for_hive() for .hive markers
+
+TICKET TYPES
+- Epic: Top-level, optional children array, no parent field allowed
+- Task: Mid-level, required parent (Epic), optional children (Subtasks)
+- Subtask: Leaf-level, required parent (Task), children always empty
+- ID format: {hive_normalized}.bees-{3char} (e.g., backend.bees-abc)
+- Schema: Markdown with YAML frontmatter, bees_version field marks valid tickets
+
+PARENT/CHILD RELATIONSHIPS
+- Valid pairs: Epic↔Task, Task↔Subtask
+- Bidirectional sync: Setting A.parent=B auto-updates B.children to include A
+- Bidirectional sync: Setting A.children=[C] auto-updates C.parent=A
+- Update behavior: Removing A from B.children nullifies A.parent (except subtasks)
+- Delete cascade: Deleting parent recursively deletes entire child subtree
+- Delete cleanup: Removes deleted ticket from parent's children array
+- Subtask constraint: parent field cannot be nullified (required)
+
+DEPENDENCIES
+- up_dependencies: Tickets this one depends on (blockers)
+- down_dependencies: Tickets depending on this one (blocked items)
+- Bidirectional sync: Setting A.up_dependencies=[B] auto-updates B.down_dependencies=[A]
+- Same-type restriction: Epics→Epics, Tasks→Tasks, Subtasks→Subtasks only
+- Circular detection: Validates no direct or transitive cycles
+- Delete cleanup: Removes deleted ticket from all related dependency arrays
+
+QUERIES
+- Multi-stage pipeline: Each stage filters or traverses previous result set
+- Search terms (AND logic): type=, id=, title~regex, label~regex
+- Graph terms (traversal): parent, children, up_dependencies, down_dependencies
+- Stage purity: Each stage is ONLY search OR ONLY graph, never mixed
+- Named queries: Stored as YAML in .bees/queries/, validated on save
+"""
+    
+    return {
+        "status": "success",
+        "commands": commands,
+        "concepts": concepts
+    }
+
+
+# Register the help tool with FastMCP
+help = mcp.tool()(_help)
 
 
 if __name__ == "__main__":

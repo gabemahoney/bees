@@ -2,7 +2,6 @@
   - git hook to run tests as CI
   - improve make-task and do-task with more instructions - check old tests for broken
 - Is there a watcher? Remove it. Add design requirement of no daemons
-
 - Clone bees
 - Cross-hive dependency setting should be per hive (stored in .hive)
 - Make-task: Add detailed instructions for docs and tests
@@ -24,7 +23,7 @@
     - Hive list
     - Dont delete tickets, just archive the hive
 - A simple tool (or MCP command) for determining the dependency order of a set of tickets
-- Similar to bd-prime. How to let agents know about features?
+- Similar to bd-prime. How to let agents know about features? Make it an MCP method 
   1. Hook Configuration (~/.claude/settings.json):                                                                                       
   {                                                                                                                                      
     "hooks": {                                                                                                                           

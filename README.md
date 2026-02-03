@@ -105,6 +105,11 @@ All tickets use the format: `hive_name.bees-abc1`:
 
 Human users do not need to interact with the MCP server. These commands are provided only for informational purposes.
 
+For a complete list of available commands with parameters and technical reference, use:
+```
+help()
+```
+
 - **list_hives** - No parameters
   - Lists all registered hives in the repository
 - **colonize_hive** - `name, path`
@@ -123,6 +128,8 @@ Human users do not need to interact with the MCP server. These commands are prov
     - `new_name` (required): Desired new hive name
 - **create_ticket** - `ticket_type, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status, hive_name`
   - Creates a new ticket with the sent parameters
+- **show_ticket** - `ticket_id`
+  - Retrieves and returns all data for a specific ticket
 - **update_ticket** - `ticket_id, title, description, parent, children, up_dependencies, down_dependencies, labels, owner, priority, status`
   - Modifies an existing ticket based on the sent parameters
 - **delete_ticket** - `ticket_id`
@@ -183,6 +190,10 @@ create_ticket(ticket_type="task", title="Build login API", parent="backend.epic-
 
 # Create a ticket with hive prefix (generates ID like "backend.bees-abc")
 create_ticket(ticket_type="epic", title="Backend API", hive_name="backend")
+
+# Show ticket details
+show_ticket(ticket_id="backend.bees-abc1")
+# Returns: {'status': 'success', 'ticket_id': 'backend.bees-abc1', 'ticket_type': 'epic', 'title': '...', ...}
 
 # Create a ticket in a multi-word hive (generates ID like "my_hive.bees-123")
 create_ticket(ticket_type="task", title="Setup database", hive_name="My Hive")
