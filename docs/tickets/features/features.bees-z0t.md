@@ -42,12 +42,12 @@ description: 'Clean up master_plan.md by removing MCP server sections that have 
   Parent Task: features.bees-dsa
 
   Blocked By: features.bees-dwp (must extract content first)'
-parent: features.bees-dsa
 up_dependencies:
 - features.bees-dwp
-status: open
+parent: features.bees-dsa
 created_at: '2026-02-03T16:53:12.464807'
-updated_at: '2026-02-03T16:53:12.464812'
+updated_at: '2026-02-03T17:36:11.766429'
+status: completed
 bees_version: '1.1'
 ---
 
