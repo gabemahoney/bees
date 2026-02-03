@@ -77,9 +77,9 @@ children:
 - features.bees-vxp
 - features.bees-em3
 created_at: '2026-02-03T16:46:30.052016'
-updated_at: '2026-02-03T17:29:22.290897'
+updated_at: '2026-02-03T17:57:00.793894'
 priority: 2
-status: open
+status: completed
 bees_version: '1.1'
 ---
 
