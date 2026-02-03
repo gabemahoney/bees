@@ -12,8 +12,8 @@ import yaml
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
-from fastmcp import FastMCP
+from typing import Any, Dict, Literal
+from fastmcp import FastMCP, Context
 from .ticket_factory import create_epic, create_task, create_subtask
 from .reader import read_ticket
 from .writer import write_ticket_file
@@ -121,6 +121,43 @@ def parse_hive_from_ticket_id(ticket_id: str) -> str | None:
         return None
 
 
+def get_repo_root_from_path(start_path: Path) -> Path:
+    """
+    Find the git repository root by walking up from a given path.
+
+    Starts from the provided path and walks up the directory tree
+    looking for a .git directory. Returns the path to the repository root
+    when found.
+
+    Args:
+        start_path: Path to start searching from
+
+    Returns:
+        Path: Absolute path to the git repository root
+
+    Raises:
+        ValueError: If not in a git repository (no .git directory found)
+
+    Example:
+        >>> repo_root = get_repo_root_from_path(Path('/Users/user/projects/myrepo/tickets'))
+        >>> print(repo_root)
+        /Users/username/projects/myrepo
+    """
+    current = start_path.resolve()
+
+    # Walk up directory tree looking for .git
+    while current != current.parent:
+        if (current / '.git').exists():
+            return current
+        current = current.parent
+
+    # Check root directory
+    if (current / '.git').exists():
+        return current
+
+    raise ValueError(f"Not in a git repository - no .git directory found starting from {start_path}")
+
+
 def get_repo_root() -> Path:
     """
     Find the git repository root by walking up directories.
@@ -140,19 +177,7 @@ def get_repo_root() -> Path:
         >>> print(repo_root)
         /Users/username/projects/myrepo
     """
-    current = Path.cwd()
-
-    # Walk up directory tree looking for .git
-    while current != current.parent:
-        if (current / '.git').exists():
-            return current
-        current = current.parent
-
-    # Check root directory
-    if (current / '.git').exists():
-        return current
-
-    raise ValueError("Not in a git repository - no .git directory found")
+    return get_repo_root_from_path(Path.cwd())
 
 
 def validate_hive_path(path: str, repo_root: Path) -> Path:
@@ -161,8 +186,8 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
 
     Validates that:
     - Path is absolute
-    - Path exists
     - Path is within the repository root
+    - Parent directory exists (path itself will be created by colonize_hive)
     - Normalizes trailing slashes
 
     Args:
@@ -173,7 +198,7 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
         Path: Normalized absolute path to the hive directory
 
     Raises:
-        ValueError: If path is relative, doesn't exist, or is outside repo root
+        ValueError: If path is relative, parent doesn't exist, or is outside repo root
 
     Example:
         >>> repo = Path('/Users/username/projects/myrepo')
@@ -190,14 +215,19 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
             f"Hive path must be absolute, got relative path: {path}"
         )
 
-    # Check if path exists
-    if not hive_path.exists():
-        raise ValueError(
-            f"Hive path does not exist: {path}"
-        )
+    # Create parent directory if it doesn't exist (we'll create the hive directory itself later)
+    if not hive_path.parent.exists():
+        try:
+            hive_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created parent directory: {hive_path.parent}")
+        except (PermissionError, OSError) as e:
+            raise ValueError(
+                f"Failed to create parent directory {hive_path.parent}: {e}"
+            )
 
     # Resolve both paths to handle symlinks and normalize
-    resolved_hive = hive_path.resolve()
+    # Use strict=False since the hive path itself doesn't exist yet
+    resolved_hive = hive_path.resolve(strict=False)
     resolved_repo = repo_root.resolve()
 
     # Check if hive path is within repo root
@@ -257,8 +287,8 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
         if config_path.exists():
             try:
                 with open(config_path, 'r') as f:
-                    config = json.load(f)
-                    registered_hives = set(config.get('hives', {}).keys())
+                    config_dict = json.load(f)
+                    registered_hives = set(config_dict.get('hives', {}).keys())
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Could not read config.json: {e}")
 
@@ -376,11 +406,15 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
                 }
             }
 
-        # Step 2: Validate path using config system
+        # Step 2: Validate path and find repo root from the hive path
         try:
-            repo_root = get_repo_root()
+            # Find repo root from the hive path itself, not from cwd
+            # This ensures we work with the correct repo even if MCP server is running elsewhere
+            hive_path = Path(path)
+            repo_root = get_repo_root_from_path(hive_path)
             validated_path = validate_hive_path(path, repo_root)
             logger.info(f"Validated hive path: {validated_path}")
+            logger.info(f"Found repo root from hive path: {repo_root}")
         except ValueError as e:
             return {
                 "status": "error",
@@ -492,22 +526,25 @@ def colonize_hive(name: str, path: str) -> Dict[str, Any]:
         # Deferred to future Epic for full implementation.
         logger.info(f"Linter check: (stubbed out for now)")
 
-        # Step 5: Register hive in config.json
+        # Step 5: Register hive in config.json in the repo where the hive is located
         try:
             # Get current timestamp for registration
             creation_timestamp = datetime.now()
 
             # Register hive in config (updates config dict in memory)
+            # Pass repo_root so config is created in the correct repository
             config = register_hive_dict(
                 normalized_name=normalized_name,
                 display_name=name,
                 path=str(validated_path),
-                timestamp=creation_timestamp
+                timestamp=creation_timestamp,
+                repo_root=repo_root
             )
 
             # Persist config to disk with error handling
-            write_hive_config_dict(config)
-            logger.info(f"Registered hive '{normalized_name}' in config.json")
+            # Pass repo_root to ensure .bees/config.json is created in the correct repo
+            write_hive_config_dict(config, repo_root)
+            logger.info(f"Registered hive '{normalized_name}' in config.json at {repo_root / '.bees/config.json'}")
         except (IOError, PermissionError, OSError) as e:
             return {
                 "status": "error",
@@ -1151,6 +1188,8 @@ def _create_ticket(
                 hive_name=hive_name
             )
         elif ticket_type == "subtask":
+            # Type checker: parent is guaranteed to be str due to validation at line 1113-1116
+            assert parent is not None, "Subtask parent validated above"
             ticket_id = create_subtask(
                 title=title,
                 parent=parent,
@@ -1194,21 +1233,21 @@ def _create_ticket(
 create_ticket = mcp.tool()(_create_ticket)
 
 
-# Sentinel value to distinguish "not provided" from "explicitly set to None"
-_UNSET = object()
+# Use a string constant as sentinel instead of object() to avoid Pydantic JSON schema warnings
+_UNSET: Literal["__UNSET__"] = "__UNSET__"
 
 def _update_ticket(
     ticket_id: str,
-    title: str | None = _UNSET,
-    description: str | None = _UNSET,
-    parent: str | None = _UNSET,
-    children: list[str] | None = _UNSET,
-    up_dependencies: list[str] | None = _UNSET,
-    down_dependencies: list[str] | None = _UNSET,
-    labels: list[str] | None = _UNSET,
-    owner: str | None = _UNSET,
-    priority: int | None = _UNSET,
-    status: str | None = _UNSET
+    title: str | None | Literal["__UNSET__"] = _UNSET,
+    description: str | None | Literal["__UNSET__"] = _UNSET,
+    parent: str | None | Literal["__UNSET__"] = _UNSET,
+    children: list[str] | None | Literal["__UNSET__"] = _UNSET,
+    up_dependencies: list[str] | None | Literal["__UNSET__"] = _UNSET,
+    down_dependencies: list[str] | None | Literal["__UNSET__"] = _UNSET,
+    labels: list[str] | None | Literal["__UNSET__"] = _UNSET,
+    owner: str | None | Literal["__UNSET__"] = _UNSET,
+    priority: int | None | Literal["__UNSET__"] = _UNSET,
+    status: str | None | Literal["__UNSET__"] = _UNSET
 ) -> Dict[str, Any]:
     """
     Update an existing ticket.
@@ -1281,7 +1320,7 @@ def _update_ticket(
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-    if children is not _UNSET:
+    if children is not _UNSET and children is not None:
         for child_id in children:
             child_type = infer_ticket_type_from_id(child_id)
             if not child_type:
@@ -1289,7 +1328,7 @@ def _update_ticket(
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-    if up_dependencies is not _UNSET:
+    if up_dependencies is not _UNSET and up_dependencies is not None:
         for dep_id in up_dependencies:
             dep_type = infer_ticket_type_from_id(dep_id)
             if not dep_type:
@@ -1297,7 +1336,7 @@ def _update_ticket(
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-    if down_dependencies is not _UNSET:
+    if down_dependencies is not _UNSET and down_dependencies is not None:
         for dep_id in down_dependencies:
             dep_type = infer_ticket_type_from_id(dep_id)
             if not dep_type:
@@ -1306,7 +1345,8 @@ def _update_ticket(
                 raise ValueError(error_msg)
 
     # Check for circular dependencies if both up and down are being updated
-    if up_dependencies is not _UNSET and down_dependencies is not _UNSET:
+    if (up_dependencies is not _UNSET and up_dependencies is not None and 
+        down_dependencies is not _UNSET and down_dependencies is not None):
         circular_deps = set(up_dependencies) & set(down_dependencies)
         if circular_deps:
             error_msg = f"Circular dependency detected: ticket cannot both depend on and be depended on by the same tickets: {circular_deps}"
@@ -1315,26 +1355,30 @@ def _update_ticket(
 
     # Update basic fields (non-relationship fields)
     if title is not _UNSET:
-        if not title.strip():
+        if title is None or not title.strip():
             error_msg = "Ticket title cannot be empty"
             logger.error(error_msg)
             raise ValueError(error_msg)
         ticket.title = title
 
     if description is not _UNSET:
-        ticket.description = description
+        # description can be None or empty string
+        ticket.description = description if description else ""
 
     if labels is not _UNSET:
-        ticket.labels = labels
+        # labels can be None (which means empty list)
+        assert labels != _UNSET  # Type narrowing
+        ticket.labels = labels if labels is not None else []
 
     if owner is not _UNSET:
-        ticket.owner = owner
+        ticket.owner = owner  # type: ignore[assignment]
 
     if priority is not _UNSET:
+        assert priority != _UNSET  # Type narrowing
         ticket.priority = priority
 
     if status is not _UNSET:
-        ticket.status = status
+        ticket.status = status  # type: ignore[assignment]
 
     # Handle relationship updates with bidirectional consistency
     # Track old relationships to determine what changed
@@ -1345,13 +1389,16 @@ def _update_ticket(
 
     # Update relationship fields if provided
     if parent is not _UNSET:
-        ticket.parent = parent if parent else None
+        ticket.parent = parent if parent else None  # type: ignore[assignment]
     if children is not _UNSET:
-        ticket.children = children
+        assert children != _UNSET  # Type narrowing
+        ticket.children = children if children is not None else []
     if up_dependencies is not _UNSET:
-        ticket.up_dependencies = up_dependencies
+        assert up_dependencies != _UNSET  # Type narrowing
+        ticket.up_dependencies = up_dependencies if up_dependencies is not None else []
     if down_dependencies is not _UNSET:
-        ticket.down_dependencies = down_dependencies
+        assert down_dependencies != _UNSET  # Type narrowing
+        ticket.down_dependencies = down_dependencies if down_dependencies is not None else []
 
     # Update timestamp
     ticket.updated_at = datetime.now()
@@ -1936,6 +1983,12 @@ def _colonize_hive(
     - Checks for duplicate normalized hive names
     - Creates the hive directory structure (/eggs, /evicted, .hive marker)
     - Registers the hive in .bees/config.json
+
+    LLM USAGE INSTRUCTIONS:
+        ALWAYS ask the user for the hive name and path if they are not explicitly provided.
+        - Ask: "What should the hive be named?" if name is not provided
+        - Ask: "Where should the hive be located (absolute path)?" if path is not provided
+        DO NOT proceed with this tool call until both parameters are provided by the user.
 
     Args:
         name: Display name for the hive (e.g., 'Back End', 'Frontend')
@@ -2707,6 +2760,10 @@ def _help() -> Dict[str, Any]:
     Returns comprehensive list of all available Bees MCP commands with their
     parameters, types, and brief descriptions—similar to --help output.
     
+    CRITICAL: NEVER modify tickets or directory structure directly via file operations.
+    ALWAYS use the MCP server tools (create_ticket, update_ticket, delete_ticket, etc.).
+    Direct file modifications bypass validation, relationship sync, and can corrupt the ticket database.
+    
     HIVES
     - Isolated ticket directories within repo, tracked in .bees/config.json
     - Identity marker: .hive/identity.json contains normalized_name, display_name, created_at
@@ -2868,6 +2925,10 @@ def _help() -> Dict[str, Any]:
     ]
     
     concepts = """
+CRITICAL: NEVER modify tickets or directory structure directly via file operations.
+ALWAYS use the MCP server tools (create_ticket, update_ticket, delete_ticket, etc.).
+Direct file modifications bypass validation, relationship sync, and can corrupt the ticket database.
+
 HIVES
 - Isolated ticket directories within repo, tracked in .bees/config.json
 - Identity marker: .hive/identity.json contains normalized_name, display_name, created_at
