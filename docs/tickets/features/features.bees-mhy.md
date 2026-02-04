@@ -19,7 +19,7 @@ down_dependencies:
 parent: features.bees-zy7
 created_at: '2026-02-03T17:03:13.560636'
 updated_at: '2026-02-03T17:03:36.081065'
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

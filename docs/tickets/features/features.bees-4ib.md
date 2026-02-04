@@ -43,7 +43,7 @@ description: 'Context: Validate that index generation extraction doesn''t break 
 parent: features.bees-zy7
 up_dependencies:
 - features.bees-fe7
-status: open
+status: completed
 created_at: '2026-02-03T17:03:45.443570'
 updated_at: '2026-02-03T17:03:45.443573'
 bees_version: '1.1'

@@ -26,11 +26,12 @@ Detailed technical documentation is organized into focused architecture document
 The codebase is organized into focused modules following separation of concerns:
 
 **Core Infrastructure Modules:**
-- **mcp_server.py** - FastMCP server registration and coordination (~470 lines after extraction)
+- **mcp_server.py** - FastMCP server registration and coordination (~420 lines after extraction)
 - **mcp_relationships.py** - Bidirectional relationship synchronization (~400-500 lines)
 - **mcp_ticket_ops.py** - Ticket CRUD operations (create, update, delete, show) (~800 lines)
 - **mcp_hive_ops.py** - Hive lifecycle operations (colonize, list, abandon, rename, sanitize) (~1000 lines)
 - **mcp_query_ops.py** - Query operations (add named query, execute named/freeform queries) (~250 lines)
+- **mcp_index_ops.py** - Index generation operations with filtering (~64 lines)
 
 **Utility Modules:**
 - **mcp_hive_utils.py** - Hive path validation and scanning utilities
@@ -50,6 +51,17 @@ Dependencies:
 - **config** - Hive configuration loading and validation
 
 Integration: Functions are imported by mcp_server.py and registered as MCP tools for external access. The extraction maintains identical functionality while isolating the query subsystem for better code organization.
+
+**Index Generation Subsystem (mcp_index_ops.py):**
+Extracted from mcp_server.py as part of Epic features.bees-d6o (Task features.bees-zy7) to follow single responsibility principle. The module provides:
+- Markdown index generation with filtering (`_generate_index`)
+- Support for status, type, and hive_name filters
+- Per-hive and all-hive index generation capabilities
+
+Dependencies:
+- **index_generator** - Core index generation logic
+
+Integration: The `_generate_index` function is imported by mcp_server.py and registered as an MCP tool. This extraction isolates index generation as a discrete operation for better maintainability.
 
 **Organization:**
 - **mcp_hive_utils.py** handles validation/scanning

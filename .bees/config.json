@@ -1,9 +1,9 @@
 {
   "hives": {
     "backend": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-27/test_update_ticket_routes_to_c0/tickets",
+      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-28/test_update_ticket_routes_to_c0/tickets",
       "display_name": "Backend",
-      "created_at": "2026-02-04T02:01:33.405152"
+      "created_at": "2026-02-04T02:05:56.627396"
     }
   },
   "allow_cross_hive_dependencies": false,

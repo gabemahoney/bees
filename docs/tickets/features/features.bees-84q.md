@@ -43,7 +43,7 @@ description: 'Context: Document the extraction of index generation to mcp_index_
 parent: features.bees-zy7
 up_dependencies:
 - features.bees-mhy
-status: open
+status: completed
 created_at: '2026-02-03T17:03:28.173188'
 updated_at: '2026-02-03T17:03:28.173190'
 bees_version: '1.1'

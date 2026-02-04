@@ -123,6 +123,14 @@ The MCP Server has a linter which will verify metadata integrity and warn.
   - `_execute_freeform_query()` - Executes ad-hoc YAML queries without persisting
 - Registered as MCP tools in mcp_server.py for external access (~250 lines)
 
+**mcp_index_ops.py** - Index generation operations
+- Handles markdown index generation for tickets with filtering support
+- Supports filtering by status, type, and hive name
+- Can generate per-hive or all-hive indexes
+- Contains 1 core function:
+  - `_generate_index()` - Generates filtered markdown indexes of tickets
+- Registered as MCP tool in mcp_server.py for external access (~64 lines)
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

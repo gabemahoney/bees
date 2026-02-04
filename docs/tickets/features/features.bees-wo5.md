@@ -37,7 +37,7 @@ description: 'Context: Replace local _generate_index implementation with import 
 
   - No duplicate definitions'
 parent: features.bees-zy7
-status: open
+status: completed
 created_at: '2026-02-03T17:03:17.930973'
 updated_at: '2026-02-03T17:03:17.930976'
 bees_version: '1.1'
