@@ -26,12 +26,13 @@ Detailed technical documentation is organized into focused architecture document
 The codebase is organized into focused modules following separation of concerns:
 
 **Core Infrastructure Modules:**
-- **mcp_server.py** - FastMCP server registration and coordination (~420 lines after extraction)
+- **mcp_server.py** - FastMCP server registration and coordination (~220 lines after help extraction)
 - **mcp_relationships.py** - Bidirectional relationship synchronization (~400-500 lines)
 - **mcp_ticket_ops.py** - Ticket CRUD operations (create, update, delete, show) (~800 lines)
 - **mcp_hive_ops.py** - Hive lifecycle operations (colonize, list, abandon, rename, sanitize) (~1000 lines)
 - **mcp_query_ops.py** - Query operations (add named query, execute named/freeform queries) (~250 lines)
 - **mcp_index_ops.py** - Index generation operations with filtering (~64 lines)
+- **mcp_help.py** - Help system documentation and MCP tool reference (~230 lines)
 
 **Utility Modules:**
 - **mcp_hive_utils.py** - Hive path validation and scanning utilities
@@ -62,6 +63,17 @@ Dependencies:
 - **index_generator** - Core index generation logic
 
 Integration: The `_generate_index` function is imported by mcp_server.py and registered as an MCP tool. This extraction isolates index generation as a discrete operation for better maintainability.
+
+**Help Documentation Subsystem (mcp_help.py):**
+Extracted from mcp_server.py as part of Epic features.bees-d6o (Task features.bees-jlu) to isolate help documentation for easier maintenance. The help system is ~230 lines of documentation that was bloating mcp_server.py, making it harder to navigate and maintain. The module provides:
+- Comprehensive documentation for all available MCP tools (`_help`)
+- Command details with parameters and descriptions
+- Technical reference for core concepts (HIVES, TICKET TYPES, RELATIONSHIPS, DEPENDENCIES, QUERIES)
+
+Dependencies:
+- **typing** - Type hints for Dict and Any
+
+Integration: The `_help` function is imported by mcp_server.py and registered as an MCP tool. This extraction isolates help documentation as a discrete module, making both mcp_server.py more focused on coordination and help documentation easier to maintain as new features are added.
 
 **Organization:**
 - **mcp_hive_utils.py** handles validation/scanning

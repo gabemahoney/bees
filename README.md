@@ -131,6 +131,10 @@ The MCP Server has a linter which will verify metadata integrity and warn.
   - `_generate_index()` - Generates filtered markdown indexes of tickets
 - Registered as MCP tool in mcp_server.py for external access (~64 lines)
 
+**mcp_help.py** - Help system documentation and MCP tool reference
+- Contains comprehensive documentation for all available MCP tools and core concepts
+- Provides the _help() function that returns command details and technical reference
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

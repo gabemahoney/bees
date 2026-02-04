@@ -39,9 +39,9 @@ description: 'Context: Verify all tests pass after extracting help documentation
 parent: features.bees-jlu
 up_dependencies:
 - features.bees-b77
-status: open
+status: completed
 created_at: '2026-02-03T17:03:48.580401'
-updated_at: '2026-02-03T17:03:48.580405'
+updated_at: '2026-02-04T04:00:00.000000'
 bees_version: '1.1'
 ---
 

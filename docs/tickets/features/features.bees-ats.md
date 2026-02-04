@@ -33,9 +33,9 @@ description: 'Context: Document the new mcp_help.py module in README.md after ex
 parent: features.bees-jlu
 up_dependencies:
 - features.bees-u51
-status: open
+status: completed
 created_at: '2026-02-03T17:03:28.550196'
-updated_at: '2026-02-03T17:03:28.550199'
+updated_at: '2026-02-04T04:00:00.000000'
 bees_version: '1.1'
 ---
 

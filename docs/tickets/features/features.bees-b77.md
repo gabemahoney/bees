@@ -43,8 +43,8 @@ down_dependencies:
 - features.bees-mlw
 parent: features.bees-jlu
 created_at: '2026-02-03T17:03:42.394322'
-updated_at: '2026-02-03T17:03:48.585246'
-status: open
+updated_at: '2026-02-04T04:00:00.000000'
+status: completed
 bees_version: '1.1'
 ---
 

@@ -33,9 +33,9 @@ description: 'Context: After extracting _help() to mcp_help.py, update mcp_serve
 parent: features.bees-jlu
 up_dependencies:
 - features.bees-u51
-status: open
+status: completed
 created_at: '2026-02-03T17:03:22.337078'
-updated_at: '2026-02-03T17:03:22.337082'
+updated_at: '2026-02-04T04:00:00.000000'
 bees_version: '1.1'
 ---
 
