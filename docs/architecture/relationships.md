@@ -2,7 +2,7 @@
 
 ## Overview
 
-The relationship synchronization module (`src/relationship_sync.py`) maintains bidirectional consistency for all ticket relationships. All create/update/delete operations use this module to ensure atomicity and data integrity.
+The relationship synchronization module (`src/mcp_relationships.py`) maintains bidirectional consistency for all ticket relationships. All create/update/delete operations use this module to ensure atomicity and data integrity.
 
 **Core Principle**: When a relationship is created or modified, both sides must be updated. For example:
 - Adding ticket B as child of A updates both A's `children` array and B's `parent` field
@@ -80,36 +80,27 @@ When a ticket is deleted:
 
 ## Core Functions
 
-### Relationship Operations
+The `mcp_relationships.py` module contains 9 functions for relationship synchronization:
 
-- `add_child_to_parent()`: Adds child with bidirectional sync
-- `remove_child_from_parent()`: Removes child with bidirectional sync
-- `add_dependency()`: Adds dependency with bidirectional sync
-- `remove_dependency()`: Removes dependency with bidirectional sync
+### Main Entry Point
+
+- `_update_bidirectional_relationships()`: Main function that syncs all relationships (parent/child, dependencies) for a ticket
+
+### Helper Functions
+
+**Parent/Child Operations:**
+- `_add_child_to_parent()`: Adds child to parent's children array with bidirectional sync
+- `_remove_child_from_parent()`: Removes child from parent's children array with bidirectional sync
+- `_set_parent_on_child()`: Sets parent field on child ticket with bidirectional sync
+- `_remove_parent_from_child()`: Removes parent field from child ticket (not allowed for subtasks)
+
+**Dependency Operations:**
+- `_add_to_down_dependencies()`: Adds ticket to blocking ticket's down_dependencies array
+- `_remove_from_down_dependencies()`: Removes ticket from blocking ticket's down_dependencies array
+- `_add_to_up_dependencies()`: Adds ticket to blocked ticket's up_dependencies array
+- `_remove_from_up_dependencies()`: Removes ticket from blocked ticket's up_dependencies array
 
 All operations are **idempotent** - calling multiple times has same effect as calling once.
-
-### Validation Functions
-
-- `validate_ticket_exists()`: Ensures ticket file exists
-- `validate_parent_child_relationship()`: Enforces type hierarchy rules
-- `check_for_circular_dependency()`: Prevents cycles using DFS
-
-## Batch Operations
-
-### sync_relationships_batch()
-
-Handles multiple relationship updates atomically using seven-phase execution:
-
-1. **Validation**: Check all tickets exist and relationships are valid
-2. **Loading**: Load all affected tickets into memory
-3. **Deduplication**: Convert operations to set (prevents redundant I/O)
-4. **Backup (WAL)**: Store in-memory copies before changes
-5. **Update**: Apply relationship changes to in-memory tickets
-6. **Write-with-rollback**: Write to disk; restore from backup if any fail
-7. **Cleanup**: Clear backup data
-
-**Atomicity Guarantee**: If any write fails, all tickets are restored from in-memory backups.
 
 ## Integration Points
 
@@ -119,7 +110,7 @@ All MCP tools use relationship sync:
 
 - **create_ticket**: Establishes parent/child and dependencies for new tickets
 - **update_ticket**: Modifies relationships with bidirectional sync
-- **delete_ticket**: Uses `sync_relationships_batch()` for efficient cleanup in single atomic operation
+- **delete_ticket**: Cleans up relationships with cascade delete and dependency cleanup
 
 ### Module Dependencies
 
@@ -129,9 +120,20 @@ Relationship sync integrates with:
 - `src/reader.py`: Uses `read_ticket()` for ticket parsing
 - `src/writer.py`: Uses `write_ticket_file()` for atomic writes with file locking
 
-## Implementation Reference
+## Module Architecture
 
-Full implementation: `src/relationship_sync.py`
+The relationship synchronization logic was extracted from `src/mcp_server.py` into a dedicated module `src/mcp_relationships.py` for better code organization and maintainability.
+
+**Design Rationale:**
+- Relationship sync is a complex subsystem (~400-500 lines) with 9 functions
+- Isolating it improves code clarity and makes the logic easier to understand and test
+- The module is a discrete unit with clear boundaries and responsibilities
+- Used by ticket create, update, and delete operations in mcp_server.py
+
+**Integration:**
+The module is imported by mcp_server.py and called during ticket operations to maintain bidirectional consistency. It relies on core utilities from reader.py, writer.py, and paths.py modules.
+
+Full implementation: `src/mcp_relationships.py`
 
 Key design principles:
 - Bidirectional consistency enforced at all times

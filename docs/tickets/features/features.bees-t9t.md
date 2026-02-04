@@ -61,7 +61,7 @@ children:
 created_at: '2026-02-03T17:01:55.537206'
 updated_at: '2026-02-03T17:03:27.594189'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

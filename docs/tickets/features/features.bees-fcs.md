@@ -36,7 +36,7 @@ description: 'Context: New module src/mcp_relationships.py contains relationship
 parent: features.bees-t9t
 up_dependencies:
 - features.bees-9ss
-status: open
+status: completed
 created_at: '2026-02-03T17:03:22.804908'
 updated_at: '2026-02-03T17:03:22.804912'
 bees_version: '1.1'

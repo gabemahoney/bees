@@ -35,7 +35,7 @@ parent: features.bees-t9t
 up_dependencies:
 - features.bees-s35
 - features.bees-8mt
-status: open
+status: completed
 created_at: '2026-02-03T17:03:27.591169'
 updated_at: '2026-02-03T17:03:27.591174'
 bees_version: '1.1'

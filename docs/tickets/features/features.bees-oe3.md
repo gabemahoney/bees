@@ -31,7 +31,7 @@ description: 'Context: After extracting relationship sync functions to mcp_relat
 
   - mcp_server.py is ~400 lines shorter'
 parent: features.bees-t9t
-status: open
+status: completed
 created_at: '2026-02-03T17:03:07.038432'
 updated_at: '2026-02-03T17:03:07.038436'
 bees_version: '1.1'

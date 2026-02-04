@@ -70,6 +70,21 @@ Suggested usage is for LLMs to create tickets (to keep metadata integrity).
 Humans can modify the markdown. Humans can modify the yaml metadata as well.
 The MCP Server has a linter which will verify metadata integrity and warn.
 
+## Architecture
+
+### Core Modules
+
+**mcp_relationships.py** - Bidirectional relationship synchronization
+- Handles automatic bidirectional synchronization of ticket relationships (parent/child, dependencies)
+- Used by ticket create, update, and delete operations to maintain consistency
+- Contains 9 functions:
+  - `_update_bidirectional_relationships()` - Main entry point for syncing all relationships
+  - `_add_child_to_parent()` / `_remove_child_from_parent()` - Parent/child array management
+  - `_set_parent_on_child()` / `_remove_parent_from_child()` - Child parent field management
+  - `_add_to_down_dependencies()` / `_remove_from_down_dependencies()` - Blocking ticket dependency arrays
+  - `_add_to_up_dependencies()` / `_remove_from_up_dependencies()` - Blocked ticket dependency arrays
+- This discrete subsystem is isolated for better maintainability (~400-500 lines)
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.
