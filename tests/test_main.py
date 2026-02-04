@@ -754,17 +754,17 @@ class TestDocumentation:
     """Tests for documentation accuracy."""
 
     def test_master_plan_documents_http_app_property(self):
-        """Test that master_plan.md correctly documents mcp.http_app property."""
-        master_plan_file = Path(__file__).parent.parent / "docs" / "plans" / "master_plan.md"
-        with open(master_plan_file, 'r') as f:
+        """Test that mcp_server.md correctly documents mcp.http_app property."""
+        mcp_server_file = Path(__file__).parent.parent / "docs" / "architecture" / "mcp_server.md"
+        with open(mcp_server_file, 'r') as f:
             content = f.read()
 
         # Verify mcp.http_app is documented
-        assert 'mcp.http_app' in content, "master_plan.md should document mcp.http_app property"
+        assert 'mcp.http_app' in content, "mcp_server.md should document mcp.http_app property"
 
-        # Find HTTP server implementation section code block
-        http_section_start = content.find('**Implementation Details** (`src/main.py`)')
-        assert http_section_start != -1, "Could not find Implementation Details section"
+        # Find HTTP transport architecture section code block
+        http_section_start = content.find('## HTTP Transport Architecture')
+        assert http_section_start != -1, "Could not find HTTP Transport Architecture section"
 
         # Extract the code block (between ```python and ```)
         code_block_start = content.find('```python', http_section_start)

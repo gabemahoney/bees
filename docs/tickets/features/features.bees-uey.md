@@ -33,12 +33,12 @@ description: 'Context: Add comprehensive unit tests for the extracted ID parsing
   - Tests pass with 100% coverage of mcp_id_utils module
 
   - Test file follows existing test conventions'
-parent: features.bees-pt9
 up_dependencies:
 - features.bees-jc5
-status: open
+parent: features.bees-pt9
 created_at: '2026-02-03T17:03:24.090641'
-updated_at: '2026-02-03T17:03:24.090645'
+updated_at: '2026-02-03T18:59:38.038488'
+status: completed
 bees_version: '1.1'
 ---
 

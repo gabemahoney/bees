@@ -57,6 +57,33 @@ The server implements a flexible fallback chain to support MCP clients with or w
 - Prioritizes explicit `repo_root` parameter over automatic detection
 - Raises ValueError only for truly invalid inputs (non-absolute paths, invalid git repositories)
 
+## Module Architecture
+
+### mcp_id_utils Module
+
+The `mcp_id_utils` module provides foundational ticket ID parsing utilities extracted from `mcp_server.py` to prevent circular dependencies. This module has zero dependencies on other Bees modules and serves as a base utility layer.
+
+**Design Rationale**:
+- Extracted during MCP server refactoring to break circular dependency chains
+- Contains frequently-used parsing functions needed by multiple modules
+- No external dependencies beyond Python standard library
+- Position: Foundational utility with no dependencies
+
+**Functions**:
+- `parse_ticket_id(ticket_id: str) -> tuple[str, str]`: Splits ticket ID into (hive_name, base_id). Handles both new format (`backend.bees-abc1`) and legacy format (`bees-abc1`).
+- `parse_hive_from_ticket_id(ticket_id: str) -> str | None`: Extracts hive prefix from ticket ID. Returns None for unprefixed/malformed IDs.
+
+**Module Dependencies**:
+- Used by: `mcp_server.py`, `paths.py`, validation modules
+- Imports: None (Python standard library only)
+
+**Refactoring History**:
+- 2026-02-03: Removed duplicate implementation `_parse_ticket_id_for_path()` from `paths.py`
+- `paths.py` now imports and uses `parse_ticket_id()` from this module, adding hive prefix validation where needed
+- Design decision: Centralized ticket ID parsing in `mcp_id_utils` prevents circular imports and ensures consistent parsing logic across the codebase
+
+**File Location**: `src/mcp_id_utils.py`
+
 ## Available MCP Tools
 
 ### Ticket Operations

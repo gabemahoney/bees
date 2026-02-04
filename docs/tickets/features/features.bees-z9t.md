@@ -31,12 +31,12 @@ description: 'Context: Document the architectural decision to extract ID parsing
   - Module dependencies and usage documented
 
   - Integration with refactoring effort described'
-parent: features.bees-pt9
 up_dependencies:
 - features.bees-jc5
-status: open
+parent: features.bees-pt9
 created_at: '2026-02-03T17:03:19.699471'
-updated_at: '2026-02-03T17:03:19.699475'
+updated_at: '2026-02-03T18:59:05.917380'
+status: completed
 bees_version: '1.1'
 ---
 

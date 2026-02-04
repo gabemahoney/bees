@@ -18,7 +18,9 @@ from src.mcp_server import (
     _delete_ticket,
     _server_running,
     get_repo_root_from_path,
-    validate_hive_path,
+    validate_hive_path
+)
+from src.mcp_id_utils import (
     parse_ticket_id,
     parse_hive_from_ticket_id
 )

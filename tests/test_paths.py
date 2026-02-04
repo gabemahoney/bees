@@ -8,8 +8,8 @@ from src.paths import (
     ensure_ticket_directory_exists,
     list_tickets,
     infer_ticket_type_from_id,
-    _parse_ticket_id_for_path,
 )
+from src.mcp_id_utils import parse_ticket_id
 from src.config import BeesConfig, HiveConfig, save_bees_config
 
 
@@ -46,53 +46,118 @@ def setup_hive_config(tmp_path, monkeypatch):
     return tmp_path
 
 
-class TestParseTicketIdForPath:
-    """Tests for _parse_ticket_id_for_path function (requires hive-prefixed IDs)."""
+class TestParseTicketId:
+    """Tests for parse_ticket_id function from mcp_id_utils (used by paths.py)."""
 
     def test_parses_hive_prefixed_id(self):
         """Should parse hive-prefixed ID into hive_name and base_id."""
-        hive_name, base_id = _parse_ticket_id_for_path("backend.bees-abc1")
+        hive_name, base_id = parse_ticket_id("backend.bees-abc1")
         assert hive_name == "backend"
         assert base_id == "bees-abc1"
 
     def test_parses_id_with_multiple_dots(self):
         """Should split on first dot only."""
-        hive_name, base_id = _parse_ticket_id_for_path("my.hive.bees-xyz")
+        hive_name, base_id = parse_ticket_id("my.hive.bees-xyz")
         assert hive_name == "my"
         assert base_id == "hive.bees-xyz"
 
-    def test_rejects_unprefixed_id(self):
-        """Should raise ValueError for unprefixed (legacy) IDs."""
-        with pytest.raises(ValueError, match="must have hive prefix"):
-            _parse_ticket_id_for_path("bees-abc1")
+    def test_accepts_unprefixed_id(self):
+        """Should accept unprefixed (legacy) IDs and return empty hive_name."""
+        hive_name, base_id = parse_ticket_id("bees-abc1")
+        assert hive_name == ""
+        assert base_id == "bees-abc1"
 
     def test_rejects_none(self):
         """Should raise ValueError for None."""
         with pytest.raises(ValueError, match="ticket_id cannot be None"):
-            _parse_ticket_id_for_path(None)  # type: ignore
+            parse_ticket_id(None)  # type: ignore
 
     def test_rejects_empty_string(self):
         """Should raise ValueError for empty string."""
         with pytest.raises(ValueError, match="ticket_id cannot be empty"):
-            _parse_ticket_id_for_path("")
+            parse_ticket_id("")
 
     def test_rejects_whitespace_only(self):
         """Should raise ValueError for whitespace-only string."""
         with pytest.raises(ValueError, match="ticket_id cannot be empty"):
-            _parse_ticket_id_for_path("   ")
+            parse_ticket_id("   ")
 
     def test_handles_hive_name_with_numbers(self):
         """Should handle hive names containing numbers."""
-        hive_name, base_id = _parse_ticket_id_for_path("hive123.bees-abc")
+        hive_name, base_id = parse_ticket_id("hive123.bees-abc")
         assert hive_name == "hive123"
         assert base_id == "bees-abc"
 
 
+class TestPathsFunctionsWithRefactoredParsing:
+    """Tests for paths.py functions after refactoring to use mcp_id_utils.parse_ticket_id()."""
+
+    def test_get_ticket_path_validates_hive_prefix(self, tmp_path, monkeypatch):
+        """get_ticket_path() should validate hive prefix after calling parse_ticket_id()."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create hive configuration
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config, repo_root=tmp_path)
+
+        # Should accept hive-prefixed ID
+        path = get_ticket_path("backend.bees-abc1", "epic")
+        assert path == backend_dir / "backend.bees-abc1.md"
+
+        # Should reject unprefixed ID
+        with pytest.raises(ValueError, match="must have hive prefix"):
+            get_ticket_path("bees-abc1", "epic")
+
+    def test_infer_ticket_type_validates_hive_prefix(self, tmp_path, monkeypatch):
+        """infer_ticket_type_from_id() should validate hive prefix after calling parse_ticket_id()."""
+        from datetime import datetime
+        from src.config import BeesConfig, HiveConfig, save_bees_config
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create hive configuration with ticket
+        backend_dir = tmp_path / "backend"
+        backend_dir.mkdir(parents=True)
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at=datetime.now().isoformat())}
+        )
+        save_bees_config(config, repo_root=tmp_path)
+
+        (backend_dir / "backend.bees-abc1.md").write_text("---\nbees_version: 1.1\ntype: epic\n---\n")
+
+        # Should accept hive-prefixed ID
+        ticket_type = infer_ticket_type_from_id("backend.bees-abc1")
+        assert ticket_type == "epic"
+
+        # Should return None for unprefixed ID (not raise error)
+        ticket_type = infer_ticket_type_from_id("bees-abc1")
+        assert ticket_type is None
+
+    def test_get_ticket_path_handles_parse_errors(self):
+        """get_ticket_path() should handle ValueError from parse_ticket_id()."""
+        # Empty string should raise ValueError
+        with pytest.raises(ValueError, match="ticket_id cannot be empty"):
+            get_ticket_path("", "epic")
+
+    def test_infer_ticket_type_handles_parse_errors(self):
+        """infer_ticket_type_from_id() should handle ValueError from parse_ticket_id()."""
+        # Empty string should return None
+        ticket_type = infer_ticket_type_from_id("")
+        assert ticket_type is None
+
+
 class TestGetTicketPath:
-    """Tests for get_ticket_path function (requires hive-prefixed IDs)."""
+    """Tests for get_ticket_path function (requires hive-prefixed IDs after refactoring)."""
 
     def test_epic_path_rejects_legacy_id(self):
-        """Should reject legacy IDs without hive prefix."""
+        """Should reject legacy IDs without hive prefix (validation added after parse_ticket_id)."""
         with pytest.raises(ValueError, match="must have hive prefix"):
             get_ticket_path("bees-250", "epic")
 

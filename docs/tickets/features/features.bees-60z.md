@@ -32,9 +32,9 @@ description: 'Context: After extracting ID parsing utilities, update mcp_server.
 
   - File is ~100-150 lines shorter'
 parent: features.bees-pt9
-status: open
 created_at: '2026-02-03T17:03:03.388127'
-updated_at: '2026-02-03T17:03:03.388130'
+updated_at: '2026-02-03T18:58:16.998213'
+status: completed
 bees_version: '1.1'
 ---
 

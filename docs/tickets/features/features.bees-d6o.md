@@ -211,8 +211,11 @@ children:
 - features.bees-jlu
 - features.bees-4u5
 - features.bees-dkp
+- features.bees-tho
+- features.bees-w4v
+- features.bees-yss
 created_at: '2026-02-03T16:58:33.622973'
-updated_at: '2026-02-03T17:02:28.306324'
+updated_at: '2026-02-03T19:07:13.560290'
 priority: 2
 status: open
 bees_version: '1.1'

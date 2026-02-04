@@ -29,12 +29,12 @@ description: 'Context: Document the new mcp_id_utils module in README.md after e
   - Both functions documented with signatures and examples
 
   - Documentation explains module purpose and design rationale'
-parent: features.bees-pt9
 up_dependencies:
 - features.bees-jc5
-status: open
+parent: features.bees-pt9
 created_at: '2026-02-03T17:03:14.520365'
-updated_at: '2026-02-03T17:03:14.520368'
+updated_at: '2026-02-03T18:58:47.539871'
+status: completed
 bees_version: '1.1'
 ---
 
