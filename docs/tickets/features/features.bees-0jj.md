@@ -43,7 +43,7 @@ down_dependencies:
 parent: features.bees-dkp
 created_at: '2026-02-03T17:03:47.693139'
 updated_at: '2026-02-03T17:03:55.934872'
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

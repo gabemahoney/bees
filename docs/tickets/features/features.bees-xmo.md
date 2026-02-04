@@ -38,7 +38,7 @@ description: 'Context: If pytest run identified failures, they need to be fixed 
 parent: features.bees-dkp
 up_dependencies:
 - features.bees-k2u
-status: open
+status: completed
 created_at: '2026-02-03T17:03:30.175296'
 updated_at: '2026-02-03T17:03:30.175300'
 bees_version: '1.1'

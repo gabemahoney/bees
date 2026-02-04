@@ -39,7 +39,7 @@ description: 'Context: Master plan should document the completed refactoring and
 parent: features.bees-dkp
 up_dependencies:
 - features.bees-k2u
-status: open
+status: completed
 created_at: '2026-02-03T17:03:42.762825'
 updated_at: '2026-02-03T17:03:42.762828'
 bees_version: '1.1'
