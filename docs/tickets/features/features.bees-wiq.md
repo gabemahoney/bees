@@ -18,7 +18,7 @@ description: "Context: Ensure the extracted query operations module works correc
 parent: features.bees-txe
 up_dependencies:
 - features.bees-af3
-status: open
+status: closed
 created_at: '2026-02-03T17:03:35.763534'
 updated_at: '2026-02-03T17:03:35.763538'
 bees_version: '1.1'

@@ -113,6 +113,16 @@ The MCP Server has a linter which will verify metadata integrity and warn.
 - Provides path validation and hive scanning functionality
 - Used by mcp_hive_ops.py for validation operations
 
+**mcp_query_ops.py** - Query operations (add named query, execute queries)
+- Handles named query registration and execution (both named and freeform queries)
+- Provides the query subsystem extracted from mcp_server.py for better modularity
+- Integrates with query_storage (query persistence), pipeline evaluator (query execution), and mcp_repo_utils (repo root detection)
+- Contains 3 core functions:
+  - `_add_named_query()` - Registers new named queries with validation
+  - `_execute_query()` - Executes named queries with optional hive filtering
+  - `_execute_freeform_query()` - Executes ad-hoc YAML queries without persisting
+- Registered as MCP tools in mcp_server.py for external access (~250 lines)
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

@@ -18,7 +18,7 @@ down_dependencies:
 parent: features.bees-txe
 created_at: '2026-02-03T17:03:17.640403'
 updated_at: '2026-02-03T17:03:40.745942'
-status: open
+status: closed
 bees_version: '1.1'
 ---
 

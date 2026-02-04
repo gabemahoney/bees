@@ -16,7 +16,7 @@ description: "Context: Execute the full test suite to verify the query operation
 parent: features.bees-txe
 up_dependencies:
 - features.bees-7gj
-status: open
+status: closed
 created_at: '2026-02-03T17:03:40.739370'
 updated_at: '2026-02-03T17:03:40.739376'
 bees_version: '1.1'

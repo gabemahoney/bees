@@ -15,7 +15,7 @@ description: "Context: Document the new mcp_query_ops.py module in the README to
 parent: features.bees-txe
 up_dependencies:
 - features.bees-af3
-status: open
+status: closed
 created_at: '2026-02-03T17:03:24.411392'
 updated_at: '2026-02-03T17:03:24.411397'
 bees_version: '1.1'

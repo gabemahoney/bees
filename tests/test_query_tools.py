@@ -7,7 +7,7 @@ import yaml
 
 from src.query_storage import QueryStorage, save_query, load_query, list_queries, validate_query
 from src.query_parser import QueryValidationError
-from src.mcp_server import _add_named_query, _execute_query, _execute_freeform_query
+from src.mcp_query_ops import _add_named_query, _execute_query, _execute_freeform_query
 
 
 class TestQueryStorage:

@@ -5,7 +5,7 @@ import tempfile
 import json
 from pathlib import Path
 
-from src.mcp_server import _execute_query
+from src.mcp_query_ops import _execute_query
 from src.pipeline import PipelineEvaluator
 from src.config import BeesConfig, HiveConfig, save_bees_config
 from src.query_storage import QueryStorage, save_query
@@ -18,7 +18,11 @@ class TestMultiHiveQueryValidation:
         """Test that execute_query validates specified hive exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
-            
+
+            # Create .git directory for repo root detection
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir(exist_ok=True)
+
             # Setup test environment
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -72,7 +76,11 @@ class TestMultiHiveQueryValidation:
         """Test that error message lists available hives."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
-            
+
+            # Create .git directory for repo root detection
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir(exist_ok=True)
+
             # Setup test environment
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -136,7 +144,11 @@ class TestMultiHiveQueryValidation:
         """Test error handling when no hive config exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             monkeypatch.chdir(tmpdir)
-            
+
+            # Create .git directory for repo root detection
+            git_dir = Path(tmpdir) / ".git"
+            git_dir.mkdir(exist_ok=True)
+
             # Setup test environment
             import src.query_storage
             old_storage = src.query_storage._default_storage

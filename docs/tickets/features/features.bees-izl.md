@@ -16,7 +16,7 @@ description: "Context: Document the extraction of query operations and the new m
 parent: features.bees-txe
 up_dependencies:
 - features.bees-af3
-status: open
+status: closed
 created_at: '2026-02-03T17:03:30.349332'
 updated_at: '2026-02-03T17:03:30.349336'
 bees_version: '1.1'

@@ -26,15 +26,30 @@ Detailed technical documentation is organized into focused architecture document
 The codebase is organized into focused modules following separation of concerns:
 
 **Core Infrastructure Modules:**
-- **mcp_server.py** - FastMCP server registration and coordination (~700 lines after extraction)
+- **mcp_server.py** - FastMCP server registration and coordination (~470 lines after extraction)
 - **mcp_relationships.py** - Bidirectional relationship synchronization (~400-500 lines)
 - **mcp_ticket_ops.py** - Ticket CRUD operations (create, update, delete, show) (~800 lines)
 - **mcp_hive_ops.py** - Hive lifecycle operations (colonize, list, abandon, rename, sanitize) (~1000 lines)
+- **mcp_query_ops.py** - Query operations (add named query, execute named/freeform queries) (~250 lines)
 
 **Utility Modules:**
 - **mcp_hive_utils.py** - Hive path validation and scanning utilities
 - **mcp_repo_utils.py** - Repository root detection
 - **mcp_id_utils.py** - Ticket ID parsing utilities
+
+**Query Subsystem (mcp_query_ops.py):**
+Extracted from mcp_server.py as part of Epic features.bees-d6o to improve modularity and maintainability. The module provides:
+- Named query registration with validation (`_add_named_query`)
+- Named query execution with hive filtering (`_execute_query`)
+- Ad-hoc freeform query execution without persistence (`_execute_freeform_query`)
+
+Dependencies:
+- **query_storage** - Query persistence to disk
+- **pipeline** - PipelineEvaluator for query execution
+- **mcp_repo_utils** - Repository root detection for hive resolution
+- **config** - Hive configuration loading and validation
+
+Integration: Functions are imported by mcp_server.py and registered as MCP tools for external access. The extraction maintains identical functionality while isolating the query subsystem for better code organization.
 
 **Organization:**
 - **mcp_hive_utils.py** handles validation/scanning
