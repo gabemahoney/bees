@@ -31,12 +31,12 @@ description: 'Context: Verify extraction didn''t break existing functionality an
   - New mcp_hive_utils tests all green
 
   - Test suite runs cleanly'
-parent: features.bees-wvm
 up_dependencies:
 - features.bees-98n
-status: open
+parent: features.bees-wvm
 created_at: '2026-02-03T17:03:44.744158'
-updated_at: '2026-02-03T17:03:44.744161'
+updated_at: '2026-02-03T19:50:55.509943'
+status: completed
 bees_version: '1.1'
 ---
 

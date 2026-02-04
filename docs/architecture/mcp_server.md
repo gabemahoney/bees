@@ -110,6 +110,31 @@ The `mcp_repo_utils` module provides repository root detection functions used by
 
 **File Location**: `src/mcp_repo_utils.py`
 
+### mcp_hive_utils Module
+
+The `mcp_hive_utils` module provides hive path validation and filesystem scanning utilities used by MCP server hive operations. Extracted from `mcp_server.py` to isolate hive-specific infrastructure code.
+
+**Design Rationale**:
+- Hive path validation and filesystem scanning are used by multiple hive operations (colonize, rename, etc.)
+- Extracting these utilities reduces `mcp_server.py` complexity by ~200 lines
+- Enables independent testing of validation and scanning logic
+- Centralizes hive-specific filesystem operations in dedicated module
+
+**Functions**:
+- `validate_hive_path(path: str, repo_root: Path) -> Path`: Validates hive path is absolute, within repository, and has existing parent directory. Returns normalized absolute path. Raises `ValueError` for invalid paths.
+- `scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None`: Recursively searches repository for `.hive` marker matching hive name. Returns hive directory path if found, `None` otherwise. Updates config.json with recovered path when hive is found. Logs warnings for orphaned markers.
+
+**Module Dependencies**:
+- Used by: `mcp_server.py` (hive management tools)
+- Imports: `pathlib.Path`, `json`, `logging`, `config` module, `mcp_repo_utils.get_repo_root_from_path()`
+
+**Integration Points**:
+- `colonize_hive()` uses `validate_hive_path()` to ensure hive location is valid before creation
+- `scan_for_hive()` provides fallback mechanism when hive path in config.json is stale
+- Both functions log detailed information for debugging hive configuration issues
+
+**File Location**: `src/mcp_hive_utils.py`
+
 ## Available MCP Tools
 
 ### Ticket Operations

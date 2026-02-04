@@ -29,12 +29,12 @@ description: 'Context: After extracting hive utilities, update mcp_server.py to 
   - All references to validate_hive_path() and scan_for_hive() still work
 
   - No code duplication'
-parent: features.bees-wvm
 up_dependencies:
 - features.bees-hnv
-status: open
+parent: features.bees-wvm
 created_at: '2026-02-03T17:03:26.443645'
-updated_at: '2026-02-03T17:03:26.443647'
+updated_at: '2026-02-03T19:45:42.955169'
+status: completed
 bees_version: '1.1'
 ---
 

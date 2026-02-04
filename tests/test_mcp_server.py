@@ -1038,10 +1038,10 @@ class TestScanForHiveConfigAutoUpdate:
         }))
 
         # Mock save_bees_config to raise an exception
-        def mock_save_error(cfg):
+        def mock_save_error(cfg, repo_root=None):
             raise IOError("Disk full")
 
-        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_error)
+        monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_error)
 
         # Should re-raise the IOError from config update
         with pytest.raises(IOError, match="Disk full"):
@@ -1513,10 +1513,10 @@ class TestScanForHiveExceptionHandling:
         }))
 
         # Mock save_bees_config to raise IOError
-        def mock_save_ioerror(cfg):
+        def mock_save_ioerror(cfg, repo_root=None):
             raise IOError("Permission denied")
 
-        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_ioerror)
+        monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_ioerror)
 
         # Should log error and re-raise
         with pytest.raises(IOError, match="Permission denied"):
@@ -1552,10 +1552,10 @@ class TestScanForHiveExceptionHandling:
         }))
 
         # Mock load_bees_config to raise JSONDecodeError
-        def mock_load_json_error():
+        def mock_load_json_error(repo_root=None):
             raise json.JSONDecodeError("Expecting value", "", 0)
 
-        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_json_error)
+        monkeypatch.setattr("src.mcp_hive_utils.load_bees_config", mock_load_json_error)
 
         # Should log error and re-raise
         with pytest.raises(json.JSONDecodeError, match="Expecting value"):
@@ -1594,10 +1594,10 @@ class TestScanForHiveExceptionHandling:
         class BadConfig:
             pass
 
-        def mock_load_bad_config():
+        def mock_load_bad_config(repo_root=None):
             return BadConfig()
 
-        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_bad_config)
+        monkeypatch.setattr("src.mcp_hive_utils.load_bees_config", mock_load_bad_config)
 
         # Should log error and re-raise
         with pytest.raises(AttributeError):
@@ -1623,10 +1623,10 @@ class TestScanForHiveExceptionHandling:
         }))
 
         # Mock load_bees_config to raise NameError (programming error)
-        def mock_load_name_error():
+        def mock_load_name_error(repo_root=None):
             raise NameError("undefined_variable is not defined")
 
-        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_name_error)
+        monkeypatch.setattr("src.mcp_hive_utils.load_bees_config", mock_load_name_error)
 
         # Should propagate NameError, not catch it
         with pytest.raises(NameError, match="undefined_variable is not defined"):
@@ -1664,10 +1664,10 @@ class TestScanForHiveExceptionHandling:
             (AttributeError, AttributeError("No attribute"))
         ]:
             # Mock save_bees_config to raise specific error
-            def mock_save_error(cfg):
+            def mock_save_error(cfg, repo_root=None):
                 raise error_instance
 
-            monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_error)
+            monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_error)
 
             # Should log error and re-raise
             with pytest.raises(error_type):
@@ -1719,10 +1719,10 @@ class TestScanForHiveErrorPropagation:
         }))
 
         # Mock save_bees_config to raise IOError
-        def mock_save_ioerror(cfg):
+        def mock_save_ioerror(cfg, repo_root=None):
             raise IOError("Permission denied")
 
-        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_ioerror)
+        monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_ioerror)
 
         # Should log error and re-raise exception
         with pytest.raises(IOError, match="Permission denied"):
@@ -1760,10 +1760,10 @@ class TestScanForHiveErrorPropagation:
         }))
 
         # Mock save_bees_config to raise JSONDecodeError
-        def mock_save_json_error(cfg):
+        def mock_save_json_error(cfg, repo_root=None):
             raise json.JSONDecodeError("Malformed JSON", "", 0)
 
-        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_json_error)
+        monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_json_error)
 
         # Should log error and re-raise exception
         with pytest.raises(json.JSONDecodeError, match="Malformed JSON"):
@@ -1801,10 +1801,10 @@ class TestScanForHiveErrorPropagation:
         }))
 
         # Mock save_bees_config to raise IOError
-        def mock_save_ioerror(cfg):
+        def mock_save_ioerror(cfg, repo_root=None):
             raise IOError("Test error")
 
-        monkeypatch.setattr("src.mcp_server.save_bees_config", mock_save_ioerror)
+        monkeypatch.setattr("src.mcp_hive_utils.save_bees_config", mock_save_ioerror)
 
         # Should log error and re-raise
         try:

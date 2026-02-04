@@ -24,12 +24,12 @@ description: 'Context: Document the new mcp_hive_utils.py module in project READ
   - README updated with mcp_hive_utils.py description
 
   - Functions and purpose clearly documented'
-parent: features.bees-wvm
 up_dependencies:
 - features.bees-hnv
-status: open
+parent: features.bees-wvm
 created_at: '2026-02-03T17:03:30.626748'
-updated_at: '2026-02-03T17:03:30.626758'
+updated_at: '2026-02-03T19:46:14.695986'
+status: completed
 bees_version: '1.1'
 ---
 
