@@ -135,6 +135,42 @@ The `mcp_hive_utils` module provides hive path validation and filesystem scannin
 
 **File Location**: `src/mcp_hive_utils.py`
 
+### mcp_ticket_ops Module
+
+The `mcp_ticket_ops` module contains the core ticket CRUD (Create, Read, Update, Delete) operations extracted from `mcp_server.py`. These are the primary ticket manipulation functions that form the foundation of the ticket management system.
+
+**Design Rationale**:
+- The four ticket operations were the largest functions in `mcp_server.py` (~800 lines combined)
+- Extracting to dedicated module improves code organization and cohesion
+- Ticket operations are a distinct subsystem with clear boundaries
+- Reduces `mcp_server.py` complexity, making it focus on MCP tool registration and server infrastructure
+- Enables independent testing and maintenance of ticket operation logic
+
+**Functions**:
+- `_create_ticket()`: Creates new tickets (epic, task, or subtask) with comprehensive validation, hive path verification, write permissions checking, and bidirectional relationship synchronization
+- `_update_ticket()`: Updates existing ticket fields with optional parameter sentinel pattern (`_UNSET`), tracking old/new relationships to sync only changes, and atomic file writes
+- `_delete_ticket()`: Deletes tickets with automatic cascade deletion of all children (recursively), cleanup of parent/dependency references in related tickets, and proper error handling
+- `_show_ticket()`: Retrieves complete ticket data by ID with hive validation, type inference, and JSON serialization
+
+**Module Dependencies**:
+- Used by: `mcp_server.py` (imports and registers as MCP tools)
+- Imports: `mcp_relationships` (bidirectional sync), `mcp_repo_utils` (repo root detection), `mcp_id_utils` (ticket ID parsing), `ticket_factory`, `reader`, `writer`, `paths`, `config`, `id_utils`
+
+**Integration Points**:
+- All four functions are imported by `mcp_server.py` and registered as MCP tools
+- Functions use `_update_bidirectional_relationships()` from `mcp_relationships` module to maintain consistency
+- Functions call `get_repo_root()` from `mcp_repo_utils` to determine client repository location
+- Functions use `parse_hive_from_ticket_id()` from `mcp_id_utils` for hive extraction
+
+**Design Decisions**:
+- Functions remain async to support MCP Context operations and future async I/O
+- All validation errors raise `ValueError` with descriptive messages (consistent with MCP server error handling)
+- `_UNSET` sentinel pattern in `_update_ticket()` distinguishes "not provided" from "explicitly None"
+- Write operations (create, update, delete) are strict and fail-fast without automatic recovery
+- Cascade deletion is always enabled for children (no optional flag) to prevent orphaned tickets
+
+**File Location**: `src/mcp_ticket_ops.py` (~820 lines)
+
 ## Available MCP Tools
 
 ### Ticket Operations

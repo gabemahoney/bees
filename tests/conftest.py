@@ -57,6 +57,10 @@ def mock_git_repo_check(request, monkeypatch):
         "src.mcp_server.get_repo_root_from_path",
         mock_get_repo_root
     )
+    monkeypatch.setattr(
+        "src.mcp_ticket_ops.get_repo_root_from_path",
+        mock_get_repo_root
+    )
 
     # Patch get_config_path and ensure_bees_dir to use Path.cwd() when repo_root is None
     from src.config import get_config_path as original_get_config_path

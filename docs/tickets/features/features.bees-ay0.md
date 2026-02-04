@@ -25,7 +25,7 @@ description: 'Context: Extract ticket deletion operation from mcp_server.py to n
   Acceptance: _delete_ticket() function exists in mcp_ticket_ops.py with identical
   functionality to original.'
 parent: features.bees-jzd
-status: open
+status: completed
 created_at: '2026-02-03T17:03:15.854677'
 updated_at: '2026-02-03T17:03:15.854680'
 bees_version: '1.1'

@@ -28,7 +28,7 @@ description: 'Context: New mcp_ticket_ops.py module extracts ticket CRUD operati
 parent: features.bees-jzd
 up_dependencies:
 - features.bees-zd2
-status: open
+status: completed
 created_at: '2026-02-03T17:03:31.896218'
 updated_at: '2026-02-03T17:03:31.896225'
 bees_version: '1.1'

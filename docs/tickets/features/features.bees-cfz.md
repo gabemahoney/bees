@@ -30,7 +30,7 @@ description: 'Context: Document the architectural decision to extract ticket CRU
 parent: features.bees-jzd
 up_dependencies:
 - features.bees-zd2
-status: open
+status: completed
 created_at: '2026-02-03T17:03:38.568683'
 updated_at: '2026-02-03T17:03:38.568686'
 bees_version: '1.1'

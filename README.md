@@ -85,6 +85,17 @@ The MCP Server has a linter which will verify metadata integrity and warn.
   - `_add_to_up_dependencies()` / `_remove_from_up_dependencies()` - Blocked ticket dependency arrays
 - This discrete subsystem is isolated for better maintainability (~400-500 lines)
 
+**mcp_ticket_ops.py** - Core ticket CRUD operations
+- Provides the four main ticket operations extracted from mcp_server.py
+- Contains comprehensive validation logic and error handling for all operations
+- Integrates with mcp_relationships for bidirectional sync, mcp_repo_utils for repo root detection, and mcp_id_utils for ticket ID parsing
+- Contains 4 core functions:
+  - `_create_ticket()` - Creates new tickets (epic, task, or subtask) with full validation
+  - `_update_ticket()` - Updates existing tickets with bidirectional relationship sync
+  - `_delete_ticket()` - Deletes tickets with cascade behavior and relationship cleanup
+  - `_show_ticket()` - Retrieves and returns ticket data by ID
+- Registered as MCP tools in mcp_server.py for external access (~800 lines)
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

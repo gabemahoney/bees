@@ -30,7 +30,7 @@ description: 'Context: Verify all ticket operation tests pass after extraction t
 parent: features.bees-jzd
 up_dependencies:
 - features.bees-x0t
-status: open
+status: completed
 created_at: '2026-02-03T17:03:50.521812'
 updated_at: '2026-02-03T17:03:50.521816'
 bees_version: '1.1'

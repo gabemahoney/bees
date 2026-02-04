@@ -27,7 +27,7 @@ description: 'Context: After moving ticket CRUD functions to mcp_ticket_ops.py, 
   Acceptance: mcp_server.py imports and uses ticket operations from mcp_ticket_ops.py
   without errors. Module is significantly shorter (~700-800 lines removed).'
 parent: features.bees-jzd
-status: open
+status: completed
 created_at: '2026-02-03T17:03:25.765213'
 updated_at: '2026-02-03T17:03:25.765216'
 bees_version: '1.1'

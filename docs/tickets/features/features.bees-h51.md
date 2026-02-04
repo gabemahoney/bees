@@ -25,7 +25,7 @@ description: 'Context: Extract ticket retrieval operation from mcp_server.py to 
   Acceptance: _show_ticket() function exists in mcp_ticket_ops.py with identical functionality
   to original.'
 parent: features.bees-jzd
-status: open
+status: completed
 created_at: '2026-02-03T17:03:19.404357'
 updated_at: '2026-02-03T17:03:19.404362'
 bees_version: '1.1'

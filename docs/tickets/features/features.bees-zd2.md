@@ -17,7 +17,7 @@ down_dependencies:
 parent: features.bees-jzd
 created_at: '2026-02-03T17:03:04.233647'
 updated_at: '2026-02-03T17:03:44.511966'
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

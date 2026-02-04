@@ -70,7 +70,7 @@ children:
 created_at: '2026-02-03T17:01:59.766998'
 updated_at: '2026-02-03T17:03:50.524945'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

@@ -25,7 +25,7 @@ description: 'Context: Extract ticket update operation from mcp_server.py to new
   Acceptance: _update_ticket() function exists in mcp_ticket_ops.py with identical
   functionality to original.'
 parent: features.bees-jzd
-status: open
+status: completed
 created_at: '2026-02-03T17:03:12.280569'
 updated_at: '2026-02-03T17:03:12.280573'
 bees_version: '1.1'
