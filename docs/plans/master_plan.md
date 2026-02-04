@@ -23,10 +23,27 @@ Detailed technical documentation is organized into focused architecture document
 
 ## Module Organization
 
-The codebase is organized into focused modules following separation of concerns:
+The codebase follows a modular architecture where mcp_server.py acts as a thin orchestration layer that registers MCP tools and delegates to specialized modules. This design emerged from Epic features.bees-d6o which systematically extracted functionality from a monolithic 3,222-line mcp_server.py into 9 focused modules.
+
+### Modularization Strategy
+
+**Design Goal:** Keep each module under 1000 lines to fit comfortably in LLM context windows, enabling better code comprehension and maintenance.
+
+**Orchestration Pattern:** mcp_server.py is now a ~200-line file that:
+- Initializes the FastMCP server
+- Sets up logging configuration
+- Provides lifecycle functions (start_server, stop_server, health_check)
+- Registers all MCP tools as 1-2 line wrappers that delegate to extracted modules
+- Contains no business logic or implementation details
+
+**Import Structure:** Modules are organized to avoid circular dependencies:
+- Utility modules (mcp_id_utils, mcp_repo_utils, mcp_hive_utils) have no internal dependencies
+- Relationship module (mcp_relationships) depends only on core modules (paths, reader, writer)
+- Operation modules (mcp_ticket_ops, mcp_hive_ops, mcp_query_ops) depend on utilities and relationships
+- Server orchestration (mcp_server.py) imports all modules but is imported by none
 
 **Core Infrastructure Modules:**
-- **mcp_server.py** - FastMCP server registration and coordination (~220 lines after help extraction)
+- **mcp_server.py** - FastMCP server registration and orchestration (~200 lines, reduced from 3,222)
 - **mcp_relationships.py** - Bidirectional relationship synchronization (~400-500 lines)
 - **mcp_ticket_ops.py** - Ticket CRUD operations (create, update, delete, show) (~800 lines)
 - **mcp_hive_ops.py** - Hive lifecycle operations (colonize, list, abandon, rename, sanitize) (~1000 lines)

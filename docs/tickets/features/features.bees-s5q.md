@@ -17,7 +17,7 @@ description: "Context: The mcp_server.py refactoring significantly changes the c
 parent: features.bees-4u5
 up_dependencies:
 - features.bees-b1s
-status: open
+status: completed
 created_at: '2026-02-03T17:03:37.778468'
 updated_at: '2026-02-03T17:03:37.778471'
 bees_version: '1.1'

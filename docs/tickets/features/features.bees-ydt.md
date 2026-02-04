@@ -27,7 +27,7 @@ description: 'Context: The goal of this refactoring is to shrink mcp_server.py f
   Acceptance: File is 300-500 lines and contains only server setup, lifecycle, and
   tool registration wrappers.'
 parent: features.bees-4u5
-status: open
+status: completed
 created_at: '2026-02-03T17:03:25.604215'
 updated_at: '2026-02-03T17:03:25.604219'
 bees_version: '1.1'

@@ -72,7 +72,32 @@ The MCP Server has a linter which will verify metadata integrity and warn.
 
 ## Architecture
 
+Bees uses a modular architecture where `mcp_server.py` acts as a thin orchestration layer (~200 lines) that registers MCP tools and delegates to specialized modules. This design keeps the codebase LLM-friendly by ensuring each module is under 1000 lines and fits comfortably in an LLM's context window.
+
 ### Core Modules
+
+**mcp_server.py** - Thin orchestration layer (~200 lines)
+- Initializes FastMCP server and registers all MCP tools
+- Contains only: server setup, logging config, lifecycle functions (start/stop/health_check)
+- All tool decorators are 1-2 line wrappers that delegate to specialized modules
+- Reduced from 3,222 lines to ~200 lines through systematic extraction
+
+**mcp_id_utils.py** - Ticket ID parsing utilities
+- Parses ticket IDs to extract hive names and validate format
+- Used by all modules that work with ticket IDs
+- Contains 2 core functions:
+  - `parse_ticket_id()` - Extracts components from ticket ID string
+  - `parse_hive_from_ticket_id()` - Extracts just the hive prefix
+- Enables consistent ID handling across the codebase (~50 lines)
+
+**mcp_repo_utils.py** - Repository root detection
+- Detects repository root from file paths and MCP context
+- Integrates with FastMCP's roots protocol for multi-repo support
+- Contains 3 core functions:
+  - `get_repo_root_from_path()` - Finds repo root by walking up directory tree
+  - `get_client_repo_root()` - Gets client repo from MCP context (deprecated)
+  - `get_repo_root()` - Unified repo root getter using roots protocol
+- Critical for multi-repository MCP client support (~100 lines)
 
 **mcp_relationships.py** - Bidirectional relationship synchronization
 - Handles automatic bidirectional synchronization of ticket relationships (parent/child, dependencies)

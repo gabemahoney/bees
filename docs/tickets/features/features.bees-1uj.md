@@ -13,7 +13,7 @@ description: "Context: Tool decorators should be thin wrappers that delegate to 
   \ that delegate to extracted modules. All parameters and return values are correctly\
   \ passed through."
 parent: features.bees-4u5
-status: open
+status: completed
 created_at: '2026-02-03T17:03:21.508701'
 updated_at: '2026-02-03T17:03:21.508704'
 bees_version: '1.1'

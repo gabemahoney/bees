@@ -26,7 +26,7 @@ description: 'Context: After refactoring mcp_server.py, need to ensure all exist
 parent: features.bees-4u5
 up_dependencies:
 - features.bees-svd
-status: open
+status: completed
 created_at: '2026-02-03T17:03:50.902014'
 updated_at: '2026-02-03T17:03:50.902018'
 bees_version: '1.1'

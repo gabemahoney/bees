@@ -1,9 +1,9 @@
 {
   "hives": {
-    "backend": {
-      "path": "/private/var/folders/y6/67qqd3ms753144tqycdscyzr0000gp/T/pytest-of-gmahoney/pytest-30/test_update_ticket_routes_to_c0/tickets",
-      "display_name": "Backend",
-      "created_at": "2026-02-04T02:11:23.734663"
+    "features": {
+      "path": "/Users/gmahoney/projects/bees/docs/tickets/features",
+      "display_name": "features",
+      "created_at": "2026-02-04T02:14:02.946541"
     }
   },
   "allow_cross_hive_dependencies": false,

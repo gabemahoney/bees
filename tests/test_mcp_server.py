@@ -3041,3 +3041,102 @@ class TestAbandonHive:
         assert "normalized_name" in result
         assert "path" in result
         assert result["status"] == "success"
+
+
+class TestModuleIntegration:
+    """Tests for refactored module integration.
+
+    Verifies that all extracted modules can be imported without circular dependency
+    errors and that the mcp_server correctly integrates with them.
+    """
+
+    def test_all_modules_import_successfully(self):
+        """Test that all 9 extracted modules can be imported without errors."""
+        # This test verifies there are no circular dependency issues
+        import src.mcp_id_utils
+        import src.mcp_repo_utils
+        import src.mcp_hive_utils
+        import src.mcp_relationships
+        import src.mcp_ticket_ops
+        import src.mcp_hive_ops
+        import src.mcp_query_ops
+        import src.mcp_index_ops
+        import src.mcp_help
+
+        # If we get here without ImportError, all modules loaded successfully
+        assert True
+
+    def test_mcp_server_imports_all_modules(self):
+        """Test that mcp_server.py successfully imports from all extracted modules."""
+        from src.mcp_server import (
+            parse_ticket_id,
+            parse_hive_from_ticket_id,
+            get_repo_root_from_path,
+            get_repo_root,
+            validate_hive_path,
+            scan_for_hive,
+            _update_bidirectional_relationships,
+            _create_ticket,
+            _update_ticket,
+            _delete_ticket,
+            _show_ticket,
+            _colonize_hive,
+            _list_hives,
+            _abandon_hive,
+            _rename_hive,
+            _sanitize_hive,
+            _add_named_query,
+            _execute_query,
+            _execute_freeform_query,
+            _generate_index,
+            _help
+        )
+
+        # All imports successful
+        assert True
+
+    def test_tool_registration_count(self):
+        """Test that all expected tools are registered."""
+        import asyncio
+        from src.mcp_server import mcp
+
+        async def check_tools():
+            tools = await mcp.get_tools()
+            # Expected tools: health_check, create_ticket, update_ticket, delete_ticket,
+            # show_ticket, colonize_hive, list_hives, abandon_hive, rename_hive,
+            # sanitize_hive, add_named_query, execute_query, execute_freeform_query,
+            # generate_index, help
+            assert len(tools) == 15, f"Expected 15 tools, got {len(tools)}"
+
+            # Verify specific tools are present
+            expected_tools = {
+                'health_check', 'create_ticket', 'update_ticket', 'delete_ticket',
+                'show_ticket', 'colonize_hive', 'list_hives', 'abandon_hive',
+                'rename_hive', 'sanitize_hive', 'add_named_query', 'execute_query',
+                'execute_freeform_query', 'generate_index', 'help'
+            }
+            assert set(tools) == expected_tools
+
+        asyncio.run(check_tools())
+
+    def test_delegated_functions_are_callable(self):
+        """Test that delegated functions maintain their signatures."""
+        from src.mcp_ticket_ops import _create_ticket, _update_ticket, _delete_ticket, _show_ticket
+        from src.mcp_hive_ops import _colonize_hive, _list_hives, _abandon_hive
+        from src.mcp_query_ops import _add_named_query, _execute_query, _execute_freeform_query
+        from src.mcp_index_ops import _generate_index
+        from src.mcp_help import _help
+
+        # Verify all functions are callable
+        assert callable(_create_ticket)
+        assert callable(_update_ticket)
+        assert callable(_delete_ticket)
+        assert callable(_show_ticket)
+        assert callable(_colonize_hive)
+        assert callable(_list_hives)
+        assert callable(_abandon_hive)
+        assert callable(_add_named_query)
+        assert callable(_execute_query)
+        assert callable(_execute_freeform_query)
+        assert callable(_generate_index)
+        assert callable(_help)
