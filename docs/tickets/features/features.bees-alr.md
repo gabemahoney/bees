@@ -51,6 +51,8 @@ down_dependencies:
 - features.bees-txe
 - features.bees-zy7
 - features.bees-4u5
+- features.bees-c4r
+- features.bees-l4c
 parent: features.bees-d6o
 children:
 - features.bees-420
@@ -60,9 +62,9 @@ children:
 - features.bees-at0
 - features.bees-ucu
 created_at: '2026-02-03T17:00:59.340639'
-updated_at: '2026-02-03T17:03:33.903354'
+updated_at: '2026-02-03T19:26:24.886055'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

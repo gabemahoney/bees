@@ -11,8 +11,15 @@ Bees uses pytest with a fixture-based approach for test isolation and hive-based
 **Implementation** (`tests/conftest.py:10-72`):
 - Auto-injected fixture (autouse=True) that mocks git repository validation
 - Returns `Path.cwd()` as repo root for test environments
-- Patches `get_repo_root_from_path()`, `get_config_path()`, and `ensure_bees_dir()`
+- Patches `mcp_repo_utils.get_repo_root_from_path()` (single patch point)
+- Also patches `get_config_path()` and `ensure_bees_dir()` for test isolation
 - Tests requiring real git validation can opt out using `@pytest.mark.needs_real_git_check`
+
+**Patching Strategy**: The fixture patches both `mcp_repo_utils.get_repo_root_from_path` and `mcp_server.get_repo_root_from_path`. Both patches are required because Python's `from X import Y` syntax creates a local name binding at import time. When `mcp_server.py:32` executes:
+```python
+from .mcp_repo_utils import get_repo_root_from_path, get_client_repo_root, get_repo_root
+```
+This creates a binding in `mcp_server`'s namespace that points to the function object. Patching only `mcp_repo_utils` after import doesn't affect the already-bound name in `mcp_server`. Therefore, both module namespaces must be patched to ensure the mock is used consistently.
 
 **Design Rationale**: Tests create temporary directories via pytest's `tmp_path` fixture, which aren't git repositories. Production code validates repository boundaries, but tests need to bypass this validation to work in isolated temp directories.
 

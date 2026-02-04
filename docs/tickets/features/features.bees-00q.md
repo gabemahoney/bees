@@ -39,9 +39,9 @@ description: 'Context: After extracting functions to mcp_repo_utils.py, update m
 
   - All MCP tools can still call these functions'
 parent: features.bees-alr
-status: open
 created_at: '2026-02-03T17:03:05.319443'
-updated_at: '2026-02-03T17:03:05.319446'
+updated_at: '2026-02-03T19:20:24.892771'
+status: completed
 bees_version: '1.1'
 ---
 

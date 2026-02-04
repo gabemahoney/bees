@@ -84,6 +84,32 @@ The `mcp_id_utils` module provides foundational ticket ID parsing utilities extr
 
 **File Location**: `src/mcp_id_utils.py`
 
+### mcp_repo_utils Module
+
+The `mcp_repo_utils` module provides repository root detection functions used by MCP server operations. Extracted from `mcp_server.py` to isolate fundamental detection logic from MCP tool implementations.
+
+**Design Rationale**:
+- Repository root detection is fundamental to all MCP operations and deserves dedicated module
+- Three-function architecture separates concerns: path-based detection, context-based detection, and coordination
+- Enables independent testing of detection logic without MCP server overhead
+- Reduces `mcp_server.py` complexity by extracting ~130 lines of infrastructure code
+
+**Functions**:
+- `get_repo_root_from_path(start_path: Path) -> Path`: Walks up directory tree from given path to find `.git` directory. Raises `ValueError` if no repository found.
+- `get_client_repo_root(ctx: Context) -> Path | None`: Extracts repository root from MCP client context using roots protocol. Returns `None` if client doesn't support roots or protocol fails.
+- `get_repo_root(ctx: Context | None) -> Path | None`: Wrapper coordinating fallback logic. Uses `get_client_repo_root()` when context provided, falls back to `get_repo_root_from_path(Path.cwd())` otherwise. Returns `None` when roots protocol unavailable (allowing callers to implement appropriate fallbacks).
+
+**Module Dependencies**:
+- Used by: `mcp_server.py` (all MCP tools requiring repo root detection)
+- Imports: `pathlib.Path`, `logging`, `fastmcp.Context`
+
+**Integration Points**:
+- All MCP tools call `get_repo_root(ctx)` to determine client repository location
+- When `get_repo_root()` returns `None`, tools requiring repo root should raise `ValueError` with clear message
+- Logging statements track root detection attempts for debugging client integration issues
+
+**File Location**: `src/mcp_repo_utils.py`
+
 ## Available MCP Tools
 
 ### Ticket Operations

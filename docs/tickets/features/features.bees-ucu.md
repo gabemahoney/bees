@@ -13,12 +13,12 @@ description: "Context: Execute full test suite to verify mcp_repo_utils extracti
   Blocked By: features.bees-at0 (add unit tests)\n\nSuccess Criteria:\n- pytest exits\
   \ with 0 (all tests pass)\n- No import errors\n- No broken MCP tool functionality\n\
   - Test output shows 100% pass rate"
-parent: features.bees-alr
 up_dependencies:
 - features.bees-at0
-status: open
+parent: features.bees-alr
 created_at: '2026-02-03T17:03:33.899781'
-updated_at: '2026-02-03T17:03:33.899785'
+updated_at: '2026-02-03T19:23:37.189153'
+status: completed
 bees_version: '1.1'
 ---
 

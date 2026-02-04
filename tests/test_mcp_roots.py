@@ -2,7 +2,7 @@
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock
-from src.mcp_server import get_client_repo_root, get_repo_root
+from src.mcp_repo_utils import get_client_repo_root, get_repo_root
 from src.config import get_config_path, load_bees_config
 
 

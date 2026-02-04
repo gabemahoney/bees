@@ -18,10 +18,6 @@ The bees MCP server works best with clients that support the **MCP Roots Protoco
 - ✅ Claude Desktop (official MCP client) - Full roots protocol support
 - ✅ OpenCode - Full roots protocol support
 
-### Testing
-
-Comprehensive test coverage for the repo_root parameter fallback mechanism is available in `tests/test_mcp_roots.py`. All MCP tools with the repo_root parameter have test coverage verifying they work correctly when ctx=None (i.e., when the roots protocol is unavailable).
-
 ## Quick Start
 
 ### Configure Claude Code

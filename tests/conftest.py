@@ -44,6 +44,15 @@ def mock_git_repo_check(request, monkeypatch):
         # This handles test cases where we create subdirectories but haven't created .git yet
         return Path.cwd().resolve()
 
+    # Patch both mcp_repo_utils and mcp_server
+    # Both patches are required because Python creates name bindings at import time
+    # mcp_server.py:32 does: from .mcp_repo_utils import get_repo_root_from_path
+    # This creates a local name binding to the original function in mcp_server's namespace
+    # Patching only mcp_repo_utils doesn't affect already-imported names in mcp_server
+    monkeypatch.setattr(
+        "src.mcp_repo_utils.get_repo_root_from_path",
+        mock_get_repo_root
+    )
     monkeypatch.setattr(
         "src.mcp_server.get_repo_root_from_path",
         mock_get_repo_root

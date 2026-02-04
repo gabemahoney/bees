@@ -29,6 +29,7 @@ from .config import (
 )
 from .id_utils import normalize_hive_name
 from .mcp_id_utils import parse_ticket_id, parse_hive_from_ticket_id
+from .mcp_repo_utils import get_repo_root_from_path, get_client_repo_root, get_repo_root
 
 # Ensure log directory exists
 log_dir = Path.home() / '.bees'
@@ -48,137 +49,6 @@ mcp = FastMCP("Bees Ticket Management Server")
 
 # Server state
 _server_running = False
-
-
-def get_repo_root_from_path(start_path: Path) -> Path:
-    """
-    Find the git repository root by walking up from a given path.
-
-    Starts from the provided path and walks up the directory tree
-    looking for a .git directory. Returns the path to the repository root
-    when found.
-
-    Args:
-        start_path: Path to start searching from
-
-    Returns:
-        Path: Absolute path to the git repository root
-
-    Raises:
-        ValueError: If not in a git repository (no .git directory found)
-
-    Example:
-        >>> repo_root = get_repo_root_from_path(Path('/Users/user/projects/myrepo/tickets'))
-        >>> print(repo_root)
-        /Users/username/projects/myrepo
-    """
-    current = start_path.resolve()
-
-    # Walk up directory tree looking for .git
-    while current != current.parent:
-        if (current / '.git').exists():
-            return current
-        current = current.parent
-
-    # Check root directory
-    if (current / '.git').exists():
-        return current
-
-    raise ValueError(f"Not in a git repository - no .git directory found starting from {start_path}")
-
-
-async def get_client_repo_root(ctx: Context) -> Path | None:
-    """
-    Extract repository root from MCP client context if client supports roots protocol.
-    
-    Args:
-        ctx: FastMCP Context object provided by MCP client
-        
-    Returns:
-        Path if client supports roots and provides them, None otherwise
-        
-    Example:
-        >>> ctx = get_context()  # From MCP client
-        >>> repo = await get_client_repo_root(ctx)
-        >>> if repo:
-        >>>     print(f"Client repo: {repo}")
-        >>> else:
-        >>>     print("Client doesn't support roots protocol")
-    """
-    try:
-        roots = await ctx.list_roots()
-
-        if not roots or len(roots) == 0:
-            logger.warning("Client returned empty roots list")
-            return None
-
-        # Log all roots for debugging
-        logger.info(f"Client provided {len(roots)} root(s):")
-        for i, root in enumerate(roots):
-            logger.info(f"  Root {i}: {root.uri}")
-
-        # Take first root and convert FileUrl to Path
-        first_root = roots[0]
-        root_uri_str = str(first_root.uri)
-
-        # Strip file:// prefix if present
-        if root_uri_str.startswith("file://"):
-            root_path = root_uri_str[7:]  # Remove "file://"
-        else:
-            root_path = root_uri_str
-
-        logger.info(f"Using first root as client repo root: {root_path}")
-        return Path(root_path)
-        
-    except Exception as e:
-        # Method not found (-32601) means client doesn't support roots
-        # This is normal for clients that don't implement the roots protocol
-        logger.info(f"Client doesn't support roots protocol: {e}")
-        return None
-
-
-async def get_repo_root(ctx: Context | None) -> Path | None:
-    """
-    Find the git repository root from MCP client context.
-
-    When called with MCP context, uses the roots protocol. If the client
-    doesn't support roots or the protocol fails, returns None so the caller
-    can implement appropriate fallback logic (since MCP server runs in a
-    different repo than the client, we can't just use server's cwd).
-
-    Args:
-        ctx: FastMCP Context object (optional, auto-injected by FastMCP)
-
-    Returns:
-        Path if repo root can be determined, None if roots protocol unavailable
-
-    Raises:
-        ValueError: If not in a git repository (only when ctx is None)
-
-    Example:
-        >>> ctx = get_context()
-        >>> repo_root = await get_repo_root(ctx)
-        >>> if repo_root:
-        >>>     print(repo_root)
-        >>> else:
-        >>>     # Handle roots protocol unavailable
-    """
-    if ctx:
-        client_root = await get_client_repo_root(ctx)
-        if client_root:
-            # Client supports roots - use it
-            repo_root = get_repo_root_from_path(client_root)
-            logger.info(f"Using client repo root from MCP context: {repo_root}")
-            return repo_root
-        else:
-            # Client doesn't support roots protocol or list_roots() failed
-            # Return None so caller can implement appropriate fallback
-            # (We can't fall back to server's cwd since MCP server runs in different repo)
-            logger.warning("MCP client doesn't support roots protocol or list_roots() failed")
-            return None
-    else:
-        # No context (tests, CLI) - use cwd
-        return get_repo_root_from_path(Path.cwd())
 
 
 def validate_hive_path(path: str, repo_root: Path) -> Path:
