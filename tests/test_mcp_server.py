@@ -1987,7 +1987,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_success_case(self, git_repo_tmp_path):
         """Test successful colonization via MCP wrapper."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         hive_path = git_repo_tmp_path / "backend_hive"
         hive_path.mkdir()
@@ -2008,7 +2008,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_creates_marker(self, git_repo_tmp_path):
         """Test that MCP wrapper creates .hive marker with correct identity."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         import json
 
         hive_path = git_repo_tmp_path / "frontend"
@@ -2028,14 +2028,14 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_invalid_path_not_absolute(self, git_repo_tmp_path):
         """Test error case: path is not absolute."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         with pytest.raises(ValueError, match="must be absolute"):
             await _colonize_hive("Test Hive", "relative/path")
 
     async def test_colonize_hive_path_does_not_exist(self, git_repo_tmp_path):
         """Test that parent directory is created if it doesn't exist."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         # Path with non-existent parent - new behavior creates it
         nonexistent_parent = git_repo_tmp_path / "does_not_exist" / "nested"
@@ -2050,7 +2050,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_path_outside_repo(self, tmp_path, git_repo_tmp_path):
         """Test that colonize works when path is in a different git repo than provided repo_root."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         # Create a hive in the git_repo_tmp_path
         # New behavior: When path is outside provided repo_root, it uses the hive path
@@ -2067,7 +2067,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_duplicate_name(self, git_repo_tmp_path):
         """Test error case: duplicate hive name."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         hive1_path = git_repo_tmp_path / "hive1"
         hive1_path.mkdir()
@@ -2084,7 +2084,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_invalid_name_empty(self, git_repo_tmp_path):
         """Test error case: name normalizes to empty string."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
@@ -2094,7 +2094,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
         """Test that colonize_hive registers hive in config.json."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from src.config import load_bees_config
 
         hive_path = git_repo_tmp_path / "api"
@@ -2111,7 +2111,7 @@ class TestColonizeHiveMCPIntegration:
 
     async def test_colonize_hive_name_normalization(self, git_repo_tmp_path):
         """Test that MCP wrapper correctly normalizes hive names."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         test_cases = [
             ("Back End", "back_end"),
@@ -2135,13 +2135,13 @@ class TestColonizeHiveMCPUnit:
 
     def test_colonize_hive_tool_callable(self):
         """Test that _colonize_hive function is callable."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         assert callable(_colonize_hive)
 
     def test_colonize_hive_accepts_name_and_path_parameters(self, git_repo_tmp_path):
         """Test that _colonize_hive accepts name and path parameters."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from inspect import signature
 
         sig = signature(_colonize_hive)
@@ -2152,7 +2152,7 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_parameter_validation_empty_name(self, git_repo_tmp_path):
         """Test parameter validation for empty name."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
@@ -2163,14 +2163,14 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_parameter_validation_invalid_path_format(self):
         """Test parameter validation for invalid path format (not absolute)."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         with pytest.raises(ValueError):
             await _colonize_hive("Test", "relative/path")
 
     async def test_colonize_hive_success_response_structure(self, git_repo_tmp_path):
         """Test that success response has correct structure."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
@@ -2187,7 +2187,7 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_error_response_raises_value_error(self, git_repo_tmp_path):
         """Test that error conditions raise ValueError."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
 
         # Invalid path should raise ValueError
         with pytest.raises(ValueError):
@@ -2195,14 +2195,14 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_wraps_core_function(self, git_repo_tmp_path):
         """Test that MCP wrapper calls underlying colonize_hive_core() core function."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
         # Mock the core colonize_hive_core function
-        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock) as mock_core:
+        with patch('src.mcp_hive_ops.colonize_hive_core', new_callable=AsyncMock) as mock_core:
             mock_core.return_value = {
                 "status": "success",
                 "normalized_name": "test",
@@ -2218,14 +2218,14 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_propagates_core_function_errors(self, git_repo_tmp_path):
         """Test that wrapper propagates errors from core function."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
         # Mock core function to return error
-        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock) as mock_core:
+        with patch('src.mcp_hive_ops.colonize_hive_core', new_callable=AsyncMock) as mock_core:
             mock_core.return_value = {
                 "status": "error",
                 "message": "Test error",
@@ -2237,14 +2237,14 @@ class TestColonizeHiveMCPUnit:
 
     async def test_colonize_hive_handles_unexpected_exceptions(self, git_repo_tmp_path):
         """Test that wrapper handles unexpected exceptions."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch, AsyncMock
 
         hive_path = git_repo_tmp_path / "test"
         hive_path.mkdir()
 
         # Mock core function to raise unexpected exception
-        with patch('src.mcp_server.colonize_hive_core', new_callable=AsyncMock, side_effect=RuntimeError("Unexpected")):
+        with patch('src.mcp_hive_ops.colonize_hive_core', new_callable=AsyncMock, side_effect=RuntimeError("Unexpected")):
             with pytest.raises(ValueError, match="Failed to colonize hive"):
                 await _colonize_hive("Test", str(hive_path))
 
@@ -2274,7 +2274,7 @@ class TestColonizeHiveMCPErrorCases:
 
     async def test_colonize_hive_filesystem_error_eggs_creation(self, git_repo_tmp_path):
         """Test error case: cannot create /eggs directory."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch
 
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2293,7 +2293,7 @@ class TestColonizeHiveMCPErrorCases:
 
     async def test_colonize_hive_filesystem_error_evicted_creation(self, git_repo_tmp_path):
         """Test error case: cannot create /evicted directory."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch
 
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2312,7 +2312,7 @@ class TestColonizeHiveMCPErrorCases:
 
     async def test_colonize_hive_error_writing_identity_file(self, git_repo_tmp_path):
         """Test error case: cannot write .hive/identity.json file."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch
 
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2331,14 +2331,14 @@ class TestColonizeHiveMCPErrorCases:
 
     async def test_colonize_hive_config_write_failure(self, git_repo_tmp_path):
         """Test error case: cannot write config.json."""
-        from src.mcp_server import _colonize_hive
+        from src.mcp_hive_ops import _colonize_hive
         from unittest.mock import patch
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
 
         # Mock write_hive_config_dict to raise IOError
-        with patch('src.mcp_server.write_hive_config_dict', side_effect=IOError("Disk full")):
+        with patch('src.mcp_hive_ops.write_hive_config_dict', side_effect=IOError("Disk full")):
             with pytest.raises(ValueError, match="config"):
                 await _colonize_hive("Test Hive", str(hive_path))
 
@@ -2653,7 +2653,7 @@ class TestListHives:
 
     async def test_list_hives_returns_all_hives_from_config(self, temp_repo, mock_ctx):
         """Test list_hives returns correct data when config.json exists with hives."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         # Create config with multiple hives
@@ -2697,7 +2697,7 @@ class TestListHives:
 
     async def test_list_hives_returns_empty_list_when_no_config(self, temp_repo, mock_ctx):
         """Test list_hives returns empty list with message when config.json doesn't exist."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
 
         # No config.json created - should return empty list
         result = await _list_hives(mock_ctx)
@@ -2708,7 +2708,7 @@ class TestListHives:
 
     async def test_list_hives_returns_empty_list_when_no_hives(self, temp_repo, mock_ctx):
         """Test list_hives returns empty list with message when config.json exists but has no hives."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
         from src.config import BeesConfig, save_bees_config
 
         # Create config with empty hives
@@ -2723,7 +2723,7 @@ class TestListHives:
 
     async def test_list_hives_returns_correct_fields(self, temp_repo, mock_ctx):
         """Test all hive fields are returned correctly (display_name, normalized_name, path)."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         # Create config with a hive
@@ -2754,13 +2754,13 @@ class TestListHives:
 
     async def test_list_hives_handles_exception(self, temp_repo, mock_ctx, monkeypatch):
         """Test list_hives handles exceptions gracefully."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
 
         # Mock load_bees_config to raise an exception
-        def mock_load_error():
+        def mock_load_error(*args, **kwargs):
             raise Exception("Failed to load config")
 
-        monkeypatch.setattr("src.mcp_server.load_bees_config", mock_load_error)
+        monkeypatch.setattr("src.mcp_hive_ops.load_bees_config", mock_load_error)
 
         # Should raise ValueError with error message
         with pytest.raises(ValueError, match="Failed to list hives"):
@@ -2768,7 +2768,7 @@ class TestListHives:
 
     async def test_list_hives_with_single_hive(self, temp_repo, mock_ctx):
         """Test list_hives works correctly with a single hive."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         hive_path = temp_repo / "single"
@@ -2791,7 +2791,7 @@ class TestListHives:
 
     async def test_list_hives_with_many_hives(self, temp_repo, mock_ctx):
         """Test list_hives works with multiple hives."""
-        from src.mcp_server import _list_hives
+        from src.mcp_hive_ops import _list_hives
         from src.config import BeesConfig, HiveConfig, save_bees_config
 
         # Create 5 hives
@@ -2831,7 +2831,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_removes_from_config(self, git_repo_tmp_path):
         """Test that abandon_hive removes hive entry from config."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         # Create a hive
@@ -2855,7 +2855,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_preserves_files(self, git_repo_tmp_path):
         """Test that abandon_hive leaves ticket files intact."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         # Create a hive with structure
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2879,7 +2879,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_returns_error_for_nonexistent(self, git_repo_tmp_path):
         """Test that abandon_hive raises ValueError for non-existent hive."""
-        from src.mcp_server import _abandon_hive
+        from src.mcp_hive_ops import _abandon_hive
 
         with pytest.raises(ValueError) as exc_info:
             await _abandon_hive("NonExistent")
@@ -2889,7 +2889,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_returns_success_message(self, git_repo_tmp_path):
         """Test that abandon_hive returns success message with display name."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -2902,7 +2902,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_handles_normalized_name(self, git_repo_tmp_path):
         """Test that abandon_hive works with normalized hive name."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2915,7 +2915,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_handles_display_name(self, git_repo_tmp_path):
         """Test that abandon_hive works with display name."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -2927,7 +2927,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_returns_path(self, git_repo_tmp_path):
         """Test that abandon_hive returns the hive path."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -2939,7 +2939,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_with_multiple_hives(self, git_repo_tmp_path):
         """Test that abandon_hive removes only target hive from config."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         # Create multiple hives
@@ -2968,7 +2968,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_handles_last_hive(self, git_repo_tmp_path):
         """Test that abandon_hive handles removing the last hive in config."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
         from src.config import load_bees_config
 
         hive_path = git_repo_tmp_path / "test_hive"
@@ -2986,7 +2986,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_normalizes_hive_name(self, git_repo_tmp_path):
         """Test that abandon_hive normalizes hive name before lookup."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -2998,7 +2998,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_preserves_eggs_directory(self, git_repo_tmp_path):
         """Test that abandon_hive leaves /eggs directory intact."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -3012,7 +3012,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_preserves_evicted_directory(self, git_repo_tmp_path):
         """Test that abandon_hive leaves /evicted directory intact."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -3026,7 +3026,7 @@ class TestAbandonHive:
 
     async def test_abandon_hive_response_structure(self, git_repo_tmp_path):
         """Test that abandon_hive returns correct response structure."""
-        from src.mcp_server import _abandon_hive, _colonize_hive
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()

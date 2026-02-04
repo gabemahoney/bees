@@ -16,7 +16,7 @@ description: "Context: After extracting hive operations to mcp_hive_ops.py, need
 parent: features.bees-2hp
 up_dependencies:
 - features.bees-ggr
-status: open
+status: completed
 created_at: '2026-02-03T17:03:35.212400'
 updated_at: '2026-02-03T17:03:35.212403'
 bees_version: '1.1'

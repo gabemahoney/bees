@@ -21,6 +21,25 @@ Detailed technical documentation is organized into focused architecture document
 - [**Validation**](../architecture/validation.md) - Linter architecture and corruption detection
 - [**Testing**](../architecture/testing.md) - Test organization and coverage strategy
 
+## Module Organization
+
+The codebase is organized into focused modules following separation of concerns:
+
+**Core Infrastructure Modules:**
+- **mcp_server.py** - FastMCP server registration and coordination (~700 lines after extraction)
+- **mcp_relationships.py** - Bidirectional relationship synchronization (~400-500 lines)
+- **mcp_ticket_ops.py** - Ticket CRUD operations (create, update, delete, show) (~800 lines)
+- **mcp_hive_ops.py** - Hive lifecycle operations (colonize, list, abandon, rename, sanitize) (~1000 lines)
+
+**Utility Modules:**
+- **mcp_hive_utils.py** - Hive path validation and scanning utilities
+- **mcp_repo_utils.py** - Repository root detection
+- **mcp_id_utils.py** - Ticket ID parsing utilities
+
+**Organization:**
+- **mcp_hive_utils.py** handles validation/scanning
+- **mcp_hive_ops.py** handles lifecycle (create, rename, delete)
+
 ## Quick Reference
 
 For implementation details, see the architecture documentation linked above. Key integration points:

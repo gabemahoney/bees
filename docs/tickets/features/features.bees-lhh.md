@@ -36,7 +36,7 @@ description: 'Context: New mcp_hive_ops.py module extracts hive lifecycle operat
 parent: features.bees-2hp
 up_dependencies:
 - features.bees-8jm
-status: open
+status: completed
 created_at: '2026-02-03T17:03:18.007202'
 updated_at: '2026-02-03T17:03:18.007205'
 bees_version: '1.1'

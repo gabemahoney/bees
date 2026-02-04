@@ -358,7 +358,7 @@ class TestColonizeHiveConfigIntegration:
         def mock_write_error(config, repo_root=None):
             raise IOError("Disk full")
 
-        monkeypatch.setattr("src.mcp_server.write_hive_config_dict", mock_write_error)
+        monkeypatch.setattr("src.mcp_hive_ops.write_hive_config_dict", mock_write_error)
 
         result = await colonize_hive('Backend', str(hive_path))
 
@@ -375,7 +375,7 @@ class TestColonizeHiveConfigIntegration:
         def mock_permission_error(config, repo_root=None):
             raise PermissionError("Permission denied")
 
-        monkeypatch.setattr("src.mcp_server.write_hive_config_dict", mock_permission_error)
+        monkeypatch.setattr("src.mcp_hive_ops.write_hive_config_dict", mock_permission_error)
 
         result = await colonize_hive('Backend', str(hive_path))
 

@@ -96,6 +96,23 @@ The MCP Server has a linter which will verify metadata integrity and warn.
   - `_show_ticket()` - Retrieves and returns ticket data by ID
 - Registered as MCP tools in mcp_server.py for external access (~800 lines)
 
+**mcp_hive_ops.py** - Hive lifecycle management operations
+- Handles all hive lifecycle operations: create, list, abandon, rename, and sanitize
+- Complex operations (~1000 lines) isolated for better maintainability and focus
+- Works with mcp_hive_utils.py (validation/scanning) and mcp_repo_utils.py (repo root detection)
+- Contains 6 core functions:
+  - `colonize_hive_core()` - Core implementation for hive creation with validation
+  - `_colonize_hive()` - MCP wrapper for creating and registering new hives
+  - `_list_hives()` - Lists all registered hives in the repository
+  - `_abandon_hive()` - Stops tracking a hive without deleting files
+  - `_rename_hive()` - Renames hive, updates IDs, filenames, and all cross-references
+  - `_sanitize_hive()` - Validates and auto-fixes malformed tickets in a hive
+- Registered as MCP tools in mcp_server.py for external access
+
+**mcp_hive_utils.py** - Hive validation and scanning utilities
+- Provides path validation and hive scanning functionality
+- Used by mcp_hive_ops.py for validation operations
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

@@ -19,7 +19,7 @@ down_dependencies:
 parent: features.bees-2hp
 created_at: '2026-02-03T17:03:10.573295'
 updated_at: '2026-02-03T17:03:35.217749'
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

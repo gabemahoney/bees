@@ -36,7 +36,7 @@ description: 'Context: New mcp_hive_ops.py module represents a key architectural
 parent: features.bees-2hp
 up_dependencies:
 - features.bees-8jm
-status: open
+status: completed
 created_at: '2026-02-03T17:03:23.282583'
 updated_at: '2026-02-03T17:03:23.282586'
 bees_version: '1.1'

@@ -11,7 +11,8 @@ import pytest
 import json
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
-from src.mcp_server import colonize_hive_core as colonize_hive, scan_for_hive
+from src.mcp_hive_ops import colonize_hive_core as colonize_hive
+from src.mcp_hive_utils import scan_for_hive
 
 
 class TestColonizeHive:
@@ -460,12 +461,12 @@ class TestScanForHive:
 class TestColonizeHiveOrchestrationUnit:
     """Unit tests for colonize_hive() orchestration logic with mocked config system."""
 
-    @patch('src.mcp_server.init_bees_config_if_needed')
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.validate_unique_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
+    @patch('src.mcp_hive_ops.register_hive_dict')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.validate_unique_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
     @patch('src.mcp_server.get_repo_root')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
     async def test_calls_normalize_name(
@@ -491,7 +492,7 @@ class TestColonizeHiveOrchestrationUnit:
 
         mock_normalize.assert_called_once_with('Back End')
 
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     async def test_returns_error_on_empty_normalized_name(self, mock_normalize):
         """Test that colonize_hive returns error when name normalizes to empty string."""
         mock_normalize.return_value = ''
@@ -502,9 +503,9 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['error_type'] == 'validation_error'
         assert 'empty string' in result['message']
 
-    @patch('src.mcp_server.get_repo_root_from_path')
-    @patch('src.mcp_server.normalize_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
     async def test_calls_validate_hive_path(
         self,
         mock_validate_path,
@@ -520,9 +521,9 @@ class TestColonizeHiveOrchestrationUnit:
 
         mock_validate_path.assert_called_once_with('relative/path', Path('/repo'))
 
-    @patch('src.mcp_server.get_repo_root_from_path')
-    @patch('src.mcp_server.normalize_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
     async def test_returns_error_on_invalid_path(
         self,
         mock_validate_path,
@@ -540,10 +541,10 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['error_type'] == 'path_validation_error'
         assert 'must be absolute' in result['message']
 
-    @patch('src.mcp_server.validate_unique_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root_from_path')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.validate_unique_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     async def test_calls_validate_unique_hive_name(
         self,
         mock_normalize,
@@ -561,10 +562,10 @@ class TestColonizeHiveOrchestrationUnit:
 
         mock_validate_unique.assert_called_once_with('backend', repo_root=Path('/repo'))
 
-    @patch('src.mcp_server.validate_unique_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root_from_path')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.validate_unique_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     async def test_returns_error_on_duplicate_name(
         self,
         mock_normalize,
@@ -584,12 +585,12 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['error_type'] == 'duplicate_name_error'
         assert 'already exists' in result['message']
 
-    @patch('src.mcp_server.write_hive_config_dict')
-    @patch('src.mcp_server.register_hive_dict')
-    @patch('src.mcp_server.validate_unique_hive_name')
-    @patch('src.mcp_server.validate_hive_path')
-    @patch('src.mcp_server.get_repo_root_from_path')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.write_hive_config_dict')
+    @patch('src.mcp_hive_ops.register_hive_dict')
+    @patch('src.mcp_hive_ops.validate_unique_hive_name')
+    @patch('src.mcp_hive_ops.validate_hive_path')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
     async def test_success_return_structure(
@@ -622,7 +623,7 @@ class TestColonizeHiveOrchestrationUnit:
         assert result['display_name'] == 'Backend'
         assert result['path'] == '/repo/tickets'
 
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     async def test_error_return_structure(self, mock_normalize):
         """Test that errors return consistent structure with validation_details."""
         mock_normalize.return_value = ''

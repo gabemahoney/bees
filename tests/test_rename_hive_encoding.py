@@ -8,15 +8,15 @@ to ensure cross-platform compatibility, especially on Windows and non-UTF-8 syst
 import pytest
 from pathlib import Path
 from unittest.mock import patch, mock_open, MagicMock, call
-from src.mcp_server import _rename_hive
+from src.mcp_hive_ops import _rename_hive
 
 
 class TestRenameHiveEncoding:
     """Tests for UTF-8 encoding in rename_hive file operations."""
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     async def test_read_ticket_uses_utf8_encoding(
@@ -54,9 +54,9 @@ class TestRenameHiveEncoding:
             assert kwargs.get('encoding') == 'utf-8', \
                 f"Expected encoding='utf-8' for read operation, got {kwargs}"
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     async def test_write_ticket_uses_utf8_encoding(
@@ -94,9 +94,9 @@ class TestRenameHiveEncoding:
             assert kwargs.get('encoding') == 'utf-8', \
                 f"Expected encoding='utf-8' for write operation, got {kwargs}"
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     @patch('pathlib.Path.rename')
@@ -138,9 +138,9 @@ class TestRenameHiveEncoding:
         # Should not error with Unicode content when UTF-8 encoding is used
         assert result is not None
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     async def test_all_open_calls_have_encoding(
@@ -201,9 +201,9 @@ class TestRenameHiveEncoding:
 class TestRenameHiveIdentityJsonEncoding:
     """Tests for UTF-8 encoding in identity.json operations."""
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
@@ -248,9 +248,9 @@ class TestRenameHiveIdentityJsonEncoding:
             assert kwargs.get('encoding') == 'utf-8', \
                 f"Expected encoding='utf-8' for identity.json read, got {kwargs}"
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
@@ -295,16 +295,17 @@ class TestRenameHiveIdentityJsonEncoding:
             assert kwargs.get('encoding') == 'utf-8', \
                 f"Expected encoding='utf-8' for identity.json write, got {kwargs}"
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
+    @patch('src.mcp_hive_ops.get_repo_root_from_path')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.mkdir')
     @patch('pathlib.Path.glob')
     async def test_identity_json_write_uses_utf8_create(
-        self, mock_glob, mock_mkdir, mock_exists, mock_file, mock_normalize,
-        mock_load_config, mock_save_config
+        self, mock_glob, mock_mkdir, mock_exists, mock_file, mock_get_repo,
+        mock_normalize, mock_load_config, mock_save_config
     ):
         """Test that creating identity.json uses UTF-8 encoding (create path - line 2396)."""
         # Setup mock hive config
@@ -314,6 +315,7 @@ class TestRenameHiveIdentityJsonEncoding:
         mock_hive.display_name = "old_hive"
         mock_config.hives = {"old_hive": mock_hive}
         mock_load_config.return_value = mock_config
+        mock_get_repo.return_value = Path("/fake/repo")
         
         # Mock normalize
         mock_normalize.side_effect = lambda x: x.lower()
@@ -339,9 +341,9 @@ class TestRenameHiveIdentityJsonEncoding:
             assert kwargs.get('encoding') == 'utf-8', \
                 f"Expected encoding='utf-8' for identity.json create, got {kwargs}"
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.glob')
@@ -382,9 +384,9 @@ class TestRenameHiveIdentityJsonEncoding:
 class TestRenameHiveCrossPlatform:
     """Tests for cross-platform compatibility of rename_hive."""
 
-    @patch('src.mcp_server.save_bees_config')
-    @patch('src.mcp_server.load_bees_config')
-    @patch('src.mcp_server.normalize_hive_name')
+    @patch('src.mcp_hive_ops.save_bees_config')
+    @patch('src.mcp_hive_ops.load_bees_config')
+    @patch('src.mcp_hive_ops.normalize_hive_name')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pathlib.Path.glob')
     async def test_windows_line_endings(

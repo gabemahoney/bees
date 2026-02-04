@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import pytest
 
-from src.mcp_server import _sanitize_hive
+from src.mcp_hive_ops import _sanitize_hive
 from src.config import BeesConfig, HiveConfig, save_bees_config
 from src.writer import write_ticket_file
 
@@ -16,6 +16,10 @@ class TestSanitizeHive:
     
     async def test_sanitize_unregistered_hive_returns_error(self, tmp_path, monkeypatch):
         """Test that sanitizing an unregistered hive returns an error."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create empty config
@@ -38,6 +42,10 @@ class TestSanitizeHive:
     
     async def test_sanitize_returns_detailed_report(self, tmp_path, monkeypatch):
         """Test that sanitize_hive returns a detailed report with fixes and errors."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create hive directory
@@ -103,6 +111,10 @@ class TestSanitizeHive:
     
     async def test_sanitize_detects_invalid_hive_prefix(self, tmp_path, monkeypatch):
         """Test that sanitize_hive detects tickets with wrong hive prefix."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create hive directory
@@ -150,6 +162,10 @@ status: open
     
     async def test_sanitize_detects_cross_hive_violations(self, tmp_path, monkeypatch):
         """Test that sanitize_hive detects cross-hive dependency violations."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create hive directory
@@ -199,6 +215,10 @@ status: open
     
     async def test_sanitize_marks_corrupt_on_unfixable_errors(self, tmp_path, monkeypatch):
         """Test that sanitize_hive marks DB as corrupt when unfixable errors remain."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create hive directory
@@ -243,6 +263,10 @@ status: open
     
     async def test_sanitize_fixes_orphaned_relationships(self, tmp_path, monkeypatch):
         """Test that sanitize_hive automatically fixes orphaned relationships."""
+        # Create .git directory to make it a git repo
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+
         monkeypatch.chdir(tmp_path)
 
         # Create hive directory

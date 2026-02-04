@@ -4,7 +4,7 @@ import pytest
 import json
 from pathlib import Path
 
-from src.mcp_server import _rename_hive
+from src.mcp_hive_ops import _rename_hive
 from src.config import BeesConfig, HiveConfig, save_bees_config, load_bees_config
 from datetime import datetime
 
@@ -12,6 +12,10 @@ from datetime import datetime
 @pytest.fixture
 def temp_hive_setup(tmp_path, monkeypatch):
     """Create temporary hive directories with test tickets."""
+    # Create .git directory to make it a git repo
+    git_dir = tmp_path / ".git"
+    git_dir.mkdir()
+
     # Create hive directories
     backend_dir = tmp_path / "backend"
     backend_dir.mkdir()
@@ -19,7 +23,7 @@ def temp_hive_setup(tmp_path, monkeypatch):
     frontend_dir.mkdir()
     api_layer_dir = tmp_path / "api_layer"
     api_layer_dir.mkdir()
-    
+
     # Change to temp directory
     monkeypatch.chdir(tmp_path)
     

@@ -120,7 +120,7 @@ def test_get_config_path_raises_without_git_repo():
 @pytest.mark.asyncio
 async def test_list_hives_uses_context():
     """Test that list_hives uses client context to find hives."""
-    from src.mcp_server import _list_hives
+    from src.mcp_hive_ops import _list_hives
 
     ctx = Mock()
     mock_root = Mock()
