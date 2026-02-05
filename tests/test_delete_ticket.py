@@ -13,47 +13,20 @@ from src.reader import read_ticket
 from src.paths import get_ticket_path
 
 
-@pytest.fixture
-def setup_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary tickets directory structure."""
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
-
-    # Create default hive directory
-    default_dir = tmp_path / "default"
-    default_dir.mkdir()
-
-    # Initialize .bees/config.json with default hive
-    from src.config import save_bees_config, BeesConfig, HiveConfig
-    from datetime import datetime
-
-    config = BeesConfig(
-        hives={
-            'default': HiveConfig(
-                path=str(default_dir),
-                display_name='Default',
-                created_at=datetime.now().isoformat()
-            ),
-        },
-        allow_cross_hive_dependencies=True,
-        schema_version='1.0'
-    )
-    save_bees_config(config)
-
-    yield tmp_path
-
-
 class TestDeleteTicketBasic:
     """Tests for basic delete_ticket functionality."""
 
-    async def test_delete_ticket_file_removal(self, setup_tickets_dir):
+    async def test_delete_ticket_file_removal(self, single_hive, monkeypatch):
         """Test that delete_ticket removes the ticket file."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create an epic ticket
         result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
             description="Test description",
-            hive_name="default"
+            hive_name="backend"
         )
         ticket_id = result["ticket_id"]
 
@@ -72,22 +45,28 @@ class TestDeleteTicketBasic:
         # Verify ticket file is removed
         assert not ticket_path.exists()
 
-    async def test_delete_nonexistent_ticket_error(self, setup_tickets_dir):
+    async def test_delete_nonexistent_ticket_error(self, single_hive, monkeypatch):
         """Test that deleting non-existent ticket raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError, match="Ticket does not exist"):
-            await _delete_ticket(ticket_id="default.bees-nonexistent")
+            await _delete_ticket(ticket_id="backend.bees-nonexistent")
 
 
 class TestDeleteTicketParentCleanup:
     """Tests for cleaning up parent's children array when deleting."""
 
-    async def test_delete_ticket_removes_from_parent_children(self, setup_tickets_dir):
+    async def test_delete_ticket_removes_from_parent_children(self, single_hive, monkeypatch):
         """Test that deleting a ticket removes it from parent's children array."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create parent epic and child task
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        child_result = await _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="default")
+        child_result = await _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="backend")
         child_id = child_result["ticket_id"]
 
         # Verify parent has child in children array
@@ -104,10 +83,13 @@ class TestDeleteTicketParentCleanup:
         parent = read_ticket(get_ticket_path(parent_id, "epic"))
         assert child_id not in (parent.children or [])
 
-    async def test_delete_ticket_without_parent(self, setup_tickets_dir):
+    async def test_delete_ticket_without_parent(self, single_hive, monkeypatch):
         """Test that deleting a ticket without parent works correctly."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create epic without parent
-        result = await _create_ticket(ticket_type="epic", title="Epic Without Parent", hive_name="default")
+        result = await _create_ticket(ticket_type="epic", title="Epic Without Parent", hive_name="backend")
         ticket_id = result["ticket_id"]
 
         # Delete the ticket
@@ -121,17 +103,20 @@ class TestDeleteTicketParentCleanup:
 class TestDeleteTicketDependencyCleanup:
     """Tests for cleaning up dependency arrays in related tickets."""
 
-    async def test_delete_ticket_removes_from_down_dependencies(self, setup_tickets_dir):
+    async def test_delete_ticket_removes_from_down_dependencies(self, single_hive, monkeypatch):
         """Test that deleting a ticket removes it from blocking tickets' down_dependencies."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create two epics with dependency relationship
-        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="default")
+        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="backend")
         blocking_id = blocking_result["ticket_id"]
 
         blocked_result = await _create_ticket(
             ticket_type="epic",
             title="Blocked Epic",
             up_dependencies=[blocking_id],
-            hive_name="default"
+            hive_name="backend"
         )
         blocked_id = blocked_result["ticket_id"]
 
@@ -146,17 +131,20 @@ class TestDeleteTicketDependencyCleanup:
         blocking = read_ticket(get_ticket_path(blocking_id, "epic"))
         assert blocked_id not in (blocking.down_dependencies or [])
 
-    async def test_delete_ticket_removes_from_up_dependencies(self, setup_tickets_dir):
+    async def test_delete_ticket_removes_from_up_dependencies(self, single_hive, monkeypatch):
         """Test that deleting a ticket removes it from blocked tickets' up_dependencies."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create two epics with dependency relationship
-        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="default")
+        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking Epic", hive_name="backend")
         blocking_id = blocking_result["ticket_id"]
 
         blocked_result = await _create_ticket(
             ticket_type="epic",
             title="Blocked Epic",
             up_dependencies=[blocking_id],
-            hive_name="default"
+            hive_name="backend"
         )
         blocked_id = blocked_result["ticket_id"]
 
@@ -171,13 +159,16 @@ class TestDeleteTicketDependencyCleanup:
         blocked = read_ticket(get_ticket_path(blocked_id, "epic"))
         assert blocking_id not in (blocked.up_dependencies or [])
 
-    async def test_delete_ticket_with_multiple_dependencies(self, setup_tickets_dir):
+    async def test_delete_ticket_with_multiple_dependencies(self, single_hive, monkeypatch):
         """Test deleting a ticket with multiple dependency relationships."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create epics with complex dependency structure
-        epic1_result = await _create_ticket(ticket_type="epic", title="Epic 1", hive_name="default")
+        epic1_result = await _create_ticket(ticket_type="epic", title="Epic 1", hive_name="backend")
         epic1_id = epic1_result["ticket_id"]
 
-        epic2_result = await _create_ticket(ticket_type="epic", title="Epic 2", hive_name="default")
+        epic2_result = await _create_ticket(ticket_type="epic", title="Epic 2", hive_name="backend")
         epic2_id = epic2_result["ticket_id"]
 
         epic3_result = await _create_ticket(
@@ -185,7 +176,7 @@ class TestDeleteTicketDependencyCleanup:
             title="Epic 3",
             up_dependencies=[epic1_id],
             down_dependencies=[epic2_id],
-            hive_name="default"
+            hive_name="backend"
         )
         epic3_id = epic3_result["ticket_id"]
 
@@ -204,16 +195,19 @@ class TestDeleteTicketDependencyCleanup:
 class TestDeleteTicketCascade:
     """Tests for cascade delete behavior with children."""
 
-    async def test_cascade_delete_children(self, setup_tickets_dir):
+    async def test_cascade_delete_children(self, single_hive, monkeypatch):
         """Test that cascade=True recursively deletes all children."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create parent epic with multiple children
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        child1_result = await _create_ticket(ticket_type="task", title="Child 1", parent=parent_id, hive_name="default")
+        child1_result = await _create_ticket(ticket_type="task", title="Child 1", parent=parent_id, hive_name="backend")
         child1_id = child1_result["ticket_id"]
 
-        child2_result = await _create_ticket(ticket_type="task", title="Child 2", parent=parent_id, hive_name="default")
+        child2_result = await _create_ticket(ticket_type="task", title="Child 2", parent=parent_id, hive_name="backend")
         child2_id = child2_result["ticket_id"]
 
         # Verify children exist
@@ -231,16 +225,19 @@ class TestDeleteTicketCascade:
         assert not get_ticket_path(child1_id, "task").exists()
         assert not get_ticket_path(child2_id, "task").exists()
 
-    async def test_cascade_delete_nested_children(self, setup_tickets_dir):
+    async def test_cascade_delete_nested_children(self, single_hive, monkeypatch):
         """Test that cascade delete works with nested hierarchies."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create nested hierarchy: Epic -> Task -> Subtask
-        epic_result = await _create_ticket(ticket_type="epic", title="Epic", hive_name="default")
+        epic_result = await _create_ticket(ticket_type="epic", title="Epic", hive_name="backend")
         epic_id = epic_result["ticket_id"]
 
-        task_result = await _create_ticket(ticket_type="task", title="Task", parent=epic_id, hive_name="default")
+        task_result = await _create_ticket(ticket_type="task", title="Task", parent=epic_id, hive_name="backend")
         task_id = task_result["ticket_id"]
 
-        subtask_result = await _create_ticket(ticket_type="subtask", title="Subtask", parent=task_id, hive_name="default")
+        subtask_result = await _create_ticket(ticket_type="subtask", title="Subtask", parent=task_id, hive_name="backend")
         subtask_id = subtask_result["ticket_id"]
 
         # Delete epic (always cascades)
@@ -251,13 +248,16 @@ class TestDeleteTicketCascade:
         assert not get_ticket_path(task_id, "task").exists()
         assert not get_ticket_path(subtask_id, "subtask").exists()
 
-    async def test_delete_always_cascades_to_children(self, setup_tickets_dir):
+    async def test_delete_always_cascades_to_children(self, single_hive, monkeypatch):
         """Test that deletion always cascades to children."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create parent epic with child
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="default")
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent Epic", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        child_result = await _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="default")
+        child_result = await _create_ticket(ticket_type="task", title="Child Task", parent=parent_id, hive_name="backend")
         child_id = child_result["ticket_id"]
 
         # Verify child has parent reference
@@ -273,10 +273,13 @@ class TestDeleteTicketCascade:
         # Verify child is also deleted (cascaded)
         assert not get_ticket_path(child_id, "task").exists()
 
-    async def test_delete_ticket_without_children(self, setup_tickets_dir):
+    async def test_delete_ticket_without_children(self, single_hive, monkeypatch):
         """Test that deleting ticket without children works correctly."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create epic without children
-        result = await _create_ticket(ticket_type="epic", title="Epic Without Children", hive_name="default")
+        result = await _create_ticket(ticket_type="epic", title="Epic Without Children", hive_name="backend")
         ticket_id = result["ticket_id"]
 
         # Delete should work fine
@@ -287,22 +290,25 @@ class TestDeleteTicketCascade:
         assert not get_ticket_path(ticket_id, "epic").exists()
 
 
-    async def test_cascade_delete_deep_hierarchy(self, setup_tickets_dir):
+    async def test_cascade_delete_deep_hierarchy(self, single_hive, monkeypatch):
         """Test that cascade delete works with deep hierarchies (4+ levels)."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create deep hierarchy: Epic -> Task -> Subtask (and verify grandchildren concept)
-        epic_result = await _create_ticket(ticket_type="epic", title="Epic", hive_name="default")
+        epic_result = await _create_ticket(ticket_type="epic", title="Epic", hive_name="backend")
         epic_id = epic_result["ticket_id"]
 
-        task1_result = await _create_ticket(ticket_type="task", title="Task 1", parent=epic_id, hive_name="default")
+        task1_result = await _create_ticket(ticket_type="task", title="Task 1", parent=epic_id, hive_name="backend")
         task1_id = task1_result["ticket_id"]
 
-        task2_result = await _create_ticket(ticket_type="task", title="Task 2", parent=epic_id, hive_name="default")
+        task2_result = await _create_ticket(ticket_type="task", title="Task 2", parent=epic_id, hive_name="backend")
         task2_id = task2_result["ticket_id"]
 
-        subtask1_result = await _create_ticket(ticket_type="subtask", title="Subtask 1", parent=task1_id, hive_name="default")
+        subtask1_result = await _create_ticket(ticket_type="subtask", title="Subtask 1", parent=task1_id, hive_name="backend")
         subtask1_id = subtask1_result["ticket_id"]
 
-        subtask2_result = await _create_ticket(ticket_type="subtask", title="Subtask 2", parent=task2_id, hive_name="default")
+        subtask2_result = await _create_ticket(ticket_type="subtask", title="Subtask 2", parent=task2_id, hive_name="backend")
         subtask2_id = subtask2_result["ticket_id"]
 
         # Verify all exist
@@ -322,12 +328,15 @@ class TestDeleteTicketCascade:
         assert not get_ticket_path(subtask1_id, "subtask").exists()
         assert not get_ticket_path(subtask2_id, "subtask").exists()
 
-    async def test_cascade_delete_single_child(self, setup_tickets_dir):
+    async def test_cascade_delete_single_child(self, single_hive, monkeypatch):
         """Test edge case: parent with exactly one child."""
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        child_result = await _create_ticket(ticket_type="task", title="Only Child", parent=parent_id, hive_name="default")
+        child_result = await _create_ticket(ticket_type="task", title="Only Child", parent=parent_id, hive_name="backend")
         child_id = child_result["ticket_id"]
 
         # Delete parent
@@ -337,9 +346,12 @@ class TestDeleteTicketCascade:
         assert not get_ticket_path(parent_id, "epic").exists()
         assert not get_ticket_path(child_id, "task").exists()
 
-    async def test_cascade_delete_multiple_children_at_same_level(self, setup_tickets_dir):
+    async def test_cascade_delete_multiple_children_at_same_level(self, single_hive, monkeypatch):
         """Test edge case: parent with many children at the same level."""
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
         # Create 5 children
@@ -349,7 +361,7 @@ class TestDeleteTicketCascade:
                 ticket_type="task",
                 title=f"Child {i}",
                 parent=parent_id,
-                hive_name="default"
+                hive_name="backend"
             )
             child_ids.append(child_result["ticket_id"])
 
@@ -369,13 +381,16 @@ class TestDeleteTicketCascade:
 class TestDeleteTicketEdgeCases:
     """Tests for edge cases and error handling."""
 
-    async def test_delete_ticket_with_all_relationships(self, setup_tickets_dir):
+    async def test_delete_ticket_with_all_relationships(self, single_hive, monkeypatch):
         """Test deleting a ticket with parent, children, and dependencies."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create complex relationship structure
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking", hive_name="default")
+        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking", hive_name="backend")
         blocking_id = blocking_result["ticket_id"]
 
         target_result = await _create_ticket(
@@ -383,11 +398,11 @@ class TestDeleteTicketEdgeCases:
             title="Target Task",
             parent=parent_id,
             up_dependencies=[blocking_id],
-            hive_name="default"
+            hive_name="backend"
         )
         target_id = target_result["ticket_id"]
 
-        child_result = await _create_ticket(ticket_type="subtask", title="Child", parent=target_id, hive_name="default")
+        child_result = await _create_ticket(ticket_type="subtask", title="Child", parent=target_id, hive_name="backend")
         child_id = child_result["ticket_id"]
 
         # Delete target (always cascades)
@@ -407,13 +422,16 @@ class TestDeleteTicketEdgeCases:
         # Verify child is also deleted (cascaded)
         assert not get_ticket_path(child_id, "subtask").exists()
 
-    async def test_cascade_delete_with_dependencies(self, setup_tickets_dir):
+    async def test_cascade_delete_with_dependencies(self, single_hive, monkeypatch):
         """Test that cascade delete also cleans up dependencies for children."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create parent with child that has dependencies
-        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="default")
+        parent_result = await _create_ticket(ticket_type="epic", title="Parent", hive_name="backend")
         parent_id = parent_result["ticket_id"]
 
-        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking", hive_name="default")
+        blocking_result = await _create_ticket(ticket_type="epic", title="Blocking", hive_name="backend")
         blocking_id = blocking_result["ticket_id"]
 
         child_result = await _create_ticket(
@@ -421,7 +439,7 @@ class TestDeleteTicketEdgeCases:
             title="Child",
             parent=parent_id,
             up_dependencies=[blocking_id],
-            hive_name="default"
+            hive_name="backend"
         )
         child_id = child_result["ticket_id"]
 
@@ -444,45 +462,11 @@ class TestDeleteTicketEdgeCases:
 class TestDeleteTicketHiveRouting:
     """Tests for hive routing in delete_ticket()."""
 
-    @pytest.fixture
-    def setup_multi_hive(self, tmp_path, monkeypatch):
-        """Create temporary directory with multiple hives."""
-        # Change to temp directory
-        monkeypatch.chdir(tmp_path)
-
-        # Create multiple hive directories
-        backend_dir = tmp_path / "backend"
-        backend_dir.mkdir()
-
-        frontend_dir = tmp_path / "frontend"
-        frontend_dir.mkdir()
-
-        # Initialize .bees/config.json with multiple hives
-        from src.config import save_bees_config, BeesConfig, HiveConfig
-        from datetime import datetime
-
-        config = BeesConfig(
-            hives={
-                'backend': HiveConfig(
-                    path=str(backend_dir),
-                    display_name='Backend',
-                    created_at=datetime.now().isoformat()
-                ),
-                'frontend': HiveConfig(
-                    path=str(frontend_dir),
-                    display_name='Frontend',
-                    created_at=datetime.now().isoformat()
-                ),
-            },
-            allow_cross_hive_dependencies=True,
-            schema_version='1.0'
-        )
-        save_bees_config(config)
-
-        yield tmp_path
-
-    async def test_delete_ticket_routes_to_correct_hive(self, setup_multi_hive):
+    async def test_delete_ticket_routes_to_correct_hive(self, multi_hive, monkeypatch):
         """Test that delete_ticket routes to correct hive based on ticket ID prefix."""
+        repo_root, backend_path, frontend_path = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create tickets in different hives
         backend_result = await _create_ticket(
             ticket_type="epic",
@@ -517,18 +501,27 @@ class TestDeleteTicketHiveRouting:
         assert result["status"] == "success"
         assert not get_ticket_path(frontend_id, "epic").exists()
 
-    async def test_delete_ticket_malformed_id_error(self, setup_multi_hive):
+    async def test_delete_ticket_malformed_id_error(self, multi_hive, monkeypatch):
         """Test that delete_ticket raises error for malformed ticket IDs."""
+        repo_root, backend_path, frontend_path = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError, match="Malformed ticket ID"):
             await _delete_ticket(ticket_id="bees-abc1")  # Missing hive prefix
 
-    async def test_delete_ticket_unknown_hive_error(self, setup_multi_hive):
+    async def test_delete_ticket_unknown_hive_error(self, multi_hive, monkeypatch):
         """Test that delete_ticket raises error for unknown hive prefix."""
+        repo_root, backend_path, frontend_path = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError, match="Hive .* not found in configuration"):
             await _delete_ticket(ticket_id="unknown.bees-abc1")
 
-    async def test_delete_ticket_with_multiple_dots_in_id(self, setup_multi_hive):
+    async def test_delete_ticket_with_multiple_dots_in_id(self, multi_hive, monkeypatch):
         """Test that delete_ticket handles IDs with multiple dots correctly."""
+        repo_root, backend_path, frontend_path = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create ticket in backend hive
         result = await _create_ticket(
             ticket_type="epic",
@@ -545,8 +538,11 @@ class TestDeleteTicketHiveRouting:
         assert result["status"] == "success"
         assert not get_ticket_path(ticket_id, "epic").exists()
 
-    async def test_delete_ticket_cascade_with_hive_routing(self, setup_multi_hive):
+    async def test_delete_ticket_cascade_with_hive_routing(self, multi_hive, monkeypatch):
         """Test cascade delete with hive-prefixed IDs."""
+        repo_root, backend_path, frontend_path = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create parent and child in backend hive
         parent_result = await _create_ticket(
             ticket_type="epic",

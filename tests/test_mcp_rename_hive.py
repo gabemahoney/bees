@@ -10,24 +10,22 @@ from datetime import datetime
 
 
 @pytest.fixture
-def temp_hive_setup(tmp_path, monkeypatch):
-    """Create temporary hive directories with test tickets."""
-    # Create .git directory to make it a git repo
-    git_dir = tmp_path / ".git"
-    git_dir.mkdir()
-
-    # Create hive directories
-    backend_dir = tmp_path / "backend"
-    backend_dir.mkdir()
-    frontend_dir = tmp_path / "frontend"
-    frontend_dir.mkdir()
-    api_layer_dir = tmp_path / "api_layer"
-    api_layer_dir.mkdir()
-
-    # Change to temp directory
-    monkeypatch.chdir(tmp_path)
+def temp_hive_setup(multi_hive, monkeypatch):
+    """Create temporary hive directories with test tickets using multi_hive base."""
+    repo_root, backend_dir, frontend_dir = multi_hive
     
-    # Initialize config with test hives
+    # Create .git directory to make it a git repo (for tests that check git)
+    git_dir = repo_root / ".git"
+    git_dir.mkdir(exist_ok=True)
+    
+    # Create api_layer directory for rename tests
+    api_layer_dir = repo_root / "api_layer"
+    api_layer_dir.mkdir()
+    
+    # Change to repo directory
+    monkeypatch.chdir(repo_root)
+    
+    # Update config with cross-hive dependencies enabled
     config = BeesConfig(
         hives={
             'backend': HiveConfig(
@@ -88,7 +86,7 @@ Frontend ticket body
     
     # Create .hive marker directory with identity.json
     hive_marker_dir = backend_dir / ".hive"
-    hive_marker_dir.mkdir()
+    hive_marker_dir.mkdir(exist_ok=True)
     identity_file = hive_marker_dir / "identity.json"
     identity_file.write_text(json.dumps({
         "normalized_name": "backend",
@@ -96,7 +94,7 @@ Frontend ticket body
         "created_at": "2024-01-01T00:00:00"
     }, indent=2))
     
-    yield tmp_path, backend_dir, frontend_dir, api_layer_dir
+    yield repo_root, backend_dir, frontend_dir, api_layer_dir
 
 
 class TestRenameHiveSuccess:

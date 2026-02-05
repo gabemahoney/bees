@@ -201,7 +201,7 @@ class TestToolRegistration:
     async def test_create_ticket_validates_type(self):
         """Test that create_ticket validates ticket_type parameter."""
         with pytest.raises(ValueError) as exc_info:
-            await _create_ticket(hive_name="default", ticket_type="invalid", title="Test")
+            await _create_ticket(hive_name="backend", ticket_type="invalid", title="Test")
 
         assert "Invalid ticket_type" in str(exc_info.value)
 
@@ -306,43 +306,20 @@ class TestServerConfiguration:
 
 class TestUpdateTicket:
     """Tests for update_ticket MCP tool functionality."""
+    # Removed temp_tickets_dir fixture - now using single_hive from conftest.py
 
-    @pytest.fixture
-    def temp_tickets_dir(self, tmp_path, monkeypatch):
-        """Create temporary tickets directory with test fixtures and hive config."""
-        from src.config import BeesConfig, HiveConfig, save_bees_config
-
-        # Change to tmp_path for test isolation
-        monkeypatch.chdir(tmp_path)
-
-        # Create default hive directory
-        default_hive = tmp_path / "tickets"
-        default_hive.mkdir()
-
-        # Initialize .bees/config.json
-        from datetime import datetime
-        config = BeesConfig(
-            hives={
-                'default': HiveConfig(
-                    path=str(default_hive),
-                    display_name='Default',
-                    created_at=datetime.now().isoformat()
-                )
-            }
-        )
-        save_bees_config(config)
-
-        return tmp_path
-
-    async def test_update_ticket_basic_fields(self, temp_tickets_dir):
+    async def test_update_ticket_basic_fields(self, single_hive, monkeypatch):
         """Test updating basic fields (title, labels, status, owner, priority)."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create an epic
         epic_id = create_epic(
-            hive_name="default",
+            hive_name="backend",
             title="Original Title",
             description="Original description",
             labels=["label1"],
@@ -376,16 +353,22 @@ class TestUpdateTicket:
         assert epic.owner == "bob@example.com"
         assert epic.priority == 0
 
-    async def test_update_ticket_nonexistent(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent(self, single_hive, monkeypatch):
         """Test updating a non-existent ticket raises ValueError."""
-        with pytest.raises(ValueError, match="Ticket does not exist"):
-            await _update_ticket(ticket_id="default.bees-nonexistent", title="Test")
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
 
-    async def test_update_ticket_empty_title(self, temp_tickets_dir):
+        with pytest.raises(ValueError, match="Ticket does not exist"):
+            await _update_ticket(ticket_id="backend.bees-nonexistent", title="Test")
+
+    async def test_update_ticket_empty_title(self, single_hive, monkeypatch):
         """Test updating with empty title raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic
 
-        epic_id = create_epic(hive_name="default", title="Original Title")
+        epic_id = create_epic(hive_name="backend", title="Original Title")
 
         with pytest.raises(ValueError, match="Ticket title cannot be empty"):
             await _update_ticket(ticket_id=epic_id, title="")
@@ -393,15 +376,18 @@ class TestUpdateTicket:
         with pytest.raises(ValueError, match="Ticket title cannot be empty"):
             await _update_ticket(ticket_id=epic_id, title="   ")
 
-    async def test_update_ticket_add_parent(self, temp_tickets_dir):
+    async def test_update_ticket_add_parent(self, single_hive, monkeypatch):
         """Test adding a parent relationship with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create epic and task
-        epic_id = create_epic(hive_name="default", title="Parent Epic")
-        task_id = create_task(hive_name="default", title="Child Task")
+        epic_id = create_epic(hive_name="backend", title="Parent Epic")
+        task_id = create_task(hive_name="backend", title="Child Task")
 
         # Add parent to task
         result = await _update_ticket(ticket_id=task_id, parent=epic_id)
@@ -417,15 +403,18 @@ class TestUpdateTicket:
         epic = read_ticket(epic_path)
         assert task_id in epic.children
 
-    async def test_update_ticket_remove_parent(self, temp_tickets_dir):
+    async def test_update_ticket_remove_parent(self, single_hive, monkeypatch):
         """Test removing a parent relationship with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create epic and task with parent
-        epic_id = create_epic(hive_name="default", title="Parent Epic")
-        task_id = create_task(hive_name="default", title="Child Task", parent=epic_id)
+        epic_id = create_epic(hive_name="backend", title="Parent Epic")
+        task_id = create_task(hive_name="backend", title="Child Task", parent=epic_id)
 
         # Update bidirectional relationships
         from src.mcp_server import _add_child_to_parent
@@ -449,16 +438,19 @@ class TestUpdateTicket:
         epic = read_ticket(epic_path)
         assert task_id not in (epic.children or [])
 
-    async def test_update_ticket_add_children(self, temp_tickets_dir):
+    async def test_update_ticket_add_children(self, single_hive, monkeypatch):
         """Test adding children with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create epic and tasks
-        epic_id = create_epic(hive_name="default", title="Parent Epic")
-        task1_id = create_task(hive_name="default", title="Child Task 1")
-        task2_id = create_task(hive_name="default", title="Child Task 2")
+        epic_id = create_epic(hive_name="backend", title="Parent Epic")
+        task1_id = create_task(hive_name="backend", title="Child Task 1")
+        task2_id = create_task(hive_name="backend", title="Child Task 2")
 
         # Add children to epic
         result = await _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])
@@ -479,16 +471,19 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task2.parent == epic_id
 
-    async def test_update_ticket_remove_children(self, temp_tickets_dir):
+    async def test_update_ticket_remove_children(self, single_hive, monkeypatch):
         """Test removing children with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create epic with children
-        epic_id = create_epic(hive_name="default", title="Parent Epic")
-        task1_id = create_task(hive_name="default", title="Child Task 1", parent=epic_id)
-        task2_id = create_task(hive_name="default", title="Child Task 2", parent=epic_id)
+        epic_id = create_epic(hive_name="backend", title="Parent Epic")
+        task1_id = create_task(hive_name="backend", title="Child Task 1", parent=epic_id)
+        task2_id = create_task(hive_name="backend", title="Child Task 2", parent=epic_id)
 
         # Update bidirectional relationships
         from src.mcp_server import _add_child_to_parent
@@ -513,16 +508,19 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task2.parent is None
 
-    async def test_update_ticket_add_dependencies(self, temp_tickets_dir):
+    async def test_update_ticket_add_dependencies(self, single_hive, monkeypatch):
         """Test adding dependencies with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create tasks
-        task1_id = create_task(hive_name="default", title="Task 1")
-        task2_id = create_task(hive_name="default", title="Task 2 (blocking)")
-        task3_id = create_task(hive_name="default", title="Task 3 (blocked)")
+        task1_id = create_task(hive_name="backend", title="Task 1")
+        task2_id = create_task(hive_name="backend", title="Task 2 (blocking)")
+        task3_id = create_task(hive_name="backend", title="Task 3 (blocked)")
 
         # Add dependencies
         result = await _update_ticket(
@@ -547,19 +545,22 @@ class TestUpdateTicket:
         task3 = read_ticket(task3_path)
         assert task1_id in task3.up_dependencies
 
-    async def test_update_ticket_remove_dependencies(self, temp_tickets_dir):
+    async def test_update_ticket_remove_dependencies(self, single_hive, monkeypatch):
         """Test removing dependencies with bidirectional updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create tasks with dependencies
         task1_id = create_task(
-            hive_name="default", title="Task 1",
+            hive_name="backend", title="Task 1",
             up_dependencies=[],
             down_dependencies=[]
         )
-        task2_id = create_task(hive_name="default", title="Task 2")
+        task2_id = create_task(hive_name="backend", title="Task 2")
 
         # Add dependency first
         await _update_ticket(ticket_id=task1_id, up_dependencies=[task2_id])
@@ -582,42 +583,54 @@ class TestUpdateTicket:
         task2 = read_ticket(task2_path)
         assert task1_id not in (task2.down_dependencies or [])
 
-    async def test_update_ticket_nonexistent_parent(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_parent(self, single_hive, monkeypatch):
         """Test updating with non-existent parent raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_task
 
-        task_id = create_task(hive_name="default", title="Test Task")
+        task_id = create_task(hive_name="backend", title="Test Task")
 
         with pytest.raises(ValueError, match="Parent ticket does not exist"):
-            await _update_ticket(ticket_id=task_id, parent="bees-nonexistent")
+            await _update_ticket(ticket_id=task_id, parent="backend.bees-nonexistent")
 
-    async def test_update_ticket_nonexistent_child(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_child(self, single_hive, monkeypatch):
         """Test updating with non-existent child raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic
 
-        epic_id = create_epic(hive_name="default", title="Test Epic")
+        epic_id = create_epic(hive_name="backend", title="Test Epic")
 
         with pytest.raises(ValueError, match="Child ticket does not exist"):
-            await _update_ticket(ticket_id=epic_id, children=["bees-nonexistent"])
+            await _update_ticket(ticket_id=epic_id, children=["backend.bees-nonexistent"])
 
-    async def test_update_ticket_nonexistent_dependency(self, temp_tickets_dir):
+    async def test_update_ticket_nonexistent_dependency(self, single_hive, monkeypatch):
         """Test updating with non-existent dependency raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_task
 
-        task_id = create_task(hive_name="default", title="Test Task")
+        task_id = create_task(hive_name="backend", title="Test Task")
 
         with pytest.raises(ValueError, match="Dependency ticket does not exist"):
-            await _update_ticket(ticket_id=task_id, up_dependencies=["bees-nonexistent"])
+            await _update_ticket(ticket_id=task_id, up_dependencies=["backend.bees-nonexistent"])
 
         with pytest.raises(ValueError, match="Dependency ticket does not exist"):
-            await _update_ticket(ticket_id=task_id, down_dependencies=["bees-nonexistent"])
+            await _update_ticket(ticket_id=task_id, down_dependencies=["backend.bees-nonexistent"])
 
-    async def test_update_ticket_circular_dependency(self, temp_tickets_dir):
+    async def test_update_ticket_circular_dependency(self, single_hive, monkeypatch):
         """Test updating with circular dependency raises ValueError."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_task
 
-        task1_id = create_task(hive_name="default", title="Task 1")
-        task2_id = create_task(hive_name="default", title="Task 2")
+        task1_id = create_task(hive_name="backend", title="Task 1")
+        task2_id = create_task(hive_name="backend", title="Task 2")
 
         with pytest.raises(ValueError, match="Circular dependency detected"):
             await _update_ticket(
@@ -626,15 +639,18 @@ class TestUpdateTicket:
                 down_dependencies=[task2_id]
             )
 
-    async def test_update_ticket_partial_update(self, temp_tickets_dir):
+    async def test_update_ticket_partial_update(self, single_hive, monkeypatch):
         """Test that partial updates only modify specified fields."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create epic with various fields
         epic_id = create_epic(
-            hive_name="default", title="Original Title",
+            hive_name="backend", title="Original Title",
             description="Original description",
             labels=["label1", "label2"],
             status="open",
@@ -662,17 +678,20 @@ class TestUpdateTicket:
         assert epic.owner == "alice@example.com"  # Unchanged
         assert epic.priority == 2  # Unchanged
 
-    async def test_update_ticket_bidirectional_consistency(self, temp_tickets_dir):
+    async def test_update_ticket_bidirectional_consistency(self, single_hive, monkeypatch):
         """Test comprehensive bidirectional consistency across multiple updates."""
+        repo_root, hive_path = single_hive
+        monkeypatch.chdir(repo_root)
+
         from src.ticket_factory import create_epic, create_task
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
         # Create tickets
-        epic_id = create_epic(hive_name="default", title="Epic")
-        task1_id = create_task(hive_name="default", title="Task 1")
-        task2_id = create_task(hive_name="default", title="Task 2")
-        task3_id = create_task(hive_name="default", title="Task 3")
+        epic_id = create_epic(hive_name="backend", title="Epic")
+        task1_id = create_task(hive_name="backend", title="Task 1")
+        task2_id = create_task(hive_name="backend", title="Task 2")
+        task3_id = create_task(hive_name="backend", title="Task 3")
 
         # Add task1 and task2 as children of epic
         await _update_ticket(ticket_id=epic_id, children=[task1_id, task2_id])

@@ -9,57 +9,17 @@ from src.mcp_server import _create_ticket
 from src.config import init_bees_config_if_needed
 
 
-@pytest.fixture
-def temp_hive_setup(tmp_path, monkeypatch):
-    """Create temporary hive with proper config setup."""
-    # Create backend hive directory
-    backend_dir = tmp_path / "backend"
-    backend_dir.mkdir()
-
-    # Create frontend hive directory
-    frontend_dir = tmp_path / "frontend"
-    frontend_dir.mkdir()
-
-    # Create .bees config directory
-    bees_config_dir = tmp_path / ".bees"
-    bees_config_dir.mkdir()
-
-    # Create config.json with registered hives
-    config_data = {
-        "hives": {
-            "backend": {
-                "path": str(backend_dir),
-                "display_name": "Backend",
-                "created_at": "2026-02-02T10:00:00"
-            },
-            "frontend": {
-                "path": str(frontend_dir),
-                "display_name": "Frontend",
-                "created_at": "2026-02-02T10:00:00"
-            }
-        }
-    }
-
-    config_path = bees_config_dir / "config.json"
-    with open(config_path, 'w') as f:
-        json.dump(config_data, f, indent=2)
-
-    # Change to temp directory so config can be loaded
-    monkeypatch.chdir(tmp_path)
-
-    yield {
-        "temp_dir": tmp_path,
-        "backend_dir": backend_dir,
-        "frontend_dir": frontend_dir,
-        "config_path": config_path
-    }
+# Removed temp_hive_setup fixture - now using multi_hive from conftest.py
 
 
 class TestCreateTicketHiveValidation:
     """Tests for create_ticket() hive validation logic."""
 
-    async def test_create_ticket_with_valid_hive_succeeds(self, temp_hive_setup):
+    async def test_create_ticket_with_valid_hive_succeeds(self, multi_hive, monkeypatch):
         """Should create ticket when hive exists in config."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
@@ -70,13 +30,15 @@ class TestCreateTicketHiveValidation:
         assert result["ticket_id"].startswith("backend.bees-")
 
         # Verify file was created in correct hive directory
-        backend_dir = temp_hive_setup["backend_dir"]
         ticket_files = list(backend_dir.glob("*.md"))
         assert len(ticket_files) == 1
         assert ticket_files[0].name.startswith("backend.bees-")
 
-    async def test_create_ticket_with_nonexistent_hive_raises_error(self, temp_hive_setup):
+    async def test_create_ticket_with_nonexistent_hive_raises_error(self, multi_hive, monkeypatch):
         """Should raise ValueError when hive does not exist in config."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError) as exc_info:
             await _create_ticket(
                 ticket_type="epic",
@@ -87,8 +49,11 @@ class TestCreateTicketHiveValidation:
         assert "not found in config" in str(exc_info.value)
         assert "nonexistent" in str(exc_info.value)
 
-    async def test_create_ticket_validates_normalized_hive_name(self, temp_hive_setup):
+    async def test_create_ticket_validates_normalized_hive_name(self, multi_hive, monkeypatch):
         """Should validate hive exists after normalizing hive_name."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # "BackEnd" normalizes to "backend" which exists in config
         result = await _create_ticket(
             ticket_type="epic",
@@ -99,8 +64,11 @@ class TestCreateTicketHiveValidation:
         assert result["status"] == "success"
         assert result["ticket_id"].startswith("backend.bees-")
 
-    async def test_create_ticket_with_unnormalized_nonexistent_hive_fails(self, temp_hive_setup):
+    async def test_create_ticket_with_unnormalized_nonexistent_hive_fails(self, multi_hive, monkeypatch):
         """Should fail validation when normalized hive_name doesn't exist."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError) as exc_info:
             await _create_ticket(
                 ticket_type="epic",
@@ -111,8 +79,11 @@ class TestCreateTicketHiveValidation:
         assert "not found in config" in str(exc_info.value)
         assert "other_hive" in str(exc_info.value)
 
-    async def test_create_ticket_routes_to_correct_hive_directory(self, temp_hive_setup):
+    async def test_create_ticket_routes_to_correct_hive_directory(self, multi_hive, monkeypatch):
         """Should store tickets in the correct hive directory from config."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create ticket in backend hive
         backend_result = await _create_ticket(
             ticket_type="epic",
@@ -128,19 +99,20 @@ class TestCreateTicketHiveValidation:
         )
 
         # Verify backend ticket is in backend directory
-        backend_dir = temp_hive_setup["backend_dir"]
         backend_files = list(backend_dir.glob("*.md"))
         assert len(backend_files) == 1
         assert backend_result["ticket_id"] in backend_files[0].name
 
         # Verify frontend ticket is in frontend directory
-        frontend_dir = temp_hive_setup["frontend_dir"]
         frontend_files = list(frontend_dir.glob("*.md"))
         assert len(frontend_files) == 1
         assert frontend_result["ticket_id"] in frontend_files[0].name
 
-    async def test_create_ticket_with_multiple_hives(self, temp_hive_setup):
+    async def test_create_ticket_with_multiple_hives(self, multi_hive, monkeypatch):
         """Should support creating tickets in different hives."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create 3 tickets in backend
         for i in range(3):
             result = await _create_ticket(
@@ -162,16 +134,17 @@ class TestCreateTicketHiveValidation:
             assert result["ticket_id"].startswith("frontend.bees-")
 
         # Verify counts in each hive
-        backend_dir = temp_hive_setup["backend_dir"]
         backend_files = list(backend_dir.glob("*.md"))
         assert len(backend_files) == 3
 
-        frontend_dir = temp_hive_setup["frontend_dir"]
         frontend_files = list(frontend_dir.glob("*.md"))
         assert len(frontend_files) == 2
 
-    async def test_ticket_id_format_includes_hive_prefix(self, temp_hive_setup):
+    async def test_ticket_id_format_includes_hive_prefix(self, multi_hive, monkeypatch):
         """Generated ticket IDs should follow format: {hive}.bees-{random}."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         result = await _create_ticket(
             ticket_type="epic",
             title="Test Epic",
@@ -187,8 +160,11 @@ class TestCreateTicketHiveValidation:
         assert base_id.startswith("bees-")
         assert len(base_id) == 8  # "bees-" (5) + 3 random chars
 
-    async def test_error_message_suggests_creating_hive(self, temp_hive_setup):
+    async def test_error_message_suggests_creating_hive(self, multi_hive, monkeypatch):
         """Error message should suggest using colonize_hive."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError) as exc_info:
             await _create_ticket(
                 ticket_type="epic",
@@ -202,8 +178,11 @@ class TestCreateTicketHiveValidation:
         # Verify enhanced error message mentions colonize_hive and registration
         assert "colonize_hive" in error_msg
 
-    async def test_all_ticket_types_validate_hive(self, temp_hive_setup):
+    async def test_all_ticket_types_validate_hive(self, multi_hive, monkeypatch):
         """All ticket types should validate hive exists in config."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Epic with nonexistent hive
         with pytest.raises(ValueError) as exc_info:
             await _create_ticket(
@@ -239,7 +218,7 @@ class TestCreateTicketHiveValidation:
             )
         assert "not found in config" in str(exc_info.value)
 
-    async def test_create_ticket_does_not_attempt_hive_recovery(self, temp_hive_setup):
+    async def test_create_ticket_does_not_attempt_hive_recovery(self, multi_hive, monkeypatch):
         """
         Design Decision Test: create_ticket should be STRICT and not attempt hive recovery.
 
@@ -247,9 +226,11 @@ class TestCreateTicketHiveValidation:
         recovery, maintaining consistency with update_ticket and delete_ticket operations.
         Write operations should be explicit and require hive to be registered in config.
         """
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create an unregistered hive directory with proper .hive marker
-        temp_dir = temp_hive_setup["temp_dir"]
-        unregistered_dir = temp_dir / "unregistered_hive"
+        unregistered_dir = repo_root / "unregistered_hive"
         unregistered_dir.mkdir()
 
         # Create .hive marker to simulate a relocated hive that scan_for_hive could find
@@ -275,8 +256,11 @@ class TestCreateTicketHiveValidation:
         # Error message should guide user to register hive if it exists
         assert "run colonize_hive to register it" in error_msg
 
-    async def test_error_message_guides_unregistered_hive_scenario(self, temp_hive_setup):
+    async def test_error_message_guides_unregistered_hive_scenario(self, multi_hive, monkeypatch):
         """Error message should guide users when hive directory exists but isn't registered."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         with pytest.raises(ValueError) as exc_info:
             await _create_ticket(
                 ticket_type="epic",
@@ -294,10 +278,12 @@ class TestCreateTicketHiveValidation:
 class TestCreateTicketHivePathValidation:
     """Tests for hive path validation in await _create_ticket (Task bees-3c0ja)."""
 
-    async def test_missing_hive_directory_raises_error(self, temp_hive_setup):
+    async def test_missing_hive_directory_raises_error(self, multi_hive, monkeypatch):
         """Should raise ValueError when hive path does not exist."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Delete backend directory
-        backend_dir = temp_hive_setup["backend_dir"]
         shutil.rmtree(backend_dir)
 
         with pytest.raises(ValueError) as exc_info:
@@ -311,10 +297,12 @@ class TestCreateTicketHivePathValidation:
         assert "does not exist" in error_msg
         assert str(backend_dir) in error_msg
 
-    async def test_hive_path_is_file_not_directory_raises_error(self, temp_hive_setup):
+    async def test_hive_path_is_file_not_directory_raises_error(self, multi_hive, monkeypatch):
         """Should raise ValueError when hive path is a file instead of directory."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Replace backend directory with a file
-        backend_dir = temp_hive_setup["backend_dir"]
         shutil.rmtree(backend_dir)
         backend_dir.touch()  # Create as file instead
 
@@ -328,12 +316,13 @@ class TestCreateTicketHivePathValidation:
         error_msg = str(exc_info.value)
         assert "not a directory" in error_msg
 
-    async def test_non_writable_hive_directory_raises_error(self, temp_hive_setup):
+    async def test_non_writable_hive_directory_raises_error(self, multi_hive, monkeypatch):
         """Should raise ValueError when hive directory is not writable."""
         import os
         import stat
 
-        backend_dir = temp_hive_setup["backend_dir"]
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
 
         # Make directory read-only
         original_mode = backend_dir.stat().st_mode
@@ -353,13 +342,13 @@ class TestCreateTicketHivePathValidation:
             # Restore permissions for cleanup
             backend_dir.chmod(original_mode)
 
-    async def test_valid_symlink_to_directory_succeeds(self, temp_hive_setup):
+    async def test_valid_symlink_to_directory_succeeds(self, multi_hive, monkeypatch):
         """Should succeed when hive path is a valid symlink to a directory."""
-        backend_dir = temp_hive_setup["backend_dir"]
-        temp_dir = temp_hive_setup["temp_dir"]
-
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create actual target directory
-        target_dir = temp_dir / "backend_target"
+        target_dir = repo_root / "backend_target"
         target_dir.mkdir()
 
         # Replace backend_dir with symlink
@@ -367,7 +356,7 @@ class TestCreateTicketHivePathValidation:
         backend_dir.symlink_to(target_dir)
 
         # Update config to point to symlink
-        config_path = temp_hive_setup["config_path"]
+        config_path = repo_root / ".bees" / "config.json"
         with open(config_path, 'r') as f:
             config_data = json.load(f)
         config_data["hives"]["backend"]["path"] = str(backend_dir)
@@ -385,18 +374,18 @@ class TestCreateTicketHivePathValidation:
         # Verify file was created in target directory
         assert len(list(target_dir.glob("*.md"))) == 1
 
-    async def test_broken_symlink_raises_error(self, temp_hive_setup):
+    async def test_broken_symlink_raises_error(self, multi_hive, monkeypatch):
         """Should raise ValueError when hive path is a broken symlink."""
-        backend_dir = temp_hive_setup["backend_dir"]
-        temp_dir = temp_hive_setup["temp_dir"]
-
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Create symlink pointing to nonexistent directory
-        target_dir = temp_dir / "backend_target_missing"
+        target_dir = repo_root / "backend_target_missing"
         shutil.rmtree(backend_dir)
         backend_dir.symlink_to(target_dir)
 
         # Update config
-        config_path = temp_hive_setup["config_path"]
+        config_path = repo_root / ".bees" / "config.json"
         with open(config_path, 'r') as f:
             config_data = json.load(f)
         config_data["hives"]["backend"]["path"] = str(backend_dir)
@@ -413,8 +402,11 @@ class TestCreateTicketHivePathValidation:
         error_msg = str(exc_info.value)
         assert "does not exist" in error_msg
 
-    async def test_successful_path_validation_for_valid_directory(self, temp_hive_setup):
+    async def test_successful_path_validation_for_valid_directory(self, multi_hive, monkeypatch):
         """Should pass all validations for existing writable directory."""
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # This test verifies the happy path with all validations passing
         result = await _create_ticket(
             ticket_type="epic",
@@ -425,14 +417,14 @@ class TestCreateTicketHivePathValidation:
         assert result["status"] == "success"
 
         # Verify ticket file was created
-        backend_dir = temp_hive_setup["backend_dir"]
         ticket_files = list(backend_dir.glob("*.md"))
         assert len(ticket_files) == 1
 
-    async def test_error_messages_are_descriptive(self, temp_hive_setup):
+    async def test_error_messages_are_descriptive(self, multi_hive, monkeypatch):
         """Error messages should be clear and actionable."""
-        backend_dir = temp_hive_setup["backend_dir"]
-
+        repo_root, backend_dir, frontend_dir = multi_hive
+        monkeypatch.chdir(repo_root)
+        
         # Test 1: Missing directory
         shutil.rmtree(backend_dir)
         with pytest.raises(ValueError) as exc_info:

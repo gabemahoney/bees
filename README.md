@@ -151,6 +151,21 @@ This integration test suite ensures that MCP functions (`_create_ticket`, `_upda
 
 The test suite addresses the coverage gap noted in `test_fixtures.py:174` where the fixture behavior is documented but not tested.
 
+### Centralized Fixtures
+
+All test files use shared fixtures from `tests/conftest.py` to avoid code duplication. Instead of defining local fixtures in each test file, tests should use:
+
+- **`single_hive`** for tests needing one configured hive
+- **`multi_hive`** for tests requiring backend + frontend hives
+- **`isolated_bees_env`** for tests requiring complex multi-hive setups with custom configuration
+
+The `isolated_bees_env` fixture provides a `BeesTestHelper` with utility methods:
+- `create_hive(hive_name, display_name)` - Creates and registers a hive
+- `write_config()` - Writes `.bees/config.json` with registered hives
+- `create_ticket(hive_dir, ticket_id, ticket_type, title, **extra_fields)` - Creates ticket with YAML frontmatter
+
+This centralized approach eliminates 500+ lines of duplicate fixture code across test files and ensures consistent test isolation patterns.
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

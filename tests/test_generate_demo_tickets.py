@@ -23,49 +23,16 @@ def read_ticket_by_id(ticket_id: str, ticket_type: str):
 
 
 @pytest.fixture
-def setup_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary hive-based directory structure."""
-    import src.config
-    import json
-
-    # Create default hive directory
-    default_hive = tmp_path / "default"
-    default_hive.mkdir()
+def generated_tickets(isolated_bees_env):
+    """Generate demo tickets using isolated_bees_env fixture."""
+    helper = isolated_bees_env
+    
+    # Create default hive with required subdirectories
+    default_hive = helper.create_hive("default", "Default")
     (default_hive / "eggs").mkdir()
     (default_hive / "evicted").mkdir()
-
-    # Create config
-    config_dir = tmp_path / ".bees"
-    config_dir.mkdir()
-    config_file = config_dir / "config.json"
-
-    config_data = {
-        "hives": {
-            "default": {"path": str(default_hive), "display_name": "Default"}
-        },
-        "allow_cross_hive_dependencies": False,
-        "schema_version": "1.0"
-    }
-
-    with open(config_file, 'w') as f:
-        json.dump(config_data, f)
-
-    # Mock get_config_path to return our temporary config file
-    monkeypatch.setattr(src.config, 'get_config_path', lambda repo_root=None: config_file)
-
-    # Clear the hive config cache
-    if hasattr(src.config, '_hive_config_cache'):
-        src.config._hive_config_cache = None
-
-    # Change to the tmp_path directory so path resolution works
-    monkeypatch.chdir(tmp_path)
-
-    yield tmp_path
-
-
-@pytest.fixture
-def generated_tickets(setup_tickets_dir):
-    """Generate demo tickets and return their IDs."""
+    helper.write_config()
+    
     from scripts.generate_demo_tickets import (
         generate_demo_epics,
         generate_demo_tasks,
@@ -78,7 +45,12 @@ def generated_tickets(setup_tickets_dir):
         tasks = generate_demo_tasks(epics)
         subtasks = generate_demo_subtasks(tasks)
 
-    return {"epics": epics, "tasks": tasks, "subtasks": subtasks}
+    return {
+        "epics": epics, 
+        "tasks": tasks, 
+        "subtasks": subtasks,
+        "base_path": helper.base_path  # Return base_path for tests that need it
+    }
 
 
 class TestDemoEpicGeneration:
@@ -88,10 +60,10 @@ class TestDemoEpicGeneration:
         """Test that exactly 5 epics are generated."""
         assert len(generated_tickets["epics"]) == 5
 
-    def test_epic_files_exist(self, generated_tickets, setup_tickets_dir):
+    def test_epic_files_exist(self, generated_tickets):
         """Test that epic files are created in correct hive directory."""
         # Epics now stored in hive root with flat storage
-        default_dir = setup_tickets_dir / "default"
+        default_dir = generated_tickets["base_path"] / "default"
         for epic_id in generated_tickets["epics"].values():
             epic_file = default_dir / f"{epic_id}.md"
             assert epic_file.exists(), f"Epic file {epic_id}.md not found in {default_dir}"
@@ -148,10 +120,10 @@ class TestDemoTaskGeneration:
         """Test that exactly 8 tasks are generated."""
         assert len(generated_tickets["tasks"]) == 8
 
-    def test_task_files_exist(self, generated_tickets, setup_tickets_dir):
+    def test_task_files_exist(self, generated_tickets):
         """Test that task files are created in correct hive directory."""
         # Tasks now stored in hive root with flat storage
-        default_dir = setup_tickets_dir / "default"
+        default_dir = generated_tickets["base_path"] / "default"
         for task_id in generated_tickets["tasks"].values():
             task_file = default_dir / f"{task_id}.md"
             assert task_file.exists(), f"Task file {task_id}.md not found in {default_dir}"
@@ -217,10 +189,10 @@ class TestDemoSubtaskGeneration:
         """Test that exactly 15 subtasks are generated."""
         assert len(generated_tickets["subtasks"]) == 15
 
-    def test_subtask_files_exist(self, generated_tickets, setup_tickets_dir):
+    def test_subtask_files_exist(self, generated_tickets):
         """Test that subtask files are created in correct hive directory."""
         # Subtasks now stored in hive root with flat storage
-        default_dir = setup_tickets_dir / "default"
+        default_dir = generated_tickets["base_path"] / "default"
         for subtask_id in generated_tickets["subtasks"].values():
             subtask_file = default_dir / f"{subtask_id}.md"
             assert subtask_file.exists(), f"Subtask file {subtask_id}.md not found in {default_dir}"
@@ -404,10 +376,10 @@ class TestDependencyChains:
 class TestFlatStorageArchitecture:
     """Tests for flat storage path validation."""
 
-    def test_fixtures_use_flat_storage_paths(self, generated_tickets, setup_tickets_dir):
+    def test_fixtures_use_flat_storage_paths(self, generated_tickets):
         """Verify that test fixtures check correct directory paths (default/ not default/epics/)."""
         # All tickets should be in the root of the hive, not in subdirectories
-        default_dir = setup_tickets_dir / "default"
+        default_dir = generated_tickets["base_path"] / "default"
 
         # Verify epics subdirectory does not exist or is not used
         epics_subdir = default_dir / "epics"
@@ -440,8 +412,12 @@ class TestFlatStorageArchitecture:
                 subdir_file = subtasks_subdir / f"{subtask_id}.md"
                 assert not subdir_file.exists(), f"Subtask {subtask_id}.md should NOT be in {subtasks_subdir}"
 
-    def test_missing_ticket_in_root_directory(self, setup_tickets_dir):
+    def test_missing_ticket_in_root_directory(self, isolated_bees_env):
         """Test edge case of missing ticket file in root directory."""
+        helper = isolated_bees_env
+        helper.create_hive("default", "Default")
+        helper.write_config()
+        
         from src.reader import read_ticket
         from src.paths import get_ticket_path
 
@@ -459,9 +435,9 @@ class TestFlatStorageArchitecture:
             # Expected behavior - file doesn't exist
             pass
 
-    def test_tickets_not_in_wrong_subdirectories(self, generated_tickets, setup_tickets_dir):
+    def test_tickets_not_in_wrong_subdirectories(self, generated_tickets):
         """Validate test assertions fail if tickets are in wrong location."""
-        default_dir = setup_tickets_dir / "default"
+        default_dir = generated_tickets["base_path"] / "default"
 
         # Verify that old subdirectories either don't exist or are empty
         old_subdirs = ["epics", "tasks", "subtasks"]

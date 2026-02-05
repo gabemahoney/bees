@@ -12,18 +12,20 @@ description: "Eliminate 500+ lines of duplicate fixture definitions across 10 te
   \ runs `pytest` - all tests pass\n- User searches codebase for \"def setup_tickets_dir\"\
   \ - no results found\n- Agent creates PR showing ~500 line reduction\n\nSource:\
   \ /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md"
-labels:
-- not-started
 up_dependencies:
 - features.bees-y6w
 down_dependencies:
 - features.bees-1u8
 - features.bees-5y8
 - features.bees-c9p
+children:
+- features.bees-oxx
+- features.bees-xo8
+- features.bees-4vi
 created_at: '2026-02-05T08:05:44.016743'
-updated_at: '2026-02-05T10:35:18.566164'
+updated_at: '2026-02-05T12:39:34.105286'
 priority: 2
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

@@ -12,38 +12,36 @@ from datetime import datetime
 
 
 @pytest.fixture
-def temp_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary hive directory with config-based setup."""
-    # Create hive directories for testing
-    backend_dir = tmp_path / "backend"
-    backend_dir.mkdir()
-    frontend_dir = tmp_path / "frontend"
-    frontend_dir.mkdir()
-    test_hive_dir = tmp_path / "test_hive"
+def temp_tickets_dir(multi_hive, monkeypatch):
+    """Create temporary hive directory with config-based setup using multi_hive base."""
+    repo_root, backend_dir, frontend_dir = multi_hive
+    
+    # Create additional hives needed for normalization tests
+    test_hive_dir = repo_root / "test_hive"
     test_hive_dir.mkdir()
-    my_hive_dir = tmp_path / "my_hive"
+    my_hive_dir = repo_root / "my_hive"
     my_hive_dir.mkdir()
-    front_end_dir = tmp_path / "front_end"
+    front_end_dir = repo_root / "front_end"
     front_end_dir.mkdir()
-    back_end_dir = tmp_path / "back_end"
+    back_end_dir = repo_root / "back_end"
     back_end_dir.mkdir()
-    myhive_dir = tmp_path / "myhive"
+    myhive_dir = repo_root / "myhive"
     myhive_dir.mkdir()
-    test_123_dir = tmp_path / "test_123"
+    test_123_dir = repo_root / "test_123"
     test_123_dir.mkdir()
-    test_dir = tmp_path / "test"
+    test_dir = repo_root / "test"
     test_dir.mkdir()
-    a_dir = tmp_path / "a"
+    a_dir = repo_root / "a"
     a_dir.mkdir()
-    _1_dir = tmp_path / "_1"
+    _1_dir = repo_root / "_1"
     _1_dir.mkdir()
-    my_hive_123_dir = tmp_path / "my_hive_123"
+    my_hive_123_dir = repo_root / "my_hive_123"
     my_hive_123_dir.mkdir()
 
-    # Change to temp directory FIRST so config saves there
-    monkeypatch.chdir(tmp_path)
+    # Change to repo_root directory
+    monkeypatch.chdir(repo_root)
 
-    # Initialize .bees/config.json with test hives
+    # Extend config.json with additional test hives
     config = BeesConfig(
         hives={
             'backend': HiveConfig(
@@ -112,7 +110,7 @@ def temp_tickets_dir(tmp_path, monkeypatch):
     )
     save_bees_config(config)
 
-    yield tmp_path
+    yield repo_root
 
 
 class TestMCPCreateTicketWithHive:

@@ -9,44 +9,14 @@ from src.pipeline import PipelineEvaluator
 
 
 @pytest.fixture
-def temp_tickets_dir(tmp_path, monkeypatch):
-    """Create temporary tickets directory with test tickets in markdown format (flat storage)."""
-    from src.repo_context import repo_root_context
+def pipeline(isolated_bees_env):
+    """Create PipelineEvaluator with test data using isolated_bees_env."""
+    helper = isolated_bees_env
     
-    # Change to tmp_path so autouse fixture sets context correctly
-    monkeypatch.chdir(tmp_path)
+    # Create hive
+    hive_dir = helper.create_hive("test_hive", "Test Hive")
+    helper.write_config()
     
-    # Create hive directory
-    hive_dir = tmp_path / "test_hive"
-    hive_dir.mkdir()
-
-    # Create .bees config directory
-    bees_dir = tmp_path / ".bees"
-    bees_dir.mkdir()
-    
-    # Create config file with hive
-    config_data = {
-        "hives": {
-            "test_hive": {
-                "path": str(hive_dir),
-                "display_name": "Test Hive"
-            }
-        },
-        "allow_cross_hive_dependencies": False,
-        "schema_version": "1.0"
-    }
-    config_file = bees_dir / "config.json"
-    with open(config_file, 'w') as f:
-        json.dump(config_data, f)
-
-    # Mock get_config_path to return our test config
-    import src.config
-    monkeypatch.setattr(src.config, 'get_config_path', lambda repo_root=None: config_file)
-    
-    # Clear config cache
-    if hasattr(src.config, '_bees_config_cache'):
-        src.config._bees_config_cache = None
-
     # Create test tickets in hive root (flat storage) with bees_version field
     test_tickets = {
         "bees-ep1.md": {
@@ -116,17 +86,8 @@ def temp_tickets_dir(tmp_path, monkeypatch):
         content = f"---\n{yaml.dump(frontmatter)}---\n\n# {frontmatter['title']}\n\nTest ticket content.\n"
         with open(filepath, 'w') as f:
             f.write(content)
-
-    yield tmp_path
-
-
-@pytest.fixture
-def pipeline(temp_tickets_dir):
-    """Create PipelineEvaluator with test data.
     
-    Note: Relies on set_repo_root_context autouse fixture to provide context.
-    """
-    return PipelineEvaluator(tickets_dir=str(temp_tickets_dir))
+    return PipelineEvaluator(tickets_dir=str(helper.base_path))
 
 
 class TestPipelineEvaluatorInit:

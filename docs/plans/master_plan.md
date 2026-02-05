@@ -158,6 +158,28 @@ def test_query_relationships(hive_with_tickets):
     # Test queries against pre-created tickets
 ```
 
+### Centralized Fixture Migration
+
+**Architectural Decision (Epic features.bees-74p):** All test files now use shared fixtures from `conftest.py` instead of local fixture definitions. This eliminates 500+ lines of duplicate fixture code across test files and ensures consistent test isolation patterns.
+
+**Migration Approach:**
+- Local fixtures in individual test files were replaced with appropriate shared fixtures (`single_hive`, `multi_hive`, `isolated_bees_env`)
+- Tests requiring complex multi-hive setups now use `isolated_bees_env` helper with its `create_hive()` and `write_config()` methods
+- Tests needing simple single-hive setups use `single_hive` fixture
+- Tests requiring backend + frontend hives use `multi_hive` fixture
+
+**Files Migrated:**
+- `test_paths.py` - Migrated from local `setup_hive_config` to `multi_hive` fixture
+- `test_ticket_factory_hive.py` - Migrated from local `temp_hive_config` to `single_hive`, `multi_hive`, and `isolated_bees_env` fixtures
+- `test_pipeline.py` - Migrated from local `temp_tickets_dir` to `isolated_bees_env` fixture with helper methods
+- `test_generate_demo_tickets.py` - Migrated from local `setup_tickets_dir` to `isolated_bees_env` fixture
+
+**Benefits:**
+- Reduced code duplication from 500+ lines to zero
+- Consistent test isolation patterns across all test files
+- Easier maintenance of fixture logic in one central location
+- Improved discoverability of available test fixtures
+
 ### Test Suite Organization
 
 The test suite follows a module-based organization principle where tests are located alongside the modules they test:
