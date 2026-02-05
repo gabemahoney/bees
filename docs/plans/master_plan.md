@@ -96,6 +96,67 @@ Integration: The `_help` function is imported by mcp_server.py and registered as
 - **mcp_hive_utils.py** handles validation/scanning
 - **mcp_hive_ops.py** handles lifecycle (create, rename, delete)
 
+## Test Infrastructure
+
+### Pytest Fixtures Architecture
+
+Bees uses a tiered fixture design pattern in `tests/conftest.py` that supports test isolation while avoiding code duplication. The fixture hierarchy enables tests to request the appropriate level of setup complexity for their needs.
+
+**Design Philosophy:**
+- **Function scope** - All fixtures use `scope="function"` for complete test isolation and parallelization
+- **Composition** - Fixtures build on each other to create increasingly complex scenarios
+- **Explicit cleanup** - Uses pytest's tmp_path for automatic cleanup, no manual teardown needed
+- **Realistic structure** - Higher-tier fixtures use actual create_ticket() functions to ensure valid ticket relationships
+
+**Fixture Hierarchy:**
+
+1. **bees_repo** (base)
+   - Creates temporary directory with `.bees/` subdirectory
+   - Yields repo root Path object
+   - Foundation for all other fixtures
+
+2. **single_hive** (builds on bees_repo)
+   - Creates 'backend' hive with `.hive/identity.json` marker
+   - Registers hive in `.bees/config.json`
+   - Yields `(repo_root, hive_path)`
+   - Use for: Single-hive operations, basic ticket CRUD tests
+
+3. **multi_hive** (builds on bees_repo)
+   - Creates 'backend' and 'frontend' hives with identity markers
+   - Registers both hives in config
+   - Yields `(repo_root, backend_path, frontend_path)`
+   - Use for: Cross-hive queries, multi-hive operations, dependency validation
+
+4. **hive_with_tickets** (builds on single_hive)
+   - Pre-creates epic → task → subtask hierarchy using create_ticket() functions
+   - Yields `(repo_root, hive_path, epic_id, task_id, subtask_id)`
+   - Use for: Relationship testing, query operations on existing tickets, update/delete operations
+
+**Integration with Test Suite:**
+- Fixtures are automatically available to all tests via conftest.py
+- Tests request only the complexity level they need via fixture parameters
+- Function scope ensures no state pollution between tests
+- Integration with existing `repo_root_context` ensures proper context handling
+
+**Example Usage:**
+```python
+def test_simple_config(bees_repo):
+    # Only needs basic repo structure
+    repo_root = bees_repo
+    config_path = repo_root / ".bees" / "config.json"
+    assert config_path.parent.exists()
+
+def test_ticket_creation(single_hive):
+    # Needs configured hive but no existing tickets
+    repo_root, hive_path = single_hive
+    create_epic(title="New Epic", hive_name="backend")
+
+def test_query_relationships(hive_with_tickets):
+    # Needs existing ticket hierarchy
+    repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
+    # Test queries against pre-created tickets
+```
+
 ## Quick Reference
 
 For implementation details, see the architecture documentation linked above. Key integration points:

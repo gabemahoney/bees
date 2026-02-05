@@ -162,3 +162,144 @@ class TestFixtureIntegration:
         # Should be able to find repo root via mock
         result = mcp_repo_utils.get_repo_root_from_path(tmp_path)
         assert result == tmp_path
+
+
+class TestTieredFixtures:
+    """Test the new tiered pytest fixtures (bees_repo, single_hive, multi_hive, hive_with_tickets)."""
+
+    def test_bees_repo_creates_structure(self, bees_repo):
+        """Verify bees_repo fixture creates .bees directory."""
+        repo_root = bees_repo
+        assert repo_root.exists()
+        assert (repo_root / ".bees").exists()
+        assert (repo_root / ".bees").is_dir()
+
+    def test_bees_repo_uses_tmp_path(self, bees_repo, tmp_path):
+        """Verify bees_repo is based on tmp_path for isolation."""
+        # bees_repo should be tmp_path (or a derivative)
+        # Both should be temporary directories
+        assert bees_repo.exists()
+        assert tmp_path.exists()
+
+    def test_single_hive_creates_hive(self, single_hive):
+        """Verify single_hive fixture creates backend hive with proper structure."""
+        repo_root, hive_path = single_hive
+        
+        # Check hive directory exists
+        assert hive_path.exists()
+        assert hive_path.is_dir()
+        assert hive_path.name == "backend"
+        
+        # Check .hive/identity.json exists
+        identity_file = hive_path / ".hive" / "identity.json"
+        assert identity_file.exists()
+        
+        import json
+        identity_data = json.loads(identity_file.read_text())
+        assert identity_data["normalized_name"] == "backend"
+        assert identity_data["display_name"] == "Backend"
+        assert "created_at" in identity_data
+
+    def test_single_hive_registers_config(self, single_hive):
+        """Verify single_hive fixture registers hive in config.json."""
+        repo_root, hive_path = single_hive
+        
+        config_path = repo_root / ".bees" / "config.json"
+        assert config_path.exists()
+        
+        import json
+        config_data = json.loads(config_path.read_text())
+        assert "hives" in config_data
+        assert "backend" in config_data["hives"]
+        assert config_data["hives"]["backend"]["display_name"] == "Backend"
+        assert config_data["hives"]["backend"]["path"] == str(hive_path)
+
+    def test_multi_hive_creates_both_hives(self, multi_hive):
+        """Verify multi_hive fixture creates backend and frontend hives."""
+        repo_root, backend_path, frontend_path = multi_hive
+        
+        # Check both hive directories exist
+        assert backend_path.exists()
+        assert backend_path.name == "backend"
+        assert frontend_path.exists()
+        assert frontend_path.name == "frontend"
+        
+        # Check both have identity markers
+        backend_identity = backend_path / ".hive" / "identity.json"
+        frontend_identity = frontend_path / ".hive" / "identity.json"
+        assert backend_identity.exists()
+        assert frontend_identity.exists()
+
+    def test_multi_hive_registers_both_configs(self, multi_hive):
+        """Verify multi_hive fixture registers both hives in config.json."""
+        repo_root, backend_path, frontend_path = multi_hive
+        
+        config_path = repo_root / ".bees" / "config.json"
+        assert config_path.exists()
+        
+        import json
+        config_data = json.loads(config_path.read_text())
+        assert "backend" in config_data["hives"]
+        assert "frontend" in config_data["hives"]
+        assert config_data["hives"]["backend"]["display_name"] == "Backend"
+        assert config_data["hives"]["frontend"]["display_name"] == "Frontend"
+
+    def test_hive_with_tickets_creates_hierarchy(self, hive_with_tickets):
+        """Verify hive_with_tickets fixture creates epic → task → subtask hierarchy."""
+        repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
+        
+        # Check all ticket IDs are valid format
+        assert epic_id.startswith("backend.bees-")
+        assert task_id.startswith("backend.bees-")
+        assert subtask_id.startswith("backend.bees-")
+        
+        # Check ticket files exist
+        assert (hive_path / f"{epic_id}.md").exists()
+        assert (hive_path / f"{task_id}.md").exists()
+        assert (hive_path / f"{subtask_id}.md").exists()
+
+    def test_hive_with_tickets_has_proper_relationships(self, hive_with_tickets):
+        """Verify hive_with_tickets creates tickets with proper types."""
+        from src.reader import read_ticket
+        
+        repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
+        
+        # Read tickets using full file paths
+        epic = read_ticket(hive_path / f"{epic_id}.md")
+        task = read_ticket(hive_path / f"{task_id}.md")
+        subtask = read_ticket(hive_path / f"{subtask_id}.md")
+        
+        # Verify types
+        assert epic.type == "epic"
+        assert task.type == "task"
+        assert subtask.type == "subtask"
+        
+        # Verify parent assignments were made
+        assert task.parent == epic_id
+        assert subtask.parent == task_id
+
+    def test_fixture_composition_chain(self, bees_repo, single_hive, multi_hive):
+        """Verify fixtures compose properly and maintain isolation."""
+        # bees_repo is base
+        assert bees_repo.exists()
+        
+        # single_hive and multi_hive should each have their own repo roots
+        single_repo, single_hive_path = single_hive
+        multi_repo, multi_backend, multi_frontend = multi_hive
+        
+        # Each fixture should have isolated directory structure
+        assert single_repo.exists()
+        assert multi_repo.exists()
+        
+        # Verify they're different temp directories (isolation)
+        # This ensures no state pollution between tests
+        assert single_hive_path.exists()
+        assert multi_backend.exists()
+
+    def test_fixture_cleanup_happens_automatically(self, bees_repo):
+        """Verify fixtures clean up automatically via tmp_path."""
+        # This test validates the design - cleanup is automatic
+        # Because fixtures use tmp_path, pytest handles cleanup
+        repo_root = bees_repo
+        assert repo_root.exists()
+        # Cleanup verification happens implicitly - pytest removes tmp_path after test

@@ -77,6 +77,56 @@ Suggested usage is for LLMs to create tickets (to keep metadata integrity).
 Humans can modify the markdown. Humans can modify the yaml metadata as well.
 The MCP Server has a linter which will verify metadata integrity and warn.
 
+## Testing
+
+Bees provides tiered pytest fixtures in `tests/conftest.py` for different test scenarios:
+
+### Available Fixtures
+
+**`bees_repo`** - Base fixture creating minimal repository structure
+- Creates temporary directory with `.bees/` subdirectory
+- Yields repo root Path object
+- Use for tests that only need basic repo structure
+
+**`single_hive`** - Single configured hive (builds on `bees_repo`)
+- Creates 'backend' hive with `.hive/identity.json`
+- Registers hive in `.bees/config.json`
+- Yields `(repo_root, hive_path)`
+- Use for simple single-hive test scenarios
+
+Example:
+```python
+def test_something(single_hive):
+    repo_root, hive_path = single_hive
+    # Test code using single hive
+```
+
+**`multi_hive`** - Multiple hives for cross-hive testing (builds on `bees_repo`)
+- Creates 'backend' and 'frontend' hives with identity markers
+- Registers both hives in config
+- Yields `(repo_root, backend_path, frontend_path)`
+- Use for cross-hive operation tests
+
+Example:
+```python
+def test_multi_hive_query(multi_hive):
+    repo_root, backend_path, frontend_path = multi_hive
+    # Test code using multiple hives
+```
+
+**`hive_with_tickets`** - Pre-created ticket hierarchy (builds on `single_hive`)
+- Creates epic → task → subtask hierarchy in backend hive
+- Uses proper `create_ticket()` functions
+- Yields `(repo_root, hive_path, epic_id, task_id, subtask_id)`
+- Use for relationship and query testing
+
+Example:
+```python
+def test_ticket_relationships(hive_with_tickets):
+    repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
+    # Test code using existing tickets
+```
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.
