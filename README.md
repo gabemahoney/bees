@@ -166,6 +166,28 @@ The `isolated_bees_env` fixture provides a `BeesTestHelper` with utility methods
 
 This centralized approach eliminates 500+ lines of duplicate fixture code across test files and ensures consistent test isolation patterns.
 
+### Centralized Mock Patching
+
+Bees uses **source module patching** in `tests/conftest.py` to ensure mocks apply consistently across all test code. The key mock is `get_repo_root_from_path`, which is patched at its source module (`src.mcp_repo_utils`) rather than at import sites.
+
+**Why Source Module Patching:**
+- Patching at the source module (`src.mcp_repo_utils.get_repo_root_from_path`) ensures the mock applies to all modules that import the function
+- Prevents silent test failures when new modules add imports
+- Eliminates need to patch at multiple import sites (mcp_server, mcp_ticket_ops, etc.)
+
+**Auto-Applied Mock:**
+The `mock_git_repo_check` fixture in conftest.py is `autouse=True`, so all tests automatically receive the mocked `get_repo_root_from_path`. This allows tests to run in temporary directories (tmp_path) without requiring actual .git directories.
+
+**Opt-Out with Marker:**
+Tests that need real git validation can opt out:
+```python
+@pytest.mark.needs_real_git_check
+def test_requires_real_git():
+    # Uses actual get_repo_root_from_path logic
+    result = get_repo_root_from_path(Path.cwd())
+    assert (result / '.git').exists()
+```
+
 ## Hives
 
 Bees supports grouping tickets into Hives which are simply simply folders in your repo where a group of related tickets are stored.

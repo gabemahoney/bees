@@ -213,6 +213,41 @@ As part of the "Remove Legacy Skipped Tests" epic (features.bees-5va), test orga
 
 **Rationale**: TestLoadConfig tests were redundant with TestPortValidation which provides comprehensive unit-level coverage for port validation logic. The deleted tests added no unique value since they tested the same Config port validation through a different code path (via load_config). This cleanup reduces test duplication and focuses TestLoadConfig on its intended purpose: integration-level configuration file loading.
 
+### Centralized Mock Patching Architecture
+
+**Architectural Decision (Task features.bees-gjg):** Bees uses **source module patching** in `tests/conftest.py` to ensure mocks apply consistently across all test code without manual patching in individual test files.
+
+**Problem with Import-Site Patching:**
+When modules import functions, Python creates local name bindings at import time:
+```python
+# In mcp_server.py
+from .mcp_repo_utils import get_repo_root_from_path
+```
+
+If you patch at the import site (`mcp_server.get_repo_root_from_path`), you must patch every import site individually. When new modules add imports, tests silently fail because the new import site isn't patched.
+
+**Solution: Source Module Patching:**
+By patching `get_repo_root_from_path` at its source module (`src.mcp_repo_utils`) before any imports occur, all modules that import the function automatically receive the mocked version. This centralized approach:
+- Eliminates need to patch at multiple import sites (mcp_server, mcp_ticket_ops, mcp_query_ops, etc.)
+- Prevents silent test failures when new modules add imports
+- Ensures consistent mock behavior across entire test suite
+
+**Implementation:**
+The `mock_git_repo_check` fixture in `tests/conftest.py` is `autouse=True`, automatically applying to all tests. It patches `src.mcp_repo_utils.get_repo_root_from_path` to allow tests to run in temporary directories without requiring actual `.git` directories.
+
+**Opt-Out Mechanism:**
+Tests requiring real git validation can opt out using the `needs_real_git_check` marker:
+```python
+@pytest.mark.needs_real_git_check
+def test_requires_real_git():
+    # Uses actual get_repo_root_from_path logic
+    result = get_repo_root_from_path(Path.cwd())
+    assert (result / '.git').exists()
+```
+
+**Design Rationale:**
+This pattern applies to any widely-imported utility function where consistent mocking is critical. By centralizing the mock at the source module, we achieve better reliability and maintainability compared to scattered import-site patches.
+
 ### Integration Testing Strategy
 
 **Bidirectional Relationship Sync Testing** (`tests/integration/test_bidirectional_sync.py`)

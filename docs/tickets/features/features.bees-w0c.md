@@ -27,12 +27,16 @@ description: 'Prevent silent test failures when new modules import `get_repo_roo
 
 
   Source: /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md'
-labels:
-- not-started
 down_dependencies:
 - features.bees-c9p
+children:
+- features.bees-gjg
+- features.bees-ycr
+- features.bees-27y
+- features.bees-k56
+- features.bees-tv7
 created_at: '2026-02-05T08:05:52.096237'
-updated_at: '2026-02-05T10:35:18.553789'
+updated_at: '2026-02-05T12:46:30.049513'
 priority: 2
 status: open
 bees_version: '1.1'
