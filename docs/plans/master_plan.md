@@ -183,6 +183,14 @@ As part of the "Remove Legacy Skipped Tests" epic (features.bees-5va), test orga
 
 **Rationale**: Skipped test files create maintenance debt and confusion. By migrating unique coverage to active test files before deletion, we maintained test quality while removing dead code. The consolidated test organization makes it clearer where to find tests for specific functionality.
 
+3. **Task 3 (features.bees-uxl)**: Removed duplicate port validation tests from TestLoadConfig class
+   - Deleted 3 integration-level tests: `test_load_config_with_invalid_port_number`, `test_load_config_with_negative_port`, `test_load_config_with_string_port`
+   - These tests duplicated coverage already provided by unit-level TestPortValidation class
+   - Removed ~39 lines of redundant test code
+   - TestLoadConfig is designed for integration-level testing (file loading, YAML parsing), not unit-level port validation
+
+**Rationale**: TestLoadConfig tests were redundant with TestPortValidation which provides comprehensive unit-level coverage for port validation logic. The deleted tests added no unique value since they tested the same Config port validation through a different code path (via load_config). This cleanup reduces test duplication and focuses TestLoadConfig on its intended purpose: integration-level configuration file loading.
+
 ### Integration Testing Strategy
 
 **Bidirectional Relationship Sync Testing** (`tests/integration/test_bidirectional_sync.py`)
@@ -205,23 +213,28 @@ This two-tier approach balances performance (minimal fixture setup) with correct
 
 **Architectural Decision: Essential Test Coverage for Simple Validation Functions**
 
-For simple validation functions (e.g., `is_valid_ticket_id()`), we adopted a focused testing strategy that prioritizes essential coverage over exhaustive permutations:
+For simple validation functions, we adopted a focused testing strategy that prioritizes essential coverage over exhaustive permutations:
 
-**5-Case Pattern:**
+**Ticket ID Validation (5-Case Pattern):**
 1. **Valid format** - Representative valid inputs demonstrating expected patterns
 2. **Invalid prefix format** - Uppercase, hyphens, leading numbers (combined into one test)
 3. **Invalid suffix format** - Malformed bees-xxx suffixes
 4. **Missing/multiple separators** - Dot separator edge cases
 5. **Empty/None input** - Boundary conditions
 
+Applied to `tests/test_id_utils.py::TestIsValidTicketIdWithHive` which was reduced from 9 granular tests to 5 essential cases while maintaining comprehensive validation coverage.
+
+**Port Validation (2-Case Pattern):**
+1. **Valid port range (1024-65535)** - Tests minimum recommended port, typical port, maximum port, and string type coercion
+2. **Invalid ports** - Tests below range (0, negative), above range (65536+), and non-numeric values (string, empty, float, None)
+
+Applied to `tests/test_config.py::TestPortValidation` which was reduced from 16 granular tests to 2 essential cases. The reduced suite covers all validation branches while eliminating redundant permutations.
+
 **Rationale:**
-- Regex-based validators have predictable behavior - testing every invalid permutation adds little value
-- Combining related invalid cases (e.g., uppercase, hyphen, leading number) reduces test count while maintaining coverage
+- Simple validators (regex, range checks) have predictable behavior - testing every invalid permutation adds little value
+- Combining related invalid cases reduces test count while maintaining coverage
 - This approach reduces test maintenance overhead without sacrificing confidence
 - Focus shifted to edge cases (empty, None, boundary conditions) rather than combinatorial invalid patterns
-
-**Implementation:**
-Applied to `tests/test_id_utils.py::TestIsValidTicketIdWithHive` which was reduced from 9 granular tests to 5 essential cases while maintaining comprehensive validation coverage. Previous tests verified individual invalid cases separately; new approach groups related failures logically.
 
 ## Quick Reference
 

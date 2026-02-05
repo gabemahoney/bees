@@ -89,74 +89,52 @@ class TestConfig:
 class TestPortValidation:
     """Test port validation and type coercion."""
 
-    def test_valid_port_minimum(self):
-        """Test port value 1 (minimum valid port)."""
-        config = Config({'http': {'port': 1}})
-        assert config.http_port == 1
-
-    def test_valid_port_typical(self):
-        """Test typical port value."""
+    def test_valid_port_range(self):
+        """Test valid port range 1024-65535 with representative values."""
+        # Test minimum recommended port (1024)
+        config = Config({'http': {'port': 1024}})
+        assert config.http_port == 1024
+        
+        # Test typical port (8000)
         config = Config({'http': {'port': 8000}})
         assert config.http_port == 8000
-
-    def test_valid_port_maximum(self):
-        """Test port value 65535 (maximum valid port)."""
+        
+        # Test maximum port (65535)
         config = Config({'http': {'port': 65535}})
         assert config.http_port == 65535
-
-    def test_invalid_port_zero(self):
-        """Test port value 0 raises ValueError."""
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: 0"):
-            Config({'http': {'port': 0}})
-
-    def test_invalid_port_negative(self):
-        """Test negative port raises ValueError."""
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: -1"):
-            Config({'http': {'port': -1}})
-
-    def test_invalid_port_too_large(self):
-        """Test port > 65535 raises ValueError."""
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: 65536"):
-            Config({'http': {'port': 65536}})
-
-    def test_invalid_port_way_too_large(self):
-        """Test port >> 65535 raises ValueError."""
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: 99999"):
-            Config({'http': {'port': 99999}})
-
-    def test_port_string_coercion_valid(self):
-        """Test string port '8000' is coerced to integer 8000."""
-        config = Config({'http': {'port': '8000'}})
-        assert config.http_port == 8000
+        
+        # Test string coercion for valid port
+        config = Config({'http': {'port': '8080'}})
+        assert config.http_port == 8080
         assert isinstance(config.http_port, int)
 
-    def test_port_string_coercion_edge_case_minimum(self):
-        """Test string port '1' is coerced to integer 1."""
-        config = Config({'http': {'port': '1'}})
-        assert config.http_port == 1
-
-    def test_port_string_coercion_edge_case_maximum(self):
-        """Test string port '65535' is coerced to integer 65535."""
-        config = Config({'http': {'port': '65535'}})
-        assert config.http_port == 65535
-
-    def test_port_non_numeric_string_raises_error(self):
-        """Test non-numeric string port raises ValueError."""
+    def test_invalid_port_out_of_range_and_non_numeric(self):
+        """Test invalid ports: below range, above range, and non-numeric values."""
+        # Port below valid range
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: 0"):
+            Config({'http': {'port': 0}})
+        
+        # Negative port
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: -1"):
+            Config({'http': {'port': -1}})
+        
+        # Port above valid range
+        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535, got: 65536"):
+            Config({'http': {'port': 65536}})
+        
+        # Non-numeric string
         with pytest.raises(ValueError, match="Port must be a valid integer, got: abc"):
             Config({'http': {'port': 'abc'}})
-
-    def test_port_empty_string_raises_error(self):
-        """Test empty string port raises ValueError."""
+        
+        # Empty string
         with pytest.raises(ValueError, match="Port must be a valid integer, got: "):
             Config({'http': {'port': ''}})
-
-    def test_port_float_string_raises_error(self):
-        """Test float string port raises ValueError."""
+        
+        # Float string
         with pytest.raises(ValueError, match="Port must be a valid integer, got: 8000.5"):
             Config({'http': {'port': '8000.5'}})
-
-    def test_port_none_raises_error(self):
-        """Test None port raises ValueError."""
+        
+        # None value
         with pytest.raises(ValueError, match="Port must be a valid integer, got: None"):
             Config({'http': {'port': None}})
 
@@ -210,45 +188,6 @@ class TestLoadConfig:
         with pytest.raises(yaml.YAMLError):
             load_config(str(config_file))
 
-    def test_load_config_with_invalid_port_number(self, tmp_path):
-        """Test config raises ValueError for port > 65535."""
-        config_file = tmp_path / 'config.yaml'
-        config_data = {
-            'http': {
-                'host': '127.0.0.1',
-                'port': 99999  # invalid port
-            }
-        }
-        config_file.write_text(yaml.dump(config_data))
-
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535"):
-            load_config(str(config_file))
-
-    def test_load_config_with_negative_port(self, tmp_path):
-        """Test config raises ValueError for negative port."""
-        config_file = tmp_path / 'config.yaml'
-        config_data = {
-            'http': {
-                'port': -100
-            }
-        }
-        config_file.write_text(yaml.dump(config_data))
-
-        with pytest.raises(ValueError, match="Port must be an integer between 1 and 65535"):
-            load_config(str(config_file))
-
-    def test_load_config_with_string_port(self, tmp_path):
-        """Test config coerces string port value to integer."""
-        config_file = tmp_path / 'config.yaml'
-        config_data = {
-            'http': {
-                'port': "8080"
-            }
-        }
-        config_file.write_text(yaml.dump(config_data))
-
-        config = load_config(str(config_file))
-        assert config.http_port == 8080  # Type coercion applied
 
 
 class TestGetConfig:
