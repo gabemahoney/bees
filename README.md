@@ -6,17 +6,20 @@ Bees is an MCP server that implements a markdown-based ticket management system.
 
 ```bash
 git clone https://github.com/gabemahoney/bees.git
+cd bees
+poetry install
 ```
 
-## Requirements
+## Start the Server
 
-### MCP Client Requirements
+```bash
+poetry run python -m src.main > /tmp/bees_server.log 2>&1 &
+```
 
-The bees MCP server works best with clients that support the **MCP Roots Protocol**. This protocol allows the server to automatically detect which repository the client is working in.
-
-**Supported Clients:**
-- ✅ Claude Desktop (official MCP client) - Full roots protocol support
-- ✅ OpenCode - Full roots protocol support
+Verify it's running:
+```bash
+curl http://127.0.0.1:8000/health
+```
 
 ## Quick Start
 
@@ -69,96 +72,6 @@ Tickets are stored as simple markdown files with yaml front-matter for metadata.
 Suggested usage is for LLMs to create tickets (to keep metadata integrity).
 Humans can modify the markdown. Humans can modify the yaml metadata as well.
 The MCP Server has a linter which will verify metadata integrity and warn.
-
-## Architecture
-
-Bees uses a modular architecture where `mcp_server.py` acts as a thin orchestration layer (~200 lines) that registers MCP tools and delegates to specialized modules. This design keeps the codebase LLM-friendly by ensuring each module is under 1000 lines and fits comfortably in an LLM's context window.
-
-### Core Modules
-
-**mcp_server.py** - Thin orchestration layer (~200 lines)
-- Initializes FastMCP server and registers all MCP tools
-- Contains only: server setup, logging config, lifecycle functions (start/stop/health_check)
-- All tool decorators are 1-2 line wrappers that delegate to specialized modules
-- Reduced from 3,222 lines to ~200 lines through systematic extraction
-
-**mcp_id_utils.py** - Ticket ID parsing utilities
-- Parses ticket IDs to extract hive names and validate format
-- Used by all modules that work with ticket IDs
-- Contains 2 core functions:
-  - `parse_ticket_id()` - Extracts components from ticket ID string
-  - `parse_hive_from_ticket_id()` - Extracts just the hive prefix
-- Enables consistent ID handling across the codebase (~50 lines)
-
-**mcp_repo_utils.py** - Repository root detection
-- Detects repository root from file paths and MCP context
-- Integrates with FastMCP's roots protocol for multi-repo support
-- Contains 3 core functions:
-  - `get_repo_root_from_path()` - Finds repo root by walking up directory tree
-  - `get_client_repo_root()` - Gets client repo from MCP context (deprecated)
-  - `get_repo_root()` - Unified repo root getter using roots protocol
-- Critical for multi-repository MCP client support (~100 lines)
-
-**mcp_relationships.py** - Bidirectional relationship synchronization
-- Handles automatic bidirectional synchronization of ticket relationships (parent/child, dependencies)
-- Used by ticket create, update, and delete operations to maintain consistency
-- Contains 9 functions:
-  - `_update_bidirectional_relationships()` - Main entry point for syncing all relationships
-  - `_add_child_to_parent()` / `_remove_child_from_parent()` - Parent/child array management
-  - `_set_parent_on_child()` / `_remove_parent_from_child()` - Child parent field management
-  - `_add_to_down_dependencies()` / `_remove_from_down_dependencies()` - Blocking ticket dependency arrays
-  - `_add_to_up_dependencies()` / `_remove_from_up_dependencies()` - Blocked ticket dependency arrays
-- This discrete subsystem is isolated for better maintainability (~400-500 lines)
-
-**mcp_ticket_ops.py** - Core ticket CRUD operations
-- Provides the four main ticket operations extracted from mcp_server.py
-- Contains comprehensive validation logic and error handling for all operations
-- Integrates with mcp_relationships for bidirectional sync, mcp_repo_utils for repo root detection, and mcp_id_utils for ticket ID parsing
-- Contains 4 core functions:
-  - `_create_ticket()` - Creates new tickets (epic, task, or subtask) with full validation
-  - `_update_ticket()` - Updates existing tickets with bidirectional relationship sync
-  - `_delete_ticket()` - Deletes tickets with cascade behavior and relationship cleanup
-  - `_show_ticket()` - Retrieves and returns ticket data by ID
-- Registered as MCP tools in mcp_server.py for external access (~800 lines)
-
-**mcp_hive_ops.py** - Hive lifecycle management operations
-- Handles all hive lifecycle operations: create, list, abandon, rename, and sanitize
-- Complex operations (~1000 lines) isolated for better maintainability and focus
-- Works with mcp_hive_utils.py (validation/scanning) and mcp_repo_utils.py (repo root detection)
-- Contains 6 core functions:
-  - `colonize_hive_core()` - Core implementation for hive creation with validation
-  - `_colonize_hive()` - MCP wrapper for creating and registering new hives
-  - `_list_hives()` - Lists all registered hives in the repository
-  - `_abandon_hive()` - Stops tracking a hive without deleting files
-  - `_rename_hive()` - Renames hive, updates IDs, filenames, and all cross-references
-  - `_sanitize_hive()` - Validates and auto-fixes malformed tickets in a hive
-- Registered as MCP tools in mcp_server.py for external access
-
-**mcp_hive_utils.py** - Hive validation and scanning utilities
-- Provides path validation and hive scanning functionality
-- Used by mcp_hive_ops.py for validation operations
-
-**mcp_query_ops.py** - Query operations (add named query, execute queries)
-- Handles named query registration and execution (both named and freeform queries)
-- Provides the query subsystem extracted from mcp_server.py for better modularity
-- Integrates with query_storage (query persistence), pipeline evaluator (query execution), and mcp_repo_utils (repo root detection)
-- Contains 3 core functions:
-  - `_add_named_query()` - Registers new named queries with validation
-  - `_execute_query()` - Executes named queries with optional hive filtering
-  - `_execute_freeform_query()` - Executes ad-hoc YAML queries without persisting
-- Registered as MCP tools in mcp_server.py for external access (~250 lines)
-
-**mcp_index_ops.py** - Index generation operations
-- Handles markdown index generation for tickets with filtering support
-- Supports filtering by status, type, and hive name
-- Can generate per-hive or all-hive indexes
-- Contains 1 core function:
-  - `_generate_index()` - Generates filtered markdown indexes of tickets
-- Registered as MCP tool in mcp_server.py for external access (~64 lines)
-
-**mcp_help.py** - Help system documentation and MCP tool reference
-- Contains comprehensive documentation for all available MCP tools and core concepts
-- Provides the _help() function that returns command details and technical reference
 
 ## Hives
 
@@ -255,105 +168,3 @@ help()
   - When omitted, regenerates indexes for all registered hives
   - Each hive's index is written to `{hive_path}/index.md`
 - **health_check** - No parameters
-
-### Examples
-
-```python
-# List all registered hives
-list_hives()
-# Returns: {'status': 'success', 'hives': [{'display_name': 'Back End', 'normalized_name': 'back_end', 'path': '...'}, ...]}
-
-# List hives when none configured
-# Returns: {'status': 'success', 'hives': [], 'message': 'No hives configured'}
-
-# Colonize a new hive
-colonize_hive(name="Back End", path="/Users/user/projects/myrepo/tickets/backend")
-# Returns: {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', 'path': '...'}
-
-# Colonize with validation error (invalid path)
-colonize_hive(name="Frontend", path="relative/path")
-# Returns: {'status': 'error', 'error_type': 'path_validation_error', 'message': '...'}
-
-# Abandon a hive (stop tracking without deleting files)
-abandon_hive(hive_name="Back End")
-# Returns: {'status': 'success', 'message': 'Hive "Back End" abandoned successfully', 'display_name': 'Back End', 'normalized_name': 'back_end', 'path': '/Users/user/projects/myrepo/tickets/backend'}
-
-# Rename a hive (updates config, IDs, filenames, and cross-references)
-rename_hive(old_name="backend", new_name="api_layer")
-# Returns: {'status': 'success', 'message': 'Hive renamed successfully from backend to api_layer', 'old_name': 'backend', 'new_name': 'api_layer', 'tickets_updated': 15, 'cross_references_updated': 8, 'path': '/Users/user/projects/myrepo/tickets/backend'}
-
-# Create an epic (hive_name is required)
-create_ticket(ticket_type="epic", title="Add user authentication", description="Implement login/logout", hive_name="backend")
-
-# Create a task under an epic
-create_ticket(ticket_type="task", title="Build login API", parent="backend.epic-001", hive_name="backend")
-
-# Create a ticket with hive prefix (generates ID like "backend.bees-abc")
-create_ticket(ticket_type="epic", title="Backend API", hive_name="backend")
-
-# Show ticket details
-show_ticket(ticket_id="backend.bees-abc1")
-# Returns: {'status': 'success', 'ticket_id': 'backend.bees-abc1', 'ticket_type': 'epic', 'title': '...', ...}
-
-# Create a ticket in a multi-word hive (generates ID like "my_hive.bees-123")
-create_ticket(ticket_type="task", title="Setup database", hive_name="My Hive")
-
-# Update ticket status
-update_ticket(ticket_id="task-001", status="in_progress")
-
-# Add labels to a ticket
-update_ticket(ticket_id="task-001", labels=["backend", "security"])
-
-# Add a dependency (task-002 depends on task-001)
-update_ticket(ticket_id="task-002", up_dependencies=["task-001"])
-
-# Delete ticket with children (automatically routes to backend hive, always cascades)
-delete_ticket(ticket_id="backend.bees-abc1")
-
-# Register a static query (validated at registration)
-add_named_query(name="open_tasks", query_yaml="- - type=task\n  - status=open")
-
-# Execute query (all hives)
-execute_query(query_name="open_tasks")
-
-# Execute query filtered to single hive
-execute_query(query_name="open_tasks", hive_names=["backend"])
-
-# Execute query filtered to multiple hives
-execute_query(query_name="open_tasks", hive_names=["backend", "frontend"])
-
-# Error handling: nonexistent hive
-# execute_query(query_name="open_tasks", hive_names=["nonexistent"])
-# Returns: ValueError: Hive not found: nonexistent. Available hives: backend, frontend
-
-# Execute ad-hoc query without persisting (one-step)
-execute_freeform_query(query_yaml="- [type=epic]\n- [children]")
-# Returns: {'status': 'success', 'result_count': 42, 'ticket_ids': ['backend.bees-abc1', ...], 'stages_executed': 2}
-
-# Execute ad-hoc query with hive filter
-execute_freeform_query(query_yaml="- [type=task, status=open]", hive_names=["backend"])
-
-# Find all tasks with a specific parent
-execute_freeform_query(query_yaml="- [parent=features.bees-d3s]")
-
-# Combine parent= with other search terms
-execute_freeform_query(query_yaml="- [type=task, parent=features.bees-d3s]")
-
-# Compare to named query approach (two-step)
-add_named_query(name="epic_children", query_yaml="- [type=epic]\n- [children]")
-execute_query(query_name="epic_children")
-# Same results, but query is persisted for reuse
-
-# Generate index for all hives
-generate_index()
-
-# Generate index filtered by status and type
-generate_index(status="open", type="task")
-
-# Generate index for specific hive only
-generate_index(hive_name="backend")
-
-# Generate index for specific hive with filters
-generate_index(hive_name="backend", status="open")
-```
-
