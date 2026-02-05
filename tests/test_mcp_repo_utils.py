@@ -3,6 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
 from src.mcp_repo_utils import get_repo_root_from_path, get_client_repo_root, get_repo_root
+from fastmcp.exceptions import NotFoundError
 
 
 # Tests for get_repo_root_from_path()
@@ -146,7 +147,7 @@ async def test_get_client_repo_root_returns_none_on_exception():
     ctx = Mock()
 
     async def mock_list_roots():
-        raise Exception("Method not found (-32601)")
+        raise NotFoundError("Method not found (-32601)")
 
     ctx.list_roots = mock_list_roots
 
@@ -243,7 +244,7 @@ async def test_get_repo_root_returns_none_on_context_exception():
     ctx = Mock()
 
     async def mock_list_roots():
-        raise Exception("Method not found")
+        raise NotFoundError("Method not found")
 
     ctx.list_roots = mock_list_roots
 
@@ -328,7 +329,7 @@ async def test_logging_on_roots_unavailable(caplog):
     ctx = Mock()
 
     async def mock_list_roots():
-        raise Exception("Method not found")
+        raise NotFoundError("Method not found")
 
     ctx.list_roots = mock_list_roots
 

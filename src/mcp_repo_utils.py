@@ -9,6 +9,7 @@ context, and coordinating fallback logic.
 import logging
 from pathlib import Path
 from fastmcp import Context
+from fastmcp.exceptions import NotFoundError
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -94,10 +95,10 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         logger.info(f"Using first root as client repo root: {root_path}")
         return Path(root_path)
 
-    except Exception as e:
+    except NotFoundError:
         # Method not found (-32601) means client doesn't support roots
         # This is normal for clients that don't implement the roots protocol
-        logger.info(f"Client doesn't support roots protocol: {e}")
+        logger.info("Client doesn't support roots protocol")
         return None
 
 
