@@ -36,8 +36,8 @@ down_dependencies:
 - features.bees-a2g
 parent: features.bees-ycr
 created_at: '2026-02-05T12:45:40.638318'
-updated_at: '2026-02-05T12:45:47.967328'
-status: open
+updated_at: '2026-02-05T15:45:46.366596'
+status: cancelled
 bees_version: '1.1'
 ---
 

@@ -31,9 +31,9 @@ description: 'Context: After mocking `get_repo_root_from_path`, need to force re
 
   Reference: Task features.bees-ycr'
 parent: features.bees-ycr
-status: open
 created_at: '2026-02-05T12:45:28.344918'
-updated_at: '2026-02-05T12:45:28.344921'
+updated_at: '2026-02-05T15:45:44.182896'
+status: cancelled
 bees_version: '1.1'
 ---
 

@@ -24,12 +24,12 @@ description: 'Context: Document the module reload approach in conftest.py so dev
 
 
   Reference: Task features.bees-ycr'
-parent: features.bees-ycr
 up_dependencies:
 - features.bees-02n
-status: open
+parent: features.bees-ycr
 created_at: '2026-02-05T12:45:33.937723'
-updated_at: '2026-02-05T12:45:33.937727'
+updated_at: '2026-02-05T15:45:44.963798'
+status: cancelled
 bees_version: '1.1'
 ---
 

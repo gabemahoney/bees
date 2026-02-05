@@ -25,12 +25,12 @@ description: 'Context: Document the technical implementation of module reloading
 
 
   Reference: Task features.bees-ycr'
-parent: features.bees-ycr
 up_dependencies:
 - features.bees-02n
-status: open
+parent: features.bees-ycr
 created_at: '2026-02-05T12:45:36.941339'
-updated_at: '2026-02-05T12:45:36.941344'
+updated_at: '2026-02-05T15:45:45.655245'
+status: cancelled
 bees_version: '1.1'
 ---
 

@@ -28,8 +28,8 @@ down_dependencies:
 - features.bees-47c
 parent: features.bees-ycr
 created_at: '2026-02-05T12:45:24.308043'
-updated_at: '2026-02-05T12:45:40.643828'
-status: open
+updated_at: '2026-02-05T15:45:43.474033'
+status: cancelled
 bees_version: '1.1'
 ---
 
