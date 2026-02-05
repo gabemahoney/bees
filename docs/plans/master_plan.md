@@ -201,6 +201,28 @@ The integration test suite documents and verifies the architectural distinction 
 **Rationale:**
 This two-tier approach balances performance (minimal fixture setup) with correctness (full MCP sync). The integration tests ensure the distinction is documented and verified, preventing confusion about when bidirectional sync occurs. Addresses coverage gap noted in `test_fixtures.py:174`.
 
+### Validation Test Strategy
+
+**Architectural Decision: Essential Test Coverage for Simple Validation Functions**
+
+For simple validation functions (e.g., `is_valid_ticket_id()`), we adopted a focused testing strategy that prioritizes essential coverage over exhaustive permutations:
+
+**5-Case Pattern:**
+1. **Valid format** - Representative valid inputs demonstrating expected patterns
+2. **Invalid prefix format** - Uppercase, hyphens, leading numbers (combined into one test)
+3. **Invalid suffix format** - Malformed bees-xxx suffixes
+4. **Missing/multiple separators** - Dot separator edge cases
+5. **Empty/None input** - Boundary conditions
+
+**Rationale:**
+- Regex-based validators have predictable behavior - testing every invalid permutation adds little value
+- Combining related invalid cases (e.g., uppercase, hyphen, leading number) reduces test count while maintaining coverage
+- This approach reduces test maintenance overhead without sacrificing confidence
+- Focus shifted to edge cases (empty, None, boundary conditions) rather than combinatorial invalid patterns
+
+**Implementation:**
+Applied to `tests/test_id_utils.py::TestIsValidTicketIdWithHive` which was reduced from 9 granular tests to 5 essential cases while maintaining comprehensive validation coverage. Previous tests verified individual invalid cases separately; new approach groups related failures logically.
+
 ## Quick Reference
 
 For implementation details, see the architecture documentation linked above. Key integration points:

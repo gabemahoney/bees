@@ -134,47 +134,47 @@ class TestIsValidTicketIdWithHive:
     """Tests for is_valid_ticket_id() with hive-prefixed IDs."""
 
     def test_valid_hive_prefixed_ids(self):
-        """Should accept hive-prefixed IDs."""
+        """Should accept valid hive-prefixed ID formats."""
         assert is_valid_ticket_id("backend.bees-abc")
         assert is_valid_ticket_id("my_hive.bees-123")
         assert is_valid_ticket_id("front_end.bees-x9z")
-
-    def test_hive_with_numbers(self):
-        """Should accept hive names with numbers."""
         assert is_valid_ticket_id("hive_v2.bees-abc")
-        assert is_valid_ticket_id("test123.bees-xyz")
-
-    def test_hive_starting_with_underscore(self):
-        """Should accept hive names starting with underscore."""
         assert is_valid_ticket_id("_private.bees-abc")
-        assert is_valid_ticket_id("_test.bees-123")
 
-    def test_invalid_hive_uppercase(self):
-        """Should reject uppercase in hive name."""
+    def test_invalid_hive_prefix_format(self):
+        """Should reject invalid hive prefix formats (uppercase, hyphen, leading number)."""
+        # Uppercase not allowed
         assert not is_valid_ticket_id("BackEnd.bees-abc")
         assert not is_valid_ticket_id("HIVE.bees-123")
-
-    def test_invalid_hive_with_hyphen(self):
-        """Should reject hyphens in hive name."""
+        # Hyphens not allowed
         assert not is_valid_ticket_id("back-end.bees-abc")
         assert not is_valid_ticket_id("my-hive.bees-123")
-
-    def test_invalid_hive_starting_with_number(self):
-        """Should reject hive names starting with number."""
+        # Leading numbers not allowed
         assert not is_valid_ticket_id("2backend.bees-abc")
         assert not is_valid_ticket_id("123test.bees-xyz")
 
-    def test_invalid_no_dot_separator(self):
-        """Should reject missing dot separator."""
-        assert not is_valid_ticket_id("backendbees-abc")
+    def test_invalid_suffix_format(self):
+        """Should reject invalid bees-xxx suffix formats."""
+        assert not is_valid_ticket_id("backend.bees-")
+        assert not is_valid_ticket_id("backend.bees-AB")
+        assert not is_valid_ticket_id("backend.bees-abcd")
+        assert not is_valid_ticket_id("backend.invalid-abc")
 
-    def test_invalid_multiple_dots(self):
-        """Should reject multiple dots."""
+    def test_invalid_separator(self):
+        """Should reject missing or multiple dot separators."""
+        # Missing separator
+        assert not is_valid_ticket_id("backendbees-abc")
+        # Multiple dots
         assert not is_valid_ticket_id("back.end.bees-abc")
 
-    def test_invalid_empty_hive(self):
-        """Should reject empty hive name."""
+    def test_invalid_empty_or_none(self):
+        """Should reject empty hive name, empty string, and None input."""
+        # Empty hive
         assert not is_valid_ticket_id(".bees-abc")
+        # Empty string
+        assert not is_valid_ticket_id("")
+        # None input (type: ignore needed for testing runtime behavior)
+        assert not is_valid_ticket_id(None)  # type: ignore
 
 
 class TestGenerateUniqueTicketIdWithHive:

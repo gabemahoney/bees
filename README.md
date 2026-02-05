@@ -79,7 +79,19 @@ The MCP Server has a linter which will verify metadata integrity and warn.
 
 ## Testing
 
-Bees provides tiered pytest fixtures in `tests/conftest.py` for different test scenarios:
+Bees provides tiered pytest fixtures in `tests/conftest.py` for different test scenarios.
+
+### Testing Philosophy
+
+For simple validation functions like `is_valid_ticket_id()`, we focus on **essential test cases** that cover the core validation logic without exhaustive permutations:
+
+1. **Valid format** - Representative valid inputs
+2. **Invalid prefix format** - Uppercase, hyphens, leading numbers
+3. **Invalid suffix format** - Malformed bees-xxx suffixes
+4. **Missing/multiple separators** - Dot separator edge cases
+5. **Empty/None input** - Boundary conditions
+
+This approach maintains high confidence in validation correctness while reducing test maintenance overhead. The 5-case pattern provides comprehensive coverage for regex-based validation without testing every possible invalid permutation.
 
 ### Available Fixtures
 
