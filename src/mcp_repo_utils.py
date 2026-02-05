@@ -10,6 +10,7 @@ import logging
 from pathlib import Path
 from fastmcp import Context
 from fastmcp.exceptions import NotFoundError
+from mcp.shared.exceptions import McpError
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -97,10 +98,10 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         logger.info(f"Using first root as client repo root: {root_path}")
         return Path(root_path)
 
-    except NotFoundError as e:
+    except (NotFoundError, McpError) as e:
         # Method not found (-32601) means client doesn't support roots
         # This is normal for clients that don't implement the roots protocol
-        logger.info(f"Client doesn't support roots protocol - NotFoundError: {e}")
+        logger.info(f"Client doesn't support roots protocol - {type(e).__name__}: {e}")
         return None
     except Exception as e:
         # Catch any other exceptions to help debug
