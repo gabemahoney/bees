@@ -1,3 +1,4 @@
+- Rename src.main to bee.main or something so that its more clear its the bees server in ps
 - Quality
   - git hook to run tests as CI
   - improve make-task and do-task with more instructions - check old tests for broken

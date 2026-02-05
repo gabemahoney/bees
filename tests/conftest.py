@@ -2,9 +2,29 @@
 
 import json
 import pytest
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 from src.repo_context import repo_root_context
+
+
+@pytest.fixture(scope="session", autouse=True)
+def backup_project_config():
+    """Backup and restore the project's .bees/config.json to prevent test pollution."""
+    project_root = Path(__file__).parent.parent
+    config_path = project_root / ".bees" / "config.json"
+    backup_path = project_root / ".bees" / "config.json.test_backup"
+    
+    # Backup if config exists
+    if config_path.exists():
+        shutil.copy2(config_path, backup_path)
+    
+    yield
+    
+    # Restore from backup
+    if backup_path.exists():
+        shutil.copy2(backup_path, config_path)
+        backup_path.unlink()
 
 
 @pytest.fixture(autouse=True)

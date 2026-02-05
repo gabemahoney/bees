@@ -2509,13 +2509,16 @@ class TestUpdateTicketHiveParsing:
         return config
 
     @pytest.fixture
-    def setup_test_ticket(self, tmp_path, mock_config):
+    def setup_test_ticket(self, tmp_path, mock_config, monkeypatch):
         """Create a test ticket with prefixed ID."""
         from src.ticket_factory import create_task
         from src.config import save_bees_config
 
-        # Save config
-        config_dir = Path(".bees")
+        # Change to tmp_path to ensure all file operations are isolated
+        monkeypatch.chdir(tmp_path)
+        
+        # Save config (will use tmp_path from autouse fixture's Path.cwd())
+        config_dir = tmp_path / ".bees"
         config_dir.mkdir(exist_ok=True)
         save_bees_config(mock_config)
 
