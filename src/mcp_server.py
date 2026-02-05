@@ -145,51 +145,51 @@ def _health_check() -> Dict[str, Any]:
 
 
 # Register the health_check tool with FastMCP
-health_check = mcp.tool(name="health_check")(_health_check)
+health_check = mcp.tool(name="- health_check")(_health_check)
 
 
 # Register the create_ticket tool with FastMCP (implementation in mcp_ticket_ops.py)
-create_ticket = mcp.tool(name="create_ticket")(_create_ticket)
+create_ticket = mcp.tool(name="- create_ticket")(_create_ticket)
 
 
 # Register the update_ticket tool with FastMCP (implementation in mcp_ticket_ops.py)
-update_ticket = mcp.tool(name="update_ticket")(_update_ticket)
+update_ticket = mcp.tool(name="- update_ticket")(_update_ticket)
 
 
 # Register the delete_ticket tool with FastMCP (implementation in mcp_ticket_ops.py)
-delete_ticket = mcp.tool(name="delete_ticket")(_delete_ticket)
+delete_ticket = mcp.tool(name="- delete_ticket")(_delete_ticket)
 
 
 # Register hive lifecycle operation tools with FastMCP (implementation in mcp_hive_ops.py)
-colonize_hive = mcp.tool(name="colonize_hive")(_colonize_hive)
-list_hives = mcp.tool(name="list_hives")(_list_hives)
-abandon_hive = mcp.tool(name="abandon_hive")(_abandon_hive)
-rename_hive = mcp.tool(name="rename_hive")(_rename_hive)
-sanitize_hive = mcp.tool(name="sanitize_hive")(_sanitize_hive)
+colonize_hive = mcp.tool(name="- colonize_hive")(_colonize_hive)
+list_hives = mcp.tool(name="- list_hives")(_list_hives)
+abandon_hive = mcp.tool(name="- abandon_hive")(_abandon_hive)
+rename_hive = mcp.tool(name="- rename_hive")(_rename_hive)
+sanitize_hive = mcp.tool(name="- sanitize_hive")(_sanitize_hive)
 
 
 # Register the add_named_query tool with FastMCP (implementation in mcp_query_ops.py)
-add_named_query = mcp.tool(name="add_named_query")(_add_named_query)
+add_named_query = mcp.tool(name="- add_named_query")(_add_named_query)
 
 
 # Register the execute_query tool with FastMCP (implementation in mcp_query_ops.py)
-execute_query = mcp.tool(name="execute_query")(_execute_query)
+execute_query = mcp.tool(name="- execute_query")(_execute_query)
 
 
 # Register the execute_freeform_query tool with FastMCP (implementation in mcp_query_ops.py)
-execute_freeform_query = mcp.tool(name="execute_freeform_query")(_execute_freeform_query)
+execute_freeform_query = mcp.tool(name="- execute_freeform_query")(_execute_freeform_query)
 
 
 # Register the show_ticket tool with FastMCP (implementation in mcp_ticket_ops.py)
-show_ticket = mcp.tool(name="show_ticket")(_show_ticket)
+show_ticket = mcp.tool(name="- show_ticket")(_show_ticket)
 
 
 # Register the generate_index tool with FastMCP
-generate_index_tool = mcp.tool(name="generate_index")(_generate_index)
+generate_index_tool = mcp.tool(name="- generate_index")(_generate_index)
 
 
 # Register the help tool with FastMCP
-help = mcp.tool(name="help")(_help)
+help = mcp.tool(name="- help")(_help)
 
 
 if __name__ == "__main__":

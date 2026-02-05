@@ -71,7 +71,9 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         >>>     print("Client doesn't support roots protocol")
     """
     try:
+        logger.info(f"Calling ctx.list_roots() - ctx type: {type(ctx)}, ctx: {ctx}")
         roots = await ctx.list_roots()
+        logger.info(f"ctx.list_roots() returned: {roots}")
 
         if not roots or len(roots) == 0:
             logger.warning("Client returned empty roots list")
@@ -95,11 +97,15 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         logger.info(f"Using first root as client repo root: {root_path}")
         return Path(root_path)
 
-    except NotFoundError:
+    except NotFoundError as e:
         # Method not found (-32601) means client doesn't support roots
         # This is normal for clients that don't implement the roots protocol
-        logger.info("Client doesn't support roots protocol")
+        logger.info(f"Client doesn't support roots protocol - NotFoundError: {e}")
         return None
+    except Exception as e:
+        # Catch any other exceptions to help debug
+        logger.error(f"Unexpected error in get_client_repo_root: {type(e).__name__}: {e}")
+        raise
 
 
 async def get_repo_root(ctx: Context | None) -> Path | None:
@@ -132,9 +138,14 @@ async def get_repo_root(ctx: Context | None) -> Path | None:
         client_root = await get_client_repo_root(ctx)
         if client_root:
             # Client supports roots - use it
-            repo_root = get_repo_root_from_path(client_root)
-            logger.info(f"Using client repo root from MCP context: {repo_root}")
-            return repo_root
+            try:
+                repo_root = get_repo_root_from_path(client_root)
+                logger.info(f"Using client repo root from MCP context: {repo_root}")
+                return repo_root
+            except ValueError as e:
+                # Client provided a root but it's not a git repo
+                logger.error(f"Client root {client_root} is not a git repository: {e}")
+                raise
         else:
             # Client doesn't support roots protocol or list_roots() failed
             # Return None so caller can implement appropriate fallback

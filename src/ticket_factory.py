@@ -64,7 +64,7 @@ def create_epic(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives()
+        existing_ids = extract_existing_ids_from_all_hives(repo_root)
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
@@ -157,7 +157,7 @@ def create_task(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives()
+        existing_ids = extract_existing_ids_from_all_hives(repo_root)
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
@@ -255,7 +255,7 @@ def create_subtask(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives()
+        existing_ids = extract_existing_ids_from_all_hives(repo_root)
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data

@@ -160,9 +160,12 @@ def get_config_path(repo_root: Path | None = None) -> Path:
         ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
+        import traceback
+        stack = ''.join(traceback.format_stack())
         raise ValueError(
-            "repo_root is required. Your MCP client does not support the roots protocol. "
-            "Please provide repo_root explicitly when calling this tool."
+            f"repo_root is None!\nStack trace:\n{stack}\n"
+            f"Original error: repo_root is required. Your MCP client does not support the roots protocol. "
+            f"Please provide repo_root explicitly when calling this tool."
         )
 
     return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
@@ -179,9 +182,12 @@ def ensure_bees_dir(repo_root: Path | None = None) -> None:
         ValueError: If repo_root is None and not in a git repository
     """
     if repo_root is None:
+        import traceback
+        stack = ''.join(traceback.format_stack())
         raise ValueError(
-            "repo_root is required. Your MCP client does not support the roots protocol. "
-            "Please provide repo_root explicitly when calling this tool."
+            f"repo_root is None!\nStack trace:\n{stack}\n"
+            f"Original error: repo_root is required. Your MCP client does not support the roots protocol. "
+            f"Please provide repo_root explicitly when calling this tool."
         )
     
     bees_dir = repo_root / BEES_CONFIG_DIR

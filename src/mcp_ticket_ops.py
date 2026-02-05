@@ -86,6 +86,16 @@ async def _create_ticket(
     Raises:
         ValueError: If ticket_type is invalid or validation fails
     """
+    # DEBUG: Log ctx info at the very start
+    import datetime
+    debug_log = "/tmp/bees_mcp_debug.log"
+    with open(debug_log, "a") as f:
+        f.write(f"\n{'='*80}\n")
+        f.write(f"{datetime.datetime.now()}: _create_ticket called\n")
+        f.write(f"ctx={ctx}, type(ctx)={type(ctx)}\n")
+        f.flush()
+    logger.error(f"DEBUG _create_ticket: ctx={ctx}, type(ctx)={type(ctx)}")
+
     # Validate ticket_type
     if ticket_type not in ["epic", "task", "subtask"]:
         error_msg = f"Invalid ticket_type: {ticket_type}. Must be 'epic', 'task', or 'subtask'"
@@ -121,8 +131,20 @@ async def _create_ticket(
     normalized_hive = normalize_hive_name(hive_name)
 
     # Get client's repo root from MCP context
+    with open("/tmp/bees_mcp_debug.log", "a") as f:
+        f.write(f"About to call get_repo_root, ctx is not None: {ctx is not None}\n")
+        f.flush()
+    logger.error(f"DEBUG: About to call get_repo_root, ctx={ctx is not None}")
     if ctx:
+        with open("/tmp/bees_mcp_debug.log", "a") as f:
+            f.write(f"Calling get_repo_root(ctx)\n")
+            f.flush()
+        logger.error(f"DEBUG: Calling get_repo_root(ctx)")
         repo_root = await get_repo_root(ctx)
+        with open("/tmp/bees_mcp_debug.log", "a") as f:
+            f.write(f"get_repo_root returned: {repo_root}\n")
+            f.flush()
+        logger.error(f"DEBUG: get_repo_root returned: {repo_root}")
         if not repo_root:
             # Roots protocol unavailable - cannot determine client repo
             error_msg = (
@@ -145,6 +167,12 @@ async def _create_ticket(
     logger.info(f"create_ticket: Config exists: {config_path.exists()}")
     logger.info(f"create_ticket: Config hives: {list(config.hives.keys()) if config else 'None'}")
     logger.info(f"create_ticket: Looking for hive: '{normalized_hive}'")
+
+    with open("/tmp/bees_mcp_debug.log", "a") as f:
+        f.write(f"After 'Looking for hive', about to check if hive exists\n")
+        f.write(f"config is not None: {config is not None}\n")
+        f.write(f"normalized_hive in config.hives: {normalized_hive in config.hives if config else 'N/A'}\n")
+        f.flush()
 
     if not config or normalized_hive not in config.hives:
         # Provide helpful error message guiding users to create hive first
@@ -189,6 +217,9 @@ async def _create_ticket(
         raise ValueError(error_msg)
 
     # Validate hive path exists and is writable
+    with open("/tmp/bees_mcp_debug.log", "a") as f:
+        f.write(f"About to validate hive path\n")
+        f.flush()
     hive_path = Path(config.hives[normalized_hive].path)
 
     # Resolve symlinks to get the actual path
@@ -237,8 +268,11 @@ async def _create_ticket(
         raise ValueError(error_msg)
 
     # Validate parent ticket exists
+    with open("/tmp/bees_mcp_debug.log", "a") as f:
+        f.write(f"About to validate parent ticket (if exists)\n")
+        f.flush()
     if parent:
-        parent_type = infer_ticket_type_from_id(parent)
+        parent_type = infer_ticket_type_from_id(parent, repo_root)
         if not parent_type:
             error_msg = f"Parent ticket does not exist: {parent}"
             logger.error(error_msg)
@@ -247,7 +281,7 @@ async def _create_ticket(
     # Validate dependency tickets exist
     if up_dependencies:
         for dep_id in up_dependencies:
-            dep_type = infer_ticket_type_from_id(dep_id)
+            dep_type = infer_ticket_type_from_id(dep_id, repo_root)
             if not dep_type:
                 error_msg = f"Dependency ticket does not exist: {dep_id}"
                 logger.error(error_msg)
@@ -255,7 +289,7 @@ async def _create_ticket(
 
     if down_dependencies:
         for dep_id in down_dependencies:
-            dep_type = infer_ticket_type_from_id(dep_id)
+            dep_type = infer_ticket_type_from_id(dep_id, repo_root)
             if not dep_type:
                 error_msg = f"Dependency ticket does not exist: {dep_id}"
                 logger.error(error_msg)
@@ -264,7 +298,7 @@ async def _create_ticket(
     # Validate children tickets exist
     if children:
         for child_id in children:
-            child_type = infer_ticket_type_from_id(child_id)
+            child_type = infer_ticket_type_from_id(child_id, repo_root)
             if not child_type:
                 error_msg = f"Child ticket does not exist: {child_id}"
                 logger.error(error_msg)
@@ -346,7 +380,9 @@ async def _create_ticket(
         }
 
     except Exception as e:
+        import traceback
         logger.error(f"Failed to create {ticket_type} ticket: {e}")
+        logger.error(f"Full traceback:\n{''.join(traceback.format_exc())}")
         raise
 
 
@@ -402,21 +438,21 @@ async def _update_ticket(
 
     # Validate hive exists in config using normalize_name for lookup
     normalized_hive = normalize_hive_name(hive_prefix)
-    config = load_bees_config()
+    config = load_bees_config(repo_root)
     if not config or normalized_hive not in config.hives:
         error_msg = f"Unknown hive: '{hive_prefix}' (normalized: '{normalized_hive}'). Hive not found in config."
         logger.error(error_msg)
         raise ValueError(error_msg)
 
     # Validate ticket exists
-    ticket_type = infer_ticket_type_from_id(ticket_id)
+    ticket_type = infer_ticket_type_from_id(ticket_id, repo_root)
     if not ticket_type:
         error_msg = f"Ticket does not exist: {ticket_id}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
     # Read existing ticket
-    ticket_path = get_ticket_path(ticket_id, ticket_type)
+    ticket_path = get_ticket_path(ticket_id, ticket_type, repo_root)
     try:
         ticket = read_ticket(ticket_path)
     except FileNotFoundError:
@@ -430,7 +466,7 @@ async def _update_ticket(
 
     # Validate relationship ticket IDs exist
     if parent is not _UNSET and parent:  # Check if parent is provided and not empty/None
-        parent_type = infer_ticket_type_from_id(parent)
+        parent_type = infer_ticket_type_from_id(parent, repo_root)
         if not parent_type:
             error_msg = f"Parent ticket does not exist: {parent}"
             logger.error(error_msg)
@@ -438,7 +474,7 @@ async def _update_ticket(
 
     if children is not _UNSET and children is not None:
         for child_id in children:
-            child_type = infer_ticket_type_from_id(child_id)
+            child_type = infer_ticket_type_from_id(child_id, repo_root)
             if not child_type:
                 error_msg = f"Child ticket does not exist: {child_id}"
                 logger.error(error_msg)
@@ -446,7 +482,7 @@ async def _update_ticket(
 
     if up_dependencies is not _UNSET and up_dependencies is not None:
         for dep_id in up_dependencies:
-            dep_type = infer_ticket_type_from_id(dep_id)
+            dep_type = infer_ticket_type_from_id(dep_id, repo_root)
             if not dep_type:
                 error_msg = f"Dependency ticket does not exist: {dep_id}"
                 logger.error(error_msg)
@@ -454,7 +490,7 @@ async def _update_ticket(
 
     if down_dependencies is not _UNSET and down_dependencies is not None:
         for dep_id in down_dependencies:
-            dep_type = infer_ticket_type_from_id(dep_id)
+            dep_type = infer_ticket_type_from_id(dep_id, repo_root)
             if not dep_type:
                 error_msg = f"Dependency ticket does not exist: {dep_id}"
                 logger.error(error_msg)
@@ -525,7 +561,8 @@ async def _update_ticket(
         ticket_id=ticket_id,
         ticket_type=ticket_type,
         frontmatter_data=frontmatter_data,
-        body=ticket.description or ""
+        body=ticket.description or "",
+        repo_root=repo_root
     )
 
     # Sync bidirectional relationships
@@ -641,14 +678,14 @@ async def _delete_ticket(
         raise ValueError(error_msg)
 
     # Validate ticket exists
-    ticket_type = infer_ticket_type_from_id(ticket_id)
+    ticket_type = infer_ticket_type_from_id(ticket_id, repo_root)
     if not ticket_type:
         error_msg = f"Ticket does not exist: {ticket_id}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
     # Read ticket to get relationships
-    ticket_path = get_ticket_path(ticket_id, ticket_type)
+    ticket_path = get_ticket_path(ticket_id, ticket_type, repo_root)
     try:
         ticket = read_ticket(ticket_path)
     except FileNotFoundError:
@@ -774,14 +811,14 @@ async def _show_ticket(ticket_id: str, ctx: Context | None = None) -> Dict[str, 
         raise ValueError(error_msg)
 
     # Infer ticket type from ID
-    ticket_type = infer_ticket_type_from_id(ticket_id)
+    ticket_type = infer_ticket_type_from_id(ticket_id, repo_root)
     if not ticket_type:
         error_msg = f"Ticket does not exist: {ticket_id}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
     # Get ticket path and read ticket
-    ticket_path = get_ticket_path(ticket_id, ticket_type)
+    ticket_path = get_ticket_path(ticket_id, ticket_type, repo_root)
     try:
         ticket = read_ticket(ticket_path)
     except FileNotFoundError:
