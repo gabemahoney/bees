@@ -388,7 +388,7 @@ async def _colonize_hive(
         raise ValueError(error_msg)
 
 
-async def _list_hives(ctx: Context) -> Dict[str, Any]:
+async def _list_hives(ctx: Context | None = None, repo_root: str | None = None) -> Dict[str, Any]:
     """
     List all registered hives in the repository.
 
@@ -398,6 +398,7 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
 
     Args:
         ctx: FastMCP Context (auto-injected, gets client's repo root)
+        repo_root: Optional explicit repo root path (fallback for non-Roots clients)
 
     Returns:
         dict: List of hives with their details
@@ -437,35 +438,40 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
         }
     """
     try:
-        # Get client's repo root from MCP context
-        repo_root = await get_repo_root(ctx)
+        # Resolve repo root and set up context
+        if ctx:
+            resolved_root = await resolve_repo_root(ctx, repo_root)
+        else:
+            # Non-MCP call (tests, CLI)
+            resolved_root = get_repo_root_from_path(Path.cwd())
+        
+        with repo_root_context(resolved_root):
+            # Load config from client's .bees/config.json
+            config = load_bees_config()
 
-        # Load config from client's .bees/config.json
-        config = load_bees_config()
+            # Handle case where config doesn't exist or has no hives
+            if not config or not config.hives:
+                logger.info("No hives configured")
+                return {
+                    "status": "success",
+                    "hives": [],
+                    "message": "No hives configured"
+                }
 
-        # Handle case where config doesn't exist or has no hives
-        if not config or not config.hives:
-            logger.info("No hives configured")
+            # Build list of hives with their details
+            hives_list = []
+            for normalized_name, hive_config in config.hives.items():
+                hives_list.append({
+                    "display_name": hive_config.display_name,
+                    "normalized_name": normalized_name,
+                    "path": hive_config.path
+                })
+
+            logger.info(f"Listed {len(hives_list)} hives")
             return {
                 "status": "success",
-                "hives": [],
-                "message": "No hives configured"
+                "hives": hives_list
             }
-
-        # Build list of hives with their details
-        hives_list = []
-        for normalized_name, hive_config in config.hives.items():
-            hives_list.append({
-                "display_name": hive_config.display_name,
-                "normalized_name": normalized_name,
-                "path": hive_config.path
-            })
-
-        logger.info(f"Listed {len(hives_list)} hives")
-        return {
-            "status": "success",
-            "hives": hives_list
-        }
 
     except Exception as e:
         error_msg = f"Failed to list hives: {e}"
@@ -473,7 +479,7 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
         raise ValueError(error_msg)
 
 
-async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
+async def _abandon_hive(hive_name: str, ctx: Context | None = None, repo_root: str | None = None) -> Dict[str, Any]:
     """
     Stop tracking a hive without deleting ticket files.
 
@@ -484,6 +490,7 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     Args:
         hive_name: Display name or normalized name of the hive to abandon
         ctx: FastMCP Context (auto-injected, gets client's repo root)
+        repo_root: Optional explicit repo root path (fallback for non-Roots clients)
 
     Returns:
         dict: Operation result with status and details
@@ -517,43 +524,42 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     normalized_name = normalize_hive_name(hive_name)
     logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
 
-    # Load config from .bees/config.json
-    # Get repo root
+    # Resolve repo root and set up context
     if ctx:
-        repo_root = await get_repo_root(ctx)
-        if not repo_root:
-            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+        resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
-        repo_root = get_repo_root_from_path(Path.cwd())
+        # Non-MCP call (tests, CLI)
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    
+    with repo_root_context(resolved_root):
+        config = load_bees_config()
 
-    config = load_bees_config()
+        # Check if hive exists
+        if not config or normalized_name not in config.hives:
+            error_msg = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
-    # Check if hive exists
-    if not config or normalized_name not in config.hives:
-        error_msg = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+        # Get hive details before removal
+        hive_config = config.hives[normalized_name]
+        display_name = hive_config.display_name
+        hive_path = hive_config.path
 
-    # Get hive details before removal
-    hive_config = config.hives[normalized_name]
-    display_name = hive_config.display_name
-    hive_path = hive_config.path
+        # Remove hive from config
+        del config.hives[normalized_name]
 
-    # Remove hive from config
-    del config.hives[normalized_name]
+        # Save updated config
+        save_bees_config(config)
+        logger.info(f"Removed hive '{normalized_name}' from config.json")
 
-    # Save updated config
-    save_bees_config(config)
-    logger.info(f"Removed hive '{normalized_name}' from config.json")
-
-    # Success response
-    return {
-        "status": "success",
-        "message": f"Hive \"{display_name}\" abandoned successfully",
-        "display_name": display_name,
-        "normalized_name": normalized_name,
-        "path": hive_path
-    }
+        # Success response
+        return {
+            "status": "success",
+            "message": f"Hive \"{display_name}\" abandoned successfully",
+            "display_name": display_name,
+            "normalized_name": normalized_name,
+            "path": hive_path
+        }
 
 
 async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None, repo_root: str | None = None) -> Dict[str, Any]:
