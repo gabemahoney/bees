@@ -6,16 +6,22 @@ Handles filtering and generation of ticket indexes.
 """
 
 import logging
+from pathlib import Path
 from typing import Dict, Any
+from fastmcp import Context
 from .index_generator import generate_index
+from .mcp_repo_utils import resolve_repo_root, get_repo_root_from_path
+from .repo_context import repo_root_context
 
 logger = logging.getLogger(__name__)
 
 
-def _generate_index(
+async def _generate_index(
     status: str | None = None,
     type: str | None = None,
-    hive_name: str | None = None
+    hive_name: str | None = None,
+    ctx: Context | None = None,
+    repo_root: str | None = None
 ) -> Dict[str, Any]:
     """
     Generate markdown index of all tickets with optional filters.
@@ -48,11 +54,18 @@ def _generate_index(
         result = _generate_index(hive_name='backend')
     """
     try:
-        index_markdown = generate_index(
-            status_filter=status,
-            type_filter=type,
-            hive_name=hive_name
-        )
+        # Resolve repo root from Roots protocol or explicit parameter
+        if ctx:
+            resolved_root = await resolve_repo_root(ctx, repo_root)
+        else:
+            resolved_root = get_repo_root_from_path(Path.cwd())
+        
+        with repo_root_context(resolved_root):
+            index_markdown = generate_index(
+                status_filter=status,
+                type_filter=type,
+                hive_name=hive_name
+            )
         logger.info(f"Successfully generated ticket index (status={status}, type={type}, hive_name={hive_name})")
         return {
             "status": "success",

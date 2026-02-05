@@ -128,7 +128,7 @@ class TestLoadHivesConfig:
             schema_version="1.0"
         )
         
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Load config
         loaded = load_hives_config()

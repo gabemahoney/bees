@@ -12,6 +12,7 @@ from typing import Dict, List, Set, Any
 
 from src.search_executor import SearchExecutor
 from src.graph_executor import GraphExecutor
+from src.repo_context import get_repo_root
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +33,18 @@ class PipelineEvaluator:
     - Batch query execution support
     """
 
-    def __init__(self, tickets_dir: str = "tickets"):
-        """Initialize pipeline and load all tickets into memory.
+    def __init__(self, tickets_dir: str | None = None):
+        """Initialize pipeline and load all tickets into memory from configured hives.
 
         Args:
-            tickets_dir: Path to tickets directory containing markdown files with YAML frontmatter
+            tickets_dir: DEPRECATED - kept for backward compatibility, not used
 
         Raises:
-            FileNotFoundError: If tickets directory not found
+            FileNotFoundError: If hive directories not found
             ValueError: If YAML frontmatter contains invalid syntax
         """
-        self.tickets_dir = Path(tickets_dir)
+        # DEPRECATED: tickets_dir parameter is kept for backward compatibility
+        # but is no longer used. Tickets are now loaded from hives defined in config.
 
         # In-memory ticket storage: ticket_id -> ticket_data
         self.tickets: Dict[str, Dict[str, Any]] = {}
@@ -51,15 +53,15 @@ class PipelineEvaluator:
         self.search_executor = SearchExecutor()
         self.graph_executor = GraphExecutor()
 
-        # Load all tickets into memory
+        # Load all tickets into memory from all hives
         self._load_tickets()
 
-        logger.info(f"Loaded {len(self.tickets)} tickets into memory")
+        logger.info(f"Loaded {len(self.tickets)} tickets into memory from all hives")
 
     def _load_tickets(self) -> None:
-        """Load all tickets from markdown files with YAML frontmatter into memory.
+        """Load all tickets from markdown files with YAML frontmatter from all configured hives.
 
-        Scans hive root directory (flat storage) for *.md files and parses YAML
+        Scans each hive root directory (flat storage) for *.md files and parses YAML
         frontmatter from each. Only processes files with bees_version field.
         Skips subdirectories (/eggs, /evicted). Stores tickets as dict[ticket_id -> ticket_data].
 
@@ -67,62 +69,76 @@ class PipelineEvaluator:
             FileNotFoundError: If hive directory not found
             ValueError: If YAML frontmatter contains invalid syntax
         """
-        if not self.tickets_dir.exists():
-            raise FileNotFoundError(
-                f"Tickets directory not found: {self.tickets_dir}. "
-                f"Ensure tickets directory exists at hive root."
-            )
-
-        # Scan only hive root for markdown files (flat storage)
-        for md_file in self.tickets_dir.glob('*.md'):
-            # Skip files in subdirectories (e.g., /eggs, /evicted)
-            if md_file.parent != self.tickets_dir:
+        from src.config import load_bees_config
+        
+        # Load hive configuration
+        config = load_bees_config()
+        
+        if not config or not config.hives:
+            # No hives configured - return with empty ticket set
+            logger.warning("No hives configured, no tickets will be loaded")
+            return
+        
+        # Load tickets from each hive
+        for hive_name, hive_config in config.hives.items():
+            hive_path = Path(hive_config.path)
+            
+            if not hive_path.exists():
+                logger.warning(f"Hive directory not found: {hive_path} (hive: {hive_name})")
                 continue
-
-            try:
-                with open(md_file, 'r') as f:
-                    content = f.read()
-
-                # Parse YAML frontmatter
-                if not content.startswith('---'):
-                    logger.warning(f"Skipping {md_file}: no YAML frontmatter")
+            
+            logger.debug(f"Loading tickets from hive '{hive_name}' at {hive_path}")
+            
+            # Scan only hive root for markdown files (flat storage)
+            for md_file in hive_path.glob('*.md'):
+                # Skip files in subdirectories (e.g., /eggs, /evicted)
+                if md_file.parent != hive_path:
                     continue
 
-                # Extract frontmatter between --- delimiters
-                parts = content.split('---', 2)
-                if len(parts) < 3:
-                    logger.warning(f"Skipping {md_file}: malformed YAML frontmatter")
+                try:
+                    with open(md_file, 'r') as f:
+                        content = f.read()
+
+                    # Parse YAML frontmatter
+                    if not content.startswith('---'):
+                        logger.warning(f"Skipping {md_file}: no YAML frontmatter")
+                        continue
+
+                    # Extract frontmatter between --- delimiters
+                    parts = content.split('---', 2)
+                    if len(parts) < 3:
+                        logger.warning(f"Skipping {md_file}: malformed YAML frontmatter")
+                        continue
+
+                    frontmatter_str = parts[1]
+                    ticket = yaml.safe_load(frontmatter_str)
+
+                    if not isinstance(ticket, dict):
+                        logger.warning(f"Skipping {md_file}: frontmatter is not a dict")
+                        continue
+
+                    # Filter by bees_version field - skip files without it
+                    if 'bees_version' not in ticket:
+                        logger.debug(f"Skipping {md_file}: no bees_version field")
+                        continue
+
+                    # Extract ticket ID and store ticket data
+                    ticket_id = ticket.get('id')
+                    if not ticket_id:
+                        logger.warning(f"Skipping {md_file}: no ID in frontmatter")
+                        continue
+
+                    # Normalize ticket data structure for executors
+                    normalized = self._normalize_ticket(ticket)
+                    self.tickets[ticket_id] = normalized
+
+                except yaml.YAMLError as e:
+                    raise ValueError(
+                        f"Invalid YAML in {md_file}: {e}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Error loading {md_file}: {e}")
                     continue
-
-                frontmatter_str = parts[1]
-                ticket = yaml.safe_load(frontmatter_str)
-
-                if not isinstance(ticket, dict):
-                    logger.warning(f"Skipping {md_file}: frontmatter is not a dict")
-                    continue
-
-                # Filter by bees_version field - skip files without it
-                if 'bees_version' not in ticket:
-                    logger.debug(f"Skipping {md_file}: no bees_version field")
-                    continue
-
-                # Extract ticket ID and store ticket data
-                ticket_id = ticket.get('id')
-                if not ticket_id:
-                    logger.warning(f"Skipping {md_file}: no ID in frontmatter")
-                    continue
-
-                # Normalize ticket data structure for executors
-                normalized = self._normalize_ticket(ticket)
-                self.tickets[ticket_id] = normalized
-
-            except yaml.YAMLError as e:
-                raise ValueError(
-                    f"Invalid YAML in {md_file}: {e}"
-                )
-            except Exception as e:
-                logger.warning(f"Error loading {md_file}: {e}")
-                continue
 
         # Second pass: Build reverse relationships (children from parents, etc)
         self._build_reverse_relationships()

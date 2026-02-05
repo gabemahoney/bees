@@ -16,7 +16,8 @@ from .query_storage import save_query, load_query, list_queries
 from .query_parser import QueryParser, QueryValidationError
 from .pipeline import PipelineEvaluator
 from .config import load_bees_config
-from .mcp_repo_utils import get_repo_root_from_path, get_repo_root
+from .mcp_repo_utils import get_repo_root_from_path, get_repo_root, resolve_repo_root
+from .repo_context import repo_root_context
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,8 @@ def _add_named_query(
 async def _execute_query(
     query_name: str,
     hive_names: list[str] | None = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
+    repo_root: str | None = None
 ) -> Dict[str, Any]:
     """
     Execute a named query.
@@ -115,54 +117,54 @@ async def _execute_query(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Validate hive existence if hive_names provided
-    if hive_names:
-        # Get repo root
-        if ctx:
-            repo_root = await get_repo_root(ctx)
-            if not repo_root:
-                raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
-        else:
-            repo_root = get_repo_root_from_path(Path.cwd())
-
-        config = load_bees_config(repo_root)
-        if config is None:
-            error_msg = "No hives configured. Available hives: none"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        # Check each hive exists
-        for hive_name in hive_names:
-            if hive_name not in config.hives:
-                available_hives = sorted(config.hives.keys())
-                error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+    # Resolve repo root and set context for entire function
+    if ctx:
+        resolved_root = await resolve_repo_root(ctx, repo_root)
+    else:
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    
+    with repo_root_context(resolved_root):
+        # Validate hive existence if hive_names provided
+        if hive_names:
+            config = load_bees_config()
+            if config is None:
+                error_msg = "No hives configured. Available hives: none"
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-    # Execute query using pipeline evaluator
-    try:
-        evaluator = PipelineEvaluator()
-        result_ids = evaluator.execute_query(stages, hive_names=hive_names)
+            # Check each hive exists
+            for hive_name in hive_names:
+                if hive_name not in config.hives:
+                    available_hives = sorted(config.hives.keys())
+                    error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
 
-        logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
+        # Execute query using pipeline evaluator
+        try:
+            evaluator = PipelineEvaluator()
+            result_ids = evaluator.execute_query(stages, hive_names=hive_names)
 
-        return {
-            "status": "success",
-            "query_name": query_name,
-            "result_count": len(result_ids),
-            "ticket_ids": sorted(result_ids)
-        }
+            logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
 
-    except Exception as e:
-        error_msg = f"Failed to execute query '{query_name}': {e}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+            return {
+                "status": "success",
+                "query_name": query_name,
+                "result_count": len(result_ids),
+                "ticket_ids": sorted(result_ids)
+            }
+
+        except Exception as e:
+            error_msg = f"Failed to execute query '{query_name}': {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
 
 async def _execute_freeform_query(
     query_yaml: str,
     hive_names: list[str] | None = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
+    repo_root: str | None = None
 ) -> Dict[str, Any]:
     """
     Execute a YAML query pipeline directly without persisting it.
@@ -206,45 +208,44 @@ async def _execute_freeform_query(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Validate hive existence if hive_names provided
-    if hive_names:
-        # Get repo root
-        if ctx:
-            repo_root = await get_repo_root(ctx)
-            if not repo_root:
-                raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
-        else:
-            repo_root = get_repo_root_from_path(Path.cwd())
-
-        config = load_bees_config(repo_root)
-        if config is None:
-            error_msg = "No hives configured. Available hives: none"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-
-        # Check each hive exists
-        for hive_name in hive_names:
-            if hive_name not in config.hives:
-                available_hives = sorted(config.hives.keys())
-                error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+    # Resolve repo root and set context for entire function
+    if ctx:
+        resolved_root = await resolve_repo_root(ctx, repo_root)
+    else:
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    
+    with repo_root_context(resolved_root):
+        # Validate hive existence if hive_names provided
+        if hive_names:
+            config = load_bees_config()
+            if config is None:
+                error_msg = "No hives configured. Available hives: none"
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-    # Execute query using pipeline evaluator
-    try:
-        evaluator = PipelineEvaluator()
-        result_ids = evaluator.execute_query(stages, hive_names=hive_names)
+            # Check each hive exists
+            for hive_name in hive_names:
+                if hive_name not in config.hives:
+                    available_hives = sorted(config.hives.keys())
+                    error_msg = f"Hive not found: {hive_name}. Available hives: {', '.join(available_hives) if available_hives else 'none'}"
+                    logger.error(error_msg)
+                    raise ValueError(error_msg)
 
-        logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")
+        # Execute query using pipeline evaluator
+        try:
+            evaluator = PipelineEvaluator()
+            result_ids = evaluator.execute_query(stages, hive_names=hive_names)
 
-        return {
-            "status": "success",
-            "result_count": len(result_ids),
-            "ticket_ids": sorted(result_ids),
-            "stages_executed": len(stages)
-        }
+            logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")
 
-    except Exception as e:
-        error_msg = f"Failed to execute freeform query: {e}"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
+            return {
+                "status": "success",
+                "result_count": len(result_ids),
+                "ticket_ids": sorted(result_ids),
+                "stages_executed": len(stages)
+            }
+
+        except Exception as e:
+            error_msg = f"Failed to execute freeform query: {e}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)

@@ -31,7 +31,7 @@ class TestSanitizeHive:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Try to sanitize non-existent hive
         result = await _sanitize_hive("nonexistent")
@@ -67,7 +67,7 @@ class TestSanitizeHive:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Create a ticket with orphaned parent relationship
         write_ticket_file(
@@ -136,7 +136,7 @@ class TestSanitizeHive:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Create ticket with WRONG prefix (bypass write_ticket_file)
         wrong_prefix_file = hive_dir / "frontend.bees-abc.md"
@@ -187,7 +187,7 @@ status: open
             allow_cross_hive_dependencies=False,  # Disallow
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Create ticket with cross-hive parent
         write_ticket_file(
@@ -240,7 +240,7 @@ status: open
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Create ticket with invalid ID format (bypass write_ticket_file)
         invalid_file = hive_dir / "INVALID-ID.md"
@@ -288,7 +288,7 @@ status: open
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Create parent without child in children list
         write_ticket_file(

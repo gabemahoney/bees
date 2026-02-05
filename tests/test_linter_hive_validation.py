@@ -38,7 +38,7 @@ class TestLinterValidateHivePrefix:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create ticket with correct prefix
         write_ticket_file(
@@ -100,7 +100,7 @@ status: open
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create ticket with wrong prefix (bypass write_ticket_file)
         wrong_prefix_file = tickets_dir / "frontend.bees-xyz.md"
@@ -154,7 +154,7 @@ class TestLinterValidateCrossHiveDeps:
         )
         
         from src.config import save_bees_config
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create ticket with cross-hive parent
         write_ticket_file(
@@ -207,7 +207,7 @@ class TestLinterValidateCrossHiveDeps:
         )
         
         from src.config import save_bees_config
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create ticket with cross-hive parent
         write_ticket_file(
@@ -262,7 +262,7 @@ class TestLinterAutoFixMode:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create parent without child in children list
         write_ticket_file(
@@ -331,7 +331,7 @@ class TestLinterAutoFixMode:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
         
         # Create tickets with bidirectional dependency mismatch
         write_ticket_file(

@@ -25,13 +25,17 @@ curl http://127.0.0.1:8000/health
 
 ### Configure Claude Code
 
-Add the following to your `~/.claude.json`:
+Add the MCP server to your project configuration in `~/.claude.json`:
 ```json
 {
-  "mcpServers": {
-    "🐝": {
-      "type": "http",
-      "url": "http://127.0.0.1:8000/mcp"
+  "projects": {
+    "/path/to/your/project": {
+      "mcpServers": {
+        "🐝": {
+          "type": "http",
+          "url": "http://127.0.0.1:8000/mcp"
+        }
+      }
     }
   }
 }

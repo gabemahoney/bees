@@ -519,7 +519,7 @@ class TestColonizeHiveOrchestrationUnit:
 
         result = await colonize_hive('Backend', 'relative/path')
 
-        mock_validate_path.assert_called_once_with('relative/path', Path('/repo'))
+        mock_validate_path.assert_called_once_with('relative/path')
 
     @patch('src.mcp_hive_ops.get_repo_root_from_path')
     @patch('src.mcp_hive_ops.normalize_hive_name')
@@ -560,7 +560,7 @@ class TestColonizeHiveOrchestrationUnit:
 
         result = await colonize_hive('Backend', '/repo/tickets')
 
-        mock_validate_unique.assert_called_once_with('backend', repo_root=Path('/repo'))
+        mock_validate_unique.assert_called_once_with('backend')
 
     @patch('src.mcp_hive_ops.validate_unique_hive_name')
     @patch('src.mcp_hive_ops.validate_hive_path')

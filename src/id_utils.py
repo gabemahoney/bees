@@ -162,15 +162,12 @@ def extract_existing_ids_from_directory(tickets_dir: Path) -> set[str]:
     return existing_ids
 
 
-def extract_existing_ids_from_all_hives(repo_root: Path | None = None) -> set[str]:
+def extract_existing_ids_from_all_hives() -> set[str]:
     """
     Extract all existing ticket IDs from all configured hives.
 
     Scans all hive directories defined in .bees/config.json and collects
     all ticket IDs across all hives.
-
-    Args:
-        repo_root: Optional repository root path
 
     Returns:
         Set of existing ticket IDs found across all hives
@@ -191,7 +188,7 @@ def extract_existing_ids_from_all_hives(repo_root: Path | None = None) -> set[st
         return existing_ids
 
     # Load hive configuration
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
 
     if not config or not config.hives:
         # No hives configured - return empty set

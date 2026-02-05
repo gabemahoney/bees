@@ -275,7 +275,7 @@ class TestExtractExistingIdsFromAllHives:
                 "frontend": HiveConfig(path=str(frontend_dir), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Extract all IDs
         ids = extract_existing_ids_from_all_hives()
@@ -311,7 +311,7 @@ class TestExtractExistingIdsFromAllHives:
         config = BeesConfig(
             hives={"backend": HiveConfig(path=str(backend_dir), display_name="Backend", created_at="2026-02-02T10:00:00")}
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Extract IDs - should only get valid one
         ids = extract_existing_ids_from_all_hives()
@@ -336,7 +336,7 @@ class TestExtractExistingIdsFromAllHives:
                 "frontend": HiveConfig(path=str(tmp_path / "nonexistent"), display_name="Frontend", created_at="2026-02-02T10:00:00"),
             }
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Extract IDs - should only get backend ticket
         ids = extract_existing_ids_from_all_hives()

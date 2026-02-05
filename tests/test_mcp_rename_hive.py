@@ -44,7 +44,7 @@ def temp_hive_setup(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config, repo_root=tmp_path)
+    save_bees_config(config)
     
     # Create sample tickets in backend hive
     ticket1_path = backend_dir / "backend.bees-abc1.md"

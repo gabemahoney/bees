@@ -5,9 +5,10 @@ from pathlib import Path
 
 from .types import TicketType
 from .mcp_id_utils import parse_ticket_id
+from .repo_context import get_repo_root
 
 
-def get_ticket_path(ticket_id: str, ticket_type: TicketType, repo_root: Path | None = None) -> Path:
+def get_ticket_path(ticket_id: str, ticket_type: TicketType) -> Path:
     """
     Get the full file path for a ticket based on its ID.
 
@@ -17,7 +18,6 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType, repo_root: Path | N
     Args:
         ticket_id: The ticket ID (e.g., "backend.bees-250")
         ticket_type: The type of ticket (no longer used for path resolution, kept for API compatibility)
-        repo_root: Optional repository root path for loading config (defaults to cwd if None)
 
     Returns:
         Path object pointing to the ticket's markdown file in hive root
@@ -44,7 +44,7 @@ def get_ticket_path(ticket_id: str, ticket_type: TicketType, repo_root: Path | N
 
     # Load config to get hive path
     from .config import load_bees_config
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
 
     if not config or hive_name not in config.hives:
         raise ValueError(f"Hive '{hive_name}' not found in config")
@@ -75,7 +75,7 @@ def ensure_ticket_directory_exists(hive_name: str) -> None:
     hive_dir.mkdir(parents=True, exist_ok=True)
 
 
-def infer_ticket_type_from_id(ticket_id: str, repo_root: Path | None = None) -> TicketType | None:
+def infer_ticket_type_from_id(ticket_id: str) -> TicketType | None:
     """
     Infer ticket type from its ID by reading YAML frontmatter from ticket file.
 
@@ -86,7 +86,6 @@ def infer_ticket_type_from_id(ticket_id: str, repo_root: Path | None = None) -> 
 
     Args:
         ticket_id: The ticket ID (must have hive prefix, e.g., "backend.bees-250")
-        repo_root: Optional repository root path
 
     Returns:
         The ticket type ('epic', 'task', or 'subtask') if found, None if not found
@@ -114,7 +113,7 @@ def infer_ticket_type_from_id(ticket_id: str, repo_root: Path | None = None) -> 
 
     # Load config to get hive path
     from .config import load_bees_config
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
 
     if not config or hive_name not in config.hives:
         return None
@@ -153,7 +152,7 @@ def infer_ticket_type_from_id(ticket_id: str, repo_root: Path | None = None) -> 
 
 
 
-def list_tickets(ticket_type: TicketType | None = None, repo_root: Path | None = None) -> list[Path]:
+def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
     """
     List all ticket files from all configured hives, optionally filtered by type.
 
@@ -162,7 +161,6 @@ def list_tickets(ticket_type: TicketType | None = None, repo_root: Path | None =
 
     Args:
         ticket_type: Optional ticket type to filter by. If None, returns all tickets.
-        repo_root: Optional repository root path
 
     Returns:
         List of Path objects pointing to ticket markdown files across all hives
@@ -179,7 +177,7 @@ def list_tickets(ticket_type: TicketType | None = None, repo_root: Path | None =
     all_tickets = []
 
     # Load hive configuration
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
 
     if not config or not config.hives:
         # No hives configured - return empty list

@@ -69,7 +69,6 @@ def write_ticket_file(
     ticket_type: TicketType,
     frontmatter_data: dict[str, Any],
     body: str = "",
-    repo_root: Path | None = None,
 ) -> Path:
     """
     Write a ticket markdown file with YAML frontmatter and body content.
@@ -82,7 +81,6 @@ def write_ticket_file(
         ticket_type: The type of ticket ("epic", "task", or "subtask")
         frontmatter_data: Dictionary of ticket metadata for YAML frontmatter
         body: Optional markdown body content
-        repo_root: Optional repository root path (defaults to cwd if None)
 
     Returns:
         Path to the created ticket file
@@ -98,7 +96,7 @@ def write_ticket_file(
         True
     """
     # Get the target file path first (this includes hive-specific path logic)
-    target_path = get_ticket_path(ticket_id, ticket_type, repo_root)
+    target_path = get_ticket_path(ticket_id, ticket_type)
 
     # Ensure the directory exists (use parent directory of target path)
     # With flat storage, this creates the hive root directory

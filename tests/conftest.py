@@ -4,6 +4,7 @@ import json
 import pytest
 from pathlib import Path
 from unittest.mock import patch
+from src.repo_context import repo_root_context
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +85,28 @@ def mock_git_repo_check(request, monkeypatch):
     monkeypatch.setattr(src.config, "ensure_bees_dir", patched_ensure_bees_dir)
 
 
+@pytest.fixture(autouse=True)
+def set_repo_root_context(request):
+    """
+    Automatically set repo_root context for all tests.
+    
+    Uses Path.cwd() as the repo root, which is typically a tmp_path in tests.
+    This fixture ensures that functions using get_repo_root() from context
+    work correctly in tests without manually wrapping each test.
+    
+    Tests can skip this fixture using the marker:
+        @pytest.mark.no_repo_context
+    """
+    # Skip for tests that don't want automatic context
+    if 'no_repo_context' in request.keywords:
+        yield  # Must yield even when skipping
+        return
+    
+    # Set context to current working directory (which is tmp_path in most tests)
+    with repo_root_context(Path.cwd()):
+        yield
+
+
 @pytest.fixture
 def isolated_bees_env(tmp_path, monkeypatch):
     """
@@ -155,6 +178,37 @@ def isolated_bees_env(tmp_path, monkeypatch):
     yield helper
 
     # Optional: cleanup happens automatically with tmp_path
+
+
+@pytest.fixture
+def repo_root_ctx(tmp_path):
+    """
+    Pytest fixture for setting up repo_root context in tests.
+    
+    This fixture:
+    1. Creates a temporary git repo structure using tmp_path
+    2. Sets up repo_root_context with the tmp_path
+    3. Yields tmp_path for test use
+    4. Automatically cleans up context after test
+    
+    Usage:
+        def test_something(repo_root_ctx):
+            # repo_root is now set in context to tmp_path
+            # Functions can call get_repo_root() successfully
+            result = some_function()  # This can use get_repo_root()
+            assert result is not None
+            
+    The tmp_path is a temporary directory that is unique to each test
+    and is automatically cleaned up after the test completes.
+    """
+    # Create .bees directory to mark this as a bees repo
+    bees_dir = tmp_path / ".bees"
+    bees_dir.mkdir(exist_ok=True)
+    
+    # Set up context with tmp_path as repo_root
+    with repo_root_context(tmp_path):
+        yield tmp_path
+    # Context is automatically cleaned up after yield
 
 
 @pytest.fixture

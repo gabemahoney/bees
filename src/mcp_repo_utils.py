@@ -108,6 +108,56 @@ async def get_client_repo_root(ctx: Context) -> Path | None:
         raise
 
 
+async def resolve_repo_root(ctx: Context, explicit_root: str | None) -> Path:
+    """
+    Resolve repository root from MCP client context or explicit parameter.
+
+    Tries to get repo root from MCP client's roots protocol first. If that fails
+    (client doesn't support roots), falls back to explicit repo_root parameter.
+    If neither is available, raises error with clear instructions.
+
+    Args:
+        ctx: FastMCP Context object provided by MCP client
+        explicit_root: Optional explicit repo_root path string (fallback for non-Roots clients)
+
+    Returns:
+        Path: Resolved repository root path
+
+    Raises:
+        ValueError: If neither roots protocol nor explicit_root are available
+
+    Example:
+        >>> # Roots protocol supported
+        >>> resolved = await resolve_repo_root(ctx, None)
+        >>> # Explicit param fallback
+        >>> resolved = await resolve_repo_root(ctx, "/path/to/repo")
+    """
+    # Try Roots protocol first
+    client_root = await get_client_repo_root(ctx)
+    if client_root:
+        # Client supports roots - verify it's a git repo and return
+        try:
+            repo_root = get_repo_root_from_path(client_root)
+            logger.info(f"Resolved repo root from MCP client roots: {repo_root}")
+            return repo_root
+        except ValueError as e:
+            # Client provided a root but it's not a git repo
+            logger.error(f"Client root {client_root} is not a git repository: {e}")
+            raise
+
+    # Roots not available, try explicit parameter
+    if explicit_root:
+        explicit_path = Path(explicit_root)
+        logger.info(f"Resolved repo root from explicit parameter: {explicit_path}")
+        return explicit_path
+
+    # Neither available - raise error
+    raise ValueError(
+        "Your MCP client does not support the roots protocol. "
+        "Please provide repo_root parameter when calling this tool."
+    )
+
+
 async def get_repo_root(ctx: Context | None) -> Path | None:
     """
     Find the git repository root from MCP client context.

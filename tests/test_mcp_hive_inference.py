@@ -51,7 +51,7 @@ def temp_tickets_dir(tmp_path, monkeypatch):
         allow_cross_hive_dependencies=True,
         schema_version='1.0'
     )
-    save_bees_config(config, repo_root=tmp_path)
+    save_bees_config(config)
 
     yield tmp_path
 

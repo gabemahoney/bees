@@ -26,7 +26,8 @@ start-mcp = "src.main:main"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "needs_real_git_check: Tests that require real git repository validation (not mocked)"
+    "needs_real_git_check: Tests that require real git repository validation (not mocked)",
+    "no_repo_context: Tests that run without repo_root context set"
 ]
 
 [build-system]

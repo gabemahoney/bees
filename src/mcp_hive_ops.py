@@ -25,8 +25,9 @@ from .config import (
     validate_unique_hive_name
 )
 from .id_utils import normalize_hive_name
-from .mcp_repo_utils import get_repo_root_from_path, get_repo_root
+from .mcp_repo_utils import get_repo_root_from_path, get_repo_root, resolve_repo_root
 from .mcp_hive_utils import validate_hive_path
+from .repo_context import repo_root_context
 
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
                 }
             }
 
-        # Step 2: Validate path using client's repo root from context
+        # Step 2: Determine repo root and set context for downstream operations
         try:
             # Get repo root from MCP context (client's repo) or use hive path
             hive_path = Path(path)
@@ -114,14 +115,11 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
                 # Non-MCP call (tests, CLI) - find repo root from hive path
                 repo_root = get_repo_root_from_path(hive_path)
                 logger.info(f"colonize_hive: Found repo root from hive path: {repo_root}")
-
-            validated_path = validate_hive_path(path, repo_root)
-            logger.info(f"colonize_hive: Validated hive path: {validated_path}")
         except ValueError as e:
             return {
                 "status": "error",
                 "message": str(e),
-                "error_type": "path_validation_error",
+                "error_type": "repo_detection_error",
                 "validation_details": {
                     "field": "path",
                     "provided_value": path,
@@ -129,150 +127,165 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
                 }
             }
 
-        # Step 3: Check for duplicate normalized names using config system
-        try:
-            validate_unique_hive_name(normalized_name, repo_root=repo_root)
-            logger.info(f"Validated unique hive name: {normalized_name}")
-        except ValueError as e:
-            return {
-                "status": "error",
-                "message": str(e),
-                "error_type": "duplicate_name_error",
-                "validation_details": {
-                    "field": "name",
-                    "normalized_name": normalized_name,
-                    "display_name": name,
-                    "reason": str(e)
+        # Set repo_root context for all downstream operations
+        with repo_root_context(repo_root):
+            # Step 3: Validate path
+            try:
+                validated_path = validate_hive_path(path)
+                logger.info(f"colonize_hive: Validated hive path: {validated_path}")
+            except ValueError as e:
+                return {
+                    "status": "error",
+                    "message": str(e),
+                    "error_type": "path_validation_error",
+                    "validation_details": {
+                        "field": "path",
+                        "provided_value": path,
+                        "reason": str(e)
+                    }
                 }
-            }
 
-        # Step 4: Create hive directory structure
-        # Create /eggs subdirectory for future feature storage
-        eggs_path = validated_path / "eggs"
-        try:
-            eggs_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Created /eggs directory at {eggs_path}")
-        except (PermissionError, OSError) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to create /eggs directory: {e}",
-                "error_type": "filesystem_error",
-                "validation_details": {
-                    "operation": "create_eggs_dir",
-                    "path": str(eggs_path),
-                    "reason": str(e)
+            # Step 4: Check for duplicate normalized names using config system
+            try:
+                validate_unique_hive_name(normalized_name)
+                logger.info(f"Validated unique hive name: {normalized_name}")
+            except ValueError as e:
+                return {
+                    "status": "error",
+                    "message": str(e),
+                    "error_type": "duplicate_name_error",
+                    "validation_details": {
+                        "field": "name",
+                        "normalized_name": normalized_name,
+                        "display_name": name,
+                        "reason": str(e)
+                    }
                 }
-            }
 
-        # Create /evicted subdirectory for completed/archived tickets
-        evicted_path = validated_path / "evicted"
-        try:
-            evicted_path.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Created /evicted directory at {evicted_path}")
-        except (PermissionError, OSError) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to create /evicted directory: {e}",
-                "error_type": "filesystem_error",
-                "validation_details": {
-                    "operation": "create_evicted_dir",
-                    "path": str(evicted_path),
-                    "reason": str(e)
+            # Step 5: Create hive directory structure
+            # Create /eggs subdirectory for future feature storage
+            eggs_path = validated_path / "eggs"
+            try:
+                eggs_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created /eggs directory at {eggs_path}")
+            except (PermissionError, OSError) as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to create /eggs directory: {e}",
+                    "error_type": "filesystem_error",
+                    "validation_details": {
+                        "operation": "create_eggs_dir",
+                        "path": str(eggs_path),
+                        "reason": str(e)
+                    }
                 }
-            }
 
-        # Create .hive marker folder with identity data
-        hive_marker_path = validated_path / ".hive"
-        try:
-            hive_marker_path.mkdir(exist_ok=True)
-        except (PermissionError, OSError) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to create .hive marker directory: {e}",
-                "error_type": "filesystem_error",
-                "validation_details": {
-                    "operation": "create_hive_marker",
-                    "path": str(hive_marker_path),
-                    "reason": str(e)
+            # Create /evicted subdirectory for completed/archived tickets
+            evicted_path = validated_path / "evicted"
+            try:
+                evicted_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created /evicted directory at {evicted_path}")
+            except (PermissionError, OSError) as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to create /evicted directory: {e}",
+                    "error_type": "filesystem_error",
+                    "validation_details": {
+                        "operation": "create_evicted_dir",
+                        "path": str(evicted_path),
+                        "reason": str(e)
+                    }
                 }
-            }
 
-        # Store hive identity in marker file
-        identity_data = {
-            "normalized_name": normalized_name,
-            "display_name": name,
-            "created_at": datetime.now().isoformat(),
-            "version": "1.0.0"
-        }
-        identity_file = hive_marker_path / "identity.json"
-        try:
-            with open(identity_file, 'w') as f:
-                json.dump(identity_data, f, indent=2)
-            logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
-        except (PermissionError, OSError) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to write .hive identity file: {e}",
-                "error_type": "filesystem_error",
-                "validation_details": {
-                    "operation": "write_identity_file",
-                    "path": str(identity_file),
-                    "reason": str(e)
+            # Create .hive marker folder with identity data
+            hive_marker_path = validated_path / ".hive"
+            try:
+                hive_marker_path.mkdir(exist_ok=True)
+            except (PermissionError, OSError) as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to create .hive marker directory: {e}",
+                    "error_type": "filesystem_error",
+                    "validation_details": {
+                        "operation": "create_hive_marker",
+                        "path": str(hive_marker_path),
+                        "reason": str(e)
+                    }
                 }
+
+            # Store hive identity in marker file
+            identity_data = {
+                "normalized_name": normalized_name,
+                "display_name": name,
+                "created_at": datetime.now().isoformat(),
+                "version": "1.0.0"
             }
-
-        # TODO: Linter integration stub
-        # Future: Add linter check here to validate no conflicting tickets exist
-        # across hives during colonization. The linter should scan for duplicate
-        # ticket IDs, conflicting hive names, and other cross-hive invariants.
-        # Deferred to future Epic for full implementation.
-        logger.info(f"Linter check: (stubbed out for now)")
-
-        # Step 5: Register hive in config.json in the repo where the hive is located
-        try:
-            # Get current timestamp for registration
-            creation_timestamp = datetime.now()
-
-            # Register hive in config (updates config dict in memory)
-            # Pass repo_root so config is created in the correct repository
-            config = register_hive_dict(
-                normalized_name=normalized_name,
-                display_name=name,
-                path=str(validated_path),
-                timestamp=creation_timestamp,
-                repo_root=repo_root
-            )
-
-            # Persist config to disk with error handling
-            # Pass repo_root to ensure .bees/config.json is created in the correct repo
-            write_hive_config_dict(config, repo_root)
-            logger.info(f"colonize_hive: Registered hive '{normalized_name}' in config at {repo_root / '.bees/config.json'}")
-            logger.info(f"colonize_hive: Final repo root used: {repo_root}")
-        except (IOError, PermissionError, OSError) as e:
-            return {
-                "status": "error",
-                "message": f"Failed to write config file: {e}",
-                "error_type": "config_write_error",
-                "validation_details": {
-                    "operation": "write_config",
-                    "reason": str(e)
+            identity_file = hive_marker_path / "identity.json"
+            try:
+                with open(identity_file, 'w') as f:
+                    json.dump(identity_data, f, indent=2)
+                logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
+            except (PermissionError, OSError) as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to write .hive identity file: {e}",
+                    "error_type": "filesystem_error",
+                    "validation_details": {
+                        "operation": "write_identity_file",
+                        "path": str(identity_file),
+                        "reason": str(e)
+                    }
                 }
-            }
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Failed to register hive in config: {e}",
-                "error_type": "config_error",
-                "validation_details": {
-                    "operation": "register_hive",
-                    "reason": str(e)
-                }
-            }
 
-        # Success!
-        return {
-            "status": "success",
-            "message": "Hive created and registered successfully",
+            # TODO: Linter integration stub
+            # Future: Add linter check here to validate no conflicting tickets exist
+            # across hives during colonization. The linter should scan for duplicate
+            # ticket IDs, conflicting hive names, and other cross-hive invariants.
+            # Deferred to future Epic for full implementation.
+            logger.info(f"Linter check: (stubbed out for now)")
+
+            # Step 6: Register hive in config.json in the repo where the hive is located
+            try:
+                # Get current timestamp for registration
+                creation_timestamp = datetime.now()
+
+                # Register hive in config (updates config dict in memory)
+                config = register_hive_dict(
+                    normalized_name=normalized_name,
+                    display_name=name,
+                    path=str(validated_path),
+                    timestamp=creation_timestamp
+                )
+
+                # Persist config to disk with error handling
+                write_hive_config_dict(config)
+                logger.info(f"colonize_hive: Registered hive '{normalized_name}' in config")
+                logger.info(f"colonize_hive: Final repo root used: {repo_root}")
+            except (IOError, PermissionError, OSError) as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to write config file: {e}",
+                    "error_type": "config_write_error",
+                    "validation_details": {
+                        "operation": "write_config",
+                        "reason": str(e)
+                    }
+                }
+            except Exception as e:
+                return {
+                    "status": "error",
+                    "message": f"Failed to register hive in config: {e}",
+                    "error_type": "config_error",
+                    "validation_details": {
+                        "operation": "register_hive",
+                        "reason": str(e)
+                    }
+                }
+
+            # Success!
+            return {
+                "status": "success",
+                "message": "Hive created and registered successfully",
             "normalized_name": normalized_name,
             "display_name": name,
             "path": str(validated_path)
@@ -428,7 +441,7 @@ async def _list_hives(ctx: Context) -> Dict[str, Any]:
         repo_root = await get_repo_root(ctx)
 
         # Load config from client's .bees/config.json
-        config = load_bees_config(repo_root)
+        config = load_bees_config()
 
         # Handle case where config doesn't exist or has no hives
         if not config or not config.hives:
@@ -513,7 +526,7 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     else:
         repo_root = get_repo_root_from_path(Path.cwd())
 
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
 
     # Check if hive exists
     if not config or normalized_name not in config.hives:
@@ -530,7 +543,7 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     del config.hives[normalized_name]
 
     # Save updated config
-    save_bees_config(config, repo_root)
+    save_bees_config(config)
     logger.info(f"Removed hive '{normalized_name}' from config.json")
 
     # Success response
@@ -543,7 +556,7 @@ async def _abandon_hive(hive_name: str, ctx: Context | None = None) -> Dict[str,
     }
 
 
-async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None) -> Dict[str, Any]:
+async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None, repo_root: str | None = None) -> Dict[str, Any]:
     """
     Rename a hive by updating its name in config, regenerating ticket IDs, and updating all references.
 
@@ -603,347 +616,346 @@ async def _rename_hive(old_name: str, new_name: str, ctx: Context | None = None)
             "error_type": "validation_error"
         }
 
-    # Step 2: Load config and validate old hive exists
-    # Get repo root
+    # Step 2: Resolve repo root and set up context
     if ctx:
-        repo_root = await get_repo_root(ctx)
-        if not repo_root:
-            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+        resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
-        repo_root = get_repo_root_from_path(Path.cwd())
+        # Non-MCP call (tests, CLI)
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    
+    with repo_root_context(resolved_root):
+        config = load_bees_config()
+        if not config or normalized_old not in config.hives:
+            return {
+                "status": "error",
+                "message": f"Hive '{old_name}' (normalized: '{normalized_old}') does not exist in config",
+                "error_type": "hive_not_found"
+            }
 
-    config = load_bees_config(repo_root)
-    if not config or normalized_old not in config.hives:
-        return {
-            "status": "error",
-            "message": f"Hive '{old_name}' (normalized: '{normalized_old}') does not exist in config",
-            "error_type": "hive_not_found"
-        }
+        # Step 3: Validate new name doesn't conflict with existing hives
+        if normalized_new in config.hives:
+            return {
+                "status": "error",
+                "message": f"Hive '{new_name}' (normalized: '{normalized_new}') already exists. Cannot rename to existing hive name.",
+                "error_type": "name_conflict"
+            }
 
-    # Step 3: Validate new name doesn't conflict with existing hives
-    if normalized_new in config.hives:
-        return {
-            "status": "error",
-            "message": f"Hive '{new_name}' (normalized: '{normalized_new}') already exists. Cannot rename to existing hive name.",
-            "error_type": "name_conflict"
-        }
+        # Get hive config for later operations
+        hive_path = Path(config.hives[normalized_old].path)
+        old_display_name = config.hives[normalized_old].display_name
+        logger.info(f"Validation passed. Hive path: {hive_path}")
 
-    # Get hive config for later operations
-    hive_path = Path(config.hives[normalized_old].path)
-    old_display_name = config.hives[normalized_old].display_name
-    logger.info(f"Validation passed. Hive path: {hive_path}")
+        # Step 4: Update config - move hive entry from old key to new key
+        hive_config = config.hives[normalized_old]
+        # Update display name to the new name
+        hive_config.display_name = new_name
 
-    # Step 4: Update config - move hive entry from old key to new key
-    hive_config = config.hives[normalized_old]
-    # Update display name to the new name
-    hive_config.display_name = new_name
+        # Remove old hive entry and add new one
+        del config.hives[normalized_old]
+        config.hives[normalized_new] = hive_config
 
-    # Remove old hive entry and add new one
-    del config.hives[normalized_old]
-    config.hives[normalized_new] = hive_config
+        # Save updated config
+        try:
+            save_bees_config(config)
+            logger.info(f"Updated config: renamed hive from '{normalized_old}' to '{normalized_new}'")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to save config: {e}",
+                "error_type": "config_save_error"
+            }
 
-    # Save updated config
-    try:
-        save_bees_config(config, repo_root)
-        logger.info(f"Updated config: renamed hive from '{normalized_old}' to '{normalized_new}'")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to save config: {e}",
-            "error_type": "config_save_error"
-        }
-
-    # Step 5: Regenerate ticket IDs - build mapping of old_id → new_id
-    id_mapping = {}
-    try:
-        # Find all ticket files in the hive directory
-        for ticket_file in hive_path.glob("*.md"):
-            # Skip non-ticket files
-            if ticket_file.stem.startswith('.'):
-                continue
-
-            # Extract old ticket ID from filename
-            old_id = ticket_file.stem  # e.g., "backend.bees-abc1"
-
-            # Parse to verify it matches the old hive prefix
-            if not old_id.startswith(f"{normalized_old}.bees-"):
-                logger.warning(f"Skipping file with unexpected prefix: {old_id}")
-                continue
-
-            # Extract the bees-xxxx suffix
-            suffix = old_id[len(normalized_old)+1:]  # Remove "backend." to get "bees-abc1"
-
-            # Generate new ID with new hive prefix
-            new_id = f"{normalized_new}.{suffix}"
-
-            # Store in mapping
-            id_mapping[old_id] = new_id
-            logger.debug(f"ID mapping: {old_id} → {new_id}")
-
-        logger.info(f"Generated ID mapping for {len(id_mapping)} tickets")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to generate ID mappings: {e}",
-            "error_type": "id_generation_error"
-        }
-
-    # Step 6: Rename all ticket files
-    try:
-        for old_id, new_id in id_mapping.items():
-            old_file = hive_path / f"{old_id}.md"
-            new_file = hive_path / f"{new_id}.md"
-
-            # Check that old file exists
-            if not old_file.exists():
-                logger.warning(f"File not found during rename: {old_file}")
-                continue
-
-            # Check for conflicts with new filename
-            if new_file.exists():
-                logger.error(f"Conflict: new filename already exists: {new_file}")
-                return {
-                    "status": "error",
-                    "message": f"File conflict: {new_id}.md already exists",
-                    "error_type": "file_conflict"
-                }
-
-            # Rename the file
-            old_file.rename(new_file)
-            logger.debug(f"Renamed file: {old_id}.md → {new_id}.md")
-
-        logger.info(f"Renamed {len(id_mapping)} ticket files")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to rename ticket files: {e}",
-            "error_type": "file_rename_error"
-        }
-
-    # Step 7: Update frontmatter 'id' field in all renamed tickets
-    try:
-        for old_id, new_id in id_mapping.items():
-            new_file = hive_path / f"{new_id}.md"
-
-            # Read the file
-            with open(new_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            # Parse frontmatter (YAML between --- delimiters)
-            if content.startswith('---\n'):
-                parts = content.split('---\n', 2)
-                if len(parts) >= 3:
-                    frontmatter_str = parts[1]
-                    body = parts[2]
-
-                    # Parse YAML frontmatter
-                    frontmatter = yaml.safe_load(frontmatter_str)
-
-                    # Update the id field
-                    if frontmatter and 'id' in frontmatter:
-                        frontmatter['id'] = new_id
-
-                        # Serialize back to YAML
-                        updated_frontmatter = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
-
-                        # Reconstruct file content
-                        updated_content = f"---\n{updated_frontmatter}---\n{body}"
-
-                        # Write back to file
-                        with open(new_file, 'w', encoding='utf-8') as f:
-                            f.write(updated_content)
-
-                        logger.debug(f"Updated frontmatter id: {old_id} → {new_id}")
-                    else:
-                        logger.warning(f"No 'id' field in frontmatter for {new_file}")
-                else:
-                    logger.warning(f"Invalid frontmatter format in {new_file}")
-            else:
-                logger.warning(f"No frontmatter found in {new_file}")
-
-        logger.info(f"Updated frontmatter for {len(id_mapping)} tickets")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to update ticket frontmatter: {e}",
-            "error_type": "frontmatter_update_error"
-        }
-
-    # Step 8: Update cross-references across ALL hives
-    try:
-        tickets_updated = 0
-        # Iterate through ALL hives, not just the renamed one
-        for hive_name, hive_cfg in config.hives.items():
-            hive_dir = Path(hive_cfg.path)
-
-            # Process all ticket files in this hive
-            for ticket_file in hive_dir.glob("*.md"):
+        # Step 5: Regenerate ticket IDs - build mapping of old_id → new_id
+        id_mapping = {}
+        try:
+            # Find all ticket files in the hive directory
+            for ticket_file in hive_path.glob("*.md"):
+                # Skip non-ticket files
                 if ticket_file.stem.startswith('.'):
                     continue
 
+                # Extract old ticket ID from filename
+                old_id = ticket_file.stem  # e.g., "backend.bees-abc1"
+
+                # Parse to verify it matches the old hive prefix
+                if not old_id.startswith(f"{normalized_old}.bees-"):
+                    logger.warning(f"Skipping file with unexpected prefix: {old_id}")
+                    continue
+
+                # Extract the bees-xxxx suffix
+                suffix = old_id[len(normalized_old)+1:]  # Remove "backend." to get "bees-abc1"
+
+                # Generate new ID with new hive prefix
+                new_id = f"{normalized_new}.{suffix}"
+
+                # Store in mapping
+                id_mapping[old_id] = new_id
+                logger.debug(f"ID mapping: {old_id} → {new_id}")
+
+            logger.info(f"Generated ID mapping for {len(id_mapping)} tickets")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to generate ID mappings: {e}",
+                "error_type": "id_generation_error"
+            }
+
+        # Step 6: Rename all ticket files
+        try:
+            for old_id, new_id in id_mapping.items():
+                old_file = hive_path / f"{old_id}.md"
+                new_file = hive_path / f"{new_id}.md"
+
+                # Check that old file exists
+                if not old_file.exists():
+                    logger.warning(f"File not found during rename: {old_file}")
+                    continue
+
+                # Check for conflicts with new filename
+                if new_file.exists():
+                    logger.error(f"Conflict: new filename already exists: {new_file}")
+                    return {
+                        "status": "error",
+                        "message": f"File conflict: {new_id}.md already exists",
+                        "error_type": "file_conflict"
+                    }
+
+                # Rename the file
+                old_file.rename(new_file)
+                logger.debug(f"Renamed file: {old_id}.md → {new_id}.md")
+
+            logger.info(f"Renamed {len(id_mapping)} ticket files")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to rename ticket files: {e}",
+                "error_type": "file_rename_error"
+            }
+
+        # Step 7: Update frontmatter 'id' field in all renamed tickets
+        try:
+            for old_id, new_id in id_mapping.items():
+                new_file = hive_path / f"{new_id}.md"
+
                 # Read the file
-                with open(ticket_file, 'r', encoding='utf-8') as f:
+                with open(new_file, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-                # Parse frontmatter
-                if not content.startswith('---\n'):
-                    continue
+                # Parse frontmatter (YAML between --- delimiters)
+                if content.startswith('---\n'):
+                    parts = content.split('---\n', 2)
+                    if len(parts) >= 3:
+                        frontmatter_str = parts[1]
+                        body = parts[2]
 
-                parts = content.split('---\n', 2)
-                if len(parts) < 3:
-                    continue
+                        # Parse YAML frontmatter
+                        frontmatter = yaml.safe_load(frontmatter_str)
 
-                frontmatter_str = parts[1]
-                body = parts[2]
-                frontmatter = yaml.safe_load(frontmatter_str)
+                        # Update the id field
+                        if frontmatter and 'id' in frontmatter:
+                            frontmatter['id'] = new_id
 
-                if not frontmatter:
-                    continue
+                            # Serialize back to YAML
+                            updated_frontmatter = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
 
-                # Track if we made any changes
-                changed = False
+                            # Reconstruct file content
+                            updated_content = f"---\n{updated_frontmatter}---\n{body}"
 
-                # Update parent field (single string)
-                if 'parent' in frontmatter and frontmatter['parent']:
-                    old_parent = frontmatter['parent']
-                    if old_parent in id_mapping:
-                        frontmatter['parent'] = id_mapping[old_parent]
-                        changed = True
-                        logger.debug(f"Updated parent in {ticket_file.name}: {old_parent} → {id_mapping[old_parent]}")
+                            # Write back to file
+                            with open(new_file, 'w', encoding='utf-8') as f:
+                                f.write(updated_content)
 
-                # Update children field (list)
-                if 'children' in frontmatter and frontmatter['children']:
-                    children_changed = False
-                    updated_children = []
-                    for child_id in frontmatter['children']:
-                        if child_id in id_mapping:
-                            updated_children.append(id_mapping[child_id])
-                            children_changed = True
-                            changed = True
+                            logger.debug(f"Updated frontmatter id: {old_id} → {new_id}")
                         else:
-                            updated_children.append(child_id)
-                    if children_changed:
-                        frontmatter['children'] = updated_children
+                            logger.warning(f"No 'id' field in frontmatter for {new_file}")
+                    else:
+                        logger.warning(f"Invalid frontmatter format in {new_file}")
+                else:
+                    logger.warning(f"No frontmatter found in {new_file}")
 
-                # Update dependencies field (list)
-                if 'dependencies' in frontmatter and frontmatter['dependencies']:
-                    updated_deps = []
-                    for dep_id in frontmatter['dependencies']:
-                        if dep_id in id_mapping:
-                            updated_deps.append(id_mapping[dep_id])
-                            changed = True
-                        else:
-                            updated_deps.append(dep_id)
-                    if changed:
-                        frontmatter['dependencies'] = updated_deps
-
-                # Update up_dependencies field (list)
-                if 'up_dependencies' in frontmatter and frontmatter['up_dependencies']:
-                    updated_up = []
-                    for dep_id in frontmatter['up_dependencies']:
-                        if dep_id in id_mapping:
-                            updated_up.append(id_mapping[dep_id])
-                            changed = True
-                        else:
-                            updated_up.append(dep_id)
-                    if changed:
-                        frontmatter['up_dependencies'] = updated_up
-
-                # Update down_dependencies field (list)
-                if 'down_dependencies' in frontmatter and frontmatter['down_dependencies']:
-                    updated_down = []
-                    for dep_id in frontmatter['down_dependencies']:
-                        if dep_id in id_mapping:
-                            updated_down.append(id_mapping[dep_id])
-                            changed = True
-                        else:
-                            updated_down.append(dep_id)
-                    if changed:
-                        frontmatter['down_dependencies'] = updated_down
-
-                # Write back if changes were made
-                if changed:
-                    updated_frontmatter = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
-                    updated_content = f"---\n{updated_frontmatter}---\n{body}"
-
-                    with open(ticket_file, 'w', encoding='utf-8') as f:
-                        f.write(updated_content)
-
-                    tickets_updated += 1
-                    logger.debug(f"Updated cross-references in {ticket_file.name}")
-
-        logger.info(f"Updated cross-references in {tickets_updated} tickets across all hives")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to update cross-references: {e}",
-            "error_type": "cross_reference_update_error"
-        }
-
-    # Step 9: Update .hive marker file with new display name
-    try:
-        hive_marker_path = hive_path / ".hive"
-        identity_file = hive_marker_path / "identity.json"
-
-        if identity_file.exists():
-            # Read current identity
-            with open(identity_file, 'r', encoding='utf-8') as f:
-                identity_data = json.load(f)
-
-            # Update normalized_name and display_name
-            identity_data['normalized_name'] = normalized_new
-            identity_data['display_name'] = new_name
-
-            # Write back
-            with open(identity_file, 'w', encoding='utf-8') as f:
-                json.dump(identity_data, f, indent=2)
-
-            logger.info(f"Updated .hive marker with new identity: {normalized_new}")
-        else:
-            # Create marker if it doesn't exist
-            hive_marker_path.mkdir(exist_ok=True)
-            identity_data = {
-                "normalized_name": normalized_new,
-                "display_name": new_name,
-                "created_at": datetime.now().isoformat(),
-                "version": "1.0.0"
+            logger.info(f"Updated frontmatter for {len(id_mapping)} tickets")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to update ticket frontmatter: {e}",
+                "error_type": "frontmatter_update_error"
             }
-            with open(identity_file, 'w', encoding='utf-8') as f:
-                json.dump(identity_data, f, indent=2)
-            logger.info(f"Created .hive marker with new identity: {normalized_new}")
-    except Exception as e:
+
+        # Step 8: Update cross-references across ALL hives
+        try:
+            tickets_updated = 0
+            # Iterate through ALL hives, not just the renamed one
+            for hive_name, hive_cfg in config.hives.items():
+                hive_dir = Path(hive_cfg.path)
+
+                # Process all ticket files in this hive
+                for ticket_file in hive_dir.glob("*.md"):
+                    if ticket_file.stem.startswith('.'):
+                        continue
+
+                    # Read the file
+                    with open(ticket_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+
+                    # Parse frontmatter
+                    if not content.startswith('---\n'):
+                        continue
+
+                    parts = content.split('---\n', 2)
+                    if len(parts) < 3:
+                        continue
+
+                    frontmatter_str = parts[1]
+                    body = parts[2]
+                    frontmatter = yaml.safe_load(frontmatter_str)
+
+                    if not frontmatter:
+                        continue
+
+                    # Track if we made any changes
+                    changed = False
+
+                    # Update parent field (single string)
+                    if 'parent' in frontmatter and frontmatter['parent']:
+                        old_parent = frontmatter['parent']
+                        if old_parent in id_mapping:
+                            frontmatter['parent'] = id_mapping[old_parent]
+                            changed = True
+                            logger.debug(f"Updated parent in {ticket_file.name}: {old_parent} → {id_mapping[old_parent]}")
+
+                    # Update children field (list)
+                    if 'children' in frontmatter and frontmatter['children']:
+                        children_changed = False
+                        updated_children = []
+                        for child_id in frontmatter['children']:
+                            if child_id in id_mapping:
+                                updated_children.append(id_mapping[child_id])
+                                children_changed = True
+                                changed = True
+                            else:
+                                updated_children.append(child_id)
+                        if children_changed:
+                            frontmatter['children'] = updated_children
+
+                    # Update dependencies field (list)
+                    if 'dependencies' in frontmatter and frontmatter['dependencies']:
+                        updated_deps = []
+                        for dep_id in frontmatter['dependencies']:
+                            if dep_id in id_mapping:
+                                updated_deps.append(id_mapping[dep_id])
+                                changed = True
+                            else:
+                                updated_deps.append(dep_id)
+                        if changed:
+                            frontmatter['dependencies'] = updated_deps
+
+                    # Update up_dependencies field (list)
+                    if 'up_dependencies' in frontmatter and frontmatter['up_dependencies']:
+                        updated_up = []
+                        for dep_id in frontmatter['up_dependencies']:
+                            if dep_id in id_mapping:
+                                updated_up.append(id_mapping[dep_id])
+                                changed = True
+                            else:
+                                updated_up.append(dep_id)
+                        if changed:
+                            frontmatter['up_dependencies'] = updated_up
+
+                    # Update down_dependencies field (list)
+                    if 'down_dependencies' in frontmatter and frontmatter['down_dependencies']:
+                        updated_down = []
+                        for dep_id in frontmatter['down_dependencies']:
+                            if dep_id in id_mapping:
+                                updated_down.append(id_mapping[dep_id])
+                                changed = True
+                            else:
+                                updated_down.append(dep_id)
+                        if changed:
+                            frontmatter['down_dependencies'] = updated_down
+
+                    # Write back if changes were made
+                    if changed:
+                        updated_frontmatter = yaml.dump(frontmatter, default_flow_style=False, sort_keys=False)
+                        updated_content = f"---\n{updated_frontmatter}---\n{body}"
+
+                        with open(ticket_file, 'w', encoding='utf-8') as f:
+                            f.write(updated_content)
+
+                        tickets_updated += 1
+                        logger.debug(f"Updated cross-references in {ticket_file.name}")
+
+            logger.info(f"Updated cross-references in {tickets_updated} tickets across all hives")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to update cross-references: {e}",
+                "error_type": "cross_reference_update_error"
+            }
+
+        # Step 9: Update .hive marker file with new display name
+        try:
+            hive_marker_path = hive_path / ".hive"
+            identity_file = hive_marker_path / "identity.json"
+
+            if identity_file.exists():
+                # Read current identity
+                with open(identity_file, 'r', encoding='utf-8') as f:
+                    identity_data = json.load(f)
+
+                # Update normalized_name and display_name
+                identity_data['normalized_name'] = normalized_new
+                identity_data['display_name'] = new_name
+
+                # Write back
+                with open(identity_file, 'w', encoding='utf-8') as f:
+                    json.dump(identity_data, f, indent=2)
+
+                logger.info(f"Updated .hive marker with new identity: {normalized_new}")
+            else:
+                # Create marker if it doesn't exist
+                hive_marker_path.mkdir(exist_ok=True)
+                identity_data = {
+                    "normalized_name": normalized_new,
+                    "display_name": new_name,
+                    "created_at": datetime.now().isoformat(),
+                    "version": "1.0.0"
+                }
+                with open(identity_file, 'w', encoding='utf-8') as f:
+                    json.dump(identity_data, f, indent=2)
+                logger.info(f"Created .hive marker with new identity: {normalized_new}")
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Failed to update .hive marker: {e}",
+                "error_type": "marker_update_error"
+            }
+
+        # Step 10: Run linter to validate database integrity
+        # TODO: Full linter integration is deferred - would need to import Linter and run across all hives
+        # For now, we'll just log that this step is needed
+        logger.info("Linter check: (stubbed - full integration deferred to future work)")
+        # Future implementation would:
+        # - Import from src.linter import Linter
+        # - Import from src.corruption_state import mark_corrupt, mark_clean
+        # - Run linter on all hives
+        # - Call mark_corrupt(report) if errors found
+        # - Return error response with linter details if validation fails
+
+        # Success! Return summary
         return {
-            "status": "error",
-            "message": f"Failed to update .hive marker: {e}",
-            "error_type": "marker_update_error"
+            "status": "success",
+            "message": f"Hive renamed successfully from '{old_name}' to '{new_name}'",
+            "old_name": old_name,
+            "old_normalized": normalized_old,
+            "new_name": new_name,
+            "new_normalized": normalized_new,
+            "tickets_updated": len(id_mapping),
+            "cross_references_updated": tickets_updated,
+            "path": str(hive_path)
         }
 
-    # Step 10: Run linter to validate database integrity
-    # TODO: Full linter integration is deferred - would need to import Linter and run across all hives
-    # For now, we'll just log that this step is needed
-    logger.info("Linter check: (stubbed - full integration deferred to future work)")
-    # Future implementation would:
-    # - Import from src.linter import Linter
-    # - Import from src.corruption_state import mark_corrupt, mark_clean
-    # - Run linter on all hives
-    # - Call mark_corrupt(report) if errors found
-    # - Return error response with linter details if validation fails
 
-    # Success! Return summary
-    return {
-        "status": "success",
-        "message": f"Hive renamed successfully from '{old_name}' to '{new_name}'",
-        "old_name": old_name,
-        "old_normalized": normalized_old,
-        "new_name": new_name,
-        "new_normalized": normalized_new,
-        "tickets_updated": len(id_mapping),
-        "cross_references_updated": tickets_updated,
-        "path": str(hive_path)
-    }
-
-
-async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str, Any]:
+async def _sanitize_hive(hive_name: str, ctx: Context | None = None, repo_root: str | None = None) -> Dict[str, Any]:
     """
     Validate and auto-fix malformed tickets in a hive.
 
@@ -981,109 +993,108 @@ async def _sanitize_hive(hive_name: str, ctx: Context | None = None) -> Dict[str
     # Normalize hive name
     normalized = normalize_hive_name(hive_name)
 
-    # Load config
-    # Get repo root
+    # Resolve repo root and set up context
     if ctx:
-        repo_root = await get_repo_root(ctx)
-        if not repo_root:
-            raise ValueError("Cannot determine client repository root - MCP roots protocol unavailable")
+        resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
-        repo_root = get_repo_root_from_path(Path.cwd())
+        # Non-MCP call (tests, CLI)
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    
+    with repo_root_context(resolved_root):
+        config = load_bees_config()
 
-    config = load_bees_config(repo_root)
-
-    # Check if hive is registered
-    if not config or normalized not in config.hives:
-        return {
-            "status": "error",
-            "message": f"Hive '{hive_name}' (normalized: '{normalized}') is not registered. "
-                      f"Use colonize_hive() to register a new hive.",
-            "error_type": "hive_not_found"
-        }
-
-    # Get hive configuration
-    hive_config = config.hives[normalized]
-    hive_path = Path(hive_config.path)
-
-    # Verify hive directory exists
-    if not hive_path.exists():
-        return {
-            "status": "error",
-            "message": f"Hive directory does not exist: {hive_path}",
-            "error_type": "directory_not_found"
-        }
-
-    # Run linter with hive-aware validations and auto-fix enabled
-    logger.info(f"Running linter on hive '{normalized}' with auto-fix enabled")
-
-    try:
-        linter = Linter(
-            tickets_dir=str(hive_path),
-            hive_name=normalized,
-            validate_hive_prefix=True,
-            config=config,
-            auto_fix=True
-        )
-
-        report = linter.run()
-
-        # Build response with fixes and errors
-        fixes_applied = [
-            {
-                "ticket_id": fix.ticket_id,
-                "fix_type": fix.fix_type,
-                "description": fix.description
+        # Check if hive is registered
+        if not config or normalized not in config.hives:
+            return {
+                "status": "error",
+                "message": f"Hive '{hive_name}' (normalized: '{normalized}') is not registered. "
+                          f"Use colonize_hive() to register a new hive.",
+                "error_type": "hive_not_found"
             }
-            for fix in report.fixes
-        ]
 
-        errors_remaining = [
-            {
-                "ticket_id": error.ticket_id,
-                "error_type": error.error_type,
-                "message": error.message,
-                "severity": error.severity
+        # Get hive configuration
+        hive_config = config.hives[normalized]
+        hive_path = Path(hive_config.path)
+
+        # Verify hive directory exists
+        if not hive_path.exists():
+            return {
+                "status": "error",
+                "message": f"Hive directory does not exist: {hive_path}",
+                "error_type": "directory_not_found"
             }
-            for error in report.errors
-        ]
 
-        is_corrupt = report.is_corrupt()
+        # Run linter with hive-aware validations and auto-fix enabled
+        logger.info(f"Running linter on hive '{normalized}' with auto-fix enabled")
 
-        # Update corruption state
-        if is_corrupt:
-            mark_corrupt(report)
-            logger.warning(f"Hive '{normalized}' marked as corrupt after sanitization")
-        else:
-            mark_clean()
-            logger.info(f"Hive '{normalized}' marked as clean after sanitization")
+        try:
+            linter = Linter(
+                tickets_dir=str(hive_path),
+                hive_name=normalized,
+                validate_hive_prefix=True,
+                config=config,
+                auto_fix=True
+            )
 
-        # Build summary message
-        if not fixes_applied and not errors_remaining:
-            message = f"Hive '{hive_name}' is already clean. No issues found."
-        elif fixes_applied and not errors_remaining:
-            message = f"Hive '{hive_name}' sanitized successfully. Applied {len(fixes_applied)} fix(es)."
-        elif fixes_applied and errors_remaining:
-            message = (f"Hive '{hive_name}' partially sanitized. Applied {len(fixes_applied)} fix(es), "
-                      f"but {len(errors_remaining)} error(s) remain unfixable.")
-        else:
-            message = f"Hive '{hive_name}' has {len(errors_remaining)} unfixable error(s)."
+            report = linter.run()
 
-        return {
-            "status": "success" if not is_corrupt else "error",
-            "message": message,
-            "hive_name": hive_name,
-            "normalized_name": normalized,
-            "fixes_applied": fixes_applied,
-            "errors_remaining": errors_remaining,
-            "is_corrupt": is_corrupt,
-            "fix_count": len(fixes_applied),
-            "error_count": len(errors_remaining)
-        }
+            # Build response with fixes and errors
+            fixes_applied = [
+                {
+                    "ticket_id": fix.ticket_id,
+                    "fix_type": fix.fix_type,
+                    "description": fix.description
+                }
+                for fix in report.fixes
+            ]
 
-    except Exception as e:
-        logger.error(f"Error during sanitization of hive '{normalized}': {e}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Failed to sanitize hive: {e}",
-            "error_type": "sanitization_error"
-        }
+            errors_remaining = [
+                {
+                    "ticket_id": error.ticket_id,
+                    "error_type": error.error_type,
+                    "message": error.message,
+                    "severity": error.severity
+                }
+                for error in report.errors
+            ]
+
+            is_corrupt = report.is_corrupt()
+
+            # Update corruption state
+            if is_corrupt:
+                mark_corrupt(report)
+                logger.warning(f"Hive '{normalized}' marked as corrupt after sanitization")
+            else:
+                mark_clean()
+                logger.info(f"Hive '{normalized}' marked as clean after sanitization")
+
+            # Build summary message
+            if not fixes_applied and not errors_remaining:
+                message = f"Hive '{hive_name}' is already clean. No issues found."
+            elif fixes_applied and not errors_remaining:
+                message = f"Hive '{hive_name}' sanitized successfully. Applied {len(fixes_applied)} fix(es)."
+            elif fixes_applied and errors_remaining:
+                message = (f"Hive '{hive_name}' partially sanitized. Applied {len(fixes_applied)} fix(es), "
+                          f"but {len(errors_remaining)} error(s) remain unfixable.")
+            else:
+                message = f"Hive '{hive_name}' has {len(errors_remaining)} unfixable error(s)."
+
+            return {
+                "status": "success" if not is_corrupt else "error",
+                "message": message,
+                "hive_name": hive_name,
+                "normalized_name": normalized,
+                "fixes_applied": fixes_applied,
+                "errors_remaining": errors_remaining,
+                "is_corrupt": is_corrupt,
+                "fix_count": len(fixes_applied),
+                "error_count": len(errors_remaining)
+            }
+
+        except Exception as e:
+            logger.error(f"Error during sanitization of hive '{normalized}': {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": f"Failed to sanitize hive: {e}",
+                "error_type": "sanitization_error"
+            }

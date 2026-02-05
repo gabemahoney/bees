@@ -7,7 +7,7 @@ from .config import load_bees_config, BeesConfig
 from .id_utils import normalize_hive_name
 
 
-def get_hive_config(hive_name: str, repo_root: Path | None = None) -> Optional[Dict[str, Any]]:
+def get_hive_config(hive_name: str) -> Optional[Dict[str, Any]]:
     """
     Get configuration for a specific hive by name.
 
@@ -15,7 +15,6 @@ def get_hive_config(hive_name: str, repo_root: Path | None = None) -> Optional[D
 
     Args:
         hive_name: The hive name (display name or normalized form accepted)
-        repo_root: Optional repository root path
 
     Returns:
         Dict with 'path', 'display_name', 'created_at' if hive is registered,
@@ -33,7 +32,7 @@ def get_hive_config(hive_name: str, repo_root: Path | None = None) -> Optional[D
     normalized = normalize_hive_name(hive_name)
 
     # Load config
-    config = load_bees_config(repo_root)
+    config = load_bees_config()
     
     # Return None if config doesn't exist
     if config is None:
@@ -52,12 +51,9 @@ def get_hive_config(hive_name: str, repo_root: Path | None = None) -> Optional[D
     }
 
 
-def load_hives_config(repo_root: Path | None = None) -> Optional[BeesConfig]:
+def load_hives_config() -> Optional[BeesConfig]:
     """
     Load entire .bees/config.json configuration.
-
-    Args:
-        repo_root: Optional repository root path
 
     Returns:
         BeesConfig object if file exists, None if not found
@@ -68,4 +64,4 @@ def load_hives_config(repo_root: Path | None = None) -> Optional[BeesConfig]:
         ...     print(config.allow_cross_hive_dependencies)
         False
     """
-    return load_bees_config(repo_root)
+    return load_bees_config()

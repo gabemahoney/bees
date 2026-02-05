@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock, AsyncMock
 from src.mcp_repo_utils import get_client_repo_root, get_repo_root
 from src.config import get_config_path, load_bees_config
+from src.repo_context import repo_root_context
 
 
 @pytest.mark.asyncio
@@ -70,6 +71,7 @@ async def test_get_repo_root_with_context():
 
     result = await get_repo_root(ctx)
     assert result == test_repo
+    assert result is not None
     assert (result / ".git").exists()
 
 
@@ -77,7 +79,8 @@ async def test_get_repo_root_with_context():
 async def test_get_config_path_with_repo_root():
     """Test get_config_path uses explicit repo_root."""
     test_repo = Path(__file__).parent.parent
-    config_path = get_config_path(repo_root=test_repo)
+    with repo_root_context(test_repo):
+        config_path = get_config_path()
 
     assert config_path == test_repo / ".bees" / "config.json"
     assert "test_mcp_roots.py" not in str(config_path)
@@ -89,7 +92,8 @@ async def test_load_bees_config_with_repo_root():
     test_repo = Path(__file__).parent.parent
 
     # This should work with the test repo's actual config
-    config = load_bees_config(repo_root=test_repo)
+    with repo_root_context(test_repo):
+        config = load_bees_config()
 
     # Config might be None if no .bees/config.json exists yet, which is fine
     # The important thing is it doesn't raise an error about wrong directory
@@ -97,8 +101,9 @@ async def test_load_bees_config_with_repo_root():
 
 
 @pytest.mark.needs_real_git_check
+@pytest.mark.no_repo_context
 def test_get_config_path_raises_without_git_repo():
-    """Test get_config_path raises ValueError when not in git repo and no repo_root provided."""
+    """Test get_config_path raises RuntimeError when no repo_root set in context."""
     import tempfile
     import os
 
@@ -108,8 +113,8 @@ def test_get_config_path_raises_without_git_repo():
         try:
             os.chdir(tmpdir)
 
-            # Should raise ValueError since tmpdir is not in a git repo and no repo_root provided
-            with pytest.raises(ValueError, match="repo_root is required"):
+            # Should raise RuntimeError since no context was set
+            with pytest.raises(RuntimeError, match="repo_root not set in context"):
                 get_config_path()
         finally:
             os.chdir(old_cwd)
@@ -206,10 +211,11 @@ async def test_colonize_hive_uses_context():
 
         # Remove from config
         from src.config import load_bees_config, save_bees_config
-        config = load_bees_config(test_repo)
-        if config and "test_context_hive" in config.hives:
-            del config.hives["test_context_hive"]
-            save_bees_config(config, test_repo)
+        with repo_root_context(test_repo):
+            config = load_bees_config()
+            if config and "test_context_hive" in config.hives:
+                del config.hives["test_context_hive"]
+                save_bees_config(config)
     finally:
         # Cleanup
         import shutil

@@ -20,7 +20,6 @@ def create_epic(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    repo_root: Path | None = None,
 ) -> str:
     """
     Create an Epic ticket with YAML frontmatter.
@@ -64,7 +63,7 @@ def create_epic(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives(repo_root)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
@@ -94,7 +93,6 @@ def create_epic(
         ticket_type="epic",
         frontmatter_data=frontmatter_data,
         body=description,
-        repo_root=repo_root,
     )
 
     return ticket_id
@@ -112,7 +110,6 @@ def create_task(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    repo_root: Path | None = None,
 ) -> str:
     """
     Create a Task ticket with YAML frontmatter.
@@ -157,7 +154,7 @@ def create_task(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives(repo_root)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
@@ -189,7 +186,6 @@ def create_task(
         ticket_type="task",
         frontmatter_data=frontmatter_data,
         body=description,
-        repo_root=repo_root,
     )
 
     return ticket_id
@@ -207,7 +203,6 @@ def create_subtask(
     priority: int | None = None,
     status: str = "open",
     ticket_id: str | None = None,
-    repo_root: Path | None = None,
 ) -> str:
     """
     Create a Subtask ticket with YAML frontmatter.
@@ -255,7 +250,7 @@ def create_subtask(
 
     # Generate unique ID if not provided
     if ticket_id is None:
-        existing_ids = extract_existing_ids_from_all_hives(repo_root)
+        existing_ids = extract_existing_ids_from_all_hives()
         ticket_id = generate_unique_ticket_id(hive_name, existing_ids=existing_ids)
 
     # Build frontmatter data
@@ -286,7 +281,6 @@ def create_subtask(
         ticket_type="subtask",
         frontmatter_data=frontmatter_data,
         body=description,
-        repo_root=repo_root,
     )
 
     return ticket_id

@@ -12,11 +12,12 @@ from typing import Optional
 
 from .config import BeesConfig, load_bees_config, save_bees_config
 from .mcp_repo_utils import get_repo_root_from_path
+from .repo_context import get_repo_root
 
 logger = logging.getLogger(__name__)
 
 
-def validate_hive_path(path: str, repo_root: Path) -> Path:
+def validate_hive_path(path: str) -> Path:
     """
     Validate a hive path and return normalized absolute path.
 
@@ -28,7 +29,6 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
 
     Args:
         path: Path string to validate (must be absolute)
-        repo_root: Repository root path for boundary checking
 
     Returns:
         Path: Normalized absolute path to the hive directory
@@ -37,12 +37,12 @@ def validate_hive_path(path: str, repo_root: Path) -> Path:
         ValueError: If path is relative, parent doesn't exist, or is outside repo root
 
     Example:
-        >>> repo = Path('/Users/username/projects/myrepo')
-        >>> validate_hive_path('/Users/username/projects/myrepo/tickets/', repo)
+        >>> validate_hive_path('/Users/username/projects/myrepo/tickets/')
         PosixPath('/Users/username/projects/myrepo/tickets')
-        >>> validate_hive_path('tickets/', repo)  # Raises ValueError - not absolute
-        >>> validate_hive_path('/tmp/other/', repo)  # Raises ValueError - outside repo
+        >>> validate_hive_path('tickets/')  # Raises ValueError - not absolute
+        >>> validate_hive_path('/tmp/other/')  # Raises ValueError - outside repo
     """
+    repo_root = get_repo_root()
     hive_path = Path(path)
 
     # Check if path is absolute
@@ -168,10 +168,10 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
 
             # Update config.json with the recovered path
             try:
-                config = load_bees_config(repo_root=repo_root)
+                config = load_bees_config()
                 if config and name in config.hives:
                     config.hives[name].path = str(found_hive_path)
-                    save_bees_config(config, repo_root=repo_root)
+                    save_bees_config(config)
                     logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
                 else:
                     logger.warning(f"Hive '{name}' not found in config, cannot update path")

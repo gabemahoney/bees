@@ -13,6 +13,17 @@ from src.config import (
     load_hive_config_dict, write_hive_config_dict, register_hive_dict
 )
 from src.id_utils import normalize_hive_name
+from src.repo_context import repo_root_context, set_repo_root, reset_repo_root
+
+
+@pytest.fixture(autouse=True)
+def setup_repo_context(tmp_path, monkeypatch):
+    """Automatically set up repo_root context for all tests in this file."""
+    # Set the context before each test
+    token = set_repo_root(tmp_path)
+    yield
+    # Reset the context after each test
+    reset_repo_root(token)
 
 
 class TestConfig:
@@ -455,7 +466,8 @@ class TestLoadBeesConfig:
     def test_load_bees_config_missing_file(self, tmp_path, monkeypatch):
         """Test load_bees_config returns None when file doesn't exist."""
         monkeypatch.chdir(tmp_path)
-        config = load_bees_config(repo_root=tmp_path)
+        with repo_root_context(tmp_path):
+            config = load_bees_config()
         assert config is None
 
     def test_load_bees_config_valid_file(self, tmp_path, monkeypatch):
@@ -478,7 +490,7 @@ class TestLoadBeesConfig:
         }
         config_file.write_text(json.dumps(config_data))
 
-        config = load_bees_config(repo_root=tmp_path)
+        config = load_bees_config()
         assert config is not None
         assert len(config.hives) == 1
         assert "backend" in config.hives
@@ -502,7 +514,7 @@ class TestLoadBeesConfig:
         }
         config_file.write_text(json.dumps(config_data))
 
-        config = load_bees_config(repo_root=tmp_path)
+        config = load_bees_config()
         assert config is not None
         assert config.hives == {}
         assert config.allow_cross_hive_dependencies is True
@@ -517,7 +529,7 @@ class TestLoadBeesConfig:
         config_file.write_text("{invalid json")
 
         with caplog.at_level(logging.WARNING):
-            config = load_bees_config(repo_root=tmp_path)
+            config = load_bees_config()
 
         # Should return default structure instead of raising
         assert config is not None
@@ -542,7 +554,7 @@ class TestLoadBeesConfig:
         config_file.write_text(json.dumps(config_data))
 
         with pytest.raises(ValueError, match="schema_version must be a string"):
-            load_bees_config(repo_root=tmp_path)
+            load_bees_config()
 
     def test_load_bees_config_invalid_hive_data_type(self, tmp_path, monkeypatch):
         """Test load_bees_config raises ValueError for invalid hive data type."""
@@ -559,7 +571,7 @@ class TestLoadBeesConfig:
         config_file.write_text(json.dumps(config_data))
 
         with pytest.raises(ValueError, match="Hive 'backend' data must be a dict"):
-            load_bees_config(repo_root=tmp_path)
+            load_bees_config()
 
     def test_load_bees_config_returns_valid_structure_after_json_error(self, tmp_path, monkeypatch):
         """Test load_bees_config returns valid default structure on JSON errors."""
@@ -571,7 +583,7 @@ class TestLoadBeesConfig:
         # Write malformed JSON
         config_file.write_text("{broken json}")
 
-        config = load_bees_config(repo_root=tmp_path)
+        config = load_bees_config()
 
         # Verify returned default structure is valid
         assert isinstance(config, BeesConfig)
@@ -587,7 +599,7 @@ class TestSaveBeesConfig:
         """Test save_bees_config creates .bees/ directory if needed."""
         monkeypatch.chdir(tmp_path)
         config = BeesConfig()
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         bees_dir = tmp_path / ".bees"
         assert bees_dir.exists()
@@ -603,7 +615,7 @@ class TestSaveBeesConfig:
             allow_cross_hive_dependencies=False,
             schema_version="1.0"
         )
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         config_file = tmp_path / ".bees" / "config.json"
         assert config_file.exists()
@@ -627,7 +639,7 @@ class TestSaveBeesConfig:
             created_at=timestamp
         )
         config = BeesConfig(hives={"test": hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         config_file = tmp_path / ".bees" / "config.json"
         with open(config_file, 'r') as f:
@@ -641,7 +653,7 @@ class TestSaveBeesConfig:
         """Test save_bees_config sets schema_version to '1.0' if not set."""
         monkeypatch.chdir(tmp_path)
         config = BeesConfig(schema_version="")
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         config_file = tmp_path / ".bees" / "config.json"
         with open(config_file, 'r') as f:
@@ -653,7 +665,7 @@ class TestSaveBeesConfig:
         """Test save_bees_config creates formatted JSON with indent=2."""
         monkeypatch.chdir(tmp_path)
         config = BeesConfig()
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         config_file = tmp_path / ".bees" / "config.json"
         content = config_file.read_text()
@@ -666,7 +678,7 @@ class TestSaveBeesConfig:
         """Test save_bees_config adds trailing newline after JSON content."""
         monkeypatch.chdir(tmp_path)
         config = BeesConfig()
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         config_file = tmp_path / ".bees" / "config.json"
         content = config_file.read_text()
@@ -693,7 +705,7 @@ class TestSaveBeesConfig:
             return fd, path
 
         with patch('tempfile.mkstemp', side_effect=mock_mkstemp):
-            save_bees_config(config, repo_root=tmp_path)
+            save_bees_config(config)
 
         # Verify temp file was created in .bees/ directory
         assert len(temp_files_created) == 1
@@ -732,7 +744,7 @@ class TestSaveBeesConfig:
         with patch('tempfile.mkstemp', side_effect=mock_mkstemp):
             with patch('os.fdopen', side_effect=mock_fdopen):
                 try:
-                    save_bees_config(config, repo_root=tmp_path)
+                    save_bees_config(config)
                 except IOError:
                     pass  # Expected failure
 
@@ -752,10 +764,10 @@ class TestSaveBeesConfig:
         original_config = BeesConfig(hives={"backend": hive})
 
         # Save config
-        save_bees_config(original_config, repo_root=tmp_path)
+        save_bees_config(original_config)
 
         # Load it back
-        loaded_config = load_bees_config(repo_root=tmp_path)
+        loaded_config = load_bees_config()
 
         # Verify created_at is preserved
         assert loaded_config is not None
@@ -771,7 +783,7 @@ class TestSaveBeesConfig:
         # Create initial config
         hive = HiveConfig(path="tickets/backend/", display_name="Backend", created_at="2026-02-01T12:00:00")
         config1 = BeesConfig(hives={"backend": hive}, schema_version="1.0")
-        save_bees_config(config1, repo_root=tmp_path)
+        save_bees_config(config1)
 
         # Verify initial config was saved
         config_file = tmp_path / ".bees" / "config.json"
@@ -790,7 +802,7 @@ class TestSaveBeesConfig:
 
         with patch('os.replace', side_effect=mock_replace):
             try:
-                save_bees_config(config2, repo_root=tmp_path)
+                save_bees_config(config2)
             except IOError:
                 pass  # Expected failure
 
@@ -819,7 +831,7 @@ class TestSaveBeesConfig:
             Path(src).rename(dst)
 
         with patch('os.replace', side_effect=mock_replace) as mock_os_replace:
-            save_bees_config(config, repo_root=tmp_path)
+            save_bees_config(config)
 
         # Verify os.replace was called
         assert len(replace_calls) == 1
@@ -867,7 +879,7 @@ class TestConfigPathHelpers:
     def test_get_config_path(self, tmp_path, monkeypatch):
         """Test get_config_path returns correct path."""
         monkeypatch.chdir(tmp_path)
-        config_path = get_config_path(tmp_path)
+        config_path = get_config_path()
 
         assert config_path == tmp_path / ".bees" / "config.json"
 
@@ -877,7 +889,7 @@ class TestConfigPathHelpers:
         bees_dir = tmp_path / ".bees"
         assert not bees_dir.exists()
 
-        ensure_bees_dir(tmp_path)
+        ensure_bees_dir()
 
         assert bees_dir.exists()
         assert bees_dir.is_dir()
@@ -887,8 +899,8 @@ class TestConfigPathHelpers:
         monkeypatch.chdir(tmp_path)
         bees_dir = tmp_path / ".bees"
 
-        ensure_bees_dir(tmp_path)
-        ensure_bees_dir(tmp_path)  # Should not raise error
+        ensure_bees_dir()
+        ensure_bees_dir()  # Should not raise error
 
         assert bees_dir.exists()
 
@@ -963,7 +975,7 @@ class TestValidateUniqueHiveName:
         """Test validation passes with empty hives dict."""
         monkeypatch.chdir(tmp_path)
         config = BeesConfig(hives={})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Should not raise - no hives registered yet
         validate_unique_hive_name('backend')
@@ -973,7 +985,7 @@ class TestValidateUniqueHiveName:
         monkeypatch.chdir(tmp_path)
         hive = HiveConfig(path='tickets/frontend/', display_name='Frontend', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'frontend': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Should not raise - 'backend' is different from 'frontend'
         validate_unique_hive_name('backend')
@@ -983,7 +995,7 @@ class TestValidateUniqueHiveName:
         monkeypatch.chdir(tmp_path)
         hive = HiveConfig(path='tickets/backend/', display_name='Back End', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Should raise - 'back_end' already exists
         with pytest.raises(ValueError, match="normalized name 'back_end' already exists"):
@@ -995,7 +1007,7 @@ class TestValidateUniqueHiveName:
         # Register 'Back End' (normalized to 'back_end')
         hive = HiveConfig(path='tickets/backend/', display_name='Back End', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Trying to register 'back end' should fail (also normalizes to 'back_end')
         normalized = normalize_hive_name('back end')
@@ -1011,7 +1023,7 @@ class TestValidateUniqueHiveName:
             'backend': HiveConfig(path='tickets/be/', display_name='Backend', created_at=timestamp),
             'api': HiveConfig(path='tickets/api/', display_name='API', created_at=timestamp)
         })
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # New name should pass
         validate_unique_hive_name('mobile')
@@ -1025,7 +1037,7 @@ class TestValidateUniqueHiveName:
         monkeypatch.chdir(tmp_path)
         hive = HiveConfig(path='tickets/backend/', display_name='BACKEND', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'backend': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Normalized 'BACKEND' is 'backend', which already exists
         normalized = normalize_hive_name('BACKEND')
@@ -1037,7 +1049,7 @@ class TestValidateUniqueHiveName:
         monkeypatch.chdir(tmp_path)
         hive = HiveConfig(path='tickets/backend/', display_name='Back End Services', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'back_end_services': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         with pytest.raises(ValueError, match="Display name: 'Back End Services'"):
             validate_unique_hive_name('back_end_services')
@@ -1356,7 +1368,7 @@ class TestRegisterHiveDict:
         # Create config with one hive
         hive = HiveConfig(path='tickets/backend/', display_name='Backend', created_at='2026-02-01T12:00:00')
         config = BeesConfig(hives={'backend': hive})
-        save_bees_config(config, repo_root=tmp_path)
+        save_bees_config(config)
 
         # Add another hive
         timestamp = datetime.now()
