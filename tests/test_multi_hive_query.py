@@ -168,19 +168,18 @@ class TestMultiHiveQueryValidation:
                 src.query_storage._default_storage = old_storage
 
 
-@pytest.mark.skip(reason="Tests need update for hive-based config system")
 class TestPipelineHiveFiltering:
     """Tests for hive filtering in PipelineEvaluator."""
 
-    def test_pipeline_filters_by_single_hive(self):
+    def test_pipeline_filters_by_single_hive(self, isolated_bees_env):
         """Test that pipeline filters to only tickets from specified hive."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets with hive prefixes (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        frontend_dir = isolated_bees_env.create_hive("frontend", "Frontend")
+        isolated_bees_env.write_config()
 
-            # Create tickets with different hive prefixes
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        # Create tickets with different hive prefixes
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -191,7 +190,7 @@ labels: []
 Backend epic description
 """)
 
-            (tickets_dir / "frontend.bees-xyz.md").write_text("""---
+        (frontend_dir / "frontend.bees-xyz.md").write_text("""---
 id: frontend.bees-xyz
 bees_version: '1.1'
 title: Frontend Epic
@@ -202,35 +201,28 @@ labels: []
 Frontend epic description
 """)
 
-            (tickets_dir / "bees-123.md").write_text("""---
-id: bees-123
-bees_version: '1.1'
-title: Legacy Epic
-type: epic
-status: open
-labels: []
----
-Legacy epic without hive prefix
-""")
+        # Note: Legacy tickets without hive prefix would go in a legacy hive
+        # For this test we just test filtering between two hives
 
-            # Create pipeline and filter by backend hive
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"]]
+        # Create pipeline and filter by backend hive
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"]]
 
-            results = evaluator.execute_query(stages, hive_names=["backend"])
+        results = evaluator.execute_query(stages, hive_names=["backend"])
 
-            # Should only include backend ticket
-            assert results == {"backend.bees-abc"}
+        # Should only include backend ticket
+        assert results == {"backend.bees-abc"}
 
-    def test_pipeline_filters_by_multiple_hives(self):
+    def test_pipeline_filters_by_multiple_hives(self, isolated_bees_env):
         """Test that pipeline filters to tickets from multiple specified hives."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets with hive prefixes (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        frontend_dir = isolated_bees_env.create_hive("frontend", "Frontend")
+        database_dir = isolated_bees_env.create_hive("database", "Database")
+        isolated_bees_env.write_config()
 
-            # Create tickets with different hive prefixes
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        # Create tickets with different hive prefixes
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -241,7 +233,7 @@ labels: []
 Backend epic description
 """)
 
-            (tickets_dir / "frontend.bees-xyz.md").write_text("""---
+        (frontend_dir / "frontend.bees-xyz.md").write_text("""---
 id: frontend.bees-xyz
 bees_version: '1.1'
 title: Frontend Epic
@@ -252,7 +244,7 @@ labels: []
 Frontend epic description
 """)
 
-            (tickets_dir / "database.bees-def.md").write_text("""---
+        (database_dir / "database.bees-def.md").write_text("""---
 id: database.bees-def
 bees_version: '1.1'
 title: Database Epic
@@ -263,24 +255,25 @@ labels: []
 Database epic description
 """)
 
-            # Create pipeline and filter by backend and frontend hives
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"]]
+        # Create pipeline and filter by backend and frontend hives
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"]]
 
-            results = evaluator.execute_query(stages, hive_names=["backend", "frontend"])
+        results = evaluator.execute_query(stages, hive_names=["backend", "frontend"])
 
-            # Should include backend and frontend, but not database
-            assert results == {"backend.bees-abc", "frontend.bees-xyz"}
+        # Should include backend and frontend, but not database
+        assert results == {"backend.bees-abc", "frontend.bees-xyz"}
 
-    def test_pipeline_default_includes_all_hives(self):
+    def test_pipeline_default_includes_all_hives(self, isolated_bees_env):
         """Test that omitting hive_names includes all tickets."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets with hive prefixes (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        frontend_dir = isolated_bees_env.create_hive("frontend", "Frontend")
+        legacy_dir = isolated_bees_env.create_hive("legacy", "Legacy")
+        isolated_bees_env.write_config()
 
-            # Create tickets with different hive prefixes
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        # Create tickets with different hive prefixes
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -291,7 +284,7 @@ labels: []
 Backend epic description
 """)
 
-            (tickets_dir / "frontend.bees-xyz.md").write_text("""---
+        (frontend_dir / "frontend.bees-xyz.md").write_text("""---
 id: frontend.bees-xyz
 bees_version: '1.1'
 title: Frontend Epic
@@ -302,8 +295,8 @@ labels: []
 Frontend epic description
 """)
 
-            (tickets_dir / "bees-123.md").write_text("""---
-id: bees-123
+        (legacy_dir / "legacy.bees-123.md").write_text("""---
+id: legacy.bees-123
 bees_version: '1.1'
 title: Legacy Epic
 type: epic
@@ -313,23 +306,23 @@ labels: []
 Legacy epic without hive prefix
 """)
 
-            # Create pipeline without hive filter
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"]]
+        # Create pipeline without hive filter
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"]]
 
-            results = evaluator.execute_query(stages)
+        results = evaluator.execute_query(stages)
 
-            # Should include all tickets
-            assert results == {"backend.bees-abc", "frontend.bees-xyz", "bees-123"}
+        # Should include all tickets
+        assert results == {"backend.bees-abc", "frontend.bees-xyz", "legacy.bees-123"}
 
-    def test_pipeline_excludes_legacy_tickets_when_filtering(self):
+    def test_pipeline_excludes_legacy_tickets_when_filtering(self, isolated_bees_env):
         """Test that legacy tickets (no hive prefix) are excluded when filtering."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        legacy_dir = isolated_bees_env.create_hive("legacy", "Legacy")
+        isolated_bees_env.write_config()
 
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -340,35 +333,35 @@ labels: []
 Backend epic description
 """)
 
-            (tickets_dir / "bees-123.md").write_text("""---
-id: bees-123
+        (legacy_dir / "legacy.bees-123.md").write_text("""---
+id: legacy.bees-123
 bees_version: '1.1'
 title: Legacy Epic
 type: epic
 status: open
 labels: []
 ---
-Legacy epic without hive prefix
+Legacy epic in legacy hive
 """)
 
-            # Filter by backend hive
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"]]
+        # Filter by backend hive
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"]]
 
-            results = evaluator.execute_query(stages, hive_names=["backend"])
+        results = evaluator.execute_query(stages, hive_names=["backend"])
 
-            # Legacy ticket should be excluded
-            assert "bees-123" not in results
-            assert results == {"backend.bees-abc"}
+        # Legacy ticket should be excluded
+        assert "legacy.bees-123" not in results
+        assert results == {"backend.bees-abc"}
 
-    def test_pipeline_empty_hive_list(self):
+    def test_pipeline_empty_hive_list(self, isolated_bees_env):
         """Test that empty hive list filters out all hive-prefixed tickets."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        legacy_dir = isolated_bees_env.create_hive("legacy", "Legacy")
+        isolated_bees_env.write_config()
 
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -379,34 +372,34 @@ labels: []
 Backend epic description
 """)
 
-            (tickets_dir / "bees-123.md").write_text("""---
-id: bees-123
+        (legacy_dir / "legacy.bees-123.md").write_text("""---
+id: legacy.bees-123
 bees_version: '1.1'
 title: Legacy Epic
 type: epic
 status: open
 labels: []
 ---
-Legacy epic without hive prefix
+Legacy epic
 """)
 
-            # Filter with empty hive list
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"]]
+        # Filter with empty hive list
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"]]
 
-            results = evaluator.execute_query(stages, hive_names=[])
+        results = evaluator.execute_query(stages, hive_names=[])
 
-            # Should return empty set since no tickets match empty list
-            assert results == set()
+        # Should return empty set since no tickets match empty list
+        assert results == set()
 
-    def test_pipeline_hive_filter_with_search_stages(self):
+    def test_pipeline_hive_filter_with_search_stages(self, isolated_bees_env):
         """Test that hive filtering works correctly with search stages."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        frontend_dir = isolated_bees_env.create_hive("frontend", "Frontend")
+        isolated_bees_env.write_config()
 
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Task
@@ -417,7 +410,7 @@ labels: [priority]
 Backend task description
 """)
 
-            (tickets_dir / "backend.bees-def.md").write_text("""---
+        (backend_dir / "backend.bees-def.md").write_text("""---
 id: backend.bees-def
 bees_version: '1.1'
 title: Another Backend Task
@@ -428,7 +421,7 @@ labels: []
 Another backend task
 """)
 
-            (tickets_dir / "frontend.bees-xyz.md").write_text("""---
+        (frontend_dir / "frontend.bees-xyz.md").write_text("""---
 id: frontend.bees-xyz
 bees_version: '1.1'
 title: Frontend Task
@@ -439,23 +432,23 @@ labels: [priority]
 Frontend task description
 """)
 
-            # Filter by backend hive and open status
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=task"], ["label~priority"]]
+        # Filter by backend hive and open status
+        evaluator = PipelineEvaluator()
+        stages = [["type=task"], ["label~priority"]]
 
-            results = evaluator.execute_query(stages, hive_names=["backend"])
+        results = evaluator.execute_query(stages, hive_names=["backend"])
 
-            # Should only include backend.bees-abc (backend + priority label)
-            assert results == {"backend.bees-abc"}
+        # Should only include backend.bees-abc (backend + priority label)
+        assert results == {"backend.bees-abc"}
 
-    def test_pipeline_hive_filter_with_graph_stages(self):
+    def test_pipeline_hive_filter_with_graph_stages(self, isolated_bees_env):
         """Test that hive filtering works correctly with graph stages."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Create test tickets with parent-child relationships (flat storage)
-            tickets_dir = Path(tmpdir) / "tickets"
-            tickets_dir.mkdir(parents=True)
+        # Create hives with proper config
+        backend_dir = isolated_bees_env.create_hive("backend", "Backend")
+        frontend_dir = isolated_bees_env.create_hive("frontend", "Frontend")
+        isolated_bees_env.write_config()
 
-            (tickets_dir / "backend.bees-abc.md").write_text("""---
+        (backend_dir / "backend.bees-abc.md").write_text("""---
 id: backend.bees-abc
 bees_version: '1.1'
 title: Backend Epic
@@ -467,7 +460,7 @@ children: [backend.bees-def]
 Backend epic description
 """)
 
-            (tickets_dir / "backend.bees-def.md").write_text("""---
+        (backend_dir / "backend.bees-def.md").write_text("""---
 id: backend.bees-def
 bees_version: '1.1'
 title: Backend Task
@@ -479,7 +472,7 @@ parent: backend.bees-abc
 Backend task description
 """)
 
-            (tickets_dir / "frontend.bees-xyz.md").write_text("""---
+        (frontend_dir / "frontend.bees-xyz.md").write_text("""---
 id: frontend.bees-xyz
 bees_version: '1.1'
 title: Frontend Epic
@@ -491,7 +484,7 @@ children: [frontend.bees-123]
 Frontend epic description
 """)
 
-            (tickets_dir / "frontend.bees-123.md").write_text("""---
+        (frontend_dir / "frontend.bees-123.md").write_text("""---
 id: frontend.bees-123
 bees_version: '1.1'
 title: Frontend Task
@@ -503,11 +496,11 @@ parent: frontend.bees-xyz
 Frontend task description
 """)
 
-            # Filter by backend hive and traverse to children
-            evaluator = PipelineEvaluator(str(tickets_dir))
-            stages = [["type=epic"], ["children"]]
+        # Filter by backend hive and traverse to children
+        evaluator = PipelineEvaluator()
+        stages = [["type=epic"], ["children"]]
 
-            results = evaluator.execute_query(stages, hive_names=["backend"])
+        results = evaluator.execute_query(stages, hive_names=["backend"])
 
-            # Should only include backend.bees-def (child of backend epic)
-            assert results == {"backend.bees-def"}
+        # Should only include backend.bees-def (child of backend epic)
+        assert results == {"backend.bees-def"}

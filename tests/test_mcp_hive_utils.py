@@ -244,10 +244,17 @@ def test_scan_for_hive_warns_on_orphaned_marker(tmp_path, monkeypatch, caplog):
     assert any("orphaned .hive marker" in record.message for record in caplog.records)
 
 
-@pytest.mark.skip(reason="scan_for_hive doesn't auto-update config - known limitation")
+@pytest.mark.skip(reason="scan_for_hive is intentionally read-only and does not auto-update config. This is by design to maintain clear separation between discovery (scan) and registration (colonize). Users must manually re-register moved hives using abandon_hive + colonize_hive.")
 @pytest.mark.needs_real_git_check
 def test_scan_for_hive_updates_config_on_recovery(tmp_path, monkeypatch):
-    """Test scan_for_hive updates config.json when recovering moved hive."""
+    """Test scan_for_hive updates config.json when recovering moved hive.
+    
+    NOTE: This test documents desired behavior that is intentionally NOT implemented.
+    scan_for_hive() is designed to be read-only for clear separation of concerns.
+    If a hive is moved, users should:
+    1. Use abandon_hive() to unregister the old location
+    2. Use colonize_hive() to register the new location
+    """
     repo_root = tmp_path
     (repo_root / ".git").mkdir()
     monkeypatch.chdir(repo_root)

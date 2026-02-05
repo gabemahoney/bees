@@ -279,12 +279,15 @@ class TestAddNamedQueryTool:
                 src.query_storage._default_storage = old_storage
 
 
-@pytest.mark.skip(reason="Tests need update for hive-based config system")
 class TestExecuteQueryTool:
     """Tests for execute_query MCP tool."""
 
-    async def test_execute_nonexistent_query(self):
+    async def test_execute_nonexistent_query(self, isolated_bees_env):
         """Test that executing nonexistent query raises error."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -294,13 +297,17 @@ class TestExecuteQueryTool:
 
             try:
                 with pytest.raises(ValueError, match="Query not found"):
-                    await _execute_query("nonexistent")
+                    await _execute_query("nonexistent", ctx=None)
 
             finally:
                 src.query_storage._default_storage = old_storage
 
-    async def test_execute_query_with_valid_name(self):
+    async def test_execute_query_with_valid_name(self, isolated_bees_env):
         """Test executing a valid registered query."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -314,7 +321,7 @@ class TestExecuteQueryTool:
                 _add_named_query("test_query", query_yaml)
 
                 # Execute query - should succeed with 0 results since no tickets exist
-                result = await _execute_query("test_query")
+                result = await _execute_query("test_query", ctx=None)
                 assert result["status"] == "success"
                 assert result["query_name"] == "test_query"
                 assert result["result_count"] == 0
@@ -323,8 +330,12 @@ class TestExecuteQueryTool:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    async def test_execute_query_with_hive_filter(self):
+    async def test_execute_query_with_hive_filter(self, isolated_bees_env):
         """Test executing query with hive_names filtering."""
+        # Set up hive config with backend hive
+        isolated_bees_env.create_hive("backend", "Backend")
+        isolated_bees_env.write_config()
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -338,7 +349,7 @@ class TestExecuteQueryTool:
                 _add_named_query("test_query", query_yaml)
 
                 # Execute with hive filter - should succeed with 0 results
-                result = await _execute_query("test_query", hive_names=["backend"])
+                result = await _execute_query("test_query", hive_names=["backend"], ctx=None)
                 assert result["status"] == "success"
                 assert result["query_name"] == "test_query"
                 assert result["result_count"] == 0
@@ -346,8 +357,12 @@ class TestExecuteQueryTool:
             finally:
                 src.query_storage._default_storage = old_storage
 
-    async def test_execute_query_with_invalid_hive(self):
+    async def test_execute_query_with_invalid_hive(self, isolated_bees_env):
         """Test executing query with invalid hive name raises error."""
+        # Set up hive config with backend hive only
+        isolated_bees_env.create_hive("backend", "Backend")
+        isolated_bees_env.write_config()
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             import src.query_storage
             old_storage = src.query_storage._default_storage
@@ -362,7 +377,7 @@ class TestExecuteQueryTool:
 
                 # Execute with invalid hive should raise ValueError
                 with pytest.raises(ValueError, match="Hive not found"):
-                    await _execute_query("test_query", hive_names=["nonexistent_hive"])
+                    await _execute_query("test_query", hive_names=["nonexistent_hive"], ctx=None)
 
             finally:
                 src.query_storage._default_storage = old_storage
@@ -420,42 +435,57 @@ invalid_structure_here
                 src.query_storage._default_storage = old_storage
 
 
-@pytest.mark.skip(reason="Tests need update for hive-based config system")
 class TestExecuteFreeformQuery:
     """Tests for execute_freeform_query MCP tool."""
 
-    async def test_execute_freeform_query_with_valid_query(self):
+    async def test_execute_freeform_query_with_valid_query(self, isolated_bees_env):
         """Test executing a valid freeform query without persisting."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         # Should succeed with 0 results since no tickets exist
         query_yaml = "- [type=task]"
         
-        result = await _execute_freeform_query(query_yaml)
+        result = await _execute_freeform_query(query_yaml, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
         assert result["ticket_ids"] == []
 
-    async def test_execute_freeform_query_with_invalid_yaml_syntax(self):
+    async def test_execute_freeform_query_with_invalid_yaml_syntax(self, isolated_bees_env):
         """Test that invalid YAML syntax raises QueryValidationError."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         invalid_yaml = "- [type=task\n  missing bracket"
         
         with pytest.raises(ValueError, match="Invalid query structure"):
-            await _execute_freeform_query(invalid_yaml)
+            await _execute_freeform_query(invalid_yaml, ctx=None)
 
-    async def test_execute_freeform_query_with_hive_filter(self):
+    async def test_execute_freeform_query_with_hive_filter(self, isolated_bees_env):
         """Test executing freeform query with hive_names parameter."""
+        # Set up hive config with backend hive
+        isolated_bees_env.create_hive("backend", "Backend")
+        isolated_bees_env.write_config()
+        
         query_yaml = "- [type=task]"
         
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(query_yaml, hive_names=["backend"])
+        result = await _execute_freeform_query(query_yaml, hive_names=["backend"], ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
-    async def test_execute_freeform_query_with_nonexistent_hive(self):
+    async def test_execute_freeform_query_with_nonexistent_hive(self, isolated_bees_env):
         """Test that non-existent hive raises ValueError with available hives message."""
+        # Set up hive config with backend hive only
+        isolated_bees_env.create_hive("backend", "Backend")
+        isolated_bees_env.write_config()
+        
         query_yaml = "- [type=epic]"
         
         with pytest.raises(ValueError, match="Hive not found.*nonexistent_hive"):
-            await _execute_freeform_query(query_yaml, hive_names=["nonexistent_hive"])
+            await _execute_freeform_query(query_yaml, hive_names=["nonexistent_hive"], ctx=None)
 
     def test_execute_freeform_query_empty_result_set(self):
         """Test that empty result set returns status=success with result_count=0."""
@@ -463,66 +493,90 @@ class TestExecuteFreeformQuery:
         # and verify the structure would work based on other tests
         pass
 
-    async def test_execute_freeform_query_multi_stage(self):
+    async def test_execute_freeform_query_multi_stage(self, isolated_bees_env):
         """Test executing multi-stage freeform query."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         multi_stage_query = """
 - [type=epic]
 - [children]
 """
         
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(multi_stage_query)
+        result = await _execute_freeform_query(multi_stage_query, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
-    async def test_execute_freeform_query_validation_errors(self):
+    async def test_execute_freeform_query_validation_errors(self, isolated_bees_env):
         """Test that query validation errors are caught and reported."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         # Invalid query structure (not a list)
         invalid_query = "type=task"
 
         with pytest.raises(ValueError, match="Invalid query structure"):
-            await _execute_freeform_query(invalid_query)
+            await _execute_freeform_query(invalid_query, ctx=None)
 
     @pytest.mark.asyncio
-    async def test_execute_freeform_query_with_parent_filter(self):
+    async def test_execute_freeform_query_with_parent_filter(self, isolated_bees_env):
         """Test freeform query with parent= search term."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         query_yaml = "- [parent=some-epic-id]"
 
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(query_yaml)
+        result = await _execute_freeform_query(query_yaml, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
         assert result["ticket_ids"] == []
 
     @pytest.mark.asyncio
-    async def test_execute_freeform_query_parent_combined_with_type(self):
+    async def test_execute_freeform_query_parent_combined_with_type(self, isolated_bees_env):
         """Test freeform query with parent= combined with type= filter."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         query_yaml = "- [type=task, parent=epic-123]"
 
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(query_yaml)
+        result = await _execute_freeform_query(query_yaml, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_execute_freeform_query_parent_combined_with_label(self):
+    async def test_execute_freeform_query_parent_combined_with_label(self, isolated_bees_env):
         """Test freeform query with parent= combined with label~ filter."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         query_yaml = "- [parent=epic-123, label~beta]"
 
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(query_yaml)
+        result = await _execute_freeform_query(query_yaml, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
 
     @pytest.mark.asyncio
-    async def test_execute_freeform_query_parent_in_multistage(self):
+    async def test_execute_freeform_query_parent_in_multistage(self, isolated_bees_env):
         """Test freeform query with parent= in multi-stage pipeline."""
+        # Set up hive config
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+        
         multi_stage_query = """
 - [parent=epic-123]
 - [parent]
 """
 
         # Should succeed with 0 results since no tickets exist
-        result = await _execute_freeform_query(multi_stage_query)
+        result = await _execute_freeform_query(multi_stage_query, ctx=None)
         assert result["status"] == "success"
         assert result["result_count"] == 0
