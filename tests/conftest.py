@@ -146,6 +146,168 @@ def test_ticket_relationships(hive_with_tickets):
     epic = show_ticket(epic_id)
     assert task_id in epic["children"]
 
+MOCK PATCHING STRATEGY
+======================
+
+This test suite uses SOURCE-LEVEL PATCHING for all mocks to ensure reliable test isolation.
+Understanding this pattern is critical for writing and maintaining tests.
+
+Why Source-Level Patching?
+---------------------------
+Python creates name bindings at import time. When a module does:
+    from some_module import some_function
+
+It creates a LOCAL binding in its own namespace. Patching only the original module
+won't affect already-imported names in other modules.
+
+Example Problem (Import-Level Patching - INCORRECT):
+    # production_code.py
+    from shutil import rmtree  # Creates local binding to shutil.rmtree
+    
+    def delete_dir(path):
+        rmtree(path)  # Uses the local binding
+    
+    # test_code.py
+    @patch('shutil.rmtree')  # ❌ WRONG: Only patches shutil module
+    def test_delete():
+        delete_dir("/tmp/test")  # Still calls real rmtree!
+
+The Problem:
+    - production_code.py imported rmtree before the test ran
+    - The local binding in production_code.py still points to the real function
+    - @patch('shutil.rmtree') only affects code that imports shutil AFTER the patch
+
+Correct Solution (Source-Level Patching):
+    # production_code.py
+    import shutil  # Import the module, not the function
+    
+    def delete_dir(path):
+        shutil.rmtree(path)  # Uses module.function syntax
+    
+    # test_code.py
+    @patch('production_code.shutil.rmtree')  # ✅ CORRECT: Patches the local binding
+    def test_delete():
+        delete_dir("/tmp/test")  # Safely mocked!
+
+The Solution:
+    - Patch where the function is USED, not where it's DEFINED
+    - Use 'module_that_imports.module.function' pattern
+    - This patches the local binding created by the import statement
+
+Real Example from Bees Codebase:
+    # bees/paths.py
+    import shutil  # Source-level import
+    
+    def delete_hive(hive_path):
+        if hive_path.exists():
+            shutil.rmtree(hive_path)  # Uses shutil.rmtree
+    
+    # tests/test_paths.py
+    @patch('bees.paths.shutil.rmtree')  # Patch where it's used, not shutil.rmtree
+    def test_delete_hive():
+        delete_hive(Path("/tmp/test"))
+        # Mock is called, real filesystem is safe
+
+Mock Patching Patterns in This Test Suite
+------------------------------------------
+
+CORRECT Patterns (Use These):
+    ✅ @patch('bees.paths.shutil.rmtree')       # Patches bees.paths module's shutil binding
+    ✅ @patch('bees.config.json.dumps')         # Patches bees.config module's json binding
+    ✅ monkeypatch.setattr('src.module.func')   # monkeypatch uses source-level by default
+
+INCORRECT Patterns (Never Use):
+    ❌ @patch('shutil.rmtree')                  # Only affects code that imports shutil after patch
+    ❌ @patch('json.dumps')                     # Won't affect already-imported json modules
+    ❌ mock.patch('builtin.open')               # Won't affect modules that imported open
+
+How to Determine Correct Patch Target:
+    1. Find where the function is USED (not where it's defined)
+    2. Check the import statement in that module
+    3. Patch using the pattern: 'using_module.imported_module.function'
+    
+    Example:
+        # Step 1: Find usage
+        # File: src/writer.py, Line 45
+        shutil.copy2(src, dst)
+        
+        # Step 2: Check import
+        # File: src/writer.py, Line 3
+        import shutil
+        
+        # Step 3: Build patch target
+        @patch('src.writer.shutil.copy2')  # ✅ Correct!
+
+Module Reload Mechanism
+-----------------------
+Some tests use importlib.reload() to reset module state between tests.
+This is necessary when testing import-time side effects or module-level state.
+
+When to Use reload():
+    - Testing module initialization code
+    - Resetting module-level variables
+    - Testing different import configurations
+    - Coordinating with @pytest.mark.needs_real_git_check
+
+Example:
+    import importlib
+    import src.config
+    
+    def test_config_initialization():
+        # Reset config module to test initialization
+        importlib.reload(src.config)
+        # Now test import-time behavior
+
+Relationship with needs_real_git_check Marker
+----------------------------------------------
+The @pytest.mark.needs_real_git_check marker disables mock_git_repo_check fixture.
+Use this when you need to test actual git repository validation logic.
+
+When to Use:
+    ✅ Testing get_repo_root_from_path() function itself
+    ✅ Testing error handling for non-git directories
+    ✅ Integration tests that interact with real git repos
+    
+When NOT to Use:
+    ❌ Regular unit tests (mocks make tests faster and more reliable)
+    ❌ Tests in tmp_path (tmp_path isn't a git repo)
+    ❌ Testing ticket creation/updates (doesn't need git validation)
+
+Example:
+    @pytest.mark.needs_real_git_check
+    def test_repo_validation():
+        # This test uses REAL git validation (no mocking)
+        # Will fail if not run in a git repository
+        repo_root = get_repo_root_from_path(Path.cwd())
+        assert (repo_root / '.git').exists()
+
+Common Pitfalls and Solutions
+------------------------------
+
+Pitfall 1: "Mock not called" errors
+    Problem: Patched wrong target (used import-level instead of source-level)
+    Solution: Patch where function is USED: @patch('using_module.imported.func')
+
+Pitfall 2: Real filesystem/network calls in tests
+    Problem: Forgot to mock external dependencies
+    Solution: Use source-level patching for ALL external calls (shutil, requests, subprocess)
+
+Pitfall 3: Mock works in one test file but not another
+    Problem: Different modules import the same function differently
+    Solution: Patch each usage location separately or standardize imports
+
+Pitfall 4: Tests pass individually but fail when run together
+    Problem: Module-level state persists between tests
+    Solution: Use importlib.reload() or ensure proper fixture cleanup
+
+Summary: Golden Rules
+---------------------
+1. ALWAYS use source-level patching: @patch('using_module.imported.function')
+2. NEVER patch at the definition site: @patch('original_module.function')
+3. Production code should use "import module" not "from module import function"
+4. Find the import statement to determine the correct patch target
+5. Use @pytest.mark.needs_real_git_check only for testing validation logic itself
+
 DECISION TREE: CHOOSING THE RIGHT FIXTURE
 ==========================================
 
@@ -225,12 +387,17 @@ def backup_project_config():
     backup_path = project_root / ".bees" / "config.json.test_backup"
     
     # Backup if config exists
+    # NOTE: This fixture uses shutil.copy2 directly (not mocked) because it runs at
+    # session scope before any tests. Tests that need to mock shutil operations should
+    # use source-level patching: @patch('module_using_shutil.shutil.copy2')
     if config_path.exists():
         shutil.copy2(config_path, backup_path)
     
     yield
     
     # Restore from backup
+    # NOTE: Restoration also uses real shutil.copy2 to ensure project state is restored
+    # even if tests fail or mock shutil operations
     if backup_path.exists():
         shutil.copy2(backup_path, config_path)
         backup_path.unlink()
@@ -303,11 +470,24 @@ def mock_git_repo_check(request, monkeypatch):
             # Without this mock, colonize_hive would reject tmp_path
     """
     # Skip mocking for tests that need real git validation
+    # The needs_real_git_check marker allows opt-out for tests that need to verify
+    # actual git repository detection logic (e.g., testing get_repo_root_from_path itself)
     if 'needs_real_git_check' in request.keywords:
         return
 
     def mock_get_repo_root(start_path: Path) -> Path:
-        """Walk up from start_path to find a directory containing .git or .bees, or return cwd."""
+        """
+        Mock implementation of get_repo_root_from_path for test isolation.
+        
+        This mock allows tests to run in tmp_path directories that lack .git directories.
+        The production function would reject these as invalid repositories, but tests need
+        to operate in isolated temporary directories.
+        
+        Behavior:
+            - Walks up directory tree looking for .git or .bees markers
+            - Falls back to Path.cwd() if no markers found
+            - This fallback is critical: it allows tmp_path tests to work without creating .git
+        """
         current = start_path.resolve()
 
         # Walk up looking for .git or .bees directory
@@ -320,49 +500,79 @@ def mock_git_repo_check(request, monkeypatch):
         if (current / '.git').exists() or (current / '.bees').exists():
             return current
 
-        # If no .git or .bees found, assume current working directory is the repo root
-        # This handles test cases where we create subdirectories but haven't created .git yet
+        # CRITICAL FALLBACK: If no .git or .bees found, assume cwd is repo root
+        # This handles test cases where we:
+        # - Create subdirectories in tmp_path but haven't created .git yet
+        # - Use monkeypatch.chdir(tmp_path) to set working directory
+        # - Want tests to pass without git repository infrastructure
+        # Without this fallback, all tmp_path tests would fail validation
         return Path.cwd().resolve()
 
-    # Patch both mcp_repo_utils and mcp_server
-    # Both patches are required because Python creates name bindings at import time
-    # mcp_server.py:32 does: from .mcp_repo_utils import get_repo_root_from_path
-    # This creates a local name binding to the original function in mcp_server's namespace
-    # Patching only mcp_repo_utils doesn't affect already-imported names in mcp_server
+    # SOURCE-LEVEL PATCHING: Patch get_repo_root_from_path in ALL modules that import it
+    #
+    # Why we need 4 separate patches:
+    #   Python creates name bindings at module import time. When a module does:
+    #       from .mcp_repo_utils import get_repo_root_from_path
+    #   
+    #   It creates a LOCAL binding in that module's namespace pointing to the function.
+    #   Patching only src.mcp_repo_utils.get_repo_root_from_path won't affect the local
+    #   bindings already created in other modules during their import.
+    #
+    # Example of the problem:
+    #   1. At import time: mcp_server.py executes "from .mcp_repo_utils import get_repo_root_from_path"
+    #   2. This creates: mcp_server.get_repo_root_from_path → points to original function
+    #   3. Later, test patches: src.mcp_repo_utils.get_repo_root_from_path
+    #   4. But mcp_server's local binding STILL points to the original function!
+    #   5. Result: Calls from mcp_server.py use real function, not mock
+    #
+    # Solution: Patch where the function is USED (source-level), not where it's DEFINED
+    #
+    # These 4 modules all import get_repo_root_from_path and must be patched individually:
     monkeypatch.setattr(
-        "src.mcp_repo_utils.get_repo_root_from_path",
+        "src.mcp_repo_utils.get_repo_root_from_path",  # Definition site (for direct calls)
         mock_get_repo_root
     )
     monkeypatch.setattr(
-        "src.mcp_server.get_repo_root_from_path",
+        "src.mcp_server.get_repo_root_from_path",      # Usage site 1
         mock_get_repo_root
     )
     monkeypatch.setattr(
-        "src.mcp_ticket_ops.get_repo_root_from_path",
+        "src.mcp_ticket_ops.get_repo_root_from_path",  # Usage site 2
         mock_get_repo_root
     )
     monkeypatch.setattr(
-        "src.mcp_query_ops.get_repo_root_from_path",
+        "src.mcp_query_ops.get_repo_root_from_path",   # Usage site 3
         mock_get_repo_root
     )
 
-    # Patch get_config_path and ensure_bees_dir to use Path.cwd() when repo_root is None
+    # ADDITIONAL PATCHING: Config functions that need test-friendly defaults
+    #
+    # These config functions accept optional repo_root parameter. In production, they use
+    # get_repo_root() from context when repo_root=None. But in tests, we want them to
+    # default to Path.cwd() (which is typically tmp_path via monkeypatch.chdir).
+    #
+    # This patching complements the get_repo_root_from_path mocking above by ensuring
+    # config operations work seamlessly in test environments.
     from src.config import get_config_path as original_get_config_path
     from src.config import ensure_bees_dir as original_ensure_bees_dir
     from src.config import BEES_CONFIG_DIR, BEES_CONFIG_FILENAME
 
     def patched_get_config_path(repo_root: Path | None = None) -> Path:
+        """Test-friendly version: defaults to Path.cwd() when repo_root is None."""
         if repo_root is None:
             repo_root = Path.cwd()
         return repo_root / BEES_CONFIG_DIR / BEES_CONFIG_FILENAME
 
     def patched_ensure_bees_dir(repo_root: Path | None = None) -> None:
+        """Test-friendly version: defaults to Path.cwd() when repo_root is None."""
         if repo_root is None:
             repo_root = Path.cwd()
         bees_dir = repo_root / BEES_CONFIG_DIR
         bees_dir.mkdir(exist_ok=True)
 
-    # Patch both in src.config and any places that might have imported it
+    # SOURCE-LEVEL PATCHING: Patch in src.config module where these functions are defined
+    # Currently only src.config defines these, but if other modules import them, we'd need
+    # to patch those modules too (following the same source-level pattern as above)
     import src.config
     monkeypatch.setattr(src.config, "get_config_path", patched_get_config_path)
     monkeypatch.setattr(src.config, "ensure_bees_dir", patched_ensure_bees_dir)
@@ -421,11 +631,27 @@ def set_repo_root_context(request):
             result = some_function()  # Can safely call get_repo_root()
     """
     # Skip for tests that don't want automatic context
+    # The no_repo_context marker allows tests to manage repo_root_context manually
+    # (e.g., when testing context behavior itself or using repo_root_ctx fixture)
     if 'no_repo_context' in request.keywords:
         yield  # Must yield even when skipping
         return
     
-    # Set context to current working directory (which is tmp_path in most tests)
+    # CONTEXT SETUP: Set repo_root to Path.cwd() for duration of test
+    #
+    # How this supports the mock patching strategy:
+    #   - mock_git_repo_check (above) handles VALIDATION: makes tmp_path acceptable as repo
+    #   - set_repo_root_context (here) handles CONTEXT: makes get_repo_root() return tmp_path
+    #
+    # Together they enable production code to work seamlessly in test environments:
+    #   1. Test does: monkeypatch.chdir(tmp_path)
+    #   2. This fixture sets: repo_root_context = Path.cwd() = tmp_path
+    #   3. mock_git_repo_check makes: validation functions accept tmp_path
+    #   4. Production code can now both validate AND retrieve repo_root successfully
+    #
+    # Without both fixtures, tests would fail because:
+    #   - Without mock_git_repo_check: Validation would reject tmp_path (no .git)
+    #   - Without set_repo_root_context: get_repo_root() would raise RuntimeError (no context)
     with repo_root_context(Path.cwd()):
         yield
 
