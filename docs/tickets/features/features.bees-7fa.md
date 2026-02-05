@@ -8,9 +8,9 @@ description: "Context: Developers need to understand when and how to use the mar
   \ marker is applied (skips git mock patching)\n  - Example usage\n\nFiles: conftest.py\n\
   \nAcceptance: Clear documentation exists showing marker purpose and usage pattern"
 parent: features.bees-27y
-status: open
 created_at: '2026-02-05T12:45:34.175452'
-updated_at: '2026-02-05T12:45:34.175455'
+updated_at: '2026-02-05T15:47:14.138076'
+status: completed
 bees_version: '1.1'
 ---
 

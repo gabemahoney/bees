@@ -18,12 +18,12 @@ description: 'Context: Final validation of marker implementation.
 
 
   Acceptance: All tests pass with no failures or errors'
-parent: features.bees-27y
 up_dependencies:
 - features.bees-ofx
-status: open
+parent: features.bees-27y
 created_at: '2026-02-05T12:45:59.474090'
-updated_at: '2026-02-05T12:45:59.474097'
+updated_at: '2026-02-05T15:51:14.982266'
+status: completed
 bees_version: '1.1'
 ---
 

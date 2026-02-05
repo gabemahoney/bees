@@ -24,8 +24,8 @@ down_dependencies:
 - features.bees-ofx
 parent: features.bees-27y
 created_at: '2026-02-05T12:45:30.711532'
-updated_at: '2026-02-05T12:45:52.919055'
-status: open
+updated_at: '2026-02-05T15:46:40.004940'
+status: completed
 bees_version: '1.1'
 ---
 

@@ -235,18 +235,53 @@ By patching `get_repo_root_from_path` at its source module (`src.mcp_repo_utils`
 **Implementation:**
 The `mock_git_repo_check` fixture in `tests/conftest.py` is `autouse=True`, automatically applying to all tests. It patches `src.mcp_repo_utils.get_repo_root_from_path` to allow tests to run in temporary directories without requiring actual `.git` directories.
 
-**Opt-Out Mechanism:**
-Tests requiring real git validation can opt out using the `needs_real_git_check` marker:
+**Marker System Implementation:**
+The test infrastructure uses pytest's marker system to provide opt-out behavior for tests requiring real git checks:
+
+**Marker Registration** (pyproject.toml):
+```toml
+[tool.pytest.ini_options]
+markers = [
+    "needs_real_git_check: Tests that require real git repository validation (not mocked)",
+    "no_repo_context: Tests that run without repo_root context set"
+]
+```
+
+**Fixture Behavior Modification** (tests/conftest.py):
+The `mock_git_repo_check` fixture inspects the test's marker collection to determine whether to apply mocking:
+
+```python
+@pytest.fixture(autouse=True)
+def mock_git_repo_check(request, monkeypatch):
+    # Skip mocking for tests with needs_real_git_check marker
+    if 'needs_real_git_check' in request.keywords:
+        return  # Early return skips all patching
+    
+    # Apply mocking for unmarked tests...
+```
+
+**Usage Pattern:**
+Tests requiring real git validation can opt out using the `@pytest.mark.needs_real_git_check` decorator:
 ```python
 @pytest.mark.needs_real_git_check
 def test_requires_real_git():
-    # Uses actual get_repo_root_from_path logic
+    # Uses actual get_repo_root_from_path logic (no mocking)
     result = get_repo_root_from_path(Path.cwd())
     assert (result / '.git').exists()
 ```
 
+**Integration with Existing Fixtures:**
+The marker system works alongside the existing `mock_mcp_context` fixture, which provides mock MCP Context objects for testing MCP tool functions. Tests can combine markers with fixtures:
+- Use `@pytest.mark.needs_real_git_check` to skip git mocking
+- Use `mock_mcp_context` to provide MCP context for tool functions
+- Combine both for testing MCP tools that need real git behavior
+
 **Design Rationale:**
-This pattern applies to any widely-imported utility function where consistent mocking is critical. By centralizing the mock at the source module, we achieve better reliability and maintainability compared to scattered import-site patches.
+This pattern applies to any widely-imported utility function where consistent mocking is critical. By centralizing the mock at the source module with marker-based opt-out, we achieve:
+- Default-safe behavior (all tests get mocking by default)
+- Explicit opt-out for tests requiring real behavior
+- Better reliability and maintainability compared to scattered import-site patches
+- Clear documentation through marker registration in pytest configuration
 
 ### Integration Testing Strategy
 

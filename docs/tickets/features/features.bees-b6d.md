@@ -19,12 +19,12 @@ description: 'Context: Architecture documentation should describe the marker sys
 
 
   Acceptance: master_plan.md contains architecture notes about marker system'
-parent: features.bees-27y
 up_dependencies:
 - features.bees-lhf
-status: open
+parent: features.bees-27y
 created_at: '2026-02-05T12:45:49.341334'
-updated_at: '2026-02-05T12:45:49.341341'
+updated_at: '2026-02-05T15:49:09.849376'
+status: completed
 bees_version: '1.1'
 ---
 

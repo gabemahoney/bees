@@ -179,14 +179,25 @@ Bees uses **source module patching** in `tests/conftest.py` to ensure mocks appl
 The `mock_git_repo_check` fixture in conftest.py is `autouse=True`, so all tests automatically receive the mocked `get_repo_root_from_path`. This allows tests to run in temporary directories (tmp_path) without requiring actual .git directories.
 
 **Opt-Out with Marker:**
-Tests that need real git validation can opt out:
+Tests that need real git repository behavior instead of mocks can opt out using `@pytest.mark.needs_real_git_check`:
+
 ```python
 @pytest.mark.needs_real_git_check
 def test_requires_real_git():
-    # Uses actual get_repo_root_from_path logic
+    # Uses actual get_repo_root_from_path logic (no mocking)
     result = get_repo_root_from_path(Path.cwd())
     assert (result / '.git').exists()
 ```
+
+**When to use this marker:**
+- Testing git repository detection logic (e.g., `get_repo_root_from_path()`)
+- Verifying behavior that requires real `.git` directory structure
+- Integration tests that must run against actual git repositories
+
+**What happens when marked:**
+- The `mock_git_repo_check` fixture skips all patching for the test
+- Test runs against real filesystem and git validation
+- Test will fail if not run in an actual git repository
 
 ## Hives
 

@@ -45,9 +45,9 @@ children:
 - features.bees-ofx
 - features.bees-q2a
 created_at: '2026-02-05T12:44:36.171450'
-updated_at: '2026-02-05T12:45:59.477490'
+updated_at: '2026-02-05T15:51:15.606930'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

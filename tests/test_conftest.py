@@ -99,13 +99,55 @@ class TestMockGitRepoCheckMarker:
     """Test the @pytest.mark.needs_real_git_check marker."""
 
     @pytest.mark.needs_real_git_check
-    def test_marker_bypasses_mock(self, tmp_path):
-        """Verify tests marked with needs_real_git_check bypass the mock."""
+    def test_marker_bypasses_mock_uses_real_git(self):
+        """Verify tests marked with needs_real_git_check use real git detection."""
         # This test is marked to bypass the mock
-        # In a non-git directory, it should raise an error
-        # Note: This test validates the marker exists and is recognized by pytest
-        # The actual bypass behavior is tested in integration tests
-        pass
+        # It should use the actual get_repo_root_from_path logic
+        # Since we're in the bees project (which is a git repo), this should succeed
+        test_repo = Path(__file__).parent.parent
+        
+        result = mcp_repo_utils.get_repo_root_from_path(test_repo)
+        
+        # Should return the actual repo root
+        assert result == test_repo
+        assert (result / ".git").exists()
+    
+    @pytest.mark.needs_real_git_check
+    def test_marker_bypasses_mock_fails_in_non_git(self):
+        """Verify marked tests fail in non-git directories (no mock protection)."""
+        import tempfile
+        
+        # Create a temporary directory that's not a git repo
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+            
+            # Without the mock, this should raise ValueError
+            with pytest.raises(ValueError, match="Not in a git repository"):
+                mcp_repo_utils.get_repo_root_from_path(temp_path)
+    
+    def test_unmarked_test_uses_mock(self, tmp_path, monkeypatch):
+        """Verify unmarked tests still get mocked behavior."""
+        monkeypatch.chdir(tmp_path)
+        
+        # tmp_path has no .git directory
+        assert not (tmp_path / '.git').exists()
+        
+        # But the mock allows it to work
+        result = mcp_repo_utils.get_repo_root_from_path(tmp_path)
+        assert result == Path.cwd()
+        # No exception raised, proving the mock is active
+    
+    def test_marker_registration(self, pytestconfig):
+        """Verify needs_real_git_check marker is registered in pytest."""
+        # This ensures pytest recognizes the marker and won't warn about unknown markers
+        # The marker should be registered in pyproject.toml
+        
+        # Get the list of registered markers from pytest config
+        markers = pytestconfig.getini("markers")
+        marker_names = [marker.split(":")[0].strip() for marker in markers]
+        
+        # Check that our marker is registered
+        assert "needs_real_git_check" in marker_names
 
 
 class TestMockGitRepoCheckEdgeCases:

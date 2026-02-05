@@ -270,15 +270,30 @@ def mock_git_repo_check(request, monkeypatch):
         - mock_git_repo_check: Makes validation functions accept tmp_path
         - set_repo_root_context: Provides context for get_repo_root() calls
     
-    Opt-Out with Marker:
-        Tests that need real git validation (e.g., testing actual git detection):
+    Using @pytest.mark.needs_real_git_check Marker:
+        Tests that require real git repository checks can opt-out of mocking by using
+        the @pytest.mark.needs_real_git_check decorator. This is useful when:
+        - Testing actual git repository detection logic
+        - Verifying behavior that depends on real .git directory structure
+        - Integration testing with real git commands
         
-        @pytest.mark.needs_real_git_check
-        def test_requires_real_git():
-            # This test will use actual get_repo_root_from_path logic
-            # and will fail if run in non-git directory
-            result = get_repo_root_from_path(Path.cwd())
-            assert (result / '.git').exists()
+        Example:
+            @pytest.mark.needs_real_git_check
+            def test_requires_real_git():
+                # This test will use actual get_repo_root_from_path logic
+                # The mock_git_repo_check fixture skips patching for this test
+                result = get_repo_root_from_path(Path.cwd())
+                assert (result / '.git').exists()
+        
+        When the marker is present:
+        - All git-related mocking is skipped (get_repo_root_from_path, config functions)
+        - Test runs against real filesystem and git validation
+        - Test will fail if not run in a git repository
+        
+        When to use this marker:
+        - Testing get_repo_root_from_path() function itself
+        - Testing error handling for non-git directories
+        - Integration tests that interact with real git repos
     
     Usage Example:
         # No explicit usage needed - this fixture is autouse

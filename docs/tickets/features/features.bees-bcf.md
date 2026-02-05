@@ -19,9 +19,9 @@ description: 'Context: Some existing tests may need real git behavior instead of
 
   Acceptance: Tests requiring real git behavior are properly decorated with marker'
 parent: features.bees-27y
-status: open
 created_at: '2026-02-05T12:45:40.902742'
-updated_at: '2026-02-05T12:45:40.902748'
+updated_at: '2026-02-05T15:47:45.206662'
+status: completed
 bees_version: '1.1'
 ---
 

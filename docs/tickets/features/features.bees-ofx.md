@@ -26,8 +26,8 @@ down_dependencies:
 - features.bees-q2a
 parent: features.bees-27y
 created_at: '2026-02-05T12:45:52.913201'
-updated_at: '2026-02-05T12:45:59.479869'
-status: open
+updated_at: '2026-02-05T15:49:39.449153'
+status: completed
 bees_version: '1.1'
 ---
 
