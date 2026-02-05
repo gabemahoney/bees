@@ -25,6 +25,8 @@ description: 'Eliminate dead code that confuses developers and inflates codebase
 
 
   Source: /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md'
+down_dependencies:
+- features.bees-c9p
 children:
 - features.bees-nkt
 - features.bees-uwi
@@ -35,9 +37,9 @@ children:
 - features.bees-raw
 - features.bees-9e9
 created_at: '2026-02-05T08:05:35.529263'
-updated_at: '2026-02-05T09:49:53.771378'
+updated_at: '2026-02-05T10:35:18.562362'
 priority: 2
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

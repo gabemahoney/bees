@@ -19,8 +19,9 @@ up_dependencies:
 down_dependencies:
 - features.bees-1u8
 - features.bees-5y8
+- features.bees-c9p
 created_at: '2026-02-05T08:05:44.016743'
-updated_at: '2026-02-05T08:05:57.830220'
+updated_at: '2026-02-05T10:35:18.566164'
 priority: 2
 status: open
 bees_version: '1.1'

@@ -32,8 +32,10 @@ labels:
 - not-started
 up_dependencies:
 - features.bees-74p
+down_dependencies:
+- features.bees-c9p
 created_at: '2026-02-05T08:05:46.742728'
-updated_at: '2026-02-05T08:05:57.063112'
+updated_at: '2026-02-05T10:35:18.570007'
 priority: 2
 status: open
 bees_version: '1.1'

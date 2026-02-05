@@ -12,6 +12,7 @@ description: "Foundation for eliminating 500+ lines of duplicate fixture code.\n
   \ conftest.py with clear usage examples\n\nSource: /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md"
 down_dependencies:
 - features.bees-74p
+- features.bees-c9p
 children:
 - features.bees-l71
 - features.bees-m6i
@@ -19,7 +20,7 @@ children:
 - features.bees-bx1
 - features.bees-jc0
 created_at: '2026-02-05T08:05:40.939627'
-updated_at: '2026-02-05T09:28:00.287490'
+updated_at: '2026-02-05T10:35:18.557938'
 priority: 2
 status: completed
 bees_version: '1.1'

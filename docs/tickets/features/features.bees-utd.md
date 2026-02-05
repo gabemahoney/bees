@@ -28,13 +28,20 @@ description: 'Remove redundant test coverage for trivial functions, improving te
 
 
   Source: /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md'
-labels:
-- not-started
-status: open
+down_dependencies:
+- features.bees-c9p
+children:
+- features.bees-4tm
+- features.bees-zju
+- features.bees-115
+- features.bees-lnx
+- features.bees-uxl
+- features.bees-gvm
 created_at: '2026-02-05T08:05:38.256465'
-updated_at: '2026-02-05T08:05:38.256471'
-bees_version: '1.1'
+updated_at: '2026-02-05T10:35:29.217763'
 priority: 2
+status: open
+bees_version: '1.1'
 ---
 
 Remove redundant test coverage for trivial functions, improving test suite maintainability.
