@@ -13,111 +13,82 @@ from src.id_utils import (
 class TestNormalizeHiveName:
     """Tests for normalize_hive_name() function."""
 
-    def test_lowercase_conversion(self):
-        """Should convert to lowercase."""
+    def test_standard_normalization(self):
+        """Should normalize: lowercase, spaces→underscores, hyphens→underscores."""
+        # Lowercase conversion
         assert normalize_hive_name("BackEnd") == "backend"
         assert normalize_hive_name("FRONTEND") == "frontend"
         assert normalize_hive_name("MixedCase") == "mixedcase"
-
-    def test_space_to_underscore(self):
-        """Should convert spaces to underscores."""
+        # Spaces to underscores
         assert normalize_hive_name("My Hive") == "my_hive"
         assert normalize_hive_name("Back End") == "back_end"
         assert normalize_hive_name("Multi Word Name") == "multi_word_name"
-
-    def test_hyphen_to_underscore(self):
-        """Should convert hyphens to underscores."""
+        # Hyphens to underscores
         assert normalize_hive_name("front-end") == "front_end"
         assert normalize_hive_name("my-hive-name") == "my_hive_name"
-
-    def test_special_chars_removed(self):
-        """Should remove special characters."""
-        assert normalize_hive_name("my@hive") == "myhive"
-        assert normalize_hive_name("test#123") == "test123"
-        assert normalize_hive_name("hive!name$") == "hivename"
-
-    def test_leading_number_gets_underscore(self):
-        """Should add underscore if starts with number."""
-        assert normalize_hive_name("2backend") == "_2backend"
-        assert normalize_hive_name("123test") == "_123test"
-
-    def test_already_normalized(self):
-        """Should handle already normalized names."""
-        assert normalize_hive_name("backend") == "backend"
-        assert normalize_hive_name("my_hive") == "my_hive"
-
-    def test_complex_normalization(self):
-        """Should handle complex cases."""
-        assert normalize_hive_name("My-Hive@2024!") == "my_hive2024"
-        assert normalize_hive_name("Back End (v2)") == "back_end_v2"
-
-    def test_empty_string(self):
-        """Should return empty string for empty input."""
-        assert normalize_hive_name("") == ""
-
-    def test_unicode_characters(self):
-        """Should handle unicode characters."""
-        # Unicode letters should be removed (not in [a-z0-9_])
-        assert normalize_hive_name("café") == "caf"
-        assert normalize_hive_name("München") == "mnchen"
-        assert normalize_hive_name("日本") == ""
-        # Unicode with regular chars
-        assert normalize_hive_name("test_café") == "test_caf"
-
-    def test_mixed_special_chars_with_hyphens(self):
-        """Should handle mixed special characters and hyphens."""
-        assert normalize_hive_name("test-@name!") == "test_name"
-        assert normalize_hive_name("my-#hive$2024") == "my_hive2024"
-        assert normalize_hive_name("front-end!@#") == "front_end"
-        # Multiple consecutive hyphens and special chars
-        assert normalize_hive_name("test--@@name") == "test__name"
-
-    def test_only_special_characters(self):
-        """Should return empty string for only special characters."""
-        assert normalize_hive_name("@#$%") == ""
-        assert normalize_hive_name("!!!") == ""
-        assert normalize_hive_name("***&&&") == ""
-        assert normalize_hive_name("&&&") == ""
-
-    def test_whitespace_only_strings(self):
-        """Should convert whitespace-only strings to underscores."""
-        # Single space becomes single underscore
-        assert normalize_hive_name(" ") == "_"
-        # Multiple spaces become multiple underscores
-        assert normalize_hive_name("   ") == "___"
-        # Tab character becomes underscore (via space conversion)
-        # Note: tabs are not converted to spaces first, they're removed as special chars
-        assert normalize_hive_name("\t") == ""
-        # Newline is removed as special char
-        assert normalize_hive_name("\n") == ""
-        # Mixed whitespace - spaces become underscores, tabs/newlines removed
-        assert normalize_hive_name(" \t \n ") == "___"
-
-    def test_mixed_special_chars_and_whitespace(self):
-        """Should handle mixed special characters and whitespace."""
-        # Spaces become underscores, special chars removed
-        assert normalize_hive_name("  @#$  ") == "____"
-        # Tab and special chars - tab is removed, spaces from edges remain
-        assert normalize_hive_name("\t!!!\n") == ""
-        # Mix of everything
-        assert normalize_hive_name(" @ # $ ") == "____"
-        assert normalize_hive_name("  !!!  ") == "____"
-
-    def test_multiple_consecutive_spaces(self):
-        """Should convert multiple spaces to multiple underscores."""
+        # Mixed hyphens and spaces
+        assert normalize_hive_name("my hive-name") == "my_hive_name"
+        assert normalize_hive_name("back-end team") == "back_end_team"
+        # Multiple consecutive spaces
         assert normalize_hive_name("test  name") == "test__name"
         assert normalize_hive_name("a   b") == "a___b"
-
-    def test_leading_and_trailing_spaces(self):
-        """Should convert leading/trailing spaces to underscores."""
+        # Leading and trailing spaces
         assert normalize_hive_name(" test") == "_test"
         assert normalize_hive_name("test ") == "test_"
         assert normalize_hive_name(" test ") == "_test_"
 
-    def test_mixed_hyphens_and_spaces(self):
-        """Should convert both hyphens and spaces to underscores."""
-        assert normalize_hive_name("my hive-name") == "my_hive_name"
-        assert normalize_hive_name("back-end team") == "back_end_team"
+    def test_special_character_removal(self):
+        """Should remove special characters, handle unicode, numbers, and complex cases."""
+        # Basic special characters removed
+        assert normalize_hive_name("my@hive") == "myhive"
+        assert normalize_hive_name("test#123") == "test123"
+        assert normalize_hive_name("hive!name$") == "hivename"
+        # Leading numbers get underscore prefix
+        assert normalize_hive_name("2backend") == "_2backend"
+        assert normalize_hive_name("123test") == "_123test"
+        # Complex normalization
+        assert normalize_hive_name("My-Hive@2024!") == "my_hive2024"
+        assert normalize_hive_name("Back End (v2)") == "back_end_v2"
+        # Unicode characters removed (not in [a-z0-9_])
+        assert normalize_hive_name("café") == "caf"
+        assert normalize_hive_name("München") == "mnchen"
+        assert normalize_hive_name("日本") == ""
+        assert normalize_hive_name("test_café") == "test_caf"
+        # Mixed special chars with hyphens
+        assert normalize_hive_name("test-@name!") == "test_name"
+        assert normalize_hive_name("my-#hive$2024") == "my_hive2024"
+        assert normalize_hive_name("front-end!@#") == "front_end"
+        assert normalize_hive_name("test--@@name") == "test__name"
+
+    def test_empty_and_whitespace_only_input(self):
+        """Should handle empty strings, whitespace-only, and special-char-only inputs."""
+        # Empty string
+        assert normalize_hive_name("") == ""
+        # Only special characters return empty
+        assert normalize_hive_name("@#$%") == ""
+        assert normalize_hive_name("!!!") == ""
+        assert normalize_hive_name("***&&&") == ""
+        assert normalize_hive_name("&&&") == ""
+        # Whitespace-only strings (spaces become underscores)
+        assert normalize_hive_name(" ") == "_"
+        assert normalize_hive_name("   ") == "___"
+        # Tabs and newlines are removed as special chars
+        assert normalize_hive_name("\t") == ""
+        assert normalize_hive_name("\n") == ""
+        # Mixed whitespace - spaces preserved as underscores, tabs/newlines removed
+        assert normalize_hive_name(" \t \n ") == "___"
+        # Mixed special chars and whitespace
+        assert normalize_hive_name("  @#$  ") == "____"
+        assert normalize_hive_name("\t!!!\n") == ""
+        assert normalize_hive_name(" @ # $ ") == "____"
+        assert normalize_hive_name("  !!!  ") == "____"
+
+    def test_already_normalized_input(self):
+        """Should handle already-normalized names without changes."""
+        assert normalize_hive_name("backend") == "backend"
+        assert normalize_hive_name("my_hive") == "my_hive"
+        assert normalize_hive_name("front_end") == "front_end"
+        assert normalize_hive_name("test_123") == "test_123"
 
 
 class TestGenerateTicketIdWithHive:
