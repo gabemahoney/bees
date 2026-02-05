@@ -3108,28 +3108,26 @@ class TestModuleIntegration:
     def test_tool_registration_count(self):
         """Test that all expected tools are registered.
         
-        NOTE: FastMCP adds a '- ' prefix to all tool names. This appears to be
-        a quirk of the FastMCP library's tool naming convention. We accept this
-        and test for the actual names that FastMCP produces.
+        NOTE: FastMCP no longer adds a '- ' prefix to tool names.
         """
         import asyncio
         from src.mcp_server import mcp
 
         async def check_tools():
             tools = await mcp.get_tools()
-            # Expected tools with FastMCP's '- ' prefix:
+            # Expected tools without prefix:
             # health_check, create_ticket, update_ticket, delete_ticket,
             # show_ticket, colonize_hive, list_hives, abandon_hive, rename_hive,
             # sanitize_hive, add_named_query, execute_query, execute_freeform_query,
             # generate_index, help
             assert len(tools) == 15, f"Expected 15 tools, got {len(tools)}"
 
-            # Verify specific tools are present (with FastMCP's '- ' prefix)
+            # Verify specific tools are present
             expected_tools = {
-                '- health_check', '- create_ticket', '- update_ticket', '- delete_ticket',
-                '- show_ticket', '- colonize_hive', '- list_hives', '- abandon_hive',
-                '- rename_hive', '- sanitize_hive', '- add_named_query', '- execute_query',
-                '- execute_freeform_query', '- generate_index', '- help'
+                'health_check', 'create_ticket', 'update_ticket', 'delete_ticket',
+                'show_ticket', 'colonize_hive', 'list_hives', 'abandon_hive',
+                'rename_hive', 'sanitize_hive', 'add_named_query', 'execute_query',
+                'execute_freeform_query', 'generate_index', 'help'
             }
             assert set(tools) == expected_tools
 

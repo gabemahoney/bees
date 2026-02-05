@@ -44,6 +44,24 @@ async def colonize_hive_core(name: str, path: str, ctx: Context | None = None) -
     - Creates the hive directory structure (/eggs, /evicted, .hive marker)
     - Registers the hive in .bees/config.json
 
+    CONTEXT PATTERN:
+    This function intentionally differs from the standard repo_root resolution pattern
+    used by other MCP tools. Unlike functions that use resolve_repo_root(ctx, repo_root),
+    this function has sophisticated fallback logic:
+    
+    1. Tries MCP Roots protocol via get_repo_root(ctx)
+    2. If roots succeeds, validates the hive path is within that repo
+    3. If hive path is outside detected repo, falls back to path-based detection
+    4. If roots fails entirely, uses path-based detection
+    
+    This special handling is necessary because:
+    - Hive colonization may target a different repo than the MCP client's cwd
+    - The `path` parameter provides a reliable fallback for repo detection
+    - Standard resolve_repo_root() would raise an error instead of using the fallback
+    
+    The repo_root_context is set immediately after resolution (before validation)
+    so all downstream operations (validate_hive_path, config operations) have context.
+
     Args:
         name: Display name for the hive (e.g., 'Back End')
         path: Absolute path where the hive should be created
