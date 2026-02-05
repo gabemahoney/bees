@@ -10,7 +10,8 @@ description: |
   Affected files: config.py (10 functions), paths.py (3), ticket_factory.py (3), writer.py (1), id_utils.py (1), index_generator.py (2), hive_utils.py (2), watcher.py (1), mcp_hive_utils.py (1), plus ~15 MCP entry points.
 
   Acceptance: No functions outside MCP entry points have repo_root parameter. All entry points have optional repo_root for non-Roots clients. All tests pass. Concurrent requests work correctly. Clear error messages when neither Roots nor explicit param provides repo_root.
-status: open
+children: ["features.bees-aa1", "features.bees-aa2", "features.bees-pg9", "features.bees-aa3", "features.bees-pga", "features.bees-aa4", "features.bees-pgb", "features.bees-aa5", "features.bees-pgc", "features.bees-aa6", "features.bees-pgd", "features.bees-pge", "features.bees-aa7", "features.bees-pgf", "features.bees-pgg", "features.bees-pgh", "features.bees-pgi", "features.bees-pgj", "features.bees-pgk"]
+status: completed
 created_at: '2026-02-04T18:25:28.892523'
 updated_at: '2026-02-04T18:25:28.892530'
 bees_version: '1.1'
@@ -105,6 +106,7 @@ async def _create_ticket(
 3. All tests pass
 4. Concurrent requests with different repos work correctly (test with multiple async tasks)
 5. Clear error message when neither Roots protocol nor explicit param provides repo_root
+6. All skipped tests resolved - either fixed or removed with clear justification
 
 ## Design Notes
 
