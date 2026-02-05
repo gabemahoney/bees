@@ -23,9 +23,9 @@ description: '**Context**: After removing obvious normalize_hive_name duplicates
   **Acceptance**: Confirmation that no other duplicate tests exist beyond those already
   identified'
 parent: features.bees-lnx
-status: open
 created_at: '2026-02-05T10:20:17.648248'
-updated_at: '2026-02-05T10:20:17.648254'
+updated_at: '2026-02-05T10:47:45.287518'
+status: completed
 bees_version: '1.1'
 ---
 

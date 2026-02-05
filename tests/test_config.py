@@ -844,63 +844,6 @@ class TestConfigPathHelpers:
         assert bees_dir.exists()
 
 
-class TestNormalizeHiveName:
-    """Test normalize_hive_name function for hive name normalization."""
-
-    def test_normalize_hive_name_spaces_to_underscores(self):
-        """Test 'Back End' normalizes to 'back_end'."""
-        assert normalize_hive_name('Back End') == 'back_end'
-
-    def test_normalize_hive_name_uppercase_to_lowercase(self):
-        """Test 'UPPERCASE' normalizes to 'uppercase'."""
-        assert normalize_hive_name('UPPERCASE') == 'uppercase'
-
-    def test_normalize_hive_name_multi_word(self):
-        """Test 'multi word name' normalizes to 'multi_word_name'."""
-        assert normalize_hive_name('multi word name') == 'multi_word_name'
-
-    def test_normalize_hive_name_mixed_case_with_spaces(self):
-        """Test 'Front End Team' normalizes to 'front_end_team'."""
-        assert normalize_hive_name('Front End Team') == 'front_end_team'
-
-    def test_normalize_hive_name_already_normalized(self):
-        """Test 'backend' stays 'backend'."""
-        assert normalize_hive_name('backend') == 'backend'
-
-    def test_normalize_hive_name_single_word_uppercase(self):
-        """Test 'API' normalizes to 'api'."""
-        assert normalize_hive_name('API') == 'api'
-
-    def test_normalize_hive_name_multiple_spaces(self):
-        """Test 'multiple  spaces' with double space."""
-        assert normalize_hive_name('multiple  spaces') == 'multiple__spaces'
-
-    def test_normalize_hive_name_trailing_spaces(self):
-        """Test 'trailing ' with trailing space."""
-        assert normalize_hive_name('trailing ') == 'trailing_'
-
-    def test_normalize_hive_name_leading_spaces(self):
-        """Test ' leading' with leading space."""
-        assert normalize_hive_name(' leading') == '_leading'
-
-    def test_normalize_hive_name_empty_string(self):
-        """Test empty string returns empty string."""
-        assert normalize_hive_name('') == ''
-
-    def test_normalize_hive_name_underscore_preserved(self):
-        """Test 'already_normalized' stays 'already_normalized'."""
-        assert normalize_hive_name('already_normalized') == 'already_normalized'
-
-    def test_normalize_hive_name_hyphens_to_underscores(self):
-        """Test hyphens are converted to underscores."""
-        # Note: normalize_hive_name converts hyphens to underscores and removes special chars
-        assert normalize_hive_name('test-name') == 'test_name'
-
-    def test_normalize_hive_name_special_chars_removed(self):
-        """Test special characters are removed."""
-        assert normalize_hive_name('test.name') == 'testname'
-
-
 class TestValidateUniqueHiveName:
     """Test validate_unique_hive_name function for duplicate detection."""
 

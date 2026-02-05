@@ -22,9 +22,9 @@ description: '**Context**: Task features.bees-lnx requires identifying and remov
 
   **Acceptance**: Documented list of duplicate tests with keep/delete decisions'
 parent: features.bees-lnx
-status: open
 created_at: '2026-02-05T10:20:10.050021'
-updated_at: '2026-02-05T10:20:10.050024'
+updated_at: '2026-02-05T10:46:40.701077'
+status: completed
 bees_version: '1.1'
 ---
 

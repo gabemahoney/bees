@@ -1,37 +1,10 @@
 """Unit tests for hive utility functions."""
 
 import json
-import tempfile
-from pathlib import Path
 import pytest
 
 from src.hive_utils import get_hive_config, load_hives_config
-from src.id_utils import normalize_hive_name
 from src.config import BeesConfig, HiveConfig, save_bees_config
-
-
-class TestNormalizeHiveName:
-    """Tests for normalize_hive_name function (from id_utils)."""
-    
-    def test_lowercase_conversion(self):
-        """Test that uppercase is converted to lowercase."""
-        assert normalize_hive_name("BackEnd") == "backend"
-        assert normalize_hive_name("FRONTEND") == "frontend"
-    
-    def test_space_to_underscore(self):
-        """Test that spaces are converted to underscores."""
-        assert normalize_hive_name("Back End") == "back_end"
-        assert normalize_hive_name("My Hive Name") == "my_hive_name"
-    
-    def test_hyphen_to_underscore(self):
-        """Test that hyphens are converted to underscores."""
-        assert normalize_hive_name("back-end") == "back_end"
-        assert normalize_hive_name("my-hive-name") == "my_hive_name"
-    
-    def test_already_normalized(self):
-        """Test that already normalized names pass through unchanged."""
-        assert normalize_hive_name("backend") == "backend"
-        assert normalize_hive_name("my_hive") == "my_hive"
 
 
 class TestGetHiveConfig:

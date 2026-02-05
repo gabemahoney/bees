@@ -37,8 +37,10 @@ children:
 - features.bees-lnx
 - features.bees-uxl
 - features.bees-gvm
+- features.bees-n1k
+- features.bees-r13
 created_at: '2026-02-05T08:05:38.256465'
-updated_at: '2026-02-05T10:35:29.217763'
+updated_at: '2026-02-05T10:54:16.029763'
 priority: 2
 status: open
 bees_version: '1.1'

@@ -21,9 +21,9 @@ description: '**Context**: test_config.py contains duplicate normalize_hive_name
 
   **Acceptance**: TestNormalizeHiveName removed from test_config.py, all tests pass'
 parent: features.bees-lnx
-status: open
 created_at: '2026-02-05T10:20:13.715241'
-updated_at: '2026-02-05T10:20:13.715247'
+updated_at: '2026-02-05T10:47:15.743672'
+status: completed
 bees_version: '1.1'
 ---
 
