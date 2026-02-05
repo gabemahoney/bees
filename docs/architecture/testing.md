@@ -14,7 +14,7 @@ These fixtures run automatically for every test unless explicitly opted out. The
 
 **Purpose**: Protect development environment from test pollution.
 
-**Implementation** (`tests/conftest.py:190-236`):
+**Implementation** (`tests/conftest.py` - `backup_project_config` fixture):
 - Session-scoped: Runs once per pytest session
 - Backs up `.bees/config.json` before tests
 - Restores original config after all tests complete
@@ -28,7 +28,7 @@ These fixtures run automatically for every test unless explicitly opted out. The
 
 **Purpose**: Enable testing in temporary directories that aren't git repositories.
 
-**Implementation** (`tests/conftest.py:239-353`):
+**Implementation** (`tests/conftest.py` - `mock_git_repo_check` fixture):
 - Mocks `get_repo_root_from_path()` to accept `tmp_path` directories
 - Patches multiple import locations due to Python's name binding at import time
 - Also patches `get_config_path()` and `ensure_bees_dir()` for test isolation
@@ -44,7 +44,7 @@ These fixtures run automatically for every test unless explicitly opted out. The
 
 **Purpose**: Automatically set `repo_root` context for all tests using contextvars.
 
-**Implementation** (`tests/conftest.py:356-415`):
+**Implementation** (`tests/conftest.py` - `set_repo_root_context` fixture):
 - Sets `repo_root_context` to `Path.cwd()` for all tests
 - Enables `get_repo_root()` calls in production code
 - Automatically cleans up context after test completes
@@ -62,7 +62,7 @@ Use these when you need explicit control over context or MCP mocking.
 
 **Purpose**: Explicitly manage `repo_root` context with specific path different from `Path.cwd()`.
 
-**Implementation** (`tests/conftest.py:573-629`):
+**Implementation** (`tests/conftest.py` - `repo_root_ctx` fixture):
 - Creates `.bees` directory in `tmp_path`
 - Sets `repo_root_context` to `tmp_path` (not `Path.cwd()`)
 - Yields `tmp_path` for test use
@@ -86,7 +86,7 @@ def test_specific_context(repo_root_ctx):
 
 **Purpose**: Factory for creating mock MCP Context objects for testing MCP tool functions.
 
-**Implementation** (`tests/conftest.py:632-720`):
+**Implementation** (`tests/conftest.py` - `mock_mcp_context` fixture):
 - Returns factory function: `create_mock_context(repo_path=None)`
 - Mock context implements MCP Roots protocol with `list_roots()` method
 - Returns mock root with `file://{repo_path}` URI
@@ -115,7 +115,7 @@ async def test_mcp_create_ticket(mock_mcp_context, tmp_path, monkeypatch):
 
 **Purpose**: Complete isolated environment with `BeesTestHelper` for complex integration tests.
 
-**Implementation** (`tests/conftest.py:418-568`):
+**Implementation** (`tests/conftest.py` - `isolated_bees_env` fixture):
 - Changes to `tmp_path` via monkeypatch
 - Creates `.bees/` directory
 - Returns `BeesTestHelper` with methods:
@@ -148,7 +148,7 @@ Pre-configured test scenarios that build on each other for common testing patter
 
 **Purpose**: Minimal foundation - temporary directory with `.bees/` subdirectory.
 
-**Implementation** (`tests/conftest.py:723-737`):
+**Implementation** (`tests/conftest.py` - `bees_repo` fixture):
 - Creates `tmp_path` with `.bees/` directory
 - Yields repo root Path object
 - Foundation for `single_hive`, `multi_hive`, and other tiered fixtures
@@ -159,7 +159,7 @@ Pre-configured test scenarios that build on each other for common testing patter
 
 **Purpose**: Single configured hive for simple test scenarios.
 
-**Implementation** (`tests/conftest.py:740-783`):
+**Implementation** (`tests/conftest.py` - `single_hive` fixture):
 - Builds on `bees_repo`
 - Creates 'backend' hive with `.hive/identity.json`
 - Registers hive in `.bees/config.json`
@@ -176,7 +176,7 @@ def test_ticket_creation(single_hive):
 
 **Purpose**: Multiple hives for cross-hive test scenarios.
 
-**Implementation** (`tests/conftest.py:786-843`):
+**Implementation** (`tests/conftest.py` - `multi_hive` fixture):
 - Builds on `bees_repo`
 - Creates 'backend' and 'frontend' hives with identity markers
 - Registers both in `.bees/config.json`
@@ -193,7 +193,7 @@ def test_cross_hive_operation(multi_hive):
 
 **Purpose**: Pre-created ticket hierarchy for relationship testing.
 
-**Implementation** (`tests/conftest.py:846-893`):
+**Implementation** (`tests/conftest.py` - `hive_with_tickets` fixture):
 - Builds on `single_hive`
 - Creates Epic → Task → Subtask hierarchy using `create_epic()`, `create_task()`, `create_subtask()`
 - Yields tuple: `(repo_root, hive_path, epic_id, task_id, subtask_id)`

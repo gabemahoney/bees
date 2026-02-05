@@ -3,6 +3,7 @@
 import pytest
 from pathlib import Path
 from datetime import datetime
+import yaml
 
 from src.reader import read_ticket
 from src.parser import parse_frontmatter, ParseError

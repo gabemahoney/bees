@@ -116,9 +116,10 @@ def test_multi_hive_query(multi_hive):
 
 **`hive_with_tickets`** - Pre-created ticket hierarchy (builds on `single_hive`)
 - Creates epic → task → subtask hierarchy in backend hive
-- Uses proper `create_ticket()` functions
+- Uses raw `create_ticket()` functions (one-way parent relationships only)
 - Yields `(repo_root, hive_path, epic_id, task_id, subtask_id)`
 - Use for relationship and query testing
+- **Note:** Creates parent→child links but not children arrays (use MCP functions for full bidirectional sync)
 
 Example:
 ```python
@@ -126,6 +127,18 @@ def test_ticket_relationships(hive_with_tickets):
     repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
     # Test code using existing tickets
 ```
+
+### Integration Tests
+
+**`tests/integration/test_bidirectional_sync.py`** - Verifies bidirectional relationship synchronization
+
+This integration test suite ensures that MCP functions (`_create_ticket`, `_update_ticket`) properly sync relationships bidirectionally, while documenting that raw ticket_factory functions only set one-way parent relationships:
+
+- **Fixture Behavior**: Documents that `hive_with_tickets` creates parent fields without syncing children arrays
+- **MCP Behavior**: Verifies MCP functions populate both parent fields AND children arrays bidirectionally
+- **Edge Cases**: Tests empty children, multiple children, and dependency synchronization
+
+The test suite addresses the coverage gap noted in `test_fixtures.py:174` where the fixture behavior is documented but not tested.
 
 ## Hives
 
@@ -167,6 +180,19 @@ Note: By default tickets cannot depend on tickets in other hives. You can remove
 All tickets use the format: `hive_name.bees-abc1`:
 - hive_name: User-defined hive name normalized
 - bees-abc1: 4 character id to identify the beed
+
+## Security Features
+
+Bees includes input validation to prevent path traversal and malicious file operations:
+
+- **Ticket ID Validation**: `write_ticket_file()` validates ticket IDs against the expected format (`hive_name.bees-xxx`) before any filesystem operations
+- **Path Traversal Protection**: Invalid ticket IDs (e.g., `../etc/passwd`, `bees-INVALID`) are rejected with a `ValueError`
+- **Format Requirement**: Ticket IDs must use 3 lowercase alphanumeric characters after the `bees-` prefix
+
+Valid ticket ID examples:
+- `backend.bees-abc`
+- `frontend.bees-123`
+- `my_hive.bees-xyz`
 
 ## MCP Commands
 

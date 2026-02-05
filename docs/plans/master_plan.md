@@ -128,9 +128,10 @@ Bees uses a tiered fixture design pattern in `tests/conftest.py` that supports t
    - Use for: Cross-hive queries, multi-hive operations, dependency validation
 
 4. **hive_with_tickets** (builds on single_hive)
-   - Pre-creates epic → task → subtask hierarchy using create_ticket() functions
+   - Pre-creates epic → task → subtask hierarchy using raw ticket_factory functions
    - Yields `(repo_root, hive_path, epic_id, task_id, subtask_id)`
    - Use for: Relationship testing, query operations on existing tickets, update/delete operations
+   - **Architectural Decision:** Fixture uses raw `create_epic()`, `create_task()`, `create_subtask()` functions that only set parent fields (child→parent direction) without syncing children arrays (parent→child direction). This minimal approach keeps fixture setup simple while allowing tests to verify the full bidirectional sync behavior of MCP functions.
 
 **Integration with Test Suite:**
 - Fixtures are automatically available to all tests via conftest.py
@@ -156,6 +157,49 @@ def test_query_relationships(hive_with_tickets):
     repo_root, hive_path, epic_id, task_id, subtask_id = hive_with_tickets
     # Test queries against pre-created tickets
 ```
+
+### Test Suite Organization
+
+The test suite follows a module-based organization principle where tests are located alongside the modules they test:
+
+- **test_reader.py** - Tests for reader, parser, and validator modules
+- **test_writer_factory.py** - Tests for ticket_factory functions and frontmatter serialization
+- **test_relationships.py** - Tests for bidirectional relationship synchronization
+- **test_query_pipeline.py** - Tests for query execution and multi-stage filtering
+
+#### Test Cleanup History
+
+As part of the "Remove Legacy Skipped Tests" epic (features.bees-5va), test organization was cleaned up:
+
+1. **Task 1 (features.bees-nkt)**: Migrated unique test coverage from `test_writer.py` to appropriate test files:
+   - Moved `TestSerializeFrontmatter` → `test_writer_factory.py` (frontmatter serialization tests)
+   - Moved `TestWriteTicketFile` validations → `test_reader.py` (ticket ID format validation tests)
+   - All unique coverage preserved, ensuring no regression in test coverage
+
+2. **Task 2 (features.bees-uwi)**: Removed `test_writer.py` after verifying all unique coverage was migrated
+   - File was entirely skipped with no active tests
+   - Deletion verified through full test suite pass with unchanged coverage metrics
+   - Removed dead code that could confuse developers
+
+**Rationale**: Skipped test files create maintenance debt and confusion. By migrating unique coverage to active test files before deletion, we maintained test quality while removing dead code. The consolidated test organization makes it clearer where to find tests for specific functionality.
+
+### Integration Testing Strategy
+
+**Bidirectional Relationship Sync Testing** (`tests/integration/test_bidirectional_sync.py`)
+
+The integration test suite documents and verifies the architectural distinction between fixture behavior and MCP function behavior:
+
+**Design Decision:**
+- **Fixture Functions** (`create_epic()`, `create_task()`, `create_subtask()`): Set parent fields only (child→parent direction) without bidirectional sync. This keeps fixture setup minimal and fast.
+- **MCP Functions** (`_create_ticket()`, `_update_ticket()`): Call `_update_bidirectional_relationships()` to sync both parent fields AND children arrays (bidirectional). This ensures referential integrity for production operations.
+
+**Test Coverage:**
+- **Fixture Behavior Tests**: Document that `hive_with_tickets` creates one-way parent relationships without syncing children arrays
+- **MCP Behavior Tests**: Verify MCP functions populate both directions (parent↔children, up_dependencies↔down_dependencies)
+- **Edge Case Tests**: Multiple children, empty children arrays, dependency bidirectional sync
+
+**Rationale:**
+This two-tier approach balances performance (minimal fixture setup) with correctness (full MCP sync). The integration tests ensure the distinction is documented and verified, preventing confusion about when bidirectional sync occurs. Addresses coverage gap noted in `test_fixtures.py:174`.
 
 ## Quick Reference
 

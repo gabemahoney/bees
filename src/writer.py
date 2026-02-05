@@ -11,6 +11,7 @@ import yaml
 from .constants import BEES_SCHEMA_VERSION
 from .paths import ensure_ticket_directory_exists, get_ticket_path
 from .types import TicketType
+from .validator import validate_id_format
 
 
 def serialize_frontmatter(data: dict[str, Any]) -> str:
@@ -95,6 +96,10 @@ def write_ticket_file(
         >>> path.exists()
         True
     """
+    # Validate ticket_id format before any filesystem operations
+    if not validate_id_format(ticket_id):
+        raise ValueError(f"Invalid ticket ID format: {ticket_id}")
+    
     # Get the target file path first (this includes hive-specific path logic)
     target_path = get_ticket_path(ticket_id, ticket_type)
 
