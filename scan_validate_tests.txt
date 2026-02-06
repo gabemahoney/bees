@@ -1,0 +1,72 @@
+# Scan/Validate Tests (target: test_mcp_scan_validate.py, ~300 lines)
+
+## TestGetRepoRoot (lines 734-768, ~35 lines)
+- test_get_repo_root_success (line 737)
+- test_get_repo_root_at_root (line 751)
+- test_get_repo_root_not_in_repo (line 760)
+
+## TestValidateHivePath (lines 770-892, ~123 lines)
+- test_validate_hive_path_valid_absolute_path (line 773)
+- test_validate_hive_path_with_trailing_slash (line 787)
+- test_validate_hive_path_relative_path_fails (line 802)
+- test_validate_hive_path_nonexistent_parent_fails (line 812)
+- test_validate_hive_path_outside_repo_fails (line 828)
+- test_validate_hive_path_at_repo_root (line 841)
+- test_validate_hive_path_deeply_nested (line 851)
+- test_validate_hive_path_error_messages (line 864)
+
+## TestScanForHiveConfigAutoUpdate (lines 894-1078, ~185 lines)
+- test_scan_for_hive_updates_config_with_stale_path (line 910)
+- test_scan_for_hive_handles_missing_config (line 949)
+- test_scan_for_hive_updates_only_target_hive (line 972)
+- test_scan_for_hive_logs_config_update (line 1010)
+- test_scan_for_hive_handles_config_write_failure (line 1044)
+
+## TestScanForHiveSecurity (lines 1080-1165, ~86 lines)
+- test_scan_for_hive_respects_depth_limit (line 1096)
+- test_scan_for_hive_finds_hive_within_depth_limit (line 1119)
+- test_scan_for_hive_depth_limit_boundary (line 1142)
+
+## TestScanForHiveConfigOptimization (lines 1167-1320, ~154 lines)
+- test_scan_for_hive_accepts_config_parameter (line 1183)
+- test_scan_for_hive_uses_provided_config (line 1210)
+- test_scan_for_hive_empty_config_parameter (line 1249)
+- test_scan_for_hive_config_with_empty_hives (line 1271)
+- test_scan_for_hive_loads_from_disk_when_config_not_provided (line 1293)
+
+## TestScanForHiveBugFixes (lines 1322-1441, ~120 lines)
+- test_scan_for_hive_config_none_handling (line 1338)
+- test_scan_for_hive_config_empty_hives (line 1359)
+- test_scan_for_hive_early_return_behavior (line 1382)
+- test_scan_for_hive_beesconfig_type_handling (line 1410)
+
+## TestScanForHiveFileVsDirectory (lines 1443-1498, ~56 lines)
+- test_scan_for_hive_skips_file_marker (line 1459)
+- test_scan_for_hive_returns_none_when_only_file_marker (line 1486)
+
+## TestScanForHiveExceptionHandling (lines 1500-1704, ~205 lines)
+- test_scan_for_hive_handles_ioerror_on_config_update (line 1516)
+- test_scan_for_hive_handles_json_decode_error_on_config_load (line 1555)
+- test_scan_for_hive_handles_attribute_error_on_config_access (line 1594)
+- test_scan_for_hive_does_not_catch_programming_errors (line 1636)
+- test_scan_for_hive_exception_handling_specificity (line 1664)
+
+## TestScanForHiveErrorPropagation (lines 1706-1849, ~144 lines)
+- test_scan_for_hive_raises_ioerror_on_config_save_failure (line 1722)
+- test_scan_for_hive_raises_json_decode_error_on_config_failure (line 1763)
+- test_scan_for_hive_logs_before_raising (line 1804)
+
+## TestScanForHiveConfigHandling (lines 1851-2002, ~152 lines)
+- test_scan_for_hive_with_config_none_loads_from_disk (line 1867)
+- test_scan_for_hive_with_empty_hives_dict (line 1897)
+- test_scan_for_hive_with_populated_hives (line 1923)
+- test_scan_for_hive_registered_hives_set_populated_correctly (line 1966)
+
+## Summary
+Total scan/validate tests: 38 tests
+Estimated total lines: ~1,260 lines (larger than ~300 target estimate!)
+Line ranges: 734-2002
+
+Rationale: These tests cover repo root detection, path validation, and the complex scan_for_hive() function with all its edge cases, config handling, security features, and error handling.
+
+NOTE: The actual line count is much larger than the ~300 estimate in the Epic. The scan_for_hive tests are very comprehensive.

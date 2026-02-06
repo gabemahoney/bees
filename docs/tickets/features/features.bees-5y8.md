@@ -28,14 +28,18 @@ description: 'Improve test maintainability by splitting 3,159-line file into foc
 
 
   Source: /Users/gmahoney/projects/bees/docs/tickets/features/eggs/0_test_cleanup/test_cleanup_plan.md'
-labels:
-- not-started
 up_dependencies:
 - features.bees-74p
 down_dependencies:
 - features.bees-c9p
+children:
+- features.bees-4i1
+- features.bees-xhi
+- features.bees-82b
+- features.bees-xab
+- features.bees-se5
 created_at: '2026-02-05T08:05:49.511857'
-updated_at: '2026-02-05T12:46:12.073503'
+updated_at: '2026-02-05T16:15:53.853627'
 priority: 2
 status: open
 bees_version: '1.1'

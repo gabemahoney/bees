@@ -1,0 +1,49 @@
+# Lifecycle Tests (target: test_mcp_server_lifecycle.py, ~400 lines)
+
+## TestMCPServerInitialization (lines 30-47, ~18 lines)
+- test_server_instance_exists (line 33)
+- test_server_name_configuration (line 38)
+- test_server_has_required_attributes (line 42)
+
+## TestServerLifecycle (lines 49-103, ~55 lines)
+- test_start_server_success (line 52)
+- test_stop_server_success (line 61)
+- test_start_stop_cycle (line 73)
+- test_start_server_logs_messages (line 88)
+- test_stop_server_logs_messages (line 96)
+
+## TestHealthCheck (lines 105-140, ~36 lines)
+- test_health_check_when_server_running (line 108)
+- test_health_check_when_server_stopped (line 121)
+- test_health_check_returns_dict (line 132)
+
+## TestToolRegistration (lines 142-267, ~126 lines)
+- test_health_check_tool_registered (line 145)
+- test_create_ticket_tool_registered (line 151)
+- test_update_ticket_tool_registered (line 156)
+- test_delete_ticket_tool_registered (line 160)
+- test_create_ticket_implementation_response (line 164)
+- test_create_ticket_validates_type (line 201)
+- test_create_ticket_validates_epic_parent (line 208)
+- test_create_ticket_validates_subtask_parent (line 238)
+
+## TestErrorHandling (lines 269-289, ~21 lines)
+- test_start_server_exception_handling (line 273)
+- test_stop_server_exception_handling (line 284)
+
+## TestServerConfiguration (lines 291-305, ~15 lines)
+- test_server_has_version (line 294)
+- test_server_has_name (line 300)
+
+## TestModuleIntegration (lines 3078-3178, ~100 lines)
+- test_all_modules_import_successfully (line 3085)
+- test_mcp_server_imports_all_modules (line 3101)
+- test_tool_registration_count (line 3130)
+- test_delegated_functions_are_callable (line 3158)
+
+## Summary
+Total lifecycle tests: 25 tests
+Estimated total lines: ~371 lines (close to ~400 target)
+Line ranges: 30-305 + 3078-3178
+
+Rationale: These tests cover server initialization, startup/shutdown, health checks, tool registration, error handling, configuration, and module integration - all lifecycle-related concerns.
