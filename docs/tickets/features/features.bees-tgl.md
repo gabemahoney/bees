@@ -25,12 +25,12 @@ description: 'Context: Confirm the refactor achieved the goal of splitting the l
 
   Acceptance: All three test files are under 1,600 lines each, with documented line
   counts'
-parent: features.bees-se5
 up_dependencies:
 - features.bees-jq8
-status: open
+parent: features.bees-se5
 created_at: '2026-02-05T16:14:08.464982'
-updated_at: '2026-02-05T16:14:08.464986'
+updated_at: '2026-02-05T16:51:02.239334'
+status: completed
 bees_version: '1.1'
 ---
 
