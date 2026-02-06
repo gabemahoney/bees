@@ -86,13 +86,17 @@ Bees provides tiered pytest fixtures in `tests/conftest.py` for different test s
 The test suite is organized into focused modules for better maintainability:
 
 - **`test_mcp_server_lifecycle.py`** - Server initialization, lifecycle management (start/stop), health checks, and tool registration
-- **`test_mcp_server.py`** - Business logic tests including ticket operations, validation, and MCP tool functionality
+- **`test_mcp_scan_validate.py`** - Ticket discovery (scan_for_hive), path validation (validate_hive_path), and repo detection tests
+- **`test_mcp_server.py`** - Business logic tests including ticket CRUD operations and MCP tool functionality
 - **`test_*.py`** - Other test modules covering specific components (config, queries, relationships, etc.)
 
 Running specific test files:
 ```bash
 # Run only lifecycle tests
 poetry run pytest tests/test_mcp_server_lifecycle.py -v
+
+# Run only scan/validation tests
+poetry run pytest tests/test_mcp_scan_validate.py -v
 
 # Run only business logic tests
 poetry run pytest tests/test_mcp_server.py -v

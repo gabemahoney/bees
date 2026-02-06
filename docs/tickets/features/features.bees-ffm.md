@@ -30,12 +30,12 @@ description: 'Context: Users need to understand the new test file organization a
   - Clear guidance on test categorization
 
   - Example commands included'
-parent: features.bees-82b
 up_dependencies:
 - features.bees-le1
-status: open
+parent: features.bees-82b
 created_at: '2026-02-05T16:13:58.353053'
-updated_at: '2026-02-05T16:13:58.353062'
+updated_at: '2026-02-05T16:36:08.305588'
+status: completed
 bees_version: '1.1'
 ---
 
