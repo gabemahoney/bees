@@ -34,6 +34,7 @@ up_dependencies:
 - features.bees-4i1
 down_dependencies:
 - features.bees-xab
+- features.bees-3jb
 parent: features.bees-5y8
 children:
 - features.bees-vw7
@@ -43,9 +44,9 @@ children:
 - features.bees-q20
 - features.bees-rfd
 created_at: '2026-02-05T16:12:48.841335'
-updated_at: '2026-02-05T16:14:08.146248'
+updated_at: '2026-02-05T16:30:29.836895'
 priority: 0
-status: open
+status: completed
 bees_version: '1.1'
 ---
 

@@ -23,12 +23,12 @@ description: 'Context: Move server startup, shutdown, and tool registration test
 
   Acceptance: Lifecycle tests moved to new file, removed from old file, target ~400
   lines in new file'
-parent: features.bees-xhi
 up_dependencies:
 - features.bees-vw7
-status: open
+parent: features.bees-xhi
 created_at: '2026-02-05T16:13:46.597872'
-updated_at: '2026-02-05T16:13:46.597876'
+updated_at: '2026-02-05T16:26:03.334235'
+status: completed
 bees_version: '1.1'
 ---
 

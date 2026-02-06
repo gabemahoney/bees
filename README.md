@@ -81,6 +81,26 @@ The MCP Server has a linter which will verify metadata integrity and warn.
 
 Bees provides tiered pytest fixtures in `tests/conftest.py` for different test scenarios.
 
+### Test File Organization
+
+The test suite is organized into focused modules for better maintainability:
+
+- **`test_mcp_server_lifecycle.py`** - Server initialization, lifecycle management (start/stop), health checks, and tool registration
+- **`test_mcp_server.py`** - Business logic tests including ticket operations, validation, and MCP tool functionality
+- **`test_*.py`** - Other test modules covering specific components (config, queries, relationships, etc.)
+
+Running specific test files:
+```bash
+# Run only lifecycle tests
+poetry run pytest tests/test_mcp_server_lifecycle.py -v
+
+# Run only business logic tests
+poetry run pytest tests/test_mcp_server.py -v
+
+# Run all tests
+poetry run pytest tests/ -v
+```
+
 ### Testing Philosophy
 
 For simple validation functions, we focus on **essential test cases** that cover the core validation logic without exhaustive permutations. This maintains high confidence in correctness while reducing test maintenance overhead.

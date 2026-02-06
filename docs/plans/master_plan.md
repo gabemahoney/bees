@@ -182,12 +182,23 @@ def test_query_relationships(hive_with_tickets):
 
 ### Test Suite Organization
 
-The test suite follows a module-based organization principle where tests are located alongside the modules they test:
+The test suite follows a module-based organization principle where tests are located alongside the modules they test. For large test files, tests are split by concern to improve maintainability and context window utilization.
 
+**Core Test Files:**
 - **test_reader.py** - Tests for reader, parser, and validator modules
 - **test_writer_factory.py** - Tests for ticket_factory functions and frontmatter serialization
 - **test_relationships.py** - Tests for bidirectional relationship synchronization
 - **test_query_pipeline.py** - Tests for query execution and multi-stage filtering
+
+**MCP Server Tests (Split by Concern):**
+- **test_mcp_server_lifecycle.py** (~400 lines) - Server initialization, lifecycle management (start/stop), health checks, and tool registration
+- **test_mcp_server.py** (~2900 lines) - Business logic tests including ticket operations, validation, and MCP tool functionality
+
+**Rationale for Split:** The original test_mcp_server.py was a monolithic ~3200-line file mixing foundational infrastructure tests (server startup, health checks) with business logic tests (ticket CRUD, validation rules). This separation:
+- Isolates lifecycle tests for focused execution during infrastructure changes
+- Reduces cognitive load when working on specific concerns
+- Improves test discoverability and navigation
+- Fits better in LLM context windows for test maintenance
 
 #### Test Cleanup History
 

@@ -24,12 +24,12 @@ description: 'Context: Ensure test extraction didn''t break anything and all tes
 
 
   Acceptance: All tests pass, no failures, lifecycle file is ~400 lines'
-parent: features.bees-xhi
 up_dependencies:
 - features.bees-q20
-status: open
+parent: features.bees-xhi
 created_at: '2026-02-05T16:14:08.142246'
-updated_at: '2026-02-05T16:14:08.142256'
+updated_at: '2026-02-05T16:27:57.719426'
+status: completed
 bees_version: '1.1'
 ---
 
