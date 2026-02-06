@@ -7,19 +7,12 @@ and business rules enforcement. Lifecycle tests are in test_mcp_server_lifecycle
 
 import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from src.mcp_server import (
-    _create_ticket,
-    _update_ticket,
-    _delete_ticket,
-    get_repo_root_from_path,
-    validate_hive_path
-)
+from unittest.mock import patch
+from src.mcp_server import _update_ticket
 from src.mcp_id_utils import (
     parse_ticket_id,
     parse_hive_from_ticket_id
 )
-from src.repo_context import repo_root_context
 
 
 class TestUpdateTicket:
