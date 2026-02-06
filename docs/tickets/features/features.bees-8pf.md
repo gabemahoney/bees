@@ -2,51 +2,71 @@
 id: features.bees-8pf
 type: subtask
 title: Scan test files and remove redundant get_repo_root_from_path patches
-description: 'Context: With centralized mocking in conftest.py, individual test files
-  no longer need to patch get_repo_root_from_path.
+description: 'Context: With centralized mocking in conftest.py, reviewed test files
+  for redundant get_repo_root_from_path patches.
 
 
-  Requirements:
+  Findings:
 
-  - Search all files in tests/ for patches of get_repo_root_from_path
+  - Unit tests in test_colonize_hive.py and test_rename_hive_encoding.py use @patch
+  decorators for precise control of return values in isolated unit testing scenarios
 
-  - Remove redundant @patch decorators and patch context managers
+  - These patches are NOT redundant - they override the centralized mock to provide
+  specific behavior for unit test isolation
 
-  - Verify tests still pass after removal
+  - The centralized mock in conftest.py is designed for integration-style tests that
+  use tmp_path with real directory structures
 
-  - Leave patches that serve a specific purpose (testing error conditions, etc.)
-
-
-  Reference: Task features.bees-tv7
-
-  Files: tests/**/*.py
+  - Unit tests that use fake paths (e.g., ''/repo/tickets'') need explicit patches
+  to avoid repo detection errors
 
 
-  Acceptance:
+  Action Taken:
 
-  - No redundant patches remain in test files
+  - Reviewed all test files for get_repo_root_from_path patches
 
-  - Tests run successfully without individual patches'
+  - Confirmed that patches in test_colonize_hive.py::TestColonizeHiveOrchestrationUnit
+  are necessary for unit test isolation
+
+  - Confirmed that patches in test_rename_hive_encoding.py are necessary for mocking
+  non-existent paths
+
+  - No redundant patches were found - all serve specific testing purposes
+
+
+  Conclusion:
+
+  - The centralized mock and individual test patches serve different purposes and
+  are both necessary
+
+  - Centralized mock: Provides default behavior for integration tests with real tmp_path
+  directories
+
+  - Individual patches: Provide precise control for unit tests with fake/mocked paths'
 down_dependencies:
 - features.bees-o3k
 parent: features.bees-tv7
 created_at: '2026-02-05T12:46:03.346632'
-updated_at: '2026-02-05T12:46:16.500534'
-status: open
+updated_at: '2026-02-05T16:04:44.811297'
+status: completed
 bees_version: '1.1'
 ---
 
-Context: With centralized mocking in conftest.py, individual test files no longer need to patch get_repo_root_from_path.
+Context: With centralized mocking in conftest.py, reviewed test files for redundant get_repo_root_from_path patches.
 
-Requirements:
-- Search all files in tests/ for patches of get_repo_root_from_path
-- Remove redundant @patch decorators and patch context managers
-- Verify tests still pass after removal
-- Leave patches that serve a specific purpose (testing error conditions, etc.)
+Findings:
+- Unit tests in test_colonize_hive.py and test_rename_hive_encoding.py use @patch decorators for precise control of return values in isolated unit testing scenarios
+- These patches are NOT redundant - they override the centralized mock to provide specific behavior for unit test isolation
+- The centralized mock in conftest.py is designed for integration-style tests that use tmp_path with real directory structures
+- Unit tests that use fake paths (e.g., '/repo/tickets') need explicit patches to avoid repo detection errors
 
-Reference: Task features.bees-tv7
-Files: tests/**/*.py
+Action Taken:
+- Reviewed all test files for get_repo_root_from_path patches
+- Confirmed that patches in test_colonize_hive.py::TestColonizeHiveOrchestrationUnit are necessary for unit test isolation
+- Confirmed that patches in test_rename_hive_encoding.py are necessary for mocking non-existent paths
+- No redundant patches were found - all serve specific testing purposes
 
-Acceptance:
-- No redundant patches remain in test files
-- Tests run successfully without individual patches
+Conclusion:
+- The centralized mock and individual test patches serve different purposes and are both necessary
+- Centralized mock: Provides default behavior for integration tests with real tmp_path directories
+- Individual patches: Provide precise control for unit tests with fake/mocked paths
