@@ -255,8 +255,7 @@ This is a **global-only** setting — it cannot be set at scope or hive level.
 
 ```json
 {
-  "delete_with_dependencies": true,
-  "scopes": { ... }
+  "delete_with_dependencies": true
 }
 ```
 
