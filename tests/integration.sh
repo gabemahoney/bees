@@ -128,6 +128,11 @@ test_config_bootstrap() {
     if [ "$status" != "success" ]; then
         fail_test "Config bootstrap" "Expected status=success, got status=$status"
     fi
+    local hive_count
+    hive_count=$(check_json "$CMD_OUT" "len(d.get('hives', []))")
+    if [ "$hive_count" != "0" ]; then
+        fail_test "Config bootstrap" "Expected empty hives, got $hive_count"
+    fi
     pass_test "Config bootstrap"
 }
 
