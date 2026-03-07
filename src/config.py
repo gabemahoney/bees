@@ -237,13 +237,6 @@ def scopes_overlap(pattern_a: str, pattern_b: str) -> bool:
     seg_b, tier_b = compute_scope_specificity(canon_b)
 
     # Derive bare prefixes (strip wildcard suffix + trailing slash)
-    def _bare_prefix(p: str) -> str:
-        if p.endswith("/**"):
-            return p[:-3].rstrip("/")
-        if p.endswith("/*"):
-            return p[:-2].rstrip("/")
-        return p.rstrip("/")
-
     prefix_a = _bare_prefix(canon_a)
     prefix_b = _bare_prefix(canon_b)
 
