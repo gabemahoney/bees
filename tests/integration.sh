@@ -1700,7 +1700,7 @@ test_undertaker_cemetery_guid_naming() {
     if [ ! -d "$cemetery_dir" ]; then
         fail_test "Cemetery GUID naming" "cemetery/ directory not found"
     fi
-    # Find a file matching the GUID (22-char guid)
+    # Find a file matching the GUID (32-char guid)
     local guid_file
     guid_file=$(find "$cemetery_dir" -name "${ARCH1_GUID}*" -type f 2>/dev/null | head -1)
     if [ -z "$guid_file" ]; then
