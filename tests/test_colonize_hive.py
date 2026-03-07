@@ -910,9 +910,13 @@ class TestColonizeHiveScope:
         # Should succeed (different bare prefix → no scope conflict)
         assert result["status"] == "success"
 
-    async def test_scope_duplicate_hive_name_in_overlapping_scope(self, git_repo_tmp_path, mock_global_bees_dir):
-        """Hive name already present in an overlapping scope returns duplicate_hive_name."""
-        # /projects/** overlaps with /projects/sub/ — /** reaches any depth
+    async def test_scope_same_hive_name_at_more_specific_scope_is_allowed(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Same hive name at a more specific (differently-specificity) overlapping scope is allowed.
+
+        A "My Hive" at /projects/** should not block a "My Hive" at /projects/sub/ —
+        the more specific scope shadows the broader one at read time, which is the
+        intended design per the PRD.
+        """
         write_multi_scope_config(
             mock_global_bees_dir,
             {
@@ -931,6 +935,5 @@ class TestColonizeHiveScope:
         hive_path = git_repo_tmp_path / "dup_hive"
         result = await colonize_hive("My Hive", str(hive_path), scope="/projects/sub/")
 
-        assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_hive_name"
-        assert "/projects/**" in str(result["validation_details"]["overlapping_scope"])
+        assert result["status"] == "success"
+        assert result["normalized_name"] == "my_hive"
