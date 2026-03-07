@@ -2375,6 +2375,979 @@ run_test test_error_invalid_yaml_query
 run_test test_error_wrong_tier_parent
 run_test test_error_missing_required_flags
 
+# === FORMER PHASE 5 GROUP B: TEST CONFIG MODE ===
+
+test_testconfig_bare() {
+    capture_cmd bees list-hives --test-config
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Bare --test-config" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local hive_count
+    hive_count=$(check_json "$CMD_OUT" "len(d.get('hives',[]))")
+    if [ "$hive_count" != "0" ]; then
+        fail_test "Bare --test-config" "Expected 0 hives, got $hive_count"
+    fi
+    pass_test "Bare --test-config"
+}
+
+test_testconfig_inline_json() {
+    local tc_json='{"schema_version":"0.1","scopes":{"/test-repo/**":{"hives":{"phantom_hive":{"path":"/tmp/phantom","display_name":"Phantom Hive"}}}}}'
+    capture_cmd bees list-hives --test-config "$tc_json"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Inline JSON test-config" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_phantom
+    has_phantom=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='phantom_hive' for h in d.get('hives',[]))")
+    if [ "$has_phantom" != "True" ]; then
+        fail_test "Inline JSON test-config" "Phantom hive not found in list"
+    fi
+    pass_test "Inline JSON test-config"
+}
+
+test_testconfig_file() {
+    local tc_file="$REPO/test_config.json"
+    cat > "$tc_file" << 'TCEOF'
+{"schema_version":"0.1","scopes":{"/test-repo/**":{"hives":{"file_hive":{"path":"/tmp/filehive","display_name":"File Hive"}}}}}
+TCEOF
+    capture_cmd bees list-hives --test-config "$tc_file"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "File-based test-config" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_file_hive
+    has_file_hive=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='file_hive' for h in d.get('hives',[]))")
+    if [ "$has_file_hive" != "True" ]; then
+        fail_test "File-based test-config" "File hive not found in list"
+    fi
+    rm -f "$tc_file"
+    pass_test "File-based test-config"
+}
+
+test_testconfig_no_disk_write() {
+    local config_file="$HOME/.bees/config.json"
+    local mtime_before
+    mtime_before=$(stat -c %Y "$config_file" 2>/dev/null || stat -f %m "$config_file")
+    # Run mutating commands with --test-config
+    capture_cmd bees colonize-hive --name "Ghost Hive" --path /tmp/ghost --test-config
+    capture_cmd bees list-hives --test-config
+    local mtime_after
+    mtime_after=$(stat -c %Y "$config_file" 2>/dev/null || stat -f %m "$config_file")
+    if [ "$mtime_before" != "$mtime_after" ]; then
+        fail_test "test-config no disk write" "config.json mtime changed: $mtime_before -> $mtime_after"
+    fi
+    pass_test "test-config no disk write"
+}
+
+run_test test_testconfig_bare
+run_test test_testconfig_inline_json
+run_test test_testconfig_file
+run_test test_testconfig_no_disk_write
+
+# === FORMER PHASE 5 GROUP B: SETUP COMMAND ===
+
+test_setup_install_global() {
+    capture_cmd bees setup claude cli
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Setup install global" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    # Check output message
+    if ! echo "$CMD_OUT" | grep -q "Installed bees sting hooks in\|already present"; then
+        fail_test "Setup install global" "Expected install/already-present message"
+    fi
+    # Check settings.json contains hooks
+    local settings_file="$HOME/.claude/settings.json"
+    if [ -f "$settings_file" ]; then
+        local has_hooks
+        has_hooks=$(python3 -c "
+import json
+d = json.load(open('$settings_file'))
+hooks = d.get('hooks', {})
+has_ss = any('bees sting' in h.get('command','') for h in hooks.get('SessionStart',{}).get('hooks',[]))
+has_pc = any('bees sting' in h.get('command','') for h in hooks.get('PreCompact',{}).get('hooks',[]))
+print(has_ss and has_pc)
+")
+        if [ "$has_hooks" != "True" ]; then
+            fail_test "Setup install global" "hooks not found in settings.json"
+        fi
+    fi
+    pass_test "Setup install global"
+}
+
+test_setup_install_idempotent() {
+    capture_cmd bees setup claude cli
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Setup idempotent" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    if ! echo "$CMD_OUT" | grep -q "already present"; then
+        fail_test "Setup idempotent" "Expected 'already present' message"
+    fi
+    pass_test "Setup idempotent"
+}
+
+test_setup_install_project() {
+    capture_cmd bees setup claude cli --project
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Setup with --project" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local local_settings="$REPO/.claude/settings.local.json"
+    if [ -f "$local_settings" ]; then
+        local has_hooks
+        has_hooks=$(python3 -c "
+import json
+d = json.load(open('$local_settings'))
+hooks = d.get('hooks', {})
+has_ss = any('bees sting' in h.get('command','') for h in hooks.get('SessionStart',{}).get('hooks',[]))
+print(has_ss)
+")
+        if [ "$has_hooks" != "True" ]; then
+            fail_test "Setup with --project" "hooks not found in settings.local.json"
+        fi
+    fi
+    pass_test "Setup with --project"
+}
+
+test_setup_remove() {
+    capture_cmd bees setup claude cli --remove
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Setup --remove" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    if ! echo "$CMD_OUT" | grep -q "Removed bees sting hooks from"; then
+        fail_test "Setup --remove" "Expected 'Removed' message"
+    fi
+    pass_test "Setup --remove"
+}
+
+test_setup_remove_idempotent() {
+    capture_cmd bees setup claude cli --remove
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Setup --remove idempotent" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    if ! echo "$CMD_OUT" | grep -q "No bees sting hooks found in"; then
+        fail_test "Setup --remove idempotent" "Expected 'No bees sting hooks found' message"
+    fi
+    pass_test "Setup --remove idempotent"
+}
+
+run_test test_setup_install_global
+run_test test_setup_install_idempotent
+run_test test_setup_install_project
+run_test test_setup_remove
+run_test test_setup_remove_idempotent
+
+# === FORMER PHASE 5 GROUP B: STING COMMAND ===
+
+test_sting_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Sting Hive" \
+        --path "$REPO/tickets/sting_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Sting setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    pass_test "Sting setup"
+}
+
+test_sting_in_scope() {
+    capture_cmd bees sting
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Sting in scope" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    # Output may be empty (MCP-mode) or contain CLI reference — both valid
+    assert_no_traceback "$CMD_OUT" "Sting in scope"
+    pass_test "Sting in scope"
+}
+
+test_sting_outside_scope() {
+    capture_cmd bees sting --test-config
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Sting outside scope" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    pass_test "Sting outside scope"
+}
+
+run_test test_sting_setup
+run_test test_sting_in_scope
+run_test test_sting_outside_scope
+
+# === FORMER PHASE 5 GROUP B: STATUS VALUES ===
+
+test_sv_setup() {
+    capture_cmd bees colonize-hive \
+        --name "SV Hive" \
+        --path "$REPO/tickets/sv_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "SV setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    # Ensure no global status_values
+    capture_cmd bees set-status-values --scope global --unset
+    pass_test "SV setup"
+}
+
+test_sv_set_global() {
+    capture_cmd bees set-status-values --scope global \
+        --status-values '["pupa","worker","finished"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Set status_values global" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local scope
+    scope=$(check_json "$CMD_OUT" "d.get('scope','')")
+    assert_eq "$scope" "global" "Set status_values global"
+}
+
+test_sv_set_repo_scope() {
+    capture_cmd bees set-status-values --scope repo_scope \
+        --status-values '["pupa","worker"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Set status_values repo_scope" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local scope
+    scope=$(check_json "$CMD_OUT" "d.get('scope','')")
+    assert_eq "$scope" "repo_scope" "Set status_values repo_scope"
+}
+
+test_sv_set_hive() {
+    capture_cmd bees set-status-values --scope hive --hive "SV Hive" \
+        --status-values '["pupa","worker","finished"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Set status_values hive" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local scope hive_name
+    scope=$(check_json "$CMD_OUT" "d.get('scope','')")
+    hive_name=$(check_json "$CMD_OUT" "d.get('hive_name','')")
+    if [ "$scope" != "hive" ] || [ "$hive_name" != "sv_hive" ]; then
+        fail_test "Set status_values hive" "Expected scope=hive, hive_name=sv_hive"
+    fi
+    pass_test "Set status_values hive"
+}
+
+test_sv_unset_global() {
+    capture_cmd bees set-status-values --scope global --unset
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Unset status_values global" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local scope
+    scope=$(check_json "$CMD_OUT" "d.get('scope','')")
+    assert_eq "$scope" "global" "Unset status_values global"
+}
+
+test_sv_error_missing_values() {
+    capture_cmd bees set-status-values --scope global
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Error missing_status_values" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "missing_status_values" "Error missing_status_values"
+}
+
+test_sv_error_missing_hive_name() {
+    capture_cmd bees set-status-values --scope hive --status-values '["x"]'
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Error missing_hive_name" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "missing_hive_name" "Error missing_hive_name"
+}
+
+test_sv_get_mixed() {
+    capture_cmd bees get-status-values
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Get status_values mixed" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local global_val scope_val hive_val
+    global_val=$(check_json "$CMD_OUT" "d.get('global')")
+    scope_val=$(check_json "$CMD_OUT" "d.get('scope')")
+    hive_val=$(check_json "$CMD_OUT" "d.get('hives',{}).get('sv_hive')")
+    # Global was unset in test_sv_unset_global
+    if [ "$global_val" != "None" ]; then
+        fail_test "Get status_values mixed" "Expected global=None, got $global_val"
+    fi
+    # Repo scope was set to [pupa,worker]
+    if [ "$scope_val" = "None" ]; then
+        fail_test "Get status_values mixed" "Expected scope to be set"
+    fi
+    pass_test "Get status_values mixed"
+}
+
+test_sv_create_required_but_missing() {
+    # sv_hive has status_values configured, so status is required
+    capture_cmd bees create-ticket --ticket-type bee --title "SV Required Test" --hive sv_hive
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Create without required status" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Create without required status"
+    pass_test "Create without required status"
+}
+
+test_sv_create_no_config_no_status() {
+    # Unset hive status_values so no validation
+    capture_cmd bees set-status-values --scope hive --hive "SV Hive" --unset
+    capture_cmd bees create-ticket --ticket-type bee --title "SV No Config Test" --hive sv_hive
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Create no config no status" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local sv_bee
+    sv_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$sv_bee"
+    local status_val
+    status_val=$(check_json "$CMD_OUT" "d['tickets'][0].get('ticket_status')")
+    if [ "$status_val" != "None" ]; then
+        fail_test "Create no config no status" "Expected null status, got $status_val"
+    fi
+    pass_test "Create no config no status"
+}
+
+test_sv_create_invalid_status() {
+    # Re-configure hive status_values
+    capture_cmd bees set-status-values --scope hive --hive "SV Hive" \
+        --status-values '["pupa","worker","finished"]'
+    capture_cmd bees create-ticket --ticket-type bee --title "SV Invalid Status Test" \
+        --hive sv_hive --status bogus
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Create with invalid status" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Create with invalid status"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "invalid_status" ]; then
+        fail_test "Create with invalid status" "Expected error_type=invalid_status, got $error_type"
+    fi
+    # Teardown: unset at all scopes
+    capture_cmd bees set-status-values --scope global --unset
+    capture_cmd bees set-status-values --scope repo_scope --unset
+    pass_test "Create with invalid status"
+}
+
+run_test test_sv_setup
+run_test test_sv_set_global
+run_test test_sv_set_repo_scope
+run_test test_sv_set_hive
+run_test test_sv_unset_global
+run_test test_sv_error_missing_values
+run_test test_sv_error_missing_hive_name
+run_test test_sv_get_mixed
+run_test test_sv_create_required_but_missing
+run_test test_sv_create_no_config_no_status
+run_test test_sv_create_invalid_status
+
+# === FORMER PHASE 5 GROUP B: UNINSTALL SEQUENCE ===
+
+test_uninstall_remove_hooks() {
+    # Ensure hooks are installed first
+    capture_cmd bees setup claude cli
+    capture_cmd bees setup claude cli --remove
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Uninstall remove hooks" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    if ! echo "$CMD_OUT" | grep -q "Removed bees sting hooks from"; then
+        fail_test "Uninstall remove hooks" "Expected 'Removed' message"
+    fi
+    pass_test "Uninstall remove hooks"
+}
+
+test_uninstall_pipx_cycle() {
+    # Install via pipx using the version already installed
+    local bees_version
+    bees_version=$(bees --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
+    if [ -z "$bees_version" ]; then
+        # Skip if version can't be determined
+        pass_test "Uninstall pipx cycle (skipped: version unknown)"
+        return
+    fi
+    capture_cmd pipx install "bees-md[serve]==$bees_version" \
+        --pip-args="--index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/" 2>&1
+    # pipx install may fail if already installed system-wide — that's okay
+    if [ -f "$HOME/.local/bin/bees" ]; then
+        capture_cmd pipx uninstall bees-md
+        if [ "$CMD_EXIT" -ne 0 ]; then
+            fail_test "Uninstall pipx cycle" "pipx uninstall failed: $CMD_OUT"
+        fi
+        if [ -f "$HOME/.local/bin/bees" ]; then
+            fail_test "Uninstall pipx cycle" "~/.local/bin/bees still exists after uninstall"
+        fi
+    fi
+    pass_test "Uninstall pipx cycle"
+}
+
+run_test test_uninstall_remove_hooks
+run_test test_uninstall_pipx_cycle
+
+# === FORMER PHASE 5 GROUP B: CLONE BEE ===
+
+CLONE_BEE=""
+CLONE_TASK1=""
+CLONE_TASK2=""
+
+test_clone_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Clone Hive" \
+        --path "$REPO/tickets/clone_hive" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Clone Source Bee" \
+        --hive clone_hive --status pupa --tags '["cloneable"]' --egg '"clone_egg"'
+    CLONE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Clone Task 1" \
+        --hive clone_hive --parent "$CLONE_BEE"
+    CLONE_TASK1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Clone Task 2" \
+        --hive clone_hive --parent "$CLONE_BEE"
+    CLONE_TASK2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Clone setup"
+}
+
+test_clone_flat_bee() {
+    # Create a simple bee with no children for flat clone
+    capture_cmd bees create-ticket --ticket-type bee --title "Flat Clone Bee" \
+        --hive clone_hive --status pupa --tags '["flat"]' --egg '"flat_egg"'
+    local flat_bee
+    flat_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees clone --bee-id "$flat_bee"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone flat bee" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local written new_id
+    written=$(check_json "$CMD_OUT" "d.get('written',0)")
+    new_id=$(check_json "$CMD_OUT" "d.get('ticket_id','')")
+    if [ "$written" != "1" ]; then
+        fail_test "Clone flat bee" "Expected written=1, got $written"
+    fi
+    if [ "$new_id" = "$flat_bee" ]; then
+        fail_test "Clone flat bee" "Cloned ID should differ from source"
+    fi
+    # Verify content matches
+    capture_cmd bees show-ticket --ids "$new_id"
+    local clone_title clone_egg
+    clone_title=$(check_json "$CMD_OUT" "d['tickets'][0]['title']")
+    clone_egg=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
+    if [ "$clone_title" != "Flat Clone Bee" ]; then
+        fail_test "Clone flat bee" "Title mismatch: $clone_title"
+    fi
+    if [ "$clone_egg" != "flat_egg" ]; then
+        fail_test "Clone flat bee" "Egg mismatch: $clone_egg"
+    fi
+    pass_test "Clone flat bee"
+}
+
+test_clone_tree() {
+    capture_cmd bees clone --bee-id "$CLONE_BEE"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone tree" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local written new_id
+    written=$(check_json "$CMD_OUT" "d.get('written',0)")
+    new_id=$(check_json "$CMD_OUT" "d.get('ticket_id','')")
+    if [ "$written" != "3" ]; then
+        fail_test "Clone tree" "Expected written=3, got $written"
+    fi
+    # Verify cross-refs are remapped
+    capture_cmd bees show-ticket --ids "$new_id"
+    local new_children
+    new_children=$(check_json "$CMD_OUT" "d['tickets'][0].get('children',[])")
+    # Children should not contain original IDs
+    local has_orig1 has_orig2
+    has_orig1=$(check_json "$CMD_OUT" "'$CLONE_TASK1' in (d['tickets'][0].get('children') or [])")
+    has_orig2=$(check_json "$CMD_OUT" "'$CLONE_TASK2' in (d['tickets'][0].get('children') or [])")
+    if [ "$has_orig1" = "True" ] || [ "$has_orig2" = "True" ]; then
+        fail_test "Clone tree" "Cloned root still references original child IDs"
+    fi
+    pass_test "Clone tree"
+}
+
+test_clone_reject_non_bee() {
+    capture_cmd bees clone --bee-id "$CLONE_TASK1"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Clone reject non-bee" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "invalid_source_type" "Clone reject non-bee"
+}
+
+test_clone_not_found() {
+    capture_cmd bees clone --bee-id "b.zzz"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Clone not found" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "bee_not_found" "Clone not found"
+}
+
+test_clone_cross_hive() {
+    capture_cmd bees colonize-hive \
+        --name "Clone Dest" \
+        --path "$REPO/tickets/clone_dest"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone cross-hive" "Colonize failed: $CMD_OUT"
+    fi
+    # Create a simple bee to clone
+    capture_cmd bees create-ticket --ticket-type bee --title "Cross Hive Src" --hive clone_hive
+    local src_bee
+    src_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees clone --bee-id "$src_bee" --hive clone_dest
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone cross-hive" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local new_id
+    new_id=$(check_json "$CMD_OUT" "d.get('ticket_id','')")
+    if [ "$new_id" = "$src_bee" ]; then
+        fail_test "Clone cross-hive" "Cloned ID should differ"
+    fi
+    # Verify source still exists in source hive
+    capture_cmd bees show-ticket --ids "$src_bee"
+    local src_count
+    src_count=$(check_json "$CMD_OUT" "len(d.get('tickets',[]))")
+    if [ "$src_count" != "1" ]; then
+        fail_test "Clone cross-hive" "Source bee should still exist"
+    fi
+    pass_test "Clone cross-hive"
+}
+
+test_clone_incompatible_blocked() {
+    # Set restricted status_values on clone_dest
+    capture_cmd bees set-status-values --scope hive --hive "Clone Dest" \
+        --status-values '["open","done"]'
+    # Create bee with status not in dest's allowed values
+    capture_cmd bees create-ticket --ticket-type bee --title "Incompat Clone" \
+        --hive clone_hive --status pupa
+    local incompat_bee
+    incompat_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees clone --bee-id "$incompat_bee" --hive clone_dest
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Clone incompatible blocked" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "compatibility_error" "Clone incompatible blocked"
+}
+
+test_clone_force_bypass() {
+    # Use same incompatible bee
+    capture_cmd bees execute-freeform-query \
+        --query-yaml "- [type=bee, hive=clone_hive, title~Incompat Clone]"
+    local force_bee
+    force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
+    capture_cmd bees clone --bee-id "$force_bee" --hive clone_dest --force
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clone --force bypass" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local status
+    status=$(check_json "$CMD_OUT" "d.get('status','')")
+    assert_eq "$status" "success" "Clone --force bypass"
+}
+
+run_test test_clone_setup
+run_test test_clone_flat_bee
+run_test test_clone_tree
+run_test test_clone_reject_non_bee
+run_test test_clone_not_found
+run_test test_clone_cross_hive
+run_test test_clone_incompatible_blocked
+run_test test_clone_force_bypass
+
+# === FORMER PHASE 5 GROUP B: FAST PARSER PIPELINE ===
+
+test_fast_parser_pipeline() {
+    # Self-contained: create hive, tickets, run queries, verify
+    capture_cmd bees colonize-hive \
+        --name "FP Hive" \
+        --path "$REPO/tickets/fp_hive" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Fast parser pipeline" "Colonize failed: $CMD_OUT"
+    fi
+    # Create bees with distinct statuses
+    capture_cmd bees create-ticket --ticket-type bee --title "FP Pupa" --hive fp_hive --status pupa --tags '["shared"]'
+    local fp_bee1
+    fp_bee1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "FP Worker" --hive fp_hive --status worker --tags '["shared"]'
+    local fp_bee2
+    fp_bee2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "FP Finished" --hive fp_hive --status finished
+    # Create a task child
+    capture_cmd bees create-ticket --ticket-type t1 --title "FP Task" --hive fp_hive --parent "$fp_bee1"
+    local fp_task
+    fp_task=$(check_json "$CMD_OUT" "d['ticket_id']")
+
+    # Test 1: Filter by type=bee
+    capture_cmd bees execute-freeform-query --query-yaml "- [type=bee, hive=fp_hive]"
+    local bee_count
+    bee_count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
+    if [ "$bee_count" != "3" ]; then
+        fail_test "Fast parser pipeline" "Type filter: expected 3 bees, got $bee_count"
+    fi
+
+    # Test 2: Filter by status=pupa
+    capture_cmd bees execute-freeform-query --query-yaml "- [status=pupa, hive=fp_hive]"
+    local pupa_count
+    pupa_count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
+    if [ "$pupa_count" != "1" ]; then
+        fail_test "Fast parser pipeline" "Status filter: expected 1 pupa, got $pupa_count"
+    fi
+
+    # Test 3: Graph traversal — children of bee1
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [id='"$fp_bee1"']\n- [children]'
+    local has_task
+    has_task=$(check_json "$CMD_OUT" "'$fp_task' in d.get('ticket_ids',[])")
+    if [ "$has_task" != "True" ]; then
+        fail_test "Fast parser pipeline" "Children traversal: task not found"
+    fi
+
+    # Test 4: Chained search + traversal
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [type=bee, hive=fp_hive]\n- [children]'
+    local all_tasks
+    all_tasks=$(check_json "$CMD_OUT" "all(not tid.startswith('b.') for tid in d.get('ticket_ids',[]))")
+    if [ "$all_tasks" != "True" ]; then
+        fail_test "Fast parser pipeline" "Chained query: non-child results found"
+    fi
+
+    pass_test "Fast parser pipeline"
+}
+
+run_test test_fast_parser_pipeline
+
+# === FORMER PHASE 5 GROUP B: COLONIZE --SCOPE ===
+
+test_colonize_scope_creates_entry() {
+    mkdir -p /tmp/scope_test/projects/myrepo
+    capture_cmd bees colonize-hive \
+        --name "Scoped Hive" \
+        --path "$REPO/tickets/scoped_hive" \
+        --scope "/tmp/scope_test/projects/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Colonize --scope creates entry" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local norm_name
+    norm_name=$(check_json "$CMD_OUT" "d.get('normalized_name','')")
+    assert_eq "$norm_name" "scoped_hive" "Colonize --scope creates entry"
+}
+
+test_colonize_scope_invalid_pattern() {
+    capture_cmd bees colonize-hive \
+        --name "Bad Hive" \
+        --path "$REPO/tickets/bad_hive" \
+        --scope "/tmp/*/bad"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Colonize --scope invalid pattern" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "invalid_scope_pattern" "Colonize --scope invalid pattern"
+}
+
+run_test test_colonize_scope_creates_entry
+run_test test_colonize_scope_invalid_pattern
+
+# === FORMER PHASE 5 GROUP B: SCOPE-AWARE HIVE REGISTRATION ===
+
+test_scope_specificity() {
+    mkdir -p "$REPO/tickets/spec_broad_hive" "$REPO/tickets/spec_narrow_hive"
+    mkdir -p /tmp/spec_test/projects/active/repo
+    mkdir -p /tmp/spec_test/projects/deep/nested/repo
+
+    # Register broad hive
+    capture_cmd bees colonize-hive \
+        --name "Broad Hive" \
+        --path "$REPO/tickets/spec_broad_hive" \
+        --scope "/tmp/spec_test/projects/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope specificity" "Broad colonize failed: $CMD_OUT"
+    fi
+
+    # Register narrow hive
+    capture_cmd bees colonize-hive \
+        --name "Narrow Hive" \
+        --path "$REPO/tickets/spec_narrow_hive" \
+        --scope "/tmp/spec_test/projects/active/*"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope specificity" "Narrow colonize failed: $CMD_OUT"
+    fi
+
+    # From narrow match path — narrow wins
+    cd /tmp/spec_test/projects/active/repo
+    capture_cmd bees list-hives
+    local has_narrow has_broad
+    has_narrow=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='narrow_hive' for h in d.get('hives',[]))")
+    has_broad=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='broad_hive' for h in d.get('hives',[]))")
+    if [ "$has_narrow" != "True" ]; then
+        fail_test "Scope specificity" "Narrow hive not found from narrow path"
+    fi
+    if [ "$has_broad" = "True" ]; then
+        fail_test "Scope specificity" "Broad hive should not appear from narrow path"
+    fi
+
+    # From broad-only match path — broad wins
+    cd /tmp/spec_test/projects/deep/nested/repo
+    capture_cmd bees list-hives
+    has_narrow=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='narrow_hive' for h in d.get('hives',[]))")
+    has_broad=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='broad_hive' for h in d.get('hives',[]))")
+    if [ "$has_broad" != "True" ]; then
+        fail_test "Scope specificity" "Broad hive not found from broad-only path"
+    fi
+    if [ "$has_narrow" = "True" ]; then
+        fail_test "Scope specificity" "Narrow hive should not appear from broad-only path"
+    fi
+
+    cd "$REPO"
+    pass_test "Scope specificity"
+}
+
+test_scope_duplicate_same_scope() {
+    mkdir -p "$REPO/tickets/dup_bugs_a" "$REPO/tickets/dup_bugs_b"
+    mkdir -p /tmp/dup_test/repo
+
+    capture_cmd bees colonize-hive \
+        --name "Bugs" \
+        --path "$REPO/tickets/dup_bugs_a" \
+        --scope "/tmp/dup_test/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Dup same scope rejected" "First colonize failed: $CMD_OUT"
+    fi
+
+    capture_cmd bees colonize-hive \
+        --name "Bugs" \
+        --path "$REPO/tickets/dup_bugs_b" \
+        --scope "/tmp/dup_test/**"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Dup same scope rejected" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "duplicate_hive_name" "Dup same scope rejected"
+}
+
+test_scope_shadow_more_specific() {
+    mkdir -p "$REPO/tickets/bugs_broad" "$REPO/tickets/bugs_narrow"
+    mkdir -p /tmp/multi_test/general/team/repo
+    mkdir -p /tmp/multi_test/general/other/repo
+
+    # Broad Bugs
+    capture_cmd bees colonize-hive \
+        --name "Bugs" \
+        --path "$REPO/tickets/bugs_broad" \
+        --scope "/tmp/multi_test/general/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope shadow more specific" "Broad colonize failed: $CMD_OUT"
+    fi
+
+    # Narrow Bugs — should succeed (shadowing)
+    capture_cmd bees colonize-hive \
+        --name "Bugs" \
+        --path "$REPO/tickets/bugs_narrow" \
+        --scope "/tmp/multi_test/general/team/*"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope shadow more specific" "Narrow colonize failed: $CMD_OUT"
+    fi
+
+    # From narrow path — narrow bugs wins
+    cd /tmp/multi_test/general/team/repo
+    capture_cmd bees list-hives
+    local bugs_path
+    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
+    if ! echo "$bugs_path" | grep -q "bugs_narrow"; then
+        fail_test "Scope shadow more specific" "Expected bugs_narrow path from narrow scope, got $bugs_path"
+    fi
+
+    # From broad path — broad bugs wins
+    cd /tmp/multi_test/general/other/repo
+    capture_cmd bees list-hives
+    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
+    if ! echo "$bugs_path" | grep -q "bugs_broad"; then
+        fail_test "Scope shadow more specific" "Expected bugs_broad path from broad scope, got $bugs_path"
+    fi
+
+    cd "$REPO"
+    pass_test "Scope shadow more specific"
+}
+
+run_test test_scope_specificity
+run_test test_scope_duplicate_same_scope
+run_test test_scope_shadow_more_specific
+
+# === FORMER PHASE 5 GROUP B: ID CHARSET AND HIERARCHICAL IDS ===
+
+test_id_charset_rejected() {
+    # b.000 contains '0' which is excluded from ID_CHARSET
+    capture_cmd bees show-ticket --ids "b.000"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "ID charset rejected" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "invalid_ticket_id" "ID charset rejected"
+}
+
+test_id_lengths_hierarchy() {
+    # Use error_hive which has t1 and t2 tiers
+    capture_cmd bees create-ticket --ticket-type bee --title "Len Bee" --hive error_hive
+    local len_bee
+    len_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Len Task" --hive error_hive --parent "$len_bee"
+    local len_task
+    len_task=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t2 --title "Len Sub" --hive error_hive --parent "$len_task"
+    local len_sub
+    len_sub=$(check_json "$CMD_OUT" "d['ticket_id']")
+
+    # Bee: b. + 3 chars = 5 total
+    local bee_len=${#len_bee}
+    if [ "$bee_len" -ne 5 ]; then
+        fail_test "ID lengths hierarchy" "Bee total length: expected 5, got $bee_len ($len_bee)"
+    fi
+    # T1: t1. + parent_suffix.xx = 9 total (t1. + 3 + . + 2)
+    local t1_len=${#len_task}
+    if [ "$t1_len" -ne 9 ]; then
+        fail_test "ID lengths hierarchy" "T1 total length: expected 9, got $t1_len ($len_task)"
+    fi
+    # T2: t2. + parent_suffix.xx.yy = 12 total (t2. + 3 + . + 2 + . + 2)
+    local t2_len=${#len_sub}
+    if [ "$t2_len" -ne 12 ]; then
+        fail_test "ID lengths hierarchy" "T2 total length: expected 12, got $t2_len ($len_sub)"
+    fi
+    pass_test "ID lengths hierarchy"
+}
+
+test_id_3level_bidir() {
+    # Use the IDs from the previous test — create a fresh set
+    capture_cmd bees create-ticket --ticket-type bee --title "Bidir Bee" --hive error_hive
+    local b_id
+    b_id=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Bidir Task" --hive error_hive --parent "$b_id"
+    local t1_id
+    t1_id=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t2 --title "Bidir Sub" --hive error_hive --parent "$t1_id"
+    local t2_id
+    t2_id=$(check_json "$CMD_OUT" "d['ticket_id']")
+
+    # Show all three
+    capture_cmd bees show-ticket --ids "$b_id" "$t1_id" "$t2_id"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "3-level bidir" "Show failed: $CMD_OUT"
+    fi
+    # Check bee's children contains t1
+    local b_has_t1
+    b_has_t1=$(check_json "$CMD_OUT" "'$t1_id' in (d['tickets'][0].get('children') or [])")
+    if [ "$b_has_t1" != "True" ]; then
+        fail_test "3-level bidir" "Bee children missing t1"
+    fi
+    # Check t1's parent is bee, and children contains t2
+    local t1_parent t1_has_t2
+    t1_parent=$(check_json "$CMD_OUT" "d['tickets'][1].get('parent','')")
+    t1_has_t2=$(check_json "$CMD_OUT" "'$t2_id' in (d['tickets'][1].get('children') or [])")
+    if [ "$t1_parent" != "$b_id" ]; then
+        fail_test "3-level bidir" "T1 parent should be $b_id, got $t1_parent"
+    fi
+    if [ "$t1_has_t2" != "True" ]; then
+        fail_test "3-level bidir" "T1 children missing t2"
+    fi
+    # Check t2's parent is t1
+    local t2_parent
+    t2_parent=$(check_json "$CMD_OUT" "d['tickets'][2].get('parent','')")
+    if [ "$t2_parent" != "$t1_id" ]; then
+        fail_test "3-level bidir" "T2 parent should be $t1_id, got $t2_parent"
+    fi
+    pass_test "3-level bidir"
+}
+
+run_test test_id_charset_rejected
+run_test test_id_lengths_hierarchy
+run_test test_id_3level_bidir
+
+# === FORMER PHASE 5 GROUP B: SINGLE TESTS ===
+
+test_list_named_queries_works() {
+    # Register a query, list, verify
+    capture_cmd bees add-named-query --query-name "test_lnq" --query-yaml "- [type=bee]" --scope global
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "list-named-queries" "add failed: $CMD_OUT"
+    fi
+    capture_cmd bees list-named-queries
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "list-named-queries" "list failed: $CMD_OUT"
+    fi
+    local has_query
+    has_query=$(check_json "$CMD_OUT" "'test_lnq' in [q['name'] for q in d.get('queries',[])]")
+    if [ "$has_query" != "True" ]; then
+        fail_test "list-named-queries" "test_lnq not found in list"
+    fi
+    # Cleanup
+    capture_cmd bees delete-named-query --query-name "test_lnq"
+    pass_test "list-named-queries"
+}
+
+test_t9_cap() {
+    # T10 should be rejected
+    capture_cmd bees set-types --scope hive --hive "Error Hive" \
+        --child-tiers '{"t1":["A","As"],"t2":["B","Bs"],"t3":["C","Cs"],"t4":["D","Ds"],"t5":["E","Es"],"t6":["F","Fs"],"t7":["G","Gs"],"t8":["H","Hs"],"t9":["I","Is"],"t10":["J","Js"]}'
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "T9 cap" "Expected failure for t10 but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "T9 cap"
+    # T9 should be accepted
+    capture_cmd bees set-types --scope hive --hive "Error Hive" \
+        --child-tiers '{"t1":["A","As"],"t2":["B","Bs"],"t3":["C","Cs"],"t4":["D","Ds"],"t5":["E","Es"],"t6":["F","Fs"],"t7":["G","Gs"],"t8":["H","Hs"],"t9":["I","Is"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "T9 cap" "T9 should be accepted: $CMD_OUT"
+    fi
+    # Restore original tiers
+    capture_cmd bees set-types --scope hive --hive "Error Hive" \
+        --child-tiers '{"t1":["Task","Tasks"],"t2":["Subtask","Subtasks"]}'
+    pass_test "T9 cap"
+}
+
+test_http_port_config() {
+    # Set http.port in config
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d['http'] = {'port': 8765}
+p.write_text(json.dumps(d))
+"
+    # Start server in background
+    bees serve --http > /tmp/bees_test_server.log 2>&1 &
+    local server_pid=$!
+    # Give it time to start
+    sleep 3
+    # Check health on port 8765
+    local health_exit=1
+    local health_out=""
+    health_out=$(curl -sf http://127.0.0.1:8765/health 2>&1) && health_exit=0
+    # Kill the server
+    kill "$server_pid" 2>/dev/null
+    wait "$server_pid" 2>/dev/null || true
+
+    if [ "$health_exit" -ne 0 ]; then
+        # Clean up config
+        python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d.pop('http', None)
+p.write_text(json.dumps(d))
+"
+        fail_test "http.port config" "Server not reachable on port 8765"
+    fi
+
+    # Clean up config
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d.pop('http', None)
+p.write_text(json.dumps(d))
+"
+    pass_test "http.port config"
+}
+
+run_test test_list_named_queries_works
+run_test test_t9_cap
+run_test test_http_port_config
+
 # === SUCCESS SIGNAL ===
 echo ""
 echo "=========================================="
