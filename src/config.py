@@ -402,11 +402,26 @@ def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict) -> st
     )
 
 
+def _bare_prefix(canonical: str) -> str:
+    """Return the bare prefix of an already-canonicalized scope pattern.
+
+    Strips the wildcard suffix and any trailing slash:
+        ``/foo/``   → ``/foo``
+        ``/foo/*``  → ``/foo``
+        ``/foo/**`` → ``/foo``
+    """
+    if canonical.endswith("/**"):
+        return canonical[:-3].rstrip("/")
+    if canonical.endswith("/*"):
+        return canonical[:-2].rstrip("/")
+    return canonical.rstrip("/")
+
+
 def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
     """Check whether *pattern* conflicts with an existing scope key.
 
     A conflict exists when a different scope key has the same bare prefix
-    **and** the same wildcard tier as *pattern* (after canonicalization).
+    string **and** the same wildcard tier as *pattern* (after canonicalization).
     An exact canonical match is NOT a conflict — it means the caller can
     re-use that existing scope.
 
@@ -418,7 +433,8 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
         The first conflicting existing scope key, or ``None`` if no conflict.
     """
     canon_candidate = canonicalize_scope_pattern(pattern)
-    seg_candidate, tier_candidate = compute_scope_specificity(canon_candidate)
+    _, tier_candidate = compute_scope_specificity(canon_candidate)
+    prefix_candidate = _bare_prefix(canon_candidate)
 
     scopes = global_config.get("scopes", {})
     for existing_key in scopes:
@@ -428,10 +444,11 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
         if canon_existing == canon_candidate:
             return None
 
-        seg_existing, tier_existing = compute_scope_specificity(canon_existing)
+        _, tier_existing = compute_scope_specificity(canon_existing)
+        prefix_existing = _bare_prefix(canon_existing)
 
-        # Same bare prefix AND same wildcard tier → conflict
-        if seg_existing == seg_candidate and tier_existing == tier_candidate:
+        # Same bare prefix string AND same wildcard tier → conflict
+        if prefix_existing == prefix_candidate and tier_existing == tier_candidate:
             return existing_key
 
     return None

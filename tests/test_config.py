@@ -2820,8 +2820,14 @@ class TestCheckScopeConflict:
             pytest.param(
                 "/repos/project/other/*",
                 "/repos/project/alt/*",
-                "/repos/project/alt/*",
-                id="same_segment_count_same_tier_conflicts",
+                None,
+                id="different_bare_prefix_same_tier_no_conflict",
+            ),
+            pytest.param(
+                "/repos/project/*",
+                "/repos/project/*",
+                None,
+                id="same_prefix_same_tier_exact_canonical_no_conflict",
             ),
             pytest.param(
                 "/repos/project/*",
