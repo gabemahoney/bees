@@ -705,7 +705,8 @@ The `colonize_hive` MCP tool creates and registers new hives with optional per-h
 colonize_hive(
     name: str,
     path: str,
-    child_tiers: dict[str, list] | None = None
+    child_tiers: dict[str, list] | None = None,
+    scope: str | None = None
 )
 ```
 
@@ -713,8 +714,27 @@ colonize_hive(
 - `name`: Display name for the hive (e.g., "Back End", "Frontend")
 - `path`: Absolute path to the directory where the hive should be created
 
-**Optional Parameter**:
+**Optional Parameters**:
 - `child_tiers`: Per-hive child tiers configuration (dict or None)
+- `scope`: Scope pattern under which to register the hive (str or None)
+
+### scope Parameter Semantics
+
+The `scope` parameter controls which scope key the hive is registered under in `~/.bees/config.json`.
+
+**When omitted (None, default)**: The hive is registered under an exact-path scope derived from the current repo root. If no scope matching the repo root exists, a new exact-path scope is created automatically.
+
+**When provided**: The hive is registered directly under the given scope key. The pattern must be a valid canonical scope form — exact/trailing-slash (e.g. `/projects/myrepo/`), single-level wildcard (`/projects/*`), or recursive wildcard (`/projects/**`). If the scope key does not yet exist in config, it is created. Use this to share a hive across multiple repos that all fall under a common wildcard scope.
+
+**Scope validation order**:
+1. Pattern syntax is validated — wildcards are only allowed as terminal `/*` or `/**` suffixes. Violations return `invalid_scope_pattern`.
+2. The candidate pattern is checked for conflicts with existing scope keys — same bare prefix and same wildcard tier after canonicalization would be ambiguous. A conflict returns `conflicting_scope`.
+3. The normalized hive name is checked for duplicates within all scope keys that overlap the candidate pattern — the same hive name cannot exist in two scopes that can match the same repo root. A duplicate returns `duplicate_hive_name`.
+
+**Error types**:
+- `invalid_scope_pattern`: The scope string contains wildcards in invalid positions (mid-path or without a leading `/`)
+- `conflicting_scope`: A different existing scope key has the same bare prefix and wildcard tier as the candidate, making them ambiguous duplicates
+- `duplicate_hive_name`: The normalized hive name already exists in an overlapping scope, which would make the hive inaccessible or ambiguous for repos that match both scopes
 
 ### child_tiers Parameter Semantics
 
