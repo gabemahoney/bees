@@ -209,7 +209,7 @@ async def colonize_hive_core(
                     return {
                         "status": "error",
                         "message": str(e),
-                        "error_type": "duplicate_name_error",
+                        "error_type": "duplicate_hive_name",
                         "validation_details": {
                             "field": "name",
                             "normalized_name": normalized_name,

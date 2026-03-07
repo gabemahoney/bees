@@ -429,7 +429,7 @@ class TestColonizeHiveOrchestrationUnit:
 
         mock_validate_unique.assert_called_once_with("backend")
         assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_name_error"
+        assert result["error_type"] == "duplicate_hive_name"
         assert "already exists" in result["message"]
 
     @patch("src.mcp_hive_ops.save_global_config")

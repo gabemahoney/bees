@@ -336,7 +336,7 @@ class TestColonizeHiveMCPIntegration:
         await _colonize_hive("Test Hive", str(git_repo_tmp_path / "hive1"))
         result = await _colonize_hive("Test Hive", str(git_repo_tmp_path / "hive2"))
         assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_name_error"
+        assert result["error_type"] == "duplicate_hive_name"
         assert "already exists" in result["message"]
 
     async def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
