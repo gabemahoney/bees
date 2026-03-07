@@ -22,12 +22,17 @@ from typing import Any
 from .config import (
     BeesConfig,
     HiveConfig,
+    canonicalize_scope_pattern,
+    check_scope_conflict,
     find_matching_scope,
     load_bees_config,
     load_global_config,
+    parse_scope_to_bees_config,
     save_bees_config,
     save_global_config,
+    scopes_overlap,
     serialize_bees_config_to_scope,
+    validate_scope_pattern,
     validate_unique_hive_name,
 )
 from .constants import SCHEMA_VERSION
@@ -46,6 +51,7 @@ async def colonize_hive_core(
     repo_root: Path | None = None,
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
+    scope: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
@@ -106,6 +112,57 @@ async def colonize_hive_core(
                 },
             }
 
+        # Step 1b: Scope validation (when caller provides an explicit scope)
+        canonical_scope: str | None = None
+        if scope is not None:
+            # 1b-i: validate pattern syntax
+            try:
+                validate_scope_pattern(scope)
+            except ValueError as e:
+                return {
+                    "status": "error",
+                    "message": str(e),
+                    "error_type": "invalid_scope_pattern",
+                    "validation_details": {"field": "scope", "provided_value": scope, "reason": str(e)},
+                }
+
+            # 1b-ii: canonicalize
+            canonical_scope = canonicalize_scope_pattern(scope)
+
+            # 1b-iii: conflict check
+            global_cfg_for_scope = load_global_config()
+            conflicting = check_scope_conflict(canonical_scope, global_cfg_for_scope)
+            if conflicting is not None:
+                return {
+                    "status": "error",
+                    "message": f"Scope pattern conflicts with existing scope '{conflicting}'",
+                    "error_type": "conflicting_scope",
+                    "validation_details": {
+                        "field": "scope",
+                        "provided_value": scope,
+                        "canonical_value": canonical_scope,
+                        "conflicting_scope": conflicting,
+                    },
+                }
+
+            # 1b-iv: hive name uniqueness across overlapping scopes
+            all_scopes = global_cfg_for_scope.get("scopes", {})
+            for existing_scope, scope_data in all_scopes.items():
+                if scopes_overlap(canonical_scope, existing_scope):
+                    if normalized_name in scope_data.get("hives", {}):
+                        return {
+                            "status": "error",
+                            "message": (
+                                f"Hive '{normalized_name}' already exists in overlapping scope '{existing_scope}'"
+                            ),
+                            "error_type": "duplicate_hive_name",
+                            "validation_details": {
+                                "field": "name",
+                                "normalized_name": normalized_name,
+                                "overlapping_scope": existing_scope,
+                            },
+                        }
+
         # Step 2: Determine repo root for downstream operations
         if repo_root is None:
             # Try context first (set by CLI's _run_in_repo or MCP entry points)
@@ -141,21 +198,23 @@ async def colonize_hive_core(
                 }
 
             # Step 4: Check for duplicate normalized names using config system
-            try:
-                validate_unique_hive_name(normalized_name)
-                logger.info(f"Validated unique hive name: {normalized_name}")
-            except ValueError as e:
-                return {
-                    "status": "error",
-                    "message": str(e),
-                    "error_type": "duplicate_name_error",
-                    "validation_details": {
-                        "field": "name",
-                        "normalized_name": normalized_name,
-                        "display_name": name,
-                        "reason": str(e),
-                    },
-                }
+            # Skipped when caller provides an explicit scope (already checked in step 1b-iv)
+            if scope is None:
+                try:
+                    validate_unique_hive_name(normalized_name)
+                    logger.info(f"Validated unique hive name: {normalized_name}")
+                except ValueError as e:
+                    return {
+                        "status": "error",
+                        "message": str(e),
+                        "error_type": "duplicate_name_error",
+                        "validation_details": {
+                            "field": "name",
+                            "normalized_name": normalized_name,
+                            "display_name": name,
+                            "reason": str(e),
+                        },
+                    }
 
             # Step 4.5: Validate child_tiers if provided
             parsed_child_tiers = None
@@ -214,13 +273,6 @@ async def colonize_hive_core(
                     },
                 }
 
-            # TODO: Linter integration stub
-            # Future: Add linter check here to validate no conflicting tickets exist
-            # across hives during colonization. The linter should scan for duplicate
-            # ticket IDs, conflicting hive names, and other cross-hive invariants.
-            # Deferred to future Bee for full implementation.
-            logger.info("Linter check: (stubbed out for now)")
-
             # Step 6: Register hive in global scoped config
             try:
                 creation_timestamp = datetime.now()
@@ -233,23 +285,45 @@ async def colonize_hive_core(
                     egg_resolver_timeout=egg_resolver_timeout,
                 )
 
-                # Load global config and find or create scope
                 global_config = load_global_config()
-                pattern = find_matching_scope(repo_root, global_config)
 
-                if pattern is not None:
-                    # Scope exists — load it, add hive, save back
-                    config = load_bees_config()
-                    if config is None:
-                        config = BeesConfig()
-                    config.hives[normalized_name] = new_hive
-                    save_bees_config(config)
-                else:
-                    # No scope — create exact-path scope with this hive
-                    config = BeesConfig(hives={normalized_name: new_hive})
-                    scope_data = serialize_bees_config_to_scope(config)
-                    global_config["scopes"][str(repo_root)] = scope_data
+                if canonical_scope is not None:
+                    # Explicit scope provided — use canonical form as the key.
+                    # Always manipulate global_config directly (avoids repo-root
+                    # context dependency of load_bees_config/save_bees_config).
+                    if canonical_scope in global_config["scopes"]:
+                        # Scope entry already exists — parse it, add hive, save back
+                        existing_config = parse_scope_to_bees_config(
+                            global_config["scopes"][canonical_scope]
+                        )
+                        existing_config.hives[normalized_name] = new_hive
+                        global_config["scopes"][canonical_scope] = serialize_bees_config_to_scope(
+                            existing_config
+                        )
+                    else:
+                        # New scope — create entry with this hive
+                        new_scope_config = BeesConfig(hives={normalized_name: new_hive})
+                        global_config["scopes"][canonical_scope] = serialize_bees_config_to_scope(
+                            new_scope_config
+                        )
                     save_global_config(global_config)
+                else:
+                    # No explicit scope — find matching scope by repo root
+                    pattern = find_matching_scope(repo_root, global_config)
+
+                    if pattern is not None:
+                        # Scope exists — load it, add hive, save back
+                        config = load_bees_config()
+                        if config is None:
+                            config = BeesConfig()
+                        config.hives[normalized_name] = new_hive
+                        save_bees_config(config)
+                    else:
+                        # No scope — create exact-path scope with this hive
+                        config = BeesConfig(hives={normalized_name: new_hive})
+                        scope_data = serialize_bees_config_to_scope(config)
+                        global_config["scopes"][str(repo_root)] = scope_data
+                        save_global_config(global_config)
 
                 logger.info(f"colonize_hive: Registered hive '{normalized_name}' in global config")
                 logger.info(f"colonize_hive: Final repo root used: {repo_root}")
@@ -300,6 +374,7 @@ async def _colonize_hive(
     repo_root: Path | None = None,
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
+    scope: str | None = None,
 ) -> dict[str, Any]:
     """
     Create and register a new hive at the specified path.
@@ -329,6 +404,9 @@ async def _colonize_hive(
         repo_root: Pre-resolved repo root path (injected by adapter)
         egg_resolver: Optional path to egg resolver script for this hive (e.g., '/repo/resolve_eggs.sh')
                       If None: hive inherits egg_resolver from scope/global config
+        scope: Optional scope pattern to register the hive under (e.g., '/projects/**').
+               When provided the hive is placed under this explicit scope rather than the
+               auto-detected scope for repo_root.
 
     Returns:
         dict: Operation result with status and details
@@ -372,6 +450,7 @@ async def _colonize_hive(
         result = await colonize_hive_core(
             name=name, path=path, child_tiers=child_tiers, repo_root=repo_root,
             egg_resolver=egg_resolver, egg_resolver_timeout=egg_resolver_timeout,
+            scope=scope,
         )
 
         if result.get("status") == "error":
