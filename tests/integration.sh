@@ -748,7 +748,701 @@ run_test test_crud_cascading_delete
 run_test test_crud_reject_parent_children_update
 run_test test_crud_add_remove_tags
 
-# === PHASE 2 GROUP B tests will be appended here ===
+# === PHASE 2 GROUP B: DEPENDENCIES ===
+
+DEP_A=""
+DEP_B=""
+DEP_C=""
+DANG_A=""
+
+test_dep_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Dep Hive" \
+        --path "$REPO/tickets/dep_hive" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Dep setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Dep setup"
+    pass_test "Dep setup"
+}
+
+test_dep_create_with_up_deps() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Dep A" --hive dep_hive
+    DEP_A=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Dep B" --hive dep_hive \
+        --up-deps "[\"$DEP_A\"]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Create with up-deps" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    DEP_B=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$DEP_B"
+    local has_dep
+    has_dep=$(check_json "$CMD_OUT" "'$DEP_A' in (d['tickets'][0].get('up_dependencies') or [])")
+    if [ "$has_dep" != "True" ]; then
+        fail_test "Create with up-deps" "DEP_B up_dependencies missing DEP_A"
+    fi
+    pass_test "Create with up-deps"
+}
+
+test_dep_bidirectional_sync() {
+    capture_cmd bees show-ticket --ids "$DEP_A"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Bidirectional dep sync" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_down
+    has_down=$(check_json "$CMD_OUT" "'$DEP_B' in (d['tickets'][0].get('down_dependencies') or [])")
+    if [ "$has_down" != "True" ]; then
+        fail_test "Bidirectional dep sync" "DEP_A down_dependencies missing DEP_B"
+    fi
+    pass_test "Bidirectional dep sync"
+}
+
+test_dep_update() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Dep C" --hive dep_hive
+    DEP_C=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees update-ticket --ticket-id "$DEP_B" --up-deps "[\"$DEP_A\",\"$DEP_C\"]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Update deps" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees show-ticket --ids "$DEP_C"
+    local has_down
+    has_down=$(check_json "$CMD_OUT" "'$DEP_B' in (d['tickets'][0].get('down_dependencies') or [])")
+    if [ "$has_down" != "True" ]; then
+        fail_test "Update deps" "DEP_C down_dependencies missing DEP_B"
+    fi
+    pass_test "Update deps"
+}
+
+test_dep_delete_with_cleanup() {
+    # Enable delete_with_dependencies in global config
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d['delete_with_dependencies'] = True
+p.write_text(json.dumps(d))
+"
+    capture_cmd bees delete-ticket --ids "$DEP_B"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Delete with dep cleanup" "Delete failed: $CMD_OUT"
+    fi
+    # Check DEP_A no longer references DEP_B
+    capture_cmd bees show-ticket --ids "$DEP_A"
+    local a_has_b
+    a_has_b=$(check_json "$CMD_OUT" "'$DEP_B' in (d['tickets'][0].get('down_dependencies') or [])")
+    if [ "$a_has_b" != "False" ]; then
+        fail_test "Delete with dep cleanup" "DEP_A still references deleted DEP_B"
+    fi
+    # Check DEP_C no longer references DEP_B
+    capture_cmd bees show-ticket --ids "$DEP_C"
+    local c_has_b
+    c_has_b=$(check_json "$CMD_OUT" "'$DEP_B' in (d['tickets'][0].get('down_dependencies') or [])")
+    if [ "$c_has_b" != "False" ]; then
+        fail_test "Delete with dep cleanup" "DEP_C still references deleted DEP_B"
+    fi
+    # Remove delete_with_dependencies from config
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d.pop('delete_with_dependencies', None)
+p.write_text(json.dumps(d))
+"
+    pass_test "Delete with dep cleanup"
+}
+
+test_dep_default_dangling() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Dang A" --hive dep_hive
+    DANG_A=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Dang B" --hive dep_hive \
+        --up-deps "[\"$DANG_A\"]"
+    local dang_b
+    dang_b=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees delete-ticket --ids "$dang_b"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Default dangling refs" "Delete failed: $CMD_OUT"
+    fi
+    # DANG_A should still have dangling ref to deleted dang_b
+    capture_cmd bees show-ticket --ids "$DANG_A"
+    local has_dangling
+    has_dangling=$(check_json "$CMD_OUT" "'$dang_b' in (d['tickets'][0].get('down_dependencies') or [])")
+    if [ "$has_dangling" != "True" ]; then
+        fail_test "Default dangling refs" "DANG_A should still reference deleted ticket (dangling)"
+    fi
+    pass_test "Default dangling refs"
+}
+
+test_dep_bulk_delete_ordering() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Bulk Bee" --hive dep_hive
+    local bulk_bee
+    bulk_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Bulk Task" --hive dep_hive --parent "$bulk_bee"
+    local bulk_task
+    bulk_task=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Pass child first, then parent — bees should be processed first
+    capture_cmd bees delete-ticket --ids "$bulk_task" "$bulk_bee"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Bulk delete ordering" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_deleted has_not_found has_failed
+    has_deleted=$(check_json "$CMD_OUT" "'deleted' in d")
+    has_not_found=$(check_json "$CMD_OUT" "'not_found' in d")
+    has_failed=$(check_json "$CMD_OUT" "'failed' in d")
+    if [ "$has_deleted" != "True" ] || [ "$has_not_found" != "True" ] || [ "$has_failed" != "True" ]; then
+        fail_test "Bulk delete ordering" "Response missing deleted/not_found/failed keys"
+    fi
+    # Bee should be in deleted, task in not_found (already removed by rmtree)
+    local bee_deleted task_nf
+    bee_deleted=$(check_json "$CMD_OUT" "'$bulk_bee' in d.get('deleted',[])")
+    task_nf=$(check_json "$CMD_OUT" "'$bulk_task' in d.get('not_found',[])")
+    if [ "$bee_deleted" != "True" ]; then
+        fail_test "Bulk delete ordering" "Bee not in deleted list"
+    fi
+    if [ "$task_nf" != "True" ]; then
+        fail_test "Bulk delete ordering" "Task not in not_found list"
+    fi
+    pass_test "Bulk delete ordering"
+}
+
+test_dep_clean_deps_flag_rejected() {
+    capture_cmd bees delete-ticket --ids "$DANG_A" --clean-dependencies
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "clean-dependencies rejected" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "clean-dependencies rejected"
+    pass_test "clean-dependencies rejected"
+}
+
+run_test test_dep_setup
+run_test test_dep_create_with_up_deps
+run_test test_dep_bidirectional_sync
+run_test test_dep_update
+run_test test_dep_delete_with_cleanup
+run_test test_dep_default_dangling
+run_test test_dep_bulk_delete_ordering
+run_test test_dep_clean_deps_flag_rejected
+
+# === PHASE 2 GROUP B: ID AND GUID VALIDATION ===
+
+ID_BEE=""
+ID_TASK=""
+ID_SUB=""
+
+test_id_setup() {
+    capture_cmd bees colonize-hive \
+        --name "ID Test Hive" \
+        --path "$REPO/tickets/id_test_hive" \
+        --child-tiers '{"t1":["Task","Tasks"],"t2":["Subtask","Subtasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "ID setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "ID Bee" --hive id_test_hive
+    ID_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "ID Task" --hive id_test_hive --parent "$ID_BEE"
+    ID_TASK=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t2 --title "ID Subtask" --hive id_test_hive --parent "$ID_TASK"
+    ID_SUB=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "ID setup"
+}
+
+test_id_valid_ids() {
+    capture_cmd bees show-ticket --ids "$ID_BEE" "$ID_TASK" "$ID_SUB"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Valid IDs accepted" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local count nf
+    count=$(check_json "$CMD_OUT" "len(d['tickets'])")
+    nf=$(check_json "$CMD_OUT" "len(d.get('not_found',[]))")
+    if [ "$count" != "3" ] || [ "$nf" != "0" ]; then
+        fail_test "Valid IDs accepted" "Expected 3 tickets, 0 not_found; got $count tickets, $nf not_found"
+    fi
+    pass_test "Valid IDs accepted"
+}
+
+test_id_bee_length() {
+    local suffix="${ID_BEE#b.}"
+    local len=${#suffix}
+    if [ "$len" -ne 3 ]; then
+        fail_test "Bee ID is 3 chars" "Expected 3 chars after b., got $len ($ID_BEE)"
+    fi
+    pass_test "Bee ID is 3 chars"
+}
+
+test_id_task_length() {
+    local suffix="${ID_TASK#t1.}"
+    local len=${#suffix}
+    if [ "$len" -ne 5 ]; then
+        fail_test "Task ID is 5 chars" "Expected 5 chars after t1., got $len ($ID_TASK)"
+    fi
+    pass_test "Task ID is 5 chars"
+}
+
+test_id_subtask_length() {
+    local suffix="${ID_SUB#t2.}"
+    local len=${#suffix}
+    if [ "$len" -ne 7 ]; then
+        fail_test "Subtask ID is 7 chars" "Expected 7 chars after t2., got $len ($ID_SUB)"
+    fi
+    pass_test "Subtask ID is 7 chars"
+}
+
+test_id_charset() {
+    local valid_re='^[123456789abcdefghijkmnopqrstuvwxyz]+$'
+    local bee_suffix="${ID_BEE#b.}"
+    local task_suffix="${ID_TASK#t1.}"
+    local sub_suffix="${ID_SUB#t2.}"
+    if ! echo "$bee_suffix" | grep -qE "$valid_re"; then
+        fail_test "ID charset valid" "Bee suffix '$bee_suffix' contains invalid chars"
+    fi
+    if ! echo "$task_suffix" | grep -qE "$valid_re"; then
+        fail_test "ID charset valid" "Task suffix '$task_suffix' contains invalid chars"
+    fi
+    if ! echo "$sub_suffix" | grep -qE "$valid_re"; then
+        fail_test "ID charset valid" "Subtask suffix '$sub_suffix' contains invalid chars"
+    fi
+    pass_test "ID charset valid"
+}
+
+test_id_path_traversal() {
+    capture_cmd bees show-ticket --ids "b.../../etc"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Path traversal rejected" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Path traversal rejected"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')" 2>/dev/null || echo "")
+    # Accept any error (might be invalid_ticket_id or parse error)
+    pass_test "Path traversal rejected"
+}
+
+test_id_guid_length() {
+    capture_cmd bees show-ticket --ids "$ID_BEE"
+    local guid
+    guid=$(check_json "$CMD_OUT" "d['tickets'][0]['guid']")
+    local len=${#guid}
+    if [ "$len" -ne 32 ]; then
+        fail_test "GUID is 32 chars" "Expected 32 chars, got $len ($guid)"
+    fi
+    pass_test "GUID is 32 chars"
+}
+
+test_id_guid_charset() {
+    capture_cmd bees show-ticket --ids "$ID_BEE"
+    local guid
+    guid=$(check_json "$CMD_OUT" "d['tickets'][0]['guid']")
+    local valid_re='^[123456789abcdefghijkmnopqrstuvwxyz]+$'
+    if ! echo "$guid" | grep -qE "$valid_re"; then
+        fail_test "GUID charset valid" "GUID '$guid' contains invalid chars"
+    fi
+    pass_test "GUID charset valid"
+}
+
+test_id_guid_prefix() {
+    capture_cmd bees show-ticket --ids "$ID_BEE"
+    local guid
+    guid=$(check_json "$CMD_OUT" "d['tickets'][0]['guid']")
+    local bee_suffix="${ID_BEE#b.}"
+    local guid_prefix="${guid:0:${#bee_suffix}}"
+    if [ "$guid_prefix" != "$bee_suffix" ]; then
+        fail_test "GUID prefix matches short_id" "Expected GUID to start with '$bee_suffix', got '$guid_prefix'"
+    fi
+    pass_test "GUID prefix matches short_id"
+}
+
+run_test test_id_setup
+run_test test_id_valid_ids
+run_test test_id_bee_length
+run_test test_id_task_length
+run_test test_id_subtask_length
+run_test test_id_charset
+run_test test_id_path_traversal
+run_test test_id_guid_length
+run_test test_id_guid_charset
+run_test test_id_guid_prefix
+
+# === PHASE 2 GROUP B: STATUS BEHAVIOR ===
+
+STATUS_BEE=""
+
+test_status_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Status Hive" \
+        --path "$REPO/tickets/status_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Status setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    pass_test "Status setup"
+}
+
+test_status_freeform() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Status Test Bee" --hive status_hive
+    STATUS_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees update-ticket --ticket-id "$STATUS_BEE" --status "any_custom_status"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Freeform status accepted" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees show-ticket --ids "$STATUS_BEE"
+    local st
+    st=$(check_json "$CMD_OUT" "d['tickets'][0]['ticket_status']")
+    if [ "$st" != "any_custom_status" ]; then
+        fail_test "Freeform status accepted" "Expected any_custom_status, got $st"
+    fi
+    pass_test "Freeform status accepted"
+}
+
+test_status_linter_flags_invalid() {
+    # Configure status_values for the hive
+    capture_cmd bees set-status-values --scope hive --hive "Status Hive" \
+        --status-values '["larva","pupa","worker","finished"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Linter flags invalid status" "set-status-values failed: $CMD_OUT"
+    fi
+    # Edit the bee's frontmatter directly to set bogus status
+    local ticket_file
+    ticket_file=$(find "$REPO/tickets/status_hive" -name "*.md" ! -path '*/.hive/*' ! -path '*/cemetery/*' | head -1)
+    if [ -z "$ticket_file" ]; then
+        fail_test "Linter flags invalid status" "Could not find ticket file"
+    fi
+    python3 -c "
+import re, pathlib
+f = pathlib.Path('$ticket_file')
+t = f.read_text()
+t = re.sub(r'ticket_status: .*', 'ticket_status: bogus', t)
+f.write_text(t)
+"
+    # Run sanitizer
+    capture_cmd bees sanitize-hive --hive "Status Hive"
+    assert_no_traceback "$CMD_OUT" "Linter flags invalid status"
+    # Check that errors_remaining mentions invalid status
+    local has_errors
+    has_errors=$(check_json "$CMD_OUT" "len(d.get('errors_remaining',[])) > 0")
+    if [ "$has_errors" != "True" ]; then
+        fail_test "Linter flags invalid status" "Expected errors_remaining for bogus status"
+    fi
+    pass_test "Linter flags invalid status"
+}
+
+run_test test_status_setup
+run_test test_status_freeform
+run_test test_status_linter_flags_invalid
+
+# === PHASE 2 GROUP B: FREEFORM QUERIES ===
+
+QB1=""
+QB2=""
+QTASK1=""
+QB3=""
+QA=""
+QB=""
+
+test_query_setup() {
+    # Create hive A with t1 tiers
+    capture_cmd bees colonize-hive \
+        --name "Query Hive A" \
+        --path "$REPO/tickets/query_hive_a" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query setup" "Colonize hive A failed: $CMD_OUT"
+    fi
+    # Create hive B with no tiers
+    capture_cmd bees colonize-hive \
+        --name "Query Hive B" \
+        --path "$REPO/tickets/query_hive_b"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query setup" "Colonize hive B failed: $CMD_OUT"
+    fi
+    # Worker Bee in A
+    capture_cmd bees create-ticket --ticket-type bee --title "Worker Bee" --hive query_hive_a --status worker
+    QB1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Pupa Bee in A with tag
+    capture_cmd bees create-ticket --ticket-type bee --title "Pupa Bee" --hive query_hive_a \
+        --status pupa --tags '["searchable"]'
+    QB2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Task under Worker Bee
+    capture_cmd bees create-ticket --ticket-type t1 --title "Query Task" --hive query_hive_a --parent "$QB1"
+    QTASK1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Dependency pair: QA → QB
+    capture_cmd bees create-ticket --ticket-type bee --title "Dep Source" --hive query_hive_a
+    QA=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Dep Target" --hive query_hive_a \
+        --up-deps "[\"$QA\"]"
+    QB=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Bee in hive B
+    capture_cmd bees create-ticket --ticket-type bee --title "Other Hive Bee" --hive query_hive_b
+    QB3=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Query setup"
+}
+
+test_query_type_bee() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [type=bee, hive=query_hive_a]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query by type=bee" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local all_bees
+    all_bees=$(check_json "$CMD_OUT" "all(tid.startswith('b.') for tid in d.get('ticket_ids',[]))")
+    if [ "$all_bees" != "True" ]; then
+        fail_test "Query by type=bee" "Not all results are bees"
+    fi
+    pass_test "Query by type=bee"
+}
+
+test_query_type_t1() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [type=t1, hive=query_hive_a]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query by type=t1" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local all_tasks
+    all_tasks=$(check_json "$CMD_OUT" "all(tid.startswith('t1.') for tid in d.get('ticket_ids',[]))")
+    if [ "$all_tasks" != "True" ]; then
+        fail_test "Query by type=t1" "Not all results are t1 tasks"
+    fi
+    pass_test "Query by type=t1"
+}
+
+test_query_by_status() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [status=worker]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query by status" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qb1
+    has_qb1=$(check_json "$CMD_OUT" "'$QB1' in d.get('ticket_ids',[])")
+    if [ "$has_qb1" != "True" ]; then
+        fail_test "Query by status" "Worker Bee ($QB1) not found in status=worker results"
+    fi
+    pass_test "Query by status"
+}
+
+test_query_by_title() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [title~Worker]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query by title" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qb1
+    has_qb1=$(check_json "$CMD_OUT" "'$QB1' in d.get('ticket_ids',[])")
+    if [ "$has_qb1" != "True" ]; then
+        fail_test "Query by title" "Worker Bee not found in title~Worker results"
+    fi
+    pass_test "Query by title"
+}
+
+test_query_by_tag() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [tag~searchable]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query by tag" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qb2
+    has_qb2=$(check_json "$CMD_OUT" "'$QB2' in d.get('ticket_ids',[])")
+    if [ "$has_qb2" != "True" ]; then
+        fail_test "Query by tag" "Pupa Bee ($QB2) not found in tag~searchable results"
+    fi
+    pass_test "Query by tag"
+}
+
+test_query_graph_children() {
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [type=bee, hive=query_hive_a]\n- [children]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query children traversal" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_task
+    has_task=$(check_json "$CMD_OUT" "'$QTASK1' in d.get('ticket_ids',[])")
+    if [ "$has_task" != "True" ]; then
+        fail_test "Query children traversal" "QTASK1 not found in children results"
+    fi
+    pass_test "Query children traversal"
+}
+
+test_query_graph_parent() {
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [type=t1, hive=query_hive_a]\n- [parent]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query parent traversal" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local all_bees
+    all_bees=$(check_json "$CMD_OUT" "all(tid.startswith('b.') for tid in d.get('ticket_ids',[]))")
+    if [ "$all_bees" != "True" ]; then
+        fail_test "Query parent traversal" "Parent results should be bees"
+    fi
+    pass_test "Query parent traversal"
+}
+
+test_query_hive_filter() {
+    capture_cmd bees execute-freeform-query --query-yaml "- [hive=query_hive_a, type=bee]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query hive filter" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qb3
+    has_qb3=$(check_json "$CMD_OUT" "'$QB3' in d.get('ticket_ids',[])")
+    if [ "$has_qb3" != "False" ]; then
+        fail_test "Query hive filter" "Hive B ticket found in hive A query"
+    fi
+    pass_test "Query hive filter"
+}
+
+test_query_up_deps() {
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [type=bee]\n- [up_dependencies]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query up_dependencies" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qa
+    has_qa=$(check_json "$CMD_OUT" "'$QA' in d.get('ticket_ids',[])")
+    if [ "$has_qa" != "True" ]; then
+        fail_test "Query up_dependencies" "QA not found in up_dependencies traversal"
+    fi
+    pass_test "Query up_dependencies"
+}
+
+test_query_down_deps() {
+    capture_cmd bees execute-freeform-query \
+        --query-yaml $'- [type=bee]\n- [down_dependencies]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Query down_dependencies" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_qb
+    has_qb=$(check_json "$CMD_OUT" "'$QB' in d.get('ticket_ids',[])")
+    if [ "$has_qb" != "True" ]; then
+        fail_test "Query down_dependencies" "QB not found in down_dependencies traversal"
+    fi
+    pass_test "Query down_dependencies"
+}
+
+run_test test_query_setup
+run_test test_query_type_bee
+run_test test_query_type_t1
+run_test test_query_by_status
+run_test test_query_by_title
+run_test test_query_by_tag
+run_test test_query_graph_children
+run_test test_query_graph_parent
+run_test test_query_hive_filter
+run_test test_query_up_deps
+run_test test_query_down_deps
+
+# === PHASE 2 GROUP B: NAMED QUERIES ===
+
+NQ_BEE=""
+
+test_nq_setup() {
+    capture_cmd bees colonize-hive \
+        --name "NQ Hive" \
+        --path "$REPO/tickets/nq_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "NQ setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "NQ Worker Bee" --hive nq_hive --status worker
+    NQ_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "NQ setup"
+}
+
+test_nq_add_global() {
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope global
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Add global named query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Add global named query"
+    pass_test "Add global named query"
+}
+
+test_nq_execute() {
+    capture_cmd bees execute-named-query --query-name "all_bees"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Execute named query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local count
+    count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
+    if [ "$count" -lt 1 ]; then
+        fail_test "Execute named query" "Expected at least 1 result, got $count"
+    fi
+    pass_test "Execute named query"
+}
+
+test_nq_list() {
+    capture_cmd bees list-named-queries
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "List named queries" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_all_bees
+    has_all_bees=$(check_json "$CMD_OUT" "'all_bees' in [q['name'] for q in d.get('queries',[])]")
+    if [ "$has_all_bees" != "True" ]; then
+        fail_test "List named queries" "all_bees not found in query list"
+    fi
+    pass_test "List named queries"
+}
+
+test_nq_conflict() {
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope repo
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Reject conflicting query name" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "query_name_conflict" ]; then
+        fail_test "Reject conflicting query name" "Expected error_type=query_name_conflict, got $error_type"
+    fi
+    pass_test "Reject conflicting query name"
+}
+
+test_nq_add_repo() {
+    capture_cmd bees add-named-query --query-name "worker_bees" \
+        --query-yaml "- [type=bee, status=worker]" --scope repo
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Add repo-scoped query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Add repo-scoped query"
+    pass_test "Add repo-scoped query"
+}
+
+test_nq_execute_repo() {
+    capture_cmd bees execute-named-query --query-name "worker_bees"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Execute repo-scoped query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local count
+    count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
+    if [ "$count" -lt 1 ]; then
+        fail_test "Execute repo-scoped query" "Expected at least 1 result, got $count"
+    fi
+    pass_test "Execute repo-scoped query"
+}
+
+test_nq_delete_repo() {
+    capture_cmd bees delete-named-query --query-name "worker_bees"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Delete repo-scoped query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    # Execute should now fail
+    capture_cmd bees execute-named-query --query-name "worker_bees"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Delete repo-scoped query" "Query still executes after deletion"
+    fi
+    pass_test "Delete repo-scoped query"
+}
+
+test_nq_delete_global() {
+    capture_cmd bees delete-named-query --query-name "all_bees"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Delete global query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees execute-named-query --query-name "all_bees"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Delete global query" "Query still executes after deletion"
+    fi
+    pass_test "Delete global query"
+}
+
+run_test test_nq_setup
+run_test test_nq_add_global
+run_test test_nq_execute
+run_test test_nq_list
+run_test test_nq_conflict
+run_test test_nq_add_repo
+run_test test_nq_execute_repo
+run_test test_nq_delete_repo
+run_test test_nq_delete_global
+
+# === Former Phase 5 tests will be appended here ===
 
 # === SUCCESS SIGNAL ===
 echo ""
