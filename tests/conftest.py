@@ -74,6 +74,26 @@ def write_scoped_config(
     config_path.write_text(json.dumps(global_config, indent=2))
 
 
+def write_multi_scope_config(global_bees_dir: Path, scopes_dict: dict) -> None:
+    """Write a global config with scopes_dict as the scopes value.
+
+    Unlike write_scoped_config, this function accepts arbitrary scope keys and
+    does not restrict to a single repo_root. Use this when tests need multiple
+    scope patterns (e.g. wildcards alongside exact keys) in one config.json.
+
+    Args:
+        global_bees_dir: The (mocked) global ~/.bees/ directory.
+        scopes_dict: The full scopes mapping to write as the "scopes" value.
+                     Keys may be any scope pattern strings.
+    """
+    global_config = {
+        "scopes": scopes_dict,
+        "schema_version": "2.0",
+    }
+    config_path = global_bees_dir / "config.json"
+    config_path.write_text(json.dumps(global_config, indent=2))
+
+
 def write_global_queries(global_bees_dir: Path, queries: dict) -> None:
     """Write queries under the top-level queries key of config.json.
 
