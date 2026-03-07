@@ -1442,7 +1442,938 @@ run_test test_nq_execute_repo
 run_test test_nq_delete_repo
 run_test test_nq_delete_global
 
-# === Former Phase 5 tests will be appended here ===
+# === FORMER PHASE 5 GROUP A: EGG RESOLVER ===
+
+EGG_BEE1=""
+EGG_BEE2=""
+EGG_BEE3=""
+
+test_egg_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Egg Hive" \
+        --path "$REPO/tickets/egg_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Egg setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Egg setup"
+    pass_test "Egg setup"
+}
+
+test_egg_string_inline() {
+    capture_cmd bees create-ticket --ticket-type bee --title "String Egg Bee" \
+        --hive egg_hive --egg '"hello"'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "String egg inline" "Create failed: $CMD_OUT"
+    fi
+    EGG_BEE1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$EGG_BEE1"
+    local egg_val
+    egg_val=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
+    if [ "$egg_val" != "hello" ]; then
+        fail_test "String egg inline" "Expected egg='hello', got '$egg_val'"
+    fi
+    pass_test "String egg inline"
+}
+
+test_egg_null_inline() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Null Egg Bee" \
+        --hive egg_hive --egg 'null'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Null egg inline" "Create failed: $CMD_OUT"
+    fi
+    EGG_BEE2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$EGG_BEE2"
+    local egg_val
+    egg_val=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
+    if [ "$egg_val" != "None" ]; then
+        fail_test "Null egg inline" "Expected egg=None, got '$egg_val'"
+    fi
+    pass_test "Null egg inline"
+}
+
+test_egg_object_inline() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Object Egg Bee" \
+        --hive egg_hive --egg '{"key":"val"}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Object egg inline" "Create failed: $CMD_OUT"
+    fi
+    EGG_BEE3=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$EGG_BEE3"
+    local egg_key
+    egg_key=$(check_json "$CMD_OUT" "d['tickets'][0]['egg'].get('key','')")
+    if [ "$egg_key" != "val" ]; then
+        fail_test "Object egg inline" "Expected egg.key='val', got '$egg_key'"
+    fi
+    pass_test "Object egg inline"
+}
+
+test_egg_custom_resolver() {
+    # Create a shell script resolver that outputs JSON
+    mkdir -p "$REPO/scripts"
+    cat > "$REPO/scripts/egg_resolver.sh" << 'RESOLVER'
+#!/bin/bash
+# Parse --egg-value argument
+EGG_VALUE=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --egg-value) EGG_VALUE="$2"; shift 2 ;;
+        --repo-root) shift 2 ;;
+        *) shift ;;
+    esac
+done
+echo "{\"resolved\": true, \"original\": \"$EGG_VALUE\"}"
+RESOLVER
+    chmod +x "$REPO/scripts/egg_resolver.sh"
+    capture_cmd bees colonize-hive \
+        --name "Resolver Hive" \
+        --path "$REPO/tickets/resolver_hive" \
+        --egg-resolver "$REPO/scripts/egg_resolver.sh"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom egg resolver" "Colonize failed: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Resolved Bee" \
+        --hive resolver_hive --egg '"test_value"'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom egg resolver" "Create failed: $CMD_OUT"
+    fi
+    local res_bee
+    res_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$res_bee"
+    local resolved
+    resolved=$(check_json "$CMD_OUT" "d['tickets'][0]['egg'].get('resolved', False)")
+    if [ "$resolved" != "True" ]; then
+        fail_test "Custom egg resolver" "Expected resolved=True in egg output"
+    fi
+    pass_test "Custom egg resolver"
+}
+
+test_egg_resolver_timeout() {
+    # Create a script that sleeps forever
+    cat > "$REPO/scripts/slow_resolver.sh" << 'RESOLVER'
+#!/bin/bash
+sleep 60
+echo '{"never":"reached"}'
+RESOLVER
+    chmod +x "$REPO/scripts/slow_resolver.sh"
+    capture_cmd bees colonize-hive \
+        --name "Timeout Hive" \
+        --path "$REPO/tickets/timeout_hive" \
+        --egg-resolver "$REPO/scripts/slow_resolver.sh" \
+        --egg-resolver-timeout 2
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Egg resolver timeout" "Colonize failed: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Timeout Bee" \
+        --hive timeout_hive --egg '"test"'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Egg resolver timeout" "Create failed: $CMD_OUT"
+    fi
+    local to_bee
+    to_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Show should succeed but egg resolution should fail gracefully
+    capture_cmd bees show-ticket --ids "$to_bee"
+    assert_no_traceback "$CMD_OUT" "Egg resolver timeout"
+    # The ticket should still be returned (with errors or fallback egg)
+    local ticket_count
+    ticket_count=$(check_json "$CMD_OUT" "len(d.get('tickets',[]))")
+    if [ "$ticket_count" != "1" ]; then
+        fail_test "Egg resolver timeout" "Expected 1 ticket returned, got $ticket_count"
+    fi
+    # Check that errors list mentions the timeout
+    local has_errors
+    has_errors=$(check_json "$CMD_OUT" "len(d.get('errors',[])) > 0")
+    if [ "$has_errors" != "True" ]; then
+        fail_test "Egg resolver timeout" "Expected errors for timeout, got none"
+    fi
+    pass_test "Egg resolver timeout"
+}
+
+run_test test_egg_setup
+run_test test_egg_string_inline
+run_test test_egg_null_inline
+run_test test_egg_object_inline
+run_test test_egg_custom_resolver
+run_test test_egg_resolver_timeout
+
+# === FORMER PHASE 5 GROUP A: INDEX GENERATION ===
+
+IB1=""
+IB2=""
+
+test_index_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Index Hive" \
+        --path "$REPO/tickets/index_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Index setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Index Bee A" \
+        --hive index_hive --status worker
+    IB1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Index Bee B" \
+        --hive index_hive --status pupa
+    IB2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Index setup"
+}
+
+test_index_all_hives() {
+    capture_cmd bees generate-index
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Generate index all hives" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Generate index all hives"
+    # Check index.md was created in the index_hive directory
+    if [ ! -f "$REPO/tickets/index_hive/index.md" ]; then
+        fail_test "Generate index all hives" "index.md not found in index_hive directory"
+    fi
+    pass_test "Generate index all hives"
+}
+
+test_index_specific_hive() {
+    capture_cmd bees generate-index --hive index_hive
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Generate index specific hive" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Generate index specific hive"
+    # Verify index.md contains our ticket titles
+    if ! grep -q "Index Bee A" "$REPO/tickets/index_hive/index.md"; then
+        fail_test "Generate index specific hive" "index.md missing 'Index Bee A'"
+    fi
+    if ! grep -q "Index Bee B" "$REPO/tickets/index_hive/index.md"; then
+        fail_test "Generate index specific hive" "index.md missing 'Index Bee B'"
+    fi
+    pass_test "Generate index specific hive"
+}
+
+run_test test_index_setup
+run_test test_index_all_hives
+run_test test_index_specific_hive
+
+# === FORMER PHASE 5 GROUP A: UNDERTAKER ===
+
+ARCH1=""
+ARCH1_GUID=""
+
+test_undertaker_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Archive Hive" \
+        --path "$REPO/tickets/archive_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Undertaker setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "To Be Archived" \
+        --hive archive_hive --status finished
+    ARCH1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$ARCH1"
+    ARCH1_GUID=$(check_json "$CMD_OUT" "d['tickets'][0]['guid']")
+    pass_test "Undertaker setup"
+}
+
+test_undertaker_yaml_query() {
+    capture_cmd bees undertaker --hive archive_hive \
+        --query-yaml "- [status=finished]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Archive via YAML query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Archive via YAML query"
+    local archived_count
+    archived_count=$(check_json "$CMD_OUT" "d.get('archived_count',0)")
+    if [ "$archived_count" -lt 1 ]; then
+        fail_test "Archive via YAML query" "Expected archived_count >= 1, got $archived_count"
+    fi
+    local has_guid
+    has_guid=$(check_json "$CMD_OUT" "'$ARCH1_GUID' in d.get('archived_guids',[])")
+    if [ "$has_guid" != "True" ]; then
+        fail_test "Archive via YAML query" "ARCH1 GUID not in archived_guids"
+    fi
+    pass_test "Archive via YAML query"
+}
+
+test_undertaker_cemetery_guid_naming() {
+    # Check that cemetery directory contains file named with the GUID
+    local cemetery_dir="$REPO/tickets/archive_hive/cemetery"
+    if [ ! -d "$cemetery_dir" ]; then
+        fail_test "Cemetery GUID naming" "cemetery/ directory not found"
+    fi
+    # Find a file matching the GUID (22-char guid)
+    local guid_file
+    guid_file=$(find "$cemetery_dir" -name "${ARCH1_GUID}*" -type f 2>/dev/null | head -1)
+    if [ -z "$guid_file" ]; then
+        # Also check for directory named by GUID
+        guid_file=$(find "$cemetery_dir" -name "${ARCH1_GUID}*" -type d 2>/dev/null | head -1)
+    fi
+    if [ -z "$guid_file" ]; then
+        fail_test "Cemetery GUID naming" "No file/directory matching GUID '$ARCH1_GUID' in cemetery/"
+    fi
+    pass_test "Cemetery GUID naming"
+}
+
+test_undertaker_excluded_from_queries() {
+    capture_cmd bees execute-freeform-query \
+        --query-yaml "- [type=bee, hive=archive_hive]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Archived excluded from queries" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_arch1
+    has_arch1=$(check_json "$CMD_OUT" "'$ARCH1' in d.get('ticket_ids',[])")
+    if [ "$has_arch1" != "False" ]; then
+        fail_test "Archived excluded from queries" "Archived ticket $ARCH1 still appears in query results"
+    fi
+    pass_test "Archived excluded from queries"
+}
+
+test_undertaker_named_query() {
+    # Register a named query for finished bees
+    capture_cmd bees add-named-query --query-name "finished_bees" \
+        --query-yaml "- [status=finished]" --scope global
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Archive via named query" "add-named-query failed: $CMD_OUT"
+    fi
+    # Create another finished bee
+    capture_cmd bees create-ticket --ticket-type bee --title "Also Archived" \
+        --hive archive_hive --status finished
+    local arch2
+    arch2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$arch2"
+    local arch2_guid
+    arch2_guid=$(check_json "$CMD_OUT" "d['tickets'][0]['guid']")
+    # Run undertaker with named query
+    capture_cmd bees undertaker --hive archive_hive --query-name "finished_bees"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Archive via named query" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_guid
+    has_guid=$(check_json "$CMD_OUT" "'$arch2_guid' in d.get('archived_guids',[])")
+    if [ "$has_guid" != "True" ]; then
+        fail_test "Archive via named query" "ARCH2 GUID not in archived_guids"
+    fi
+    # Clean up named query
+    capture_cmd bees delete-named-query --query-name "finished_bees"
+    pass_test "Archive via named query"
+}
+
+run_test test_undertaker_setup
+run_test test_undertaker_yaml_query
+run_test test_undertaker_cemetery_guid_naming
+run_test test_undertaker_excluded_from_queries
+run_test test_undertaker_named_query
+
+# === FORMER PHASE 5 GROUP A: MOVE BEE ===
+
+MOVEBEE=""
+MOVETASK=""
+MOVER=""
+
+test_move_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Move Source" \
+        --path "$REPO/tickets/move_source" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move setup" "Colonize source failed: $CMD_OUT"
+    fi
+    capture_cmd bees colonize-hive \
+        --name "Move Dest" \
+        --path "$REPO/tickets/move_dest"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move setup" "Colonize dest failed: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Move Parent Bee" --hive move_source
+    MOVEBEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Move Task" --hive move_source --parent "$MOVEBEE"
+    MOVETASK=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Move setup"
+}
+
+test_move_bee_between_hives() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Mover Bee" --hive move_source
+    MOVER=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees move-bee --ids "$MOVER" --hive move_dest
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move bee between hives" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_moved
+    has_moved=$(check_json "$CMD_OUT" "'$MOVER' in d.get('moved',[])")
+    if [ "$has_moved" != "True" ]; then
+        fail_test "Move bee between hives" "MOVER not in moved list"
+    fi
+    pass_test "Move bee between hives"
+}
+
+test_move_bee_id_preserved() {
+    capture_cmd bees show-ticket --ids "$MOVER"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Bee ID preserved after move" "Show failed: $CMD_OUT"
+    fi
+    local shown_id
+    shown_id=$(check_json "$CMD_OUT" "d['tickets'][0]['ticket_id']")
+    if [ "$shown_id" != "$MOVER" ]; then
+        fail_test "Bee ID preserved after move" "Expected $MOVER, got $shown_id"
+    fi
+    pass_test "Bee ID preserved after move"
+}
+
+test_move_reject_non_bee() {
+    capture_cmd bees move-bee --ids "$MOVETASK" --hive move_dest
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        # Check if it's in the failed list
+        local in_failed
+        in_failed=$(check_json "$CMD_OUT" "len(d.get('failed',[])) > 0")
+        if [ "$in_failed" != "True" ]; then
+            fail_test "Reject non-bee on move" "Expected failure for non-bee ticket"
+        fi
+    fi
+    assert_no_traceback "$CMD_OUT" "Reject non-bee on move"
+    pass_test "Reject non-bee on move"
+}
+
+test_move_already_in_dest() {
+    capture_cmd bees move-bee --ids "$MOVER" --hive move_dest
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Skip already-in-dest" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local in_skipped
+    in_skipped=$(check_json "$CMD_OUT" "'$MOVER' in d.get('skipped',[])")
+    if [ "$in_skipped" != "True" ]; then
+        fail_test "Skip already-in-dest" "MOVER not in skipped list"
+    fi
+    pass_test "Skip already-in-dest"
+}
+
+test_move_friendly_name_dest() {
+    # Create a fresh bee to move using the display name "Move Source"
+    capture_cmd bees create-ticket --ticket-type bee --title "Friendly Move Bee" --hive move_dest
+    local friendly_bee
+    friendly_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Move using display name (not normalized)
+    capture_cmd bees move-bee --ids "$friendly_bee" --hive "Move Source"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Friendly name dest" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_moved
+    has_moved=$(check_json "$CMD_OUT" "'$friendly_bee' in d.get('moved',[])")
+    if [ "$has_moved" != "True" ]; then
+        fail_test "Friendly name dest" "Bee not in moved list"
+    fi
+    pass_test "Friendly name dest"
+}
+
+test_move_blocked_by_status_values() {
+    # Create source and dest hives for compatibility tests
+    capture_cmd bees colonize-hive \
+        --name "Compat Source" \
+        --path "$REPO/tickets/compat_source"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move blocked by status_values" "Colonize source failed: $CMD_OUT"
+    fi
+    capture_cmd bees colonize-hive \
+        --name "Compat Dest" \
+        --path "$REPO/tickets/compat_dest"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move blocked by status_values" "Colonize dest failed: $CMD_OUT"
+    fi
+    # Set restricted status_values on dest
+    capture_cmd bees set-status-values --scope hive --hive "Compat Dest" \
+        --status-values '["open","done"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move blocked by status_values" "set-status-values failed: $CMD_OUT"
+    fi
+    # Create bee in source with status not in dest's allowed values
+    capture_cmd bees create-ticket --ticket-type bee --title "Compat Bee" \
+        --hive compat_source --status worker
+    local compat_bee
+    compat_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    # Try to move without --force
+    capture_cmd bees move-bee --ids "$compat_bee" --hive compat_dest
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Move blocked by status_values" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "compatibility_error" ]; then
+        fail_test "Move blocked by status_values" "Expected compatibility_error, got $error_type"
+    fi
+    pass_test "Move blocked by status_values"
+}
+
+test_move_blocked_by_tiers() {
+    # Source hive with t1+t2 tiers
+    capture_cmd bees colonize-hive \
+        --name "Tier Source" \
+        --path "$REPO/tickets/tier_source" \
+        --child-tiers '{"t1":["Task","Tasks"],"t2":["Subtask","Subtasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move blocked by tiers" "Colonize source failed: $CMD_OUT"
+    fi
+    # Dest hive with t1-only tiers
+    capture_cmd bees colonize-hive \
+        --name "Tier Dest" \
+        --path "$REPO/tickets/tier_dest" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Move blocked by tiers" "Colonize dest failed: $CMD_OUT"
+    fi
+    # Create bee with t1 child and t2 grandchild
+    capture_cmd bees create-ticket --ticket-type bee --title "Tier Bee" --hive tier_source
+    local tier_bee
+    tier_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Tier Task" --hive tier_source --parent "$tier_bee"
+    local tier_task
+    tier_task=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t2 --title "Tier Subtask" --hive tier_source --parent "$tier_task"
+    # Move without --force should fail due to t2 incompatibility
+    capture_cmd bees move-bee --ids "$tier_bee" --hive tier_dest
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Move blocked by tiers" "Expected failure but got success"
+    fi
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "compatibility_error" ]; then
+        fail_test "Move blocked by tiers" "Expected compatibility_error, got $error_type"
+    fi
+    pass_test "Move blocked by tiers"
+}
+
+test_move_force_bypass() {
+    # Use the compat_bee from the status_values test (still in compat_source)
+    capture_cmd bees execute-freeform-query \
+        --query-yaml "- [type=bee, hive=compat_source, title~Compat Bee]"
+    local force_bee
+    force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
+    capture_cmd bees move-bee --ids "$force_bee" --hive compat_dest --force
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Force bypass move" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local has_moved
+    has_moved=$(check_json "$CMD_OUT" "'$force_bee' in d.get('moved',[])")
+    if [ "$has_moved" != "True" ]; then
+        fail_test "Force bypass move" "Bee not in moved list"
+    fi
+    pass_test "Force bypass move"
+}
+
+run_test test_move_setup
+run_test test_move_bee_between_hives
+run_test test_move_bee_id_preserved
+run_test test_move_reject_non_bee
+run_test test_move_already_in_dest
+run_test test_move_friendly_name_dest
+run_test test_move_blocked_by_status_values
+run_test test_move_blocked_by_tiers
+run_test test_move_force_bypass
+
+# === FORMER PHASE 5 GROUP A: SANITIZER ===
+
+SAN_BEE=""
+SAN_TASK=""
+
+test_sanitizer_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Sanitizer Hive" \
+        --path "$REPO/tickets/sanitizer_hive" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Sanitizer setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Sanitizer Bee" --hive sanitizer_hive
+    SAN_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Sanitizer Task" \
+        --hive sanitizer_hive --parent "$SAN_BEE"
+    SAN_TASK=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Sanitizer setup"
+}
+
+test_sanitizer_clean_hive() {
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Clean hive is_corrupt false" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local is_corrupt
+    is_corrupt=$(check_json "$CMD_OUT" "d.get('is_corrupt', True)")
+    if [ "$is_corrupt" != "False" ]; then
+        fail_test "Clean hive is_corrupt false" "Expected is_corrupt=False, got $is_corrupt"
+    fi
+    local fix_count
+    fix_count=$(check_json "$CMD_OUT" "len(d.get('fixes_applied',[]))")
+    if [ "$fix_count" != "0" ]; then
+        fail_test "Clean hive is_corrupt false" "Expected 0 fixes, got $fix_count"
+    fi
+    pass_test "Clean hive is_corrupt false"
+}
+
+test_sanitizer_broken_bidir_ref() {
+    # Remove SAN_TASK from SAN_BEE's children list (break bidirectional ref)
+    local bee_file
+    bee_file=$(find "$REPO/tickets/sanitizer_hive" -name "${SAN_BEE#b.}*" -path "*/b.*" -type f 2>/dev/null | head -1)
+    if [ -z "$bee_file" ]; then
+        # Try broader search
+        bee_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $SAN_BEE" 2>/dev/null | head -1)
+    fi
+    if [ -z "$bee_file" ]; then
+        fail_test "Broken bidir ref fix" "Could not find SAN_BEE file"
+    fi
+    python3 -c "
+import pathlib, re
+f = pathlib.Path('$bee_file')
+t = f.read_text()
+# Remove the children line entirely
+t = re.sub(r'children:.*\n', 'children: []\n', t)
+f.write_text(t)
+"
+    # Run sanitizer — should detect and fix
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Broken bidir ref fix"
+    local fix_count
+    fix_count=$(check_json "$CMD_OUT" "len(d.get('fixes_applied',[]))")
+    if [ "$fix_count" -lt 1 ]; then
+        fail_test "Broken bidir ref fix" "Expected at least 1 fix, got $fix_count"
+    fi
+    # Run again — should now be clean
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    local is_corrupt
+    is_corrupt=$(check_json "$CMD_OUT" "d.get('is_corrupt', True)")
+    if [ "$is_corrupt" != "False" ]; then
+        fail_test "Broken bidir ref fix" "Expected is_corrupt=False after fix"
+    fi
+    pass_test "Broken bidir ref fix"
+}
+
+test_sanitizer_disallowed_fields() {
+    # Add a disallowed field "owner" to SAN_BEE's frontmatter
+    local bee_file
+    bee_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $SAN_BEE" 2>/dev/null | head -1)
+    if [ -z "$bee_file" ]; then
+        fail_test "Disallowed fields" "Could not find SAN_BEE file"
+    fi
+    python3 -c "
+import pathlib
+f = pathlib.Path('$bee_file')
+t = f.read_text()
+# Add 'owner' field after 'ticket_id' line
+t = t.replace('ticket_id: $SAN_BEE', 'ticket_id: $SAN_BEE\nowner: someone', 1)
+f.write_text(t)
+"
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Disallowed fields"
+    local has_disallowed
+    has_disallowed=$(check_json "$CMD_OUT" "any(e.get('error_type')=='disallowed_field' for e in d.get('errors_remaining',[]))")
+    if [ "$has_disallowed" != "True" ]; then
+        fail_test "Disallowed fields" "Expected disallowed_field error in errors_remaining"
+    fi
+    # Clean up: remove the owner field
+    python3 -c "
+import pathlib
+f = pathlib.Path('$bee_file')
+t = f.read_text()
+t = t.replace('owner: someone\n', '')
+f.write_text(t)
+"
+    pass_test "Disallowed fields"
+}
+
+test_sanitizer_dangling_dep() {
+    # Create a bee with a dangling dependency injected via frontmatter
+    capture_cmd bees create-ticket --ticket-type bee --title "Dang Dep Bee" --hive sanitizer_hive
+    local dang_bee
+    dang_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    local dang_file
+    dang_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $dang_bee" 2>/dev/null | head -1)
+    python3 -c "
+import pathlib
+f = pathlib.Path('$dang_file')
+t = f.read_text()
+t = t.replace('up_dependencies: []', 'up_dependencies: [\"b.zzz\"]')
+f.write_text(t)
+"
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Dangling dependency"
+    local has_dangling
+    has_dangling=$(check_json "$CMD_OUT" "any(e.get('error_type')=='dangling_dependency' for e in d.get('errors_remaining',[]))")
+    if [ "$has_dangling" != "True" ]; then
+        fail_test "Dangling dependency" "Expected dangling_dependency error"
+    fi
+    pass_test "Dangling dependency"
+}
+
+test_sanitizer_dangling_parent() {
+    # Edit SAN_TASK's parent to a non-existent ID
+    local task_file
+    task_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $SAN_TASK" 2>/dev/null | head -1)
+    if [ -z "$task_file" ]; then
+        fail_test "Dangling parent" "Could not find SAN_TASK file"
+    fi
+    # Save original parent for restore
+    local original_parent="$SAN_BEE"
+    python3 -c "
+import pathlib, re
+f = pathlib.Path('$task_file')
+t = f.read_text()
+t = re.sub(r'parent: .*', 'parent: \"b.zzzz\"', t)
+f.write_text(t)
+"
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Dangling parent"
+    local has_dangling
+    has_dangling=$(check_json "$CMD_OUT" "any(e.get('error_type')=='dangling_parent' for e in d.get('errors_remaining',[]))")
+    if [ "$has_dangling" != "True" ]; then
+        fail_test "Dangling parent" "Expected dangling_parent error"
+    fi
+    # Restore parent
+    python3 -c "
+import pathlib, re
+f = pathlib.Path('$task_file')
+t = f.read_text()
+t = re.sub(r'parent: .*', 'parent: \"$original_parent\"', t)
+f.write_text(t)
+"
+    pass_test "Dangling parent"
+}
+
+test_sanitizer_auto_fix_dangling_dep() {
+    # Enable auto_fix_dangling_refs
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d['auto_fix_dangling_refs'] = True
+p.write_text(json.dumps(d))
+"
+    # Create a bee with dangling dep
+    capture_cmd bees create-ticket --ticket-type bee --title "Auto Fix Dep Bee" --hive sanitizer_hive
+    local af_bee
+    af_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    local af_file
+    af_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $af_bee" 2>/dev/null | head -1)
+    python3 -c "
+import pathlib
+f = pathlib.Path('$af_file')
+t = f.read_text()
+t = t.replace('up_dependencies: []', 'up_dependencies: [\"b.yyyy\"]')
+f.write_text(t)
+"
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Auto-fix dangling dep"
+    local has_fix
+    has_fix=$(check_json "$CMD_OUT" "any(f.get('fix_type')=='remove_dangling_dependency' for f in d.get('fixes_applied',[]))")
+    if [ "$has_fix" != "True" ]; then
+        fail_test "Auto-fix dangling dep" "Expected remove_dangling_dependency fix"
+    fi
+    # Verify the dep was actually removed
+    capture_cmd bees show-ticket --ids "$af_bee"
+    local has_dep
+    has_dep=$(check_json "$CMD_OUT" "'b.yyyy' in (d['tickets'][0].get('up_dependencies') or [])")
+    if [ "$has_dep" != "False" ]; then
+        fail_test "Auto-fix dangling dep" "b.yyyy still in up_dependencies after auto-fix"
+    fi
+    # Remove auto_fix_dangling_refs
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d.pop('auto_fix_dangling_refs', None)
+p.write_text(json.dumps(d))
+"
+    pass_test "Auto-fix dangling dep"
+}
+
+test_sanitizer_auto_fix_dangling_parent() {
+    # Enable auto_fix_dangling_refs
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d['auto_fix_dangling_refs'] = True
+p.write_text(json.dumps(d))
+"
+    # Create a task under SAN_BEE, then break its parent
+    capture_cmd bees create-ticket --ticket-type t1 --title "Auto Fix Task" \
+        --hive sanitizer_hive --parent "$SAN_BEE"
+    local af_task
+    af_task=$(check_json "$CMD_OUT" "d['ticket_id']")
+    local af_file
+    af_file=$(find "$REPO/tickets/sanitizer_hive" -name "*.md" ! -path '*/cemetery/*' ! -path '*/.hive/*' | xargs grep -l "ticket_id: $af_task" 2>/dev/null | head -1)
+    python3 -c "
+import pathlib, re
+f = pathlib.Path('$af_file')
+t = f.read_text()
+t = re.sub(r'parent: .*', 'parent: \"b.zzzz\"', t)
+f.write_text(t)
+"
+    capture_cmd bees sanitize-hive --hive "Sanitizer Hive"
+    assert_no_traceback "$CMD_OUT" "Auto-fix dangling parent"
+    local has_fix
+    has_fix=$(check_json "$CMD_OUT" "any(f.get('fix_type')=='clear_dangling_parent' for f in d.get('fixes_applied',[]))")
+    if [ "$has_fix" != "True" ]; then
+        fail_test "Auto-fix dangling parent" "Expected clear_dangling_parent fix"
+    fi
+    # Verify parent was cleared
+    capture_cmd bees show-ticket --ids "$af_task"
+    local parent_val
+    parent_val=$(check_json "$CMD_OUT" "d['tickets'][0].get('parent')")
+    if [ "$parent_val" != "None" ]; then
+        fail_test "Auto-fix dangling parent" "Parent not cleared, got '$parent_val'"
+    fi
+    # Remove auto_fix_dangling_refs
+    python3 -c "
+import json, pathlib
+p = pathlib.Path.home() / '.bees' / 'config.json'
+d = json.loads(p.read_text())
+d.pop('auto_fix_dangling_refs', None)
+p.write_text(json.dumps(d))
+"
+    pass_test "Auto-fix dangling parent"
+}
+
+run_test test_sanitizer_setup
+run_test test_sanitizer_clean_hive
+run_test test_sanitizer_broken_bidir_ref
+run_test test_sanitizer_disallowed_fields
+run_test test_sanitizer_dangling_dep
+run_test test_sanitizer_dangling_parent
+run_test test_sanitizer_auto_fix_dangling_dep
+run_test test_sanitizer_auto_fix_dangling_parent
+
+# === FORMER PHASE 5 GROUP A: ERROR HANDLING ===
+
+ERR_BEE=""
+ERR_TASK=""
+
+test_error_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Error Hive" \
+        --path "$REPO/tickets/error_hive" \
+        --child-tiers '{"t1":["Task","Tasks"],"t2":["Subtask","Subtasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Error setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Error Bee" --hive error_hive
+    ERR_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Error Task" \
+        --hive error_hive --parent "$ERR_BEE"
+    ERR_TASK=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Error setup"
+}
+
+test_error_invalid_id() {
+    capture_cmd bees show-ticket --ids "invalid!!!"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Invalid ID format" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Invalid ID format"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "invalid_ticket_id" ]; then
+        fail_test "Invalid ID format" "Expected error_type=invalid_ticket_id, got $error_type"
+    fi
+    pass_test "Invalid ID format"
+}
+
+test_error_missing_on_show() {
+    capture_cmd bees show-ticket --ids "b.zzz"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Missing ticket on show" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local nf_count
+    nf_count=$(check_json "$CMD_OUT" "len(d.get('not_found',[]))")
+    if [ "$nf_count" -lt 1 ]; then
+        fail_test "Missing ticket on show" "Expected not_found to contain b.zzz"
+    fi
+    pass_test "Missing ticket on show"
+}
+
+test_error_missing_on_update() {
+    capture_cmd bees update-ticket --ticket-id "b.zzz" --title "Ghost"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Missing ticket on update" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Missing ticket on update"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "ticket_not_found" ]; then
+        fail_test "Missing ticket on update" "Expected error_type=ticket_not_found, got $error_type"
+    fi
+    pass_test "Missing ticket on update"
+}
+
+test_error_missing_on_delete() {
+    capture_cmd bees delete-ticket --ids "b.zzz"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Missing ticket on delete" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Missing ticket on delete"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "ticket_not_found" ]; then
+        fail_test "Missing ticket on delete" "Expected error_type=ticket_not_found, got $error_type"
+    fi
+    pass_test "Missing ticket on delete"
+}
+
+test_error_duplicate_hive() {
+    capture_cmd bees colonize-hive \
+        --name "Error Hive" \
+        --path "$REPO/tickets/error_hive_dupe"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Duplicate hive name" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Duplicate hive name"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "duplicate_hive_name" ]; then
+        fail_test "Duplicate hive name" "Expected error_type=duplicate_hive_name, got $error_type"
+    fi
+    pass_test "Duplicate hive name"
+}
+
+test_error_invalid_yaml_query() {
+    capture_cmd bees execute-freeform-query --query-yaml "not valid yaml ["
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Invalid YAML query" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Invalid YAML query"
+    local status
+    status=$(check_json "$CMD_OUT" "d.get('status','')")
+    if [ "$status" != "error" ]; then
+        fail_test "Invalid YAML query" "Expected status=error, got $status"
+    fi
+    pass_test "Invalid YAML query"
+}
+
+test_error_wrong_tier_parent() {
+    # Try to create t2 directly under a bee (skipping t1)
+    capture_cmd bees create-ticket --ticket-type t2 --title "Bad Subtask" \
+        --hive error_hive --parent "$ERR_BEE"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Wrong tier parent" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Wrong tier parent"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "invalid_parent" ]; then
+        fail_test "Wrong tier parent" "Expected error_type=invalid_parent, got $error_type"
+    fi
+    pass_test "Wrong tier parent"
+}
+
+test_error_missing_required_flags() {
+    # Create a ticket without --title (required flag)
+    capture_cmd bees create-ticket --ticket-type bee --hive error_hive
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Missing required flags" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Missing required flags"
+    pass_test "Missing required flags"
+}
+
+run_test test_error_setup
+run_test test_error_invalid_id
+run_test test_error_missing_on_show
+run_test test_error_missing_on_update
+run_test test_error_missing_on_delete
+run_test test_error_duplicate_hive
+run_test test_error_invalid_yaml_query
+run_test test_error_wrong_tier_parent
+run_test test_error_missing_required_flags
 
 # === SUCCESS SIGNAL ===
 echo ""
