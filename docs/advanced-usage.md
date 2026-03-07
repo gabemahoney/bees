@@ -105,6 +105,48 @@ To share config _across_ worktrees or related repos, ask your LLM to update the 
 }
 ```
 
+### Scope Specificity
+
+Scope patterns have three canonical forms:
+
+- **Exact path** (e.g. `/projects/myrepo/`): matches only that one directory. This is the default form created by `colonize_hive` when no `--scope` is provided.
+- **`/*`** (e.g. `/projects/*`): matches any immediate child directory of the prefix — exactly one level deeper.
+- **`/**`** (e.g. `/projects/**`): matches the prefix directory itself and any descendant directory at any depth.
+
+When multiple scope patterns match a repository root, bees selects the **most specific** match — not the first. Specificity is ranked by depth first (more path segments wins), then by wildcard tier (exact = tier 0, `/*` = tier 1, `/**` = tier 2; lower tier is more specific at the same depth). `list_hives` always returns hives from the single winning scope — it never merges hives across scopes.
+
+To register a hive under a shared scope instead of the default exact-path scope, pass `--scope <pattern>` to `colonize_hive`:
+
+```
+bees colonize-hive --name Shared --path /projects/shared/tickets --scope "/projects/**"
+```
+
+This registers the hive under the `"/projects/**"` scope key. Any repo under `/projects/` that matches no more-specific scope will see this hive when running `list_hives`.
+
+**Worked example**: After the call above, `~/.bees/config.json` contains:
+
+```json
+{
+  "scopes": {
+    "/projects/**": {
+      "hives": {
+        "shared": {
+          "path": "/projects/shared/tickets",
+          "display_name": "Shared",
+          "created_at": "2026-03-06T10:00:00.000000"
+        }
+      }
+    }
+  }
+}
+```
+
+Running `bees list-hives` from `/projects/myrepo` (which matches `/projects/**`) shows:
+
+```
+shared  /projects/shared/tickets
+```
+
 ### Hives
 
 Each scope contains a `hives` map — the ticket folders registered for that repo.
@@ -330,7 +372,7 @@ bees execute-freeform-query --yaml "- ['type=bee']" [--hives backend]
 ## Hive Management
 
 ```bash
-bees colonize-hive --name Backend --path /abs/path [--child-tiers '{"t1":["Task","Tasks"]}']
+bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}']
 bees list-hives
 bees abandon-hive backend
 bees rename-hive old_name new_name
