@@ -145,23 +145,25 @@ async def colonize_hive_core(
                     },
                 }
 
-            # 1b-iv: hive name uniqueness across overlapping scopes
-            all_scopes = global_cfg_for_scope.get("scopes", {})
-            for existing_scope, scope_data in all_scopes.items():
-                if scopes_overlap(canonical_scope, existing_scope):
-                    if normalized_name in scope_data.get("hives", {}):
-                        return {
-                            "status": "error",
-                            "message": (
-                                f"Hive '{normalized_name}' already exists in overlapping scope '{existing_scope}'"
-                            ),
-                            "error_type": "duplicate_hive_name",
-                            "validation_details": {
-                                "field": "name",
-                                "normalized_name": normalized_name,
-                                "overlapping_scope": existing_scope,
-                            },
-                        }
+            # 1b-iv: hive name uniqueness within the same scope.
+            # Same hive name is only rejected when it already exists under the
+            # exact same scope pattern. A "Bugs" hive at /projects/** does NOT
+            # block a "Bugs" hive at /projects/team/* — the more specific scope
+            # shadows the broader one at read time, which is the intended design.
+            existing_scope_data = global_cfg_for_scope.get("scopes", {}).get(canonical_scope, {})
+            if normalized_name in existing_scope_data.get("hives", {}):
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Hive '{normalized_name}' already exists in scope '{canonical_scope}'"
+                    ),
+                    "error_type": "duplicate_hive_name",
+                    "validation_details": {
+                        "field": "name",
+                        "normalized_name": normalized_name,
+                        "existing_scope": canonical_scope,
+                    },
+                }
 
         # Step 2: Determine repo root for downstream operations
         if repo_root is None:
