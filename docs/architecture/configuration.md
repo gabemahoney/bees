@@ -728,12 +728,10 @@ The `scope` parameter controls which scope key the hive is registered under in `
 
 **Scope validation order**:
 1. Pattern syntax is validated — wildcards are only allowed as terminal `/*` or `/**` suffixes. Violations return `invalid_scope_pattern`.
-2. The candidate pattern is checked for conflicts with existing scope keys — same bare prefix and same wildcard tier after canonicalization would be ambiguous. A conflict returns `conflicting_scope`.
-3. The normalized hive name is checked for duplicates within all scope keys that overlap the candidate pattern — the same hive name cannot exist in two scopes that can match the same repo root. A duplicate returns `duplicate_hive_name`.
+2. The normalized hive name is checked for duplicates within all scope keys that overlap the candidate pattern — the same hive name cannot exist in two scopes that can match the same repo root. A duplicate returns `duplicate_hive_name`.
 
 **Error types**:
 - `invalid_scope_pattern`: The scope string contains wildcards in invalid positions (mid-path or without a leading `/`)
-- `conflicting_scope`: A different existing scope key has the same bare prefix and wildcard tier as the candidate, making them ambiguous duplicates
 - `duplicate_hive_name`: The normalized hive name already exists in an overlapping scope, which would make the hive inaccessible or ambiguous for repos that match both scopes
 
 ### child_tiers Parameter Semantics

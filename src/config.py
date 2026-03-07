@@ -415,19 +415,19 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
 
     A conflict exists when a different scope key has the same bare prefix
     string **and** the same wildcard tier as *pattern* (after canonicalization).
-    An exact canonical match is NOT a conflict — it means the caller can
-    re-use that existing scope.
+    In practice, this condition is equivalent to the canonical forms being
+    identical, so this function always returns ``None`` — identical canonical
+    forms are treated as valid re-use, not a conflict. The function is kept
+    for API compatibility and to make the re-use check explicit.
 
     Args:
         pattern: Candidate scope pattern to check.
         global_config: The full global config dict with 'scopes' key.
 
     Returns:
-        The first conflicting existing scope key, or ``None`` if no conflict.
+        Always ``None`` — re-using an existing scope is valid, not an error.
     """
     canon_candidate = canonicalize_scope_pattern(pattern)
-    _, tier_candidate = compute_scope_specificity(canon_candidate)
-    prefix_candidate = _bare_prefix(canon_candidate)
 
     scopes = global_config.get("scopes", {})
     for existing_key in scopes:
@@ -436,13 +436,6 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
         # Exact canonical match → re-use, not a conflict
         if canon_existing == canon_candidate:
             return None
-
-        _, tier_existing = compute_scope_specificity(canon_existing)
-        prefix_existing = _bare_prefix(canon_existing)
-
-        # Same bare prefix string AND same wildcard tier → conflict
-        if prefix_existing == prefix_candidate and tier_existing == tier_candidate:
-            return existing_key
 
     return None
 
