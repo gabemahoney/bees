@@ -38,9 +38,6 @@ from tests.test_constants import (
     SCOPE_PATTERN_DEEP,
     SCOPE_PATTERN_EXACT,
     SCOPE_PATTERN_SHALLOW,
-    SPECIFICITY_DEEP,
-    SPECIFICITY_EXACT,
-    SPECIFICITY_SHALLOW,
 )
 
 TS = "2026-02-01T12:00:00"
@@ -2705,10 +2702,10 @@ class TestComputeScopeSpecificity:
     @pytest.mark.parametrize(
         "pattern,expected",
         [
-            pytest.param(SCOPE_PATTERN_EXACT, SPECIFICITY_EXACT, id="trailing_slash_exact"),
-            pytest.param(SCOPE_PATTERN_BARE, SPECIFICITY_EXACT, id="bare_path_exact_tier"),
-            pytest.param(SCOPE_PATTERN_SHALLOW, SPECIFICITY_SHALLOW, id="shallow_star"),
-            pytest.param(SCOPE_PATTERN_DEEP, SPECIFICITY_DEEP, id="deep_doublestar"),
+            pytest.param(SCOPE_PATTERN_EXACT, (2, 0), id="trailing_slash_exact"),
+            pytest.param(SCOPE_PATTERN_BARE, (2, 0), id="bare_path_exact_tier"),
+            pytest.param(SCOPE_PATTERN_SHALLOW, (2, 1), id="shallow_star"),
+            pytest.param(SCOPE_PATTERN_DEEP, (2, 2), id="deep_doublestar"),
             pytest.param("/foo/", (1, 0), id="one_segment_exact"),
             pytest.param("/foo/*", (1, 1), id="one_segment_shallow"),
             pytest.param("/foo/**", (1, 2), id="one_segment_deep"),
@@ -2800,7 +2797,15 @@ class TestScopesOverlap:
 
 
 class TestCheckScopeConflict:
-    """Test check_scope_conflict detects patterns with the same segment count and wildcard tier."""
+    """Test check_scope_conflict detects patterns with the same bare prefix and wildcard tier.
+
+    Note: In practice, "same bare prefix + same wildcard tier" always produces the same
+    canonical form, so the conflict branch (step 5 in check_scope_conflict) is unreachable
+    with valid inputs — step 4 (canonical equality → re-use is valid → return None) always
+    fires first. The function is correct: re-using an existing scope is not an error. All
+    tests below return None because any candidate that would conflict is indistinguishable
+    from a re-use at the canonical level.
+    """
 
     def test_identical_canonical_pattern_returns_none(self):
         """Exact canonical match is not a conflict — it means re-use."""

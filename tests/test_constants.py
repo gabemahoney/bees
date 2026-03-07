@@ -356,15 +356,6 @@ SCOPE_PATTERN_EXACT = "/repos/project/"     # trailing-slash exact form (/ suffi
 SCOPE_PATTERN_BARE = "/repos/project"       # bare path form (no suffix)
 
 # ============================================================================
-# Specificity Tuple Constants
-# ============================================================================
-# Specificity = (segment_count, wildcard_tier) for 2-segment representative paths.
-# wildcard_tier: 0=exact/trailing-slash, 1=shallow (/*), 2=deep recursive (/**)
-SPECIFICITY_EXACT = (2, 0)    # e.g. /repos/project/ or /repos/project
-SPECIFICITY_SHALLOW = (2, 1)  # e.g. /repos/project/*
-SPECIFICITY_DEEP = (2, 2)     # e.g. /repos/project/**
-
-# ============================================================================
 # Clone Bee Tests
 # ============================================================================
 TICKET_ID_CLONE_BEE_ROOT = "b.cn1"  # Root bee for clone tests

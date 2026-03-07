@@ -86,14 +86,14 @@ Bees uses a single global config file at `~/.bees/config.json`, auto-created whe
 
 ### Scopes
 
-Scopes map repository paths to their settings. When you run a bees command, bees finds the first scope whose path pattern matches your current repo.
+Scopes map repository paths to their settings. When you run a bees command, bees finds the most specific scope whose path pattern matches your current repo.
 
 Path patterns support glob wildcards:
 - Exact path: matches one specific repo
 - `*` matches within a single directory segment
 - `**` matches recursively
 
-First matching scope wins. `colonize_hive` creates exact-path entries automatically.
+Most specific matching scope wins. `colonize_hive` creates exact-path entries automatically.
 To share config _across_ worktrees or related repos, ask your LLM to update the scope key in `~/.bees/config.json` to a wildcard pattern.
 
 ```json
