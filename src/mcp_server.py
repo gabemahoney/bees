@@ -445,6 +445,7 @@ async def colonize_hive(
     child_tiers: dict[str, list] | None = None,
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
+    scope: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -459,6 +460,9 @@ async def colonize_hive(
                      Pass {} for bees-only.
         egg_resolver: Optional path to an egg resolver script for this hive.
         egg_resolver_timeout: Optional timeout in seconds for the egg resolver script.
+        scope: Optional scope pattern to register the hive under (e.g. /projects/**).
+               When provided, the hive is placed under this explicit scope instead of
+               the auto-detected scope for the repo root.
     """
     # Special colonize_hive fallback logic:
     # 1. Try MCP Roots protocol via get_repo_root(ctx)
@@ -501,6 +505,7 @@ async def colonize_hive(
         repo_root=resolved_root,
         egg_resolver=egg_resolver,
         egg_resolver_timeout=egg_resolver_timeout,
+        scope=scope,
     )
 
 

@@ -281,6 +281,7 @@ def handle_colonize_hive(args):
             child_tiers=parsed_child_tiers,
             egg_resolver=args.egg_resolver,
             egg_resolver_timeout=args.egg_resolver_timeout,
+            scope=args.scope,
         )
     )
     _output_result(result)
@@ -819,6 +820,7 @@ def build_parser():
     p_colonize.add_argument("--child-tiers", default=None, dest="child_tiers", metavar="JSON", help='Optional per-hive tier config as JSON dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["Epic","Epics"], "t2": ["Task","Tasks"]}. Pass {} for bees-only. Inherits from global config if omitted.')  # noqa: E501
     p_colonize.add_argument("--egg-resolver", default=None, dest="egg_resolver", metavar="PATH", help="Optional path to an egg resolver script for this hive.")  # noqa: E501
     p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
+    p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 
     # --- list-hives ---
