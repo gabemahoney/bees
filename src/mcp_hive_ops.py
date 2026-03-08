@@ -115,6 +115,10 @@ async def colonize_hive_core(
                 },
             }
 
+        # Load global config once — reused by scope conflict check, cross-scope
+        # duplicate detection, and hive registration (Steps 1b, 4, and 6).
+        global_config = load_global_config()
+
         # Step 1b: Scope validation (when caller provides an explicit scope)
         canonical_scope: str | None = None
         if scope is not None:
@@ -133,8 +137,7 @@ async def colonize_hive_core(
             canonical_scope = canonicalize_scope_pattern(scope)
 
             # 1b-iii: conflict check
-            global_cfg_for_scope = load_global_config()
-            conflicting = check_scope_conflict(canonical_scope, global_cfg_for_scope)
+            conflicting = check_scope_conflict(canonical_scope, global_config)
             if conflicting is not None:
                 return {
                     "status": "error",
@@ -185,15 +188,14 @@ async def colonize_hive_core(
             # Step 4: Cross-scope conflict detection
             # Determine the target scope and check all overlapping scopes
             # for a hive with the same normalized name.
-            global_config_for_check = load_global_config()
             if canonical_scope is not None:
                 target_scope = canonical_scope
             else:
-                target_scope = find_matching_scope(repo_root, global_config_for_check)
+                target_scope = find_matching_scope(repo_root, global_config)
                 if target_scope is None:
                     target_scope = str(repo_root)
 
-            for candidate_scope, scope_data in global_config_for_check.get("scopes", {}).items():
+            for candidate_scope, scope_data in global_config.get("scopes", {}).items():
                 if scopes_overlap(target_scope, candidate_scope):
                     candidate_hives = scope_data.get("hives", {})
                     if normalized_name in candidate_hives:
@@ -291,8 +293,6 @@ async def colonize_hive_core(
                     egg_resolver=egg_resolver,
                     egg_resolver_timeout=egg_resolver_timeout,
                 )
-
-                global_config = load_global_config()
 
                 if canonical_scope is not None:
                     # Explicit scope provided — use canonical form as the key.
@@ -792,7 +792,7 @@ async def _rename_hive(
     try:
         save_bees_config(config, scope_pattern)
         logger.info(f"Updated config: renamed hive from '{normalized_old}' to '{normalized_new}'")
-    except Exception as e:
+    except (ValueError, OSError) as e:
         # Rollback: move folder back if we renamed it
         if rename_folder:
             try:

@@ -391,7 +391,7 @@ def test_clone_force_bypass(isolated_bees_env):
     assert (dest_dir / result["ticket_id"]).exists()
 
 
-def test_clone_cross_scope_error(isolated_bees_env):
+def test_clone_dest_hive_less_specific_scope_not_visible(isolated_bees_env):
     """Dest hive only in a less-specific scope → hive_not_found (load_bees_config uses most-specific)."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
@@ -529,6 +529,72 @@ def test_clone_source_hive_multiple_scopes(isolated_bees_env):
 
     assert result["status"] == "error"
     assert result["error_type"] == "config_conflict"
+
+
+def test_clone_dest_hive_multiple_scopes(isolated_bees_env):
+    """Dest hive found in >1 matching scopes → config_conflict error."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    # Source hive only in exact scope; dest hive in both scopes → config_conflict
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                }
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                }
+            },
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Dest Multi Scope Clone")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "config_conflict"
+
+
+def test_clone_cross_scope_error(isolated_bees_env, monkeypatch):
+    """Source and dest hives resolve to different scopes → cross_scope_error."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    env.create_hive(HIVE_CLONE_DEST)
+    env.write_config()
+
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Cross Scope Clone")
+
+    # Monkeypatch resolve_owning_scope so source and dest resolve to different scopes
+    import src.mcp_clone_bee as clone_mod
+
+    call_count = 0
+
+    def patched_resolve(name, config, root):
+        nonlocal call_count
+        call_count += 1
+        # First call is source hive, second is dest hive
+        if call_count == 1:
+            return ("/scope/source", None)
+        return ("/scope/dest", None)
+
+    monkeypatch.setattr(clone_mod, "resolve_owning_scope", patched_resolve)
+
+    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "cross_scope_error"
 
 
 def test_clone_source_hive_exactly_one_scope(isolated_bees_env):
