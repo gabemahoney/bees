@@ -342,8 +342,10 @@ Hive names are normalized to ensure consistent identification across the system 
 - "2024-project" → "_2024_project"
 
 **Collision Prevention**:
-- `validate_unique_hive_name()` checks for duplicate normalized names within the same scope pattern before registration
-- Cross-scope conflict detection for overlapping scopes is planned for future implementation
+- `colonize_hive_core` performs a pre-write cross-scope conflict check: before any filesystem writes, it scans all global scopes for overlapping scope patterns with the same normalized hive name
+- `duplicate_hive_name` is returned when the same normalized name exists in the exact same scope pattern
+- `cross_scope_hive_conflict` is returned when the same normalized name exists in an overlapping (but not identical) scope pattern
+- Non-overlapping scopes may freely define the same hive name without conflict
 - Display names are preserved in `HiveConfig.display_name` for UI/reports
 
 ## Config API
@@ -730,11 +732,12 @@ The `scope` parameter controls which scope key the hive is registered under in `
 
 **Scope validation order**:
 1. Pattern syntax is validated — wildcards are only allowed as terminal `/*` or `/**` suffixes. Violations return `invalid_scope_pattern`.
-2. The normalized hive name is checked for duplicates within all scope keys that overlap the candidate pattern — the same hive name cannot exist in two scopes that can match the same repo root. A duplicate returns `duplicate_hive_name`.
+2. The normalized hive name is checked against all scope keys that overlap the candidate pattern. If the same name exists in the exact same scope, `duplicate_hive_name` is returned. If it exists in an overlapping but different scope, `cross_scope_hive_conflict` is returned. Non-overlapping scopes may freely share the same hive name.
 
 **Error types**:
 - `invalid_scope_pattern`: The scope string contains wildcards in invalid positions (mid-path or without a leading `/`)
-- `duplicate_hive_name`: The normalized hive name already exists in an overlapping scope, which would make the hive inaccessible or ambiguous for repos that match both scopes
+- `duplicate_hive_name`: The normalized hive name already exists in the exact same scope pattern
+- `cross_scope_hive_conflict`: The normalized hive name already exists in an overlapping (but not identical) scope, which would make the hive inaccessible or ambiguous for repos that match both scopes
 
 ### child_tiers Parameter Semantics
 

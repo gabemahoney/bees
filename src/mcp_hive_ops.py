@@ -33,9 +33,9 @@ from .config import (
     parse_scope_to_bees_config,
     save_bees_config,
     save_global_config,
+    scopes_overlap,
     serialize_bees_config_to_scope,
     validate_scope_pattern,
-    validate_unique_hive_name,
 )
 from .constants import SCHEMA_VERSION
 from .id_utils import normalize_hive_name
@@ -147,26 +147,6 @@ async def colonize_hive_core(
                     },
                 }
 
-            # 1b-iv: hive name uniqueness within the same scope.
-            # Same hive name is only rejected when it already exists under the
-            # exact same scope pattern. A "Bugs" hive at /projects/** does NOT
-            # block a "Bugs" hive at /projects/team/* — the more specific scope
-            # shadows the broader one at read time, which is the intended design.
-            existing_scope_data = global_cfg_for_scope.get("scopes", {}).get(canonical_scope, {})
-            if normalized_name in existing_scope_data.get("hives", {}):
-                return {
-                    "status": "error",
-                    "message": (
-                        f"Hive '{normalized_name}' already exists in scope '{canonical_scope}'"
-                    ),
-                    "error_type": "duplicate_hive_name",
-                    "validation_details": {
-                        "field": "name",
-                        "normalized_name": normalized_name,
-                        "existing_scope": canonical_scope,
-                    },
-                }
-
         # Step 2: Determine repo root for downstream operations
         if repo_root is None:
             # Try context first (set by CLI's _run_in_repo or MCP entry points)
@@ -201,24 +181,46 @@ async def colonize_hive_core(
                     "validation_details": {"field": "path", "provided_value": path, "reason": str(e)},
                 }
 
-            # Step 4: Check for duplicate normalized names using config system
-            # Skipped when caller provides an explicit scope (already checked in step 1b-iv)
-            if scope is None:
-                try:
-                    validate_unique_hive_name(normalized_name)
-                    logger.info(f"Validated unique hive name: {normalized_name}")
-                except ValueError as e:
-                    return {
-                        "status": "error",
-                        "message": str(e),
-                        "error_type": "duplicate_hive_name",
-                        "validation_details": {
-                            "field": "name",
-                            "normalized_name": normalized_name,
-                            "display_name": name,
-                            "reason": str(e),
-                        },
-                    }
+            # Step 4: Cross-scope conflict detection
+            # Determine the target scope and check all overlapping scopes
+            # for a hive with the same normalized name.
+            global_config_for_check = load_global_config()
+            if canonical_scope is not None:
+                target_scope = canonical_scope
+            else:
+                target_scope = find_matching_scope(repo_root, global_config_for_check)
+                if target_scope is None:
+                    target_scope = str(repo_root)
+
+            for candidate_scope, scope_data in global_config_for_check.get("scopes", {}).items():
+                if scopes_overlap(target_scope, candidate_scope):
+                    candidate_hives = scope_data.get("hives", {})
+                    if normalized_name in candidate_hives:
+                        if target_scope == candidate_scope:
+                            return {
+                                "status": "error",
+                                "error_type": "duplicate_hive_name",
+                                "message": f"Hive '{normalized_name}' already exists in scope '{candidate_scope}'.",
+                                "validation_details": {
+                                    "normalized_name": normalized_name,
+                                    "conflicting_scope": candidate_scope,
+                                    "target_scope": target_scope,
+                                },
+                            }
+                        else:
+                            return {
+                                "status": "error",
+                                "error_type": "cross_scope_hive_conflict",
+                                "message": (
+                                    f"Hive '{normalized_name}' already exists in overlapping scope "
+                                    f"'{candidate_scope}'. Cannot add to target scope '{target_scope}'."
+                                ),
+                                "validation_details": {
+                                    "normalized_name": normalized_name,
+                                    "conflicting_scope": candidate_scope,
+                                    "target_scope": target_scope,
+                                },
+                            }
 
             # Step 4.5: Validate child_tiers if provided
             parsed_child_tiers = None

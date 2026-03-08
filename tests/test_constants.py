@@ -359,6 +359,10 @@ SCOPE_PATTERN_BARE = "/repos/project"       # bare path form (no suffix)
 SCOPE_PATTERN_WILDCARD_PARENT = "/Users/dev/projects/**"  # broad wildcard scope
 SCOPE_PATTERN_EXACT_CHILD = "/Users/dev/projects/bees/"   # exact child scope under wildcard
 
+# Cross-scope conflict test patterns
+SCOPE_PATTERN_PROJECTS_DEEP = "/projects/**"             # deep recursive over /projects/
+SCOPE_PATTERN_PROJECTS_EXACT = "/projects/project_a/"    # exact scope under /projects/
+
 # ============================================================================
 # Clone Bee Tests
 # ============================================================================
