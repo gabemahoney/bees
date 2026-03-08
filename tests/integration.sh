@@ -416,7 +416,7 @@ test_crud_setup() {
 
 test_crud_create_bee1() {
     capture_cmd bees create-ticket --ticket-type bee --title "First Bee" --hive crud_hive \
-        --description "A test bee" --status larva
+        --body "A test bee" --status larva
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Create bee" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -476,7 +476,7 @@ test_crud_show_single() {
     local title status desc children_has_task
     title=$(check_json "$CMD_OUT" "d['tickets'][0]['title']")
     status=$(check_json "$CMD_OUT" "d['tickets'][0]['ticket_status']")
-    desc=$(check_json "$CMD_OUT" "d['tickets'][0]['description']")
+    desc=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
     children_has_task=$(check_json "$CMD_OUT" "'$TASK1' in (d['tickets'][0].get('children') or [])")
     if [ "$title" != "First Bee" ]; then
         fail_test "Show single ticket" "Expected title=First Bee, got $title"

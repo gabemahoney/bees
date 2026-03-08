@@ -1511,7 +1511,7 @@ class Linter:
             ticket = ticket_map[ticket_id]
 
             frontmatter_data = asdict(ticket)
-            frontmatter_data.pop("description", None)
+            frontmatter_data.pop("body", None)
 
             # Write ticket back to file
             try:
@@ -1519,7 +1519,7 @@ class Linter:
                     ticket_id=ticket.id,
                     ticket_type=ticket.type,
                     frontmatter_data=frontmatter_data,
-                    body=ticket.description or "",
+                    body=ticket.body or "",
                     hive_name=self.hive_name,
                 )
                 cache.evict(ticket_id)

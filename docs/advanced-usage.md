@@ -357,7 +357,7 @@ bees set-status-values --scope=hive --hive features --values '["pupa","worker"]'
 bees set-status-values --scope=global --unset
 ```
 
-`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--description`, or `--egg`).
+`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--egg`).
 
 ## Query Operations
 

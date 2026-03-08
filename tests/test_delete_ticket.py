@@ -55,7 +55,7 @@ class TestDeleteTicketBasic:
         repo_root, hive_path, tier_config = hive_tier_config
 
         result = await _create_ticket(
-            ticket_type="bee", title=TITLE_TEST_BEE, description="Test description", hive_name=HIVE_BACKEND
+            ticket_type="bee", title=TITLE_TEST_BEE, body="Test description", hive_name=HIVE_BACKEND
         )
         ticket_id = result["ticket_id"]
         ticket_path = get_ticket_path(ticket_id, "bee", HIVE_BACKEND)
