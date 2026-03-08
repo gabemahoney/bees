@@ -16,10 +16,12 @@ from src.constants import GUID_LENGTH
 from src.mcp_server import _create_ticket, _show_ticket, _update_ticket
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee, create_child_tier
-from tests.conftest import write_scoped_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TAG_ALPHA,
     TAG_BETA,
     TAG_DELTA,
@@ -447,38 +449,90 @@ class TestListHives:
     """Tests for list_hives MCP tool functionality."""
 
     @pytest.fixture
-    def repo_and_ctx(self, bees_repo, monkeypatch, mock_mcp_context, mock_global_bees_dir):
-        """Provide bees_repo and a mock MCP context."""
+    def repo_and_ctx(self, bees_repo, monkeypatch, mock_global_bees_dir):
+        """Provide bees_repo and mock global bees dir for list_hives tests."""
         monkeypatch.chdir(bees_repo)
         write_scoped_config(mock_global_bees_dir, bees_repo, {
             "hives": {},
-                "child_tiers": {},
+            "child_tiers": {},
         })
         with repo_root_context(bees_repo):
-            yield bees_repo, mock_mcp_context(bees_repo)
+            yield bees_repo, mock_global_bees_dir
 
     async def test_list_hives_returns_all_hives_from_config(self, repo_and_ctx):
-        """Test list_hives returns correct data when config.json exists with hives."""
-        from src.config import BeesConfig, HiveConfig, save_bees_config
+        """Test list_hives returns correct data with scope field on each hive."""
         from src.mcp_hive_ops import _list_hives
 
-        temp_repo, mock_ctx = repo_and_ctx
+        temp_repo, mock_global_bees_dir = repo_and_ctx
         hive1_path = temp_repo / "hive1"
         hive2_path = temp_repo / "hive2"
         hive1_path.mkdir()
         hive2_path.mkdir()
 
-        save_bees_config(BeesConfig(hives={
-            "back_end": HiveConfig(display_name="Back End", path=str(hive1_path), created_at="2024-01-01T00:00:00"),
-            "frontend": HiveConfig(display_name="Frontend", path=str(hive2_path), created_at="2024-01-02T00:00:00"),
-        }), str(temp_repo))
+        write_scoped_config(mock_global_bees_dir, temp_repo, {
+            "hives": {
+                "back_end": {"path": str(hive1_path), "display_name": "Back End", "created_at": "2024-01-01T00:00:00"},
+                "frontend": {"path": str(hive2_path), "display_name": "Frontend", "created_at": "2024-01-02T00:00:00"},
+            },
+            "child_tiers": {},
+        })
 
-        result = await _list_hives(mock_ctx)
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "success"
         assert len(result["hives"]) == 2
         hives = {h["normalized_name"]: h for h in result["hives"]}
         assert hives["back_end"]["display_name"] == "Back End"
+        assert hives["back_end"]["scope"] == str(temp_repo)
         assert hives["frontend"]["display_name"] == "Frontend"
+        assert hives["frontend"]["scope"] == str(temp_repo)
+
+    async def test_list_hives_merges_hives_from_multiple_scopes(self, repo_and_ctx):
+        """Test list_hives merges hives from multiple matching scopes with correct scope values."""
+        from pathlib import Path
+
+        from src.mcp_hive_ops import _list_hives
+
+        _, mock_global_bees_dir = repo_and_ctx
+        write_multi_scope_config(mock_global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    "shared_hive": {"path": "/some/shared", "display_name": "Shared Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    "local_hive": {"path": "/some/local", "display_name": "Local Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+        })
+
+        # Path matches both SCOPE_PATTERN_WILDCARD_PARENT (/**) and SCOPE_PATTERN_EXACT_CHILD (exact)
+        resolved = Path(SCOPE_PATTERN_EXACT_CHILD.rstrip("/"))
+        result = await _list_hives(resolved_root=resolved)
+        assert result["status"] == "success"
+        assert len(result["hives"]) == 2
+        hives = {h["normalized_name"]: h for h in result["hives"]}
+        assert hives["shared_hive"]["scope"] == SCOPE_PATTERN_WILDCARD_PARENT
+        assert hives["local_hive"]["scope"] == SCOPE_PATTERN_EXACT_CHILD
+
+    async def test_list_hives_sorted_alphabetically(self, repo_and_ctx):
+        """Test list_hives returns hives sorted alphabetically by normalized_name."""
+        from src.mcp_hive_ops import _list_hives
+
+        temp_repo, mock_global_bees_dir = repo_and_ctx
+        write_scoped_config(mock_global_bees_dir, temp_repo, {
+            "hives": {
+                "zebra": {"path": "/z", "display_name": "Zebra"},
+                "alpha": {"path": "/a", "display_name": "Alpha"},
+                "middle": {"path": "/m", "display_name": "Middle"},
+            },
+            "child_tiers": {},
+        })
+
+        result = await _list_hives(resolved_root=temp_repo)
+        assert result["status"] == "success"
+        names = [h["normalized_name"] for h in result["hives"]]
+        assert names == ["alpha", "middle", "zebra"]
 
     @pytest.mark.parametrize(
         "setup",
@@ -489,14 +543,16 @@ class TestListHives:
     )
     async def test_list_hives_empty_scenarios(self, repo_and_ctx, setup):
         """Test list_hives returns empty list with no config or empty hives."""
-        from src.config import BeesConfig, save_bees_config
         from src.mcp_hive_ops import _list_hives
 
-        temp_repo, mock_ctx = repo_and_ctx
+        temp_repo, mock_global_bees_dir = repo_and_ctx
         if setup == "empty_config":
-            save_bees_config(BeesConfig(hives={}), str(temp_repo))
+            write_scoped_config(mock_global_bees_dir, temp_repo, {
+                "hives": {},
+                "child_tiers": {},
+            })
 
-        result = await _list_hives(mock_ctx)
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "success"
         assert result["hives"] == []
 
@@ -504,9 +560,9 @@ class TestListHives:
         """Test list_hives handles exceptions gracefully."""
         from src.mcp_hive_ops import _list_hives
 
-        _, mock_ctx = repo_and_ctx
-        monkeypatch.setattr("src.mcp_hive_ops.load_bees_config", lambda *a, **kw: (_ for _ in ()).throw(Exception("Failed")))
-        result = await _list_hives(mock_ctx)
+        temp_repo, _ = repo_and_ctx
+        monkeypatch.setattr("src.mcp_hive_ops.load_global_config", lambda: (_ for _ in ()).throw(Exception("Failed")))
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "error"
         assert result["error_type"] == "list_hives_error"
         assert "Failed to list hives" in result["message"]
