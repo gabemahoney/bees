@@ -78,7 +78,7 @@ When 3+ tests follow the same structure, parametrize:
 ```python
 @pytest.mark.parametrize("field,value", [
     pytest.param("title", "Test", id="with_title"),
-    pytest.param("description", "Desc", id="with_description"),
+    pytest.param("body", "Body text", id="with_body"),
     pytest.param("tags", ["test"], id="with_tags"),
 ])
 def test_create_bee_with_optional_fields(field, value):
