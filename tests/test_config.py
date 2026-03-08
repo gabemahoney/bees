@@ -9,10 +9,12 @@ import pytest
 from src.config import (
     BeesConfig,
     ChildTierConfig,
+    ConflictRecord,
     HiveConfig,
     canonicalize_scope_pattern,
     check_scope_conflict,
     compute_scope_specificity,
+    detect_hive_conflicts,
     find_all_matching_scopes,
     find_matching_scope,
     get_scoped_config,
@@ -2926,3 +2928,102 @@ class TestCheckScopeConflict:
 
     def test_missing_scopes_key_returns_none(self):
         assert check_scope_conflict("/repos/project/*", {}) is None
+
+
+class TestDetectHiveConflicts:
+    """Test detect_hive_conflicts identifies duplicate hive names across overlapping scopes.
+
+    Uses find_all_matching_scopes output format: list of (scope_pattern, BeesConfig) tuples.
+    Critical: non-overlapping scopes must NOT produce false positives.
+    """
+
+    def _make_matching_scopes(self, scope_hive_map: dict[str, list[str]]) -> list[tuple[str, BeesConfig]]:
+        """Build find_all_matching_scopes-style output from {scope_pattern: [hive_names]}."""
+        result = []
+        for pattern, hive_names in scope_hive_map.items():
+            hives = {name: _make_hive(display_name=name.title()) for name in hive_names}
+            config = BeesConfig(hives=hives)
+            result.append((pattern, config))
+        return result
+
+    def test_same_hive_in_overlapping_scopes_returns_conflict(self):
+        """Same hive name in two matching scopes → ConflictRecord returned."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 1
+        assert conflicts[0].normalized_hive_name == "backend"
+        assert {conflicts[0].scope_a, conflicts[0].scope_b} == {
+            SCOPE_PATTERN_WILDCARD_PARENT,
+            SCOPE_PATTERN_EXACT_CHILD,
+        }
+
+    def test_same_hive_in_non_overlapping_scopes_returns_empty(self):
+        """Same hive name in non-overlapping scopes → empty list (no false positive)."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_DEEP: ["backend"],
+        })
+        # Only one scope matches → no conflict possible
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_different_hive_names_across_scopes_returns_empty(self):
+        """Different hive names across scopes → empty list."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["frontend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_multiple_conflicting_hives_all_captured(self):
+        """Multiple hive names each in multiple scopes → all conflicts captured."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend", "frontend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend", "frontend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        conflict_names = sorted(c.normalized_hive_name for c in conflicts)
+        assert conflict_names == ["backend", "frontend"]
+        assert len(conflicts) == 2
+
+    def test_empty_input_returns_empty(self):
+        """Empty matching_scopes list → empty list."""
+        conflicts = detect_hive_conflicts([])
+        assert conflicts == []
+
+    def test_single_scope_no_conflict(self):
+        """A single scope with multiple hives never conflicts with itself."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend", "frontend", "api"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_conflict_record_fields(self):
+        """ConflictRecord contains the expected fields."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 1
+        record = conflicts[0]
+        assert isinstance(record, ConflictRecord)
+        assert record.normalized_hive_name == "backend"
+        assert record.scope_a in (SCOPE_PATTERN_WILDCARD_PARENT, SCOPE_PATTERN_EXACT_CHILD)
+        assert record.scope_b in (SCOPE_PATTERN_WILDCARD_PARENT, SCOPE_PATTERN_EXACT_CHILD)
+        assert record.scope_a != record.scope_b
+
+    def test_three_scopes_same_hive_produces_three_pairs(self):
+        """Three scopes with same hive → C(3,2) = 3 ConflictRecords."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+            SCOPE_PATTERN_DEEP: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 3
+        assert all(c.normalized_hive_name == "backend" for c in conflicts)

@@ -628,6 +628,128 @@ class TestAbandonHive:
         result = await _abandon_hive(abandon_name)
         assert result["status"] == "success"
 
+class TestAbandonHiveMultiScope:
+    """Tests for _abandon_hive multi-scope removal path."""
+
+    @staticmethod
+    def _overlapping_patterns(tmp_path):
+        """Derive two overlapping scope patterns from tmp_path."""
+        return str(tmp_path.parent) + "/**", str(tmp_path) + "/"
+
+    async def test_single_scope_abandon(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Single-scope abandon: hive removed, scopes_modified: 1 (backward compat regression)."""
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+        with repo_root_context(tmp_path):
+            hive_path = tmp_path / "test_hive"
+            hive_path.mkdir()
+            await _colonize_hive("Test Hive", str(hive_path))
+            result = await _abandon_hive("Test Hive")
+            assert result["status"] == "success"
+            assert result["scopes_modified"] == 1
+            assert len(result["scopes"]) == 1
+
+    async def test_multi_scope_abandon(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Multi-scope abandon: hive removed from both scopes, scopes_modified: 2."""
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+            exact: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            result = await _abandon_hive("Test Hive")
+            assert result["status"] == "success"
+            assert result["scopes_modified"] == 2
+            assert len(result["scopes"]) == 2
+
+    async def test_multi_scope_abandon_verifies_removal(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Verify both scopes' config entries no longer contain the hive after multi-scope abandon."""
+        from src.config import load_global_config
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+            exact: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            await _abandon_hive("Test Hive")
+            config = load_global_config()
+            for scope_key in (wildcard, exact):
+                scope_data = config["scopes"].get(scope_key, {})
+                assert "test_hive" not in scope_data.get("hives", {})
+
+    async def test_unrelated_hives_unchanged(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Unrelated hives in the same scopes are unchanged after abandon."""
+        from src.config import load_global_config
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        other_path = tmp_path / "other_hive"
+        other_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {
+                    "test_hive": {"path": str(hive_path), "display_name": "Test Hive"},
+                    "other_hive": {"path": str(other_path), "display_name": "Other Hive"},
+                },
+            },
+            exact: {
+                "hives": {
+                    "test_hive": {"path": str(hive_path), "display_name": "Test Hive"},
+                },
+            },
+        })
+        with repo_root_context(tmp_path):
+            await _abandon_hive("Test Hive")
+            config = load_global_config()
+            wildcard_hives = config["scopes"][wildcard].get("hives", {})
+            assert "other_hive" in wildcard_hives
+            assert "test_hive" not in wildcard_hives
+
+    async def test_hive_not_found_error(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """hive_not_found when hive doesn't exist in any matching scope."""
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        _, exact = self._overlapping_patterns(tmp_path)
+        write_multi_scope_config(mock_global_bees_dir, {
+            exact: {
+                "hives": {"other_hive": {"path": str(tmp_path / "other"), "display_name": "Other"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            result = await _abandon_hive("NonExistent")
+            assert result["status"] == "error"
+            assert result["error_type"] == "hive_not_found"
+
+
 @pytest.mark.integration
 class TestShowTicket:
     """Tests for the show_ticket MCP command."""

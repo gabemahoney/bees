@@ -107,6 +107,15 @@ class BeesConfig:
     status_values: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class ConflictRecord:
+    """A single hive-name conflict between two scopes."""
+
+    normalized_hive_name: str
+    scope_a: str
+    scope_b: str
+
+
 # Constants
 BEES_CONFIG_DIR = ".bees"
 BEES_CONFIG_FILENAME = "config.json"
@@ -427,6 +436,75 @@ def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict, repo_
             f"Hive '{normalized_hive_name}' not found in any scope in the global config."
         )
     return result
+
+
+def detect_hive_conflicts(
+    matching_scopes: list[tuple[str, "BeesConfig"]],
+) -> list[ConflictRecord]:
+    """Detect hive names that appear in more than one matching scope.
+
+    Args:
+        matching_scopes: Output of find_all_matching_scopes — list of
+            (scope_pattern, BeesConfig) tuples.
+
+    Returns:
+        List of ConflictRecord for every unique (hive_name, scope_a, scope_b)
+        pair. Empty list means no conflicts.
+    """
+    # Build mapping: hive_name → list of scope patterns it appears in
+    hive_scopes: dict[str, list[str]] = {}
+    for pattern, config in matching_scopes:
+        for hive_name in config.hives:
+            hive_scopes.setdefault(hive_name, []).append(pattern)
+
+    conflicts: list[ConflictRecord] = []
+    for hive_name, scopes in sorted(hive_scopes.items()):
+        if len(scopes) < 2:
+            continue
+        # Emit a ConflictRecord for each unique pair
+        for i in range(len(scopes)):
+            for j in range(i + 1, len(scopes)):
+                conflicts.append(
+                    ConflictRecord(
+                        normalized_hive_name=hive_name,
+                        scope_a=scopes[i],
+                        scope_b=scopes[j],
+                    )
+                )
+    return conflicts
+
+
+def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None:
+    """Check whether the current repo has hive-name conflicts across scopes.
+
+    Loads the global config, finds all matching scopes for the repo root,
+    and runs detect_hive_conflicts.  Returns an error dict if conflicts
+    exist, or None when the config is clean.
+
+    Args:
+        resolved_root: Pre-resolved repo root path.  Falls back to
+            get_repo_root() when None.
+
+    Returns:
+        None if no conflicts; otherwise a dict with keys
+        ``status``, ``error_type``, and ``message``.
+    """
+    if resolved_root is None:
+        resolved_root = get_repo_root()
+    global_config = load_global_config()
+    matching = find_all_matching_scopes(resolved_root, global_config)
+    conflicts = detect_hive_conflicts(matching)
+    if not conflicts:
+        return None
+    lines = []
+    for c in conflicts:
+        lines.append(f"  - hive '{c.normalized_hive_name}' in '{c.scope_a}' and '{c.scope_b}'")
+    return {
+        "status": "error",
+        "error_type": "config_conflict",
+        "message": "Config conflict detected — the same hive name appears in multiple scopes:\n"
+        + "\n".join(lines),
+    }
 
 
 def _bare_prefix(canonical: str) -> str:

@@ -26,6 +26,7 @@ from .config import (
     _parse_child_tiers_data,
     _serialize_child_tiers,
     _validate_status_values,
+    check_for_config_conflicts,
     find_matching_scope,
     load_bees_config,
     load_global_config,
@@ -307,6 +308,11 @@ async def _create_ticket(
         error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
         logger.error(error_msg)
         return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
+
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
 
     # Validate hive exists in config
     # Design Decision: create_ticket is STRICT and does not attempt hive recovery via scan_for_hive.
@@ -1365,6 +1371,11 @@ async def _show_ticket(
 
     if not ticket_ids:
         return {"status": "success", "tickets": [], "not_found": [], "errors": []}
+
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
 
     tickets = []
     not_found = []

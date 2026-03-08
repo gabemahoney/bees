@@ -23,9 +23,11 @@ from .config import (
     BeesConfig,
     HiveConfig,
     canonicalize_scope_pattern,
+    check_for_config_conflicts,
     check_scope_conflict,
     find_all_matching_scopes,
     find_matching_scope,
+    get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
     parse_scope_to_bees_config,
@@ -527,6 +529,11 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         if resolved_root is None:
             resolved_root = get_repo_root()
 
+        # Check for config conflicts before proceeding
+        conflict_error = check_for_config_conflicts(resolved_root)
+        if conflict_error is not None:
+            return conflict_error
+
         # Collect hives from all matching scopes (least→most specific)
         scope_configs = find_all_matching_scopes(resolved_root, load_global_config())
 
@@ -565,9 +572,10 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
     """
     Stop tracking a hive without deleting ticket files.
 
-    Removes the hive entry from ~/.bees/config.json while leaving all ticket
-    files and the .hive marker intact on the filesystem. This allows users
-    to stop tracking a hive without data loss and re-colonize it later if needed.
+    Removes the hive entry from ~/.bees/config.json (across ALL matching
+    scopes) while leaving all ticket files and the .hive marker intact on
+    the filesystem.  This must work in degraded state (config conflicts),
+    so no conflict guard is applied.
 
     Args:
         hive_name: Display name or normalized name of the hive to abandon
@@ -577,70 +585,58 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
         dict: Operation result with status and details
             {
                 'status': 'success',
-                'message': 'Hive abandoned successfully',
-                'display_name': str,     # Original display name
-                'normalized_name': str,  # Internal hive identifier
-                'path': str              # Path where files remain
+                'message': str,
+                'display_name': str,
+                'normalized_name': str,
+                'path': str,
+                'scopes_modified': int,
+                'scopes': list[str]
             }
 
-    Raises:
-        ValueError: If hive doesn't exist or operation cannot be completed
-
-    Example:
-        >>> _abandon_hive('Back End')
-        {
-            'status': 'success',
-            'message': 'Hive "Back End" abandoned successfully',
-            'display_name': 'Back End',
-            'normalized_name': 'back_end',
-            'path': '/Users/user/projects/myrepo/tickets/backend'
-        }
-
     Error Conditions:
-        - Hive not found: Normalized name doesn't exist in config
-        - Config read error: Cannot read ~/.bees/config.json
-        - Config write error: Cannot write updated config
+        - Hive not found: Normalized name doesn't exist in any matching scope
+        - Config read/write errors
     """
-    # Normalize hive name for lookup
     normalized_name = normalize_hive_name(hive_name)
     logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
 
-    config = load_bees_config()
+    if resolved_root is None:
+        resolved_root = get_repo_root()
 
-    # Check if hive exists
-    if not config or normalized_name not in config.hives:
+    global_config = load_global_config()
+
+    # Find all scopes that define this hive
+    try:
+        scope_keys = get_scope_key_for_hive(normalized_name, global_config, resolved_root)
+    except ValueError:
         error_msg = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config"
         logger.error(error_msg)
         return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
 
-    # Get hive details before removal
-    hive_config = config.hives[normalized_name]
-    display_name = hive_config.display_name
-    hive_path = hive_config.path
+    # Capture display_name and path from first scope for response
+    first_scope_data = global_config["scopes"][scope_keys[0]]
+    first_hive_data = first_scope_data.get("hives", {})[normalized_name]
+    display_name = first_hive_data.get("display_name", hive_name)
+    hive_path = first_hive_data.get("path", "")
 
-    # Remove hive from config
-    del config.hives[normalized_name]
+    # Remove hive from every matching scope
+    for scope_key in scope_keys:
+        scope_data = global_config["scopes"][scope_key]
+        hives = scope_data.get("hives", {})
+        hives.pop(normalized_name, None)
+        logger.info(f"Removed hive '{normalized_name}' from scope '{scope_key}'")
 
-    # Save updated config — resolve scope pattern first
-    repo_root = get_repo_root()
-    global_config = load_global_config()
-    scope_pattern = find_matching_scope(repo_root, global_config)
-    if scope_pattern is None:
-        return {
-            "status": "error",
-            "error_type": "scope_not_found",
-            "message": f"No scope matches the current repo root '{repo_root}'.",
-        }
-    save_bees_config(config, scope_pattern)
-    logger.info(f"Removed hive '{normalized_name}' from config.json")
+    save_global_config(global_config)
+    logger.info(f"Removed hive '{normalized_name}' from {len(scope_keys)} scope(s)")
 
-    # Success response
     return {
         "status": "success",
         "message": f'Hive "{display_name}" abandoned successfully',
         "display_name": display_name,
         "normalized_name": normalized_name,
         "path": hive_path,
+        "scopes_modified": len(scope_keys),
+        "scopes": scope_keys,
     }
 
 
@@ -695,6 +691,11 @@ async def _rename_hive(
         >>> rename_hive('backend', 'api_layer')
         {'status': 'success', 'old_name': 'backend', 'new_name': 'api_layer', ...}
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     # Step 1: Normalize both names
     normalized_old = normalize_hive_name(old_name)
     normalized_new = normalize_hive_name(new_name)
@@ -892,6 +893,11 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
             "is_corrupt": False
         }
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     from .linter import Linter, TicketScanner
 
     # Normalize hive name
