@@ -110,7 +110,7 @@ def handle_create_ticket(args):
             ticket_type=args.ticket_type,
             title=args.title,
             hive_name=args.hive,
-            description=args.description or "",
+            body=args.body or "",
             parent=args.parent,
             children=parse_json_arg(args.children, "--children") if args.children is not None else None,
             up_dependencies=parse_json_arg(args.up_deps, "--up-deps") if args.up_deps is not None else None,
@@ -144,8 +144,8 @@ def handle_update_ticket(args):
 
     if args.title is not _UNSET:
         kwargs["title"] = args.title
-    if args.description is not _UNSET:
-        kwargs["description"] = args.description
+    if args.body is not _UNSET:
+        kwargs["body"] = args.body
     if args.status is not _UNSET:
         kwargs["status"] = args.status
     if args.tags is not _UNSET:
@@ -281,6 +281,7 @@ def handle_colonize_hive(args):
             child_tiers=parsed_child_tiers,
             egg_resolver=args.egg_resolver,
             egg_resolver_timeout=args.egg_resolver_timeout,
+            scope=args.scope,
         )
     )
     _output_result(result)
@@ -624,7 +625,7 @@ def build_parser():
     p_create.add_argument("--ticket-type", required=True, dest="ticket_type", help='Ticket type: "bee" for top-level, or child tier by ID ("t1", "t2") or friendly name. Run get-types to see configured tiers.')  # noqa: E501
     p_create.add_argument("--title", required=True, help="Ticket title")
     p_create.add_argument("--hive", required=True, help="Hive to create the ticket in. Run list-hives to see available hives.")  # noqa: E501
-    p_create.add_argument("--description", default=None, help="Ticket description (markdown)")
+    p_create.add_argument("--body", default=None, help="Ticket body (markdown)")
     p_create.add_argument("--parent", default=None, help="Parent ticket ID. Required for child-tier tickets; omit for bees. Parent's children field is updated automatically.")  # noqa: E501
     p_create.add_argument("--children", default=None, metavar="JSON", help="JSON array of child IDs to link. Bidirectional — child tickets' parent field is set automatically.")  # noqa: E501
     p_create.add_argument("--up-deps", default=None, dest="up_deps", metavar="JSON", help="JSON array of ticket IDs that must be resolved BEFORE this one.")  # noqa: E501
@@ -651,7 +652,7 @@ def build_parser():
     )
     p_update.add_argument("--ticket-id", required=True, metavar="ID", help="Ticket ID to update")
     p_update.add_argument("--title", default=_UNSET, help="New title")
-    p_update.add_argument("--description", default=_UNSET, help="New description (markdown)")
+    p_update.add_argument("--body", default=_UNSET, help="New body (markdown)")
     p_update.add_argument("--status", default=_UNSET, help="New status")
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
@@ -819,6 +820,7 @@ def build_parser():
     p_colonize.add_argument("--child-tiers", default=None, dest="child_tiers", metavar="JSON", help='Optional per-hive tier config as JSON dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["Epic","Epics"], "t2": ["Task","Tasks"]}. Pass {} for bees-only. Inherits from global config if omitted.')  # noqa: E501
     p_colonize.add_argument("--egg-resolver", default=None, dest="egg_resolver", metavar="PATH", help="Optional path to an egg resolver script for this hive.")  # noqa: E501
     p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
+    p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 
     # --- list-hives ---

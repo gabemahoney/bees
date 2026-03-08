@@ -126,8 +126,8 @@ def _read_from_path(ticket_id: str, file_path: Path, *, _known_mtime: float | No
     # Capture raw frontmatter keys before any mutations (used by linter for disallowed field detection)
     raw_keys = frozenset(frontmatter.keys())
 
-    # Add description from body
-    frontmatter["description"] = body
+    # Add body content
+    frontmatter["body"] = body
 
     # Convert date strings to datetime if present
     for date_field in ["created_at"]:
@@ -189,7 +189,7 @@ def _filter_ticket_fields(data: dict[str, Any]) -> dict[str, Any]:
         "id",
         "type",
         "title",
-        "description",
+        "body",
         "tags",
         "up_dependencies",
         "down_dependencies",

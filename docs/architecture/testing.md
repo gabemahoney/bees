@@ -78,7 +78,7 @@ When 3+ tests follow the same structure, parametrize:
 ```python
 @pytest.mark.parametrize("field,value", [
     pytest.param("title", "Test", id="with_title"),
-    pytest.param("description", "Desc", id="with_description"),
+    pytest.param("body", "Body text", id="with_body"),
     pytest.param("tags", ["test"], id="with_tags"),
 ])
 def test_create_bee_with_optional_fields(field, value):
@@ -143,6 +143,40 @@ Use for high level end-to-end test of an actual instance of Bees, used by an LLM
 Use Plain English, do not list bees commands
 Try to write tests that can be run in isolation
 If you must write tests that depend on previous tests, ensure the ticket dependencies represent this
+
+## Bash Integration Test Script
+
+Phases 1 and 2 of the integration test suite run as a standalone bash script (`tests/integration.sh`). These phases exercise the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, egg resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
+
+Phases 3 and 4 remain Claude-run. They validate the full LLM-agent interaction loop against a live MCP server, catching interaction-level bugs that bash cannot. The split gives developers rapid feedback locally while reserving token spend for the tests that genuinely need it.
+
+### Prerequisites
+
+- `bees` installed — either via the dev path (`poetry install -E serve`) or the user path (`pipx install bees-md[serve]`)
+- A writable working directory (the script creates hives, tickets, and config during execution)
+- No pre-existing `~/.bees/config.json` — the script overwrites global config and is destructive to any existing setup. Back up or remove the file before running.
+- Phases 3 and 4 only: a Claude Code session with a configured MCP server
+
+### Running Locally
+
+All tests:
+
+```bash
+bash tests/integration.sh
+```
+
+Resume from a specific test number:
+
+```bash
+bash tests/integration.sh <test_number>
+```
+
+For a clean run, remove or back up your global config first:
+
+```bash
+mv ~/.bees/config.json ~/.bees/config.json.bak
+bash tests/integration.sh
+```
 
 ## Checklist for New Tests
 

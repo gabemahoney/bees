@@ -54,7 +54,7 @@ def test_clone_flat_bee(isolated_bees_env):
     assert cloned.status == source.status
     assert cloned.tags == source.tags
     assert cloned.egg == source.egg
-    assert cloned.description == source.description
+    assert cloned.body == source.body
 
     # New values: id, guid, created_at must differ
     assert cloned.id != source.id

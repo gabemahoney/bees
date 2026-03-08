@@ -21,7 +21,7 @@ def _write_bee(
     ticket_id: str,
     title: str,
     hive_name: str,
-    description: str = "",
+    body: str = "",
     tags: list[str] | None = None,
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
@@ -62,7 +62,7 @@ def _write_bee(
         ticket_id=ticket_id,
         ticket_type="bee",
         frontmatter_data=frontmatter_data,
-        body=description,
+        body=body,
         hive_name=hive_name,
         file_path=bee_file_path,
     )
@@ -75,7 +75,7 @@ def _write_child_tier(
     title: str,
     parent: str,
     hive_name: str,
-    description: str = "",
+    body: str = "",
     tags: list[str] | None = None,
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
@@ -109,7 +109,7 @@ def _write_child_tier(
         ticket_id=ticket_id,
         ticket_type=ticket_type,
         frontmatter_data=frontmatter_data,
-        body=description,
+        body=body,
         hive_name=hive_name,
     )
     return ticket_id, frontmatter_data["guid"]
@@ -118,7 +118,7 @@ def _write_child_tier(
 def create_bee(
     title: str,
     hive_name: str,
-    description: str = "",
+    body: str = "",
     tags: list[str] | None = None,
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
@@ -131,7 +131,7 @@ def create_bee(
 
     Args:
         title: Bee title (required)
-        description: Bee description
+        body: Markdown body content
         tags: List of tag strings
         up_dependencies: List of ticket IDs that block this bee
         down_dependencies: List of ticket IDs that this bee blocks
@@ -147,7 +147,7 @@ def create_bee(
     Examples:
         >>> bee_id, guid = create_bee(
         ...     title="Implement Auth System",
-        ...     description="Build user authentication",
+        ...     body="Build user authentication",
         ...     tags=["security", "backend"],
         ...     hive_name="backend",
         ... )
@@ -168,7 +168,7 @@ def create_bee(
         ticket_id=ticket_id,
         title=title,
         hive_name=hive_name,
-        description=description,
+        body=body,
         tags=tags,
         up_dependencies=up_dependencies,
         down_dependencies=down_dependencies,
@@ -183,7 +183,7 @@ def create_child_tier(
     title: str,
     parent: str,
     hive_name: str,
-    description: str = "",
+    body: str = "",
     tags: list[str] | None = None,
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
@@ -201,7 +201,7 @@ def create_child_tier(
         title: Ticket title (required)
         parent: Parent ticket ID (required for all child tiers)
         hive_name: Hive name to prefix the ID with (required)
-        description: Ticket description
+        body: Markdown body content
         tags: List of tag strings
         up_dependencies: List of ticket IDs that block this ticket
         down_dependencies: List of ticket IDs that this ticket blocks
@@ -242,7 +242,7 @@ def create_child_tier(
         title=title,
         parent=parent,
         hive_name=hive_name,
-        description=description,
+        body=body,
         tags=tags,
         up_dependencies=up_dependencies,
         down_dependencies=down_dependencies,
@@ -279,7 +279,7 @@ def _create_bee_with_id(
         ticket_id=ticket_id,
         title=title,
         hive_name=hive_name,
-        description=kwargs.pop("description", ""),
+        body=kwargs.pop("body", ""),
         tags=kwargs.pop("tags", None),
         up_dependencies=kwargs.pop("up_dependencies", None),
         down_dependencies=kwargs.pop("down_dependencies", None),
@@ -323,7 +323,7 @@ def _create_child_tier_with_id(
         title=title,
         parent=parent,
         hive_name=hive_name,
-        description=kwargs.pop("description", ""),
+        body=kwargs.pop("body", ""),
         tags=kwargs.pop("tags", None),
         up_dependencies=kwargs.pop("up_dependencies", None),
         down_dependencies=kwargs.pop("down_dependencies", None),

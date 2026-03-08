@@ -33,6 +33,7 @@ import json
 
 import pytest
 
+from tests.conftest import write_multi_scope_config
 from tests.test_constants import (
     HIVE_FEATURES,
     SCOPE_TIER_DEFAULT,
@@ -465,6 +466,49 @@ class TestHiveCommands:
         result = json.loads(stdout)
         assert result["status"] == "success"
         assert result.get("errors_remaining", []) == []
+
+    def test_colonize_hive_scope_creates_new_scope(self, cli_runner, isolated_bees_env, tmp_path):
+        """--scope registers hive under the given pattern key; exits 0 with success."""
+        hive_path = tmp_path / "scoped_hive"
+        scope = str(tmp_path.parent) + "/*"
+
+        stdout, exit_code = cli_runner(
+            ["colonize-hive", "--name", "Scoped Hive", "--path", str(hive_path), "--scope", scope]
+        )
+
+        assert exit_code == 0
+        result = json.loads(stdout)
+        assert result["status"] == "success"
+
+    def test_colonize_hive_scope_invalid_pattern(self, cli_runner, isolated_bees_env, tmp_path):
+        """--scope with mid-path wildcard exits 1 with invalid_scope_pattern error."""
+        hive_path = tmp_path / "bad_hive"
+
+        stdout, exit_code = cli_runner(
+            ["colonize-hive", "--name", "Bad Hive", "--path", str(hive_path), "--scope", "/tmp/*/bad"]
+        )
+
+        assert exit_code == 1
+        result = json.loads(stdout)
+        assert result["error_type"] == "invalid_scope_pattern"
+
+    def test_colonize_hive_scope_different_bare_prefix_no_conflict(self, cli_runner, isolated_bees_env, tmp_path, mock_global_bees_dir):
+        """Different bare prefixes at the same tier do NOT conflict (regression for false-positive bug).
+
+        Previously the algorithm compared segment counts; /foo/bar/* and /baz/qux/* have the
+        same segment count (2) and tier (1) so they incorrectly conflicted.  The fix compares
+        bare prefix strings instead, so different prefixes succeed.
+        """
+        write_multi_scope_config(mock_global_bees_dir, {"/foo/bar/*": {"hives": {}}})
+
+        hive_path = tmp_path / "no_conflict_hive"
+        stdout, exit_code = cli_runner(
+            ["colonize-hive", "--name", "No Conflict Hive", "--path", str(hive_path), "--scope", "/baz/qux/*"]
+        )
+
+        assert exit_code == 0
+        result = json.loads(stdout)
+        assert result["status"] == "success"
 
 
 # ---------------------------------------------------------------------------

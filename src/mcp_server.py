@@ -151,7 +151,7 @@ async def create_ticket(
     ticket_type: str,
     title: str,
     hive: str,
-    description: str = "",
+    body: str = "",
     parent: str | None = None,
     children: list[str] | None = None,
     up_deps: list[str] | None = None,
@@ -169,7 +169,7 @@ async def create_ticket(
                      or friendly name ("Task", "Epic"). Use get_types to see configured tiers.
         title: Short title for the ticket.
         hive: Hive to create the ticket in. Use list_hives to see available hives.
-        description: Optional markdown body.
+        body: Optional markdown body.
         parent: Parent ticket ID. Required for child-tier tickets; omit for bees.
                 The parent ticket's children field is updated automatically.
         children: Child ticket IDs to link at creation time. Bidirectional relationship
@@ -192,7 +192,7 @@ async def create_ticket(
             ticket_type=ticket_type,
             title=title,
             hive_name=hive,
-            description=description,
+            body=body,
             parent=parent,
             children=children,
             up_dependencies=up_deps,
@@ -208,7 +208,7 @@ async def create_ticket(
 async def update_ticket(
     ticket_id: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
-    description: str | None | Literal["__UNSET__"] = _UNSET,
+    body: str | None | Literal["__UNSET__"] = _UNSET,
     up_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     down_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     tags: list[str] | None = _UNSET,  # type: ignore[assignment]
@@ -228,7 +228,7 @@ async def update_ticket(
     Args:
         ticket_id: Ticket ID to update, or list of IDs for batch update.
         title: New title (single mode only).
-        description: New markdown body (single mode only).
+        body: New markdown body (single mode only).
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
         down_deps: Full replacement list of dependent ticket IDs (single mode only).
         tags: Full replacement list of tags (single mode only).
@@ -247,7 +247,7 @@ async def update_ticket(
         return await _update_ticket(
             ticket_id=ticket_id,
             title=title,
-            description=description,
+            body=body,
             up_dependencies=up_deps,
             down_dependencies=down_deps,
             tags=tags,
@@ -445,6 +445,7 @@ async def colonize_hive(
     child_tiers: dict[str, list] | None = None,
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
+    scope: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -459,6 +460,9 @@ async def colonize_hive(
                      Pass {} for bees-only.
         egg_resolver: Optional path to an egg resolver script for this hive.
         egg_resolver_timeout: Optional timeout in seconds for the egg resolver script.
+        scope: Optional scope pattern to register the hive under (e.g. /projects/**).
+               When provided, the hive is placed under this explicit scope instead of
+               the auto-detected scope for the repo root.
     """
     # Special colonize_hive fallback logic:
     # 1. Try MCP Roots protocol via get_repo_root(ctx)
@@ -501,6 +505,7 @@ async def colonize_hive(
         repo_root=resolved_root,
         egg_resolver=egg_resolver,
         egg_resolver_timeout=egg_resolver_timeout,
+        scope=scope,
     )
 
 

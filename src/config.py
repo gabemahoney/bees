@@ -116,6 +116,153 @@ GLOBAL_SCHEMA_VERSION = "2.0"
 _SCOPE_PATTERN_CACHE: dict[str, re.Pattern] = {}
 _CACHE_LOCK = threading.Lock()
 
+# Suffixes recognized by canonicalize_scope_pattern, in priority order
+_WILDCARD_SUFFIXES = ("/**", "/*", "/")
+
+
+def canonicalize_scope_pattern(pattern: str) -> str:
+    """Return the canonical form of a scope pattern.
+
+    Strips any trailing `/**`, `/*`, or `/` suffix, then re-appends the
+    appropriate suffix.  A bare path with no wildcard suffix is treated as
+    trailing-slash (exact-directory) form.
+
+    Canonical forms:
+        ``/foo/``    – exact directory match
+        ``/foo/*``   – one level below
+        ``/foo/**``  – any depth below
+
+    Args:
+        pattern: Raw scope pattern string.
+
+    Returns:
+        Canonical pattern string.
+    """
+    for suffix in _WILDCARD_SUFFIXES:
+        if pattern.endswith(suffix):
+            bare = pattern[: -len(suffix)]
+            return bare + suffix
+    # No recognized suffix → trailing-slash exact form
+    return pattern + "/"
+
+
+def validate_scope_pattern(pattern: str) -> None:
+    """Raise ValueError if *pattern* contains invalid wildcard placement.
+
+    Valid positions for ``*`` are only at the very end as ``/*`` or ``/**``.
+    Mid-path wildcards (e.g. ``/foo/*/bar``) and bare ``**`` without a
+    leading ``/`` are rejected.
+
+    Args:
+        pattern: Raw scope pattern string.
+
+    Raises:
+        ValueError: If the pattern contains misplaced wildcards.
+    """
+    # Strip the one valid terminal suffix before checking for stray wildcards
+    bare = pattern
+    for suffix in _WILDCARD_SUFFIXES:
+        if pattern.endswith(suffix):
+            bare = pattern[: -len(suffix)]
+            break
+
+    if "*" in bare:
+        raise ValueError(
+            f"Invalid scope pattern {pattern!r}: wildcards are only allowed as "
+            "terminal '/*' or '/**' suffixes."
+        )
+
+
+def compute_scope_specificity(pattern: str) -> tuple[int, int]:
+    """Return a specificity tuple for ranking scope patterns.
+
+    The tuple ``(segment_count, wildcard_tier)`` allows direct comparison:
+    higher is more specific.
+
+    segment_count
+        Number of literal path segments in the bare prefix (the pattern
+        minus any terminal wildcard suffix).
+
+    wildcard_tier
+        0 – trailing-slash / exact form (``/foo/``)
+        1 – single-level wildcard (``/foo/*``)
+        2 – recursive wildcard (``/foo/**``)
+
+    This function is intentionally *not* cached — call it fresh each time.
+
+    Args:
+        pattern: Raw scope pattern string (need not be canonicalized first).
+
+    Returns:
+        ``(segment_count, wildcard_tier)`` tuple.
+    """
+    if pattern.endswith("/**"):
+        bare = pattern[:-3]
+        tier = 2
+    elif pattern.endswith("/*"):
+        bare = pattern[:-2]
+        tier = 1
+    else:
+        # trailing-slash or bare path
+        bare = pattern.rstrip("/")
+        tier = 0
+
+    # Count non-empty segments in the bare prefix
+    segment_count = len([s for s in bare.split("/") if s])
+    return (segment_count, tier)
+
+
+def scopes_overlap(pattern_a: str, pattern_b: str) -> bool:
+    """Return True if the two scope patterns can match the same repository path.
+
+    One pattern must be an ancestor-or-equal of the other, *and* the parent
+    pattern's wildcard tier must reach the child's depth.
+
+    Wildcard semantics:
+        ``/**`` – matches any depth below the prefix (tier 2)
+        ``/*``  – matches exactly one level below (tier 1)
+        exact/trailing-slash – matches nothing below the prefix (tier 0)
+
+    Args:
+        pattern_a: First scope pattern.
+        pattern_b: Second scope pattern.
+
+    Returns:
+        True if the patterns overlap.
+    """
+    canon_a = canonicalize_scope_pattern(pattern_a)
+    canon_b = canonicalize_scope_pattern(pattern_b)
+
+    seg_a, tier_a = compute_scope_specificity(canon_a)
+    seg_b, tier_b = compute_scope_specificity(canon_b)
+
+    # Derive bare prefixes (strip wildcard suffix + trailing slash)
+    prefix_a = _bare_prefix(canon_a)
+    prefix_b = _bare_prefix(canon_b)
+
+    # Determine which is the shallower (potential ancestor)
+    if seg_a <= seg_b:
+        ancestor_prefix, ancestor_tier = prefix_a, tier_a
+        child_prefix = prefix_b
+        depth_diff = seg_b - seg_a
+    else:
+        ancestor_prefix, ancestor_tier = prefix_b, tier_b
+        child_prefix = prefix_a
+        depth_diff = seg_a - seg_b
+
+    # Child must start with ancestor's prefix
+    if not (child_prefix == ancestor_prefix or child_prefix.startswith(ancestor_prefix + "/")):
+        return False
+
+    # Ancestor's wildcard must reach the child
+    if depth_diff == 0:
+        return True  # same depth → identical prefixes overlap by definition
+    if ancestor_tier == 2:
+        return True  # /** reaches any depth
+    if ancestor_tier == 1 and depth_diff == 1:
+        return True  # /* reaches exactly one level deeper
+    return False
+
 
 def get_global_bees_dir() -> Path:
     """Get the global bees config directory path (~/.bees/)."""
@@ -138,7 +285,7 @@ def match_scope_pattern(repo_root: Path, pattern: str) -> bool:
     Pattern syntax:
         * = matches within a single path segment (not /)
         ** = matches recursively through subdirectories (including /)
-        Exact paths match exactly.
+        Trailing-slash / exact paths match with or without trailing slash.
 
     Args:
         repo_root: The repository root path to test
@@ -154,7 +301,8 @@ def match_scope_pattern(repo_root: Path, pattern: str) -> bool:
             # Convert pattern to regex
             # Handle /** (slash + double-star) as optional recursive match
             # Handle ** as recursive match
-            # Handle * as single-segment match
+            # Handle /* as single non-empty segment match
+            # Trailing-slash exact form matches with or without trailing slash
             regex_parts = []
             i = 0
             while i < len(pattern):
@@ -172,7 +320,16 @@ def match_scope_pattern(repo_root: Path, pattern: str) -> bool:
                     regex_parts.append(".*")
                     i += 2
                 elif pattern[i] == "*":
-                    regex_parts.append("[^/]*")
+                    # Terminal /* suffix → require non-empty segment ([^/]+)
+                    # Other * → allow empty within segment ([^/]*)
+                    if i == len(pattern) - 1 and i > 0 and pattern[i - 1] == "/":
+                        regex_parts.append("[^/]+")
+                    else:
+                        regex_parts.append("[^/]*")
+                    i += 1
+                elif pattern[i] == "/" and i == len(pattern) - 1:
+                    # Trailing slash in exact form → match with or without trailing slash
+                    regex_parts.append("/?")
                     i += 1
                 else:
                     regex_parts.append(re.escape(pattern[i]))
@@ -184,10 +341,13 @@ def match_scope_pattern(repo_root: Path, pattern: str) -> bool:
 
 
 def find_matching_scope(repo_root: Path, global_config: dict) -> str | None:
-    """Find the first scope pattern that matches repo_root.
+    """Find the most-specific scope pattern that matches repo_root.
 
-    Scopes are evaluated in declaration order (dict insertion order).
-    First match wins.
+    All matching patterns are collected; the one with the highest segment
+    count and lowest wildcard_tier wins (exact match preferred over ``/*``
+    preferred over ``/**``).  The sort key is ``(segment_count,
+    -wildcard_tier)``.  On a tie, the pattern that appears first in dict
+    insertion order wins.
 
     Args:
         repo_root: The repository root path to match
@@ -197,10 +357,16 @@ def find_matching_scope(repo_root: Path, global_config: dict) -> str | None:
         The matching scope pattern string, or None if no match
     """
     scopes = global_config.get("scopes", {})
+    best_pattern: str | None = None
+    best_key: tuple[int, int] = (-1, -1)
     for pattern in scopes:
         if match_scope_pattern(repo_root, pattern):
-            return pattern
-    return None
+            seg, tier = compute_scope_specificity(pattern)
+            key = (seg, -tier)
+            if key > best_key:
+                best_key = key
+                best_pattern = pattern
+    return best_pattern
 
 
 def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict) -> str:
@@ -227,6 +393,51 @@ def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict) -> st
     raise ValueError(
         f"Hive '{normalized_hive_name}' not found in any scope in the global config."
     )
+
+
+def _bare_prefix(canonical: str) -> str:
+    """Return the bare prefix of an already-canonicalized scope pattern.
+
+    Strips the wildcard suffix and any trailing slash:
+        ``/foo/``   → ``/foo``
+        ``/foo/*``  → ``/foo``
+        ``/foo/**`` → ``/foo``
+    """
+    if canonical.endswith("/**"):
+        return canonical[:-3].rstrip("/")
+    if canonical.endswith("/*"):
+        return canonical[:-2].rstrip("/")
+    return canonical.rstrip("/")
+
+
+def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
+    """Check whether *pattern* conflicts with an existing scope key.
+
+    A conflict exists when a different scope key has the same bare prefix
+    string **and** the same wildcard tier as *pattern* (after canonicalization).
+    In practice, this condition is equivalent to the canonical forms being
+    identical, so this function always returns ``None`` — identical canonical
+    forms are treated as valid re-use, not a conflict. The function is kept
+    for API compatibility and to make the re-use check explicit.
+
+    Args:
+        pattern: Candidate scope pattern to check.
+        global_config: The full global config dict with 'scopes' key.
+
+    Returns:
+        Always ``None`` — re-using an existing scope is valid, not an error.
+    """
+    canon_candidate = canonicalize_scope_pattern(pattern)
+
+    scopes = global_config.get("scopes", {})
+    for existing_key in scopes:
+        canon_existing = canonicalize_scope_pattern(existing_key)
+
+        # Exact canonical match → re-use, not a conflict
+        if canon_existing == canon_candidate:
+            return None
+
+    return None
 
 
 def load_global_config() -> dict:

@@ -181,9 +181,12 @@ async def _invoke_custom_resolver(
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            # Kill process on timeout
+            # Kill process on timeout; close transport while loop is running to
+            # avoid "Event loop is closed" GC traceback on loop teardown.
             proc.kill()
             await proc.wait()
+            if hasattr(proc, "_transport") and proc._transport is not None:
+                proc._transport.close()
             timeout_msg = f"Resolver timed out after {timeout} seconds"
             logger.error(timeout_msg)
             raise RuntimeError(timeout_msg) from None

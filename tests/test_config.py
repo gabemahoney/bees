@@ -10,6 +10,9 @@ from src.config import (
     BeesConfig,
     ChildTierConfig,
     HiveConfig,
+    canonicalize_scope_pattern,
+    check_scope_conflict,
+    compute_scope_specificity,
     find_matching_scope,
     get_scoped_config,
     load_bees_config,
@@ -19,15 +22,23 @@ from src.config import (
     resolve_child_tiers_for_hive,
     save_bees_config,
     save_global_config,
+    scopes_overlap,
     serialize_bees_config_to_scope,
     set_config_path,
     set_test_config_override,
     validate_child_tiers,
+    validate_scope_pattern,
     validate_unique_hive_name,
 )
 from src.id_utils import normalize_hive_name
 from src.repo_context import repo_root_context
-from tests.conftest import write_scoped_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
+from tests.test_constants import (
+    SCOPE_PATTERN_BARE,
+    SCOPE_PATTERN_DEEP,
+    SCOPE_PATTERN_EXACT,
+    SCOPE_PATTERN_SHALLOW,
+)
 
 TS = "2026-02-01T12:00:00"
 
@@ -172,6 +183,23 @@ class TestMatchScopePattern:
         for i in range(1, num_threads):
             assert results[i] is False, f"Thread {i} returned {results[i]}"
 
+    @pytest.mark.parametrize(
+        "repo_root,pattern,expected",
+        [
+            # Terminal /* requires exactly one non-empty segment
+            pytest.param("/repos/project/worktree", "/repos/project/*", True, id="terminal_slash_star_one_segment"),
+            pytest.param("/repos/project", "/repos/project/*", False, id="terminal_slash_star_no_segment"),
+            pytest.param("/repos/project/a/b", "/repos/project/*", False, id="terminal_slash_star_two_levels"),
+            # Trailing-slash exact form matches repo path with or without trailing slash
+            pytest.param("/repos/project", "/repos/project/", True, id="trailing_slash_exact_no_slash"),
+            pytest.param("/repos/project/sub", "/repos/project/", False, id="trailing_slash_exact_no_child"),
+        ],
+    )
+    def test_match_scope_pattern_new_forms(self, repo_root, pattern, expected):
+        from src.config import _SCOPE_PATTERN_CACHE
+        _SCOPE_PATTERN_CACHE.clear()
+        assert match_scope_pattern(Path(repo_root), pattern) == expected
+
     def test_match_scope_pattern_thread_safety(self):
         """Threads racing to compile the same uncached pattern all get correct results.
 
@@ -246,6 +274,63 @@ class TestFindMatchingScope:
 
     def test_missing_scopes_key(self):
         assert find_matching_scope(Path("/any/path"), {}) is None
+
+    def test_highest_specificity_wins(self, mock_global_bees_dir):
+        """More-specific pattern wins even when listed second."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/repos/**": {"hives": {"general": {}}},
+                "/repos/project/": {"hives": {"specific": {}}},
+            },
+        )
+        config = load_global_config()
+        result = find_matching_scope(Path("/repos/project"), config)
+        assert result == "/repos/project/"
+
+    def test_tie_breaks_on_dict_insertion_order(self, mock_global_bees_dir):
+        """When two patterns have equal specificity, first in dict order wins."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/repos/project/**": {"hives": {"first": {}}},
+                "/repos/another/**": {"hives": {"second": {}}},
+            },
+        )
+        config = load_global_config()
+        # /repos/project/** matches /repos/project/child; /repos/another/** does not
+        result = find_matching_scope(Path("/repos/project/child"), config)
+        assert result == "/repos/project/**"
+
+    def test_no_match_returns_none_multi_scope(self, mock_global_bees_dir):
+        """No matching pattern returns None with multi-scope config."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/repos/alpha/": {"hives": {}},
+                "/repos/beta/**": {"hives": {}},
+            },
+        )
+        config = load_global_config()
+        result = find_matching_scope(Path("/repos/gamma"), config)
+        assert result is None
+
+    def test_deeper_pattern_beats_shallower_wildcard(self, mock_global_bees_dir):
+        """Exact trailing-slash (tier 0) beats /** (tier 2) for same depth."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/repos/**": {"hives": {"wildcard": {}}},
+                "/repos/project/": {"hives": {"exact": {}}},
+                "/repos/project/**": {"hives": {"deep": {}}},
+            },
+        )
+        config = load_global_config()
+        # /repos/project/ and /repos/project/** both match /repos/project
+        # /repos/project/ has tier 0 (exact) vs /repos/project/** tier 2 (**)
+        # Exact form is more specific, so trailing-slash wins
+        result = find_matching_scope(Path("/repos/project"), config)
+        assert result == "/repos/project/"
 
 
 # ============================================================================
@@ -2555,3 +2640,220 @@ class TestValidateChildTiersCap:
         """validate_child_tiers raises ValueError for tier keys beyond t9."""
         with pytest.raises(ValueError, match=r"t(10|15)|T9|exceeds maximum"):
             validate_child_tiers(child_tiers)
+
+
+# ============================================================================
+# SCOPE PATTERN HELPER FUNCTION TESTS
+# ============================================================================
+
+
+class TestCanonicalizeScopePattern:
+    """Test canonicalize_scope_pattern normalizes scope pattern strings."""
+
+    @pytest.mark.parametrize(
+        "pattern,expected",
+        [
+            pytest.param(SCOPE_PATTERN_BARE, SCOPE_PATTERN_EXACT, id="bare_path_gets_trailing_slash"),
+            pytest.param(SCOPE_PATTERN_EXACT, SCOPE_PATTERN_EXACT, id="trailing_slash_unchanged"),
+            pytest.param(SCOPE_PATTERN_SHALLOW, SCOPE_PATTERN_SHALLOW, id="shallow_star_unchanged"),
+            pytest.param(SCOPE_PATTERN_DEEP, SCOPE_PATTERN_DEEP, id="deep_doublestar_unchanged"),
+            pytest.param("/foo", "/foo/", id="short_bare_path"),
+            pytest.param("/foo/", "/foo/", id="short_trailing_slash"),
+            pytest.param("/foo/*", "/foo/*", id="short_shallow"),
+            pytest.param("/foo/**", "/foo/**", id="short_deep"),
+        ],
+    )
+    def test_canonicalize(self, pattern, expected):
+        assert canonicalize_scope_pattern(pattern) == expected
+
+
+class TestValidateScopePattern:
+    """Test validate_scope_pattern accepts valid forms and rejects mid-path wildcards."""
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            pytest.param(SCOPE_PATTERN_BARE, id="bare_path"),
+            pytest.param(SCOPE_PATTERN_EXACT, id="trailing_slash"),
+            pytest.param(SCOPE_PATTERN_SHALLOW, id="shallow_star"),
+            pytest.param(SCOPE_PATTERN_DEEP, id="deep_doublestar"),
+            pytest.param("/single/**", id="single_segment_deep"),
+        ],
+    )
+    def test_valid_patterns_do_not_raise(self, pattern):
+        validate_scope_pattern(pattern)  # must not raise
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            pytest.param("/foo/*/bar", id="mid_path_wildcard"),
+            pytest.param("/foo/*/bar/**", id="mid_path_wildcard_with_terminal"),
+            pytest.param("/a/*/b/c", id="mid_path_three_segments"),
+        ],
+    )
+    def test_invalid_patterns_raise_value_error(self, pattern):
+        with pytest.raises(ValueError, match="wildcards"):
+            validate_scope_pattern(pattern)
+
+
+class TestComputeScopeSpecificity:
+    """Test compute_scope_specificity returns correct (segment_count, wildcard_tier) tuples."""
+
+    @pytest.mark.parametrize(
+        "pattern,expected",
+        [
+            pytest.param(SCOPE_PATTERN_EXACT, (2, 0), id="trailing_slash_exact"),
+            pytest.param(SCOPE_PATTERN_BARE, (2, 0), id="bare_path_exact_tier"),
+            pytest.param(SCOPE_PATTERN_SHALLOW, (2, 1), id="shallow_star"),
+            pytest.param(SCOPE_PATTERN_DEEP, (2, 2), id="deep_doublestar"),
+            pytest.param("/foo/", (1, 0), id="one_segment_exact"),
+            pytest.param("/foo/*", (1, 1), id="one_segment_shallow"),
+            pytest.param("/foo/**", (1, 2), id="one_segment_deep"),
+            pytest.param("/a/b/c/", (3, 0), id="three_segment_exact"),
+            pytest.param("/a/b/c/**", (3, 2), id="three_segment_deep"),
+        ],
+    )
+    def test_specificity(self, pattern, expected):
+        assert compute_scope_specificity(pattern) == expected
+
+    def test_shallow_beats_deep_same_prefix(self):
+        """Lower wildcard tier is more specific: /* (tier 1) outranks /** (tier 2)."""
+        seg_s, tier_s = compute_scope_specificity(SCOPE_PATTERN_SHALLOW)
+        seg_d, tier_d = compute_scope_specificity(SCOPE_PATTERN_DEEP)
+        # When negating wildcard_tier for ranking: (2, -1) > (2, -2)
+        assert (seg_s, -tier_s) > (seg_d, -tier_d)
+
+    def test_exact_beats_shallow_same_prefix(self):
+        """Lower wildcard tier is more specific: exact (tier 0) outranks /* (tier 1)."""
+        seg_e, tier_e = compute_scope_specificity(SCOPE_PATTERN_EXACT)
+        seg_s, tier_s = compute_scope_specificity(SCOPE_PATTERN_SHALLOW)
+        # When negating wildcard_tier for ranking: (2, 0) > (2, -1)
+        assert (seg_e, -tier_e) > (seg_s, -tier_s)
+
+    def test_more_segments_beats_fewer_same_tier(self):
+        """Three-segment exact beats two-segment exact."""
+        assert compute_scope_specificity("/a/b/c/") > compute_scope_specificity("/a/b/")
+
+
+class TestScopesOverlap:
+    """Test scopes_overlap detects patterns that can match the same repo path."""
+
+    @pytest.mark.parametrize(
+        "pattern_a,pattern_b,expected",
+        [
+            # Exact patterns at different depths do not overlap
+            pytest.param(
+                "/repos/project/",
+                "/repos/project/worktree/",
+                False,
+                id="exact_vs_child_exact",
+            ),
+            # /* reaches exactly one level deeper
+            pytest.param(
+                "/repos/project/*",
+                "/repos/project/worktree/",
+                True,
+                id="shallow_star_vs_one_level_child",
+            ),
+            # /* does NOT reach two levels deeper
+            pytest.param(
+                "/repos/project/*",
+                "/repos/project/a/b/",
+                False,
+                id="shallow_star_vs_two_levels",
+            ),
+            # /** reaches any depth
+            pytest.param(
+                SCOPE_PATTERN_DEEP,
+                "/repos/project/a/b/c/",
+                True,
+                id="deep_doublestar_vs_deep_child",
+            ),
+            # Non-overlapping paths
+            pytest.param(
+                "/repos/project/",
+                "/repos/other/",
+                False,
+                id="different_paths_no_overlap",
+            ),
+            # Same canonical pattern always overlaps
+            pytest.param(
+                SCOPE_PATTERN_EXACT,
+                SCOPE_PATTERN_BARE,
+                True,
+                id="same_effective_pattern_overlaps",
+            ),
+            # /** ancestor overlaps with /* child
+            pytest.param(
+                "/repos/**",
+                "/repos/project/*",
+                True,
+                id="deep_ancestor_vs_shallow_child",
+            ),
+        ],
+    )
+    def test_overlap(self, pattern_a, pattern_b, expected):
+        assert scopes_overlap(pattern_a, pattern_b) == expected
+
+
+class TestCheckScopeConflict:
+    """Test check_scope_conflict detects patterns with the same bare prefix and wildcard tier.
+
+    Note: In practice, "same bare prefix + same wildcard tier" always produces the same
+    canonical form, so the conflict branch (step 5 in check_scope_conflict) is unreachable
+    with valid inputs — step 4 (canonical equality → re-use is valid → return None) always
+    fires first. The function is correct: re-using an existing scope is not an error. All
+    tests below return None because any candidate that would conflict is indistinguishable
+    from a re-use at the canonical level.
+    """
+
+    def test_identical_canonical_pattern_returns_none(self):
+        """Exact canonical match is not a conflict — it means re-use."""
+        config = {"scopes": {SCOPE_PATTERN_SHALLOW: {"hives": {}}}}
+        # Same pattern (identical canonical) → None
+        assert check_scope_conflict(SCOPE_PATTERN_SHALLOW, config) is None
+
+    def test_bare_and_trailing_slash_same_canonical_no_conflict(self):
+        """Bare path and trailing-slash form are the same canonical key."""
+        config = {"scopes": {SCOPE_PATTERN_EXACT: {"hives": {}}}}
+        # /repos/project canonicalizes to /repos/project/ — identical → None
+        assert check_scope_conflict(SCOPE_PATTERN_BARE, config) is None
+
+    @pytest.mark.parametrize(
+        "candidate,existing,expected_conflict",
+        [
+            pytest.param(
+                "/repos/project/other/*",
+                "/repos/project/alt/*",
+                None,
+                id="different_bare_prefix_same_tier_no_conflict",
+            ),
+            pytest.param(
+                "/repos/project/*",
+                "/repos/project/*",
+                None,
+                id="same_prefix_same_tier_exact_canonical_no_conflict",
+            ),
+            pytest.param(
+                "/repos/project/*",
+                "/repos/project/**",
+                None,
+                id="same_prefix_different_tier_no_conflict",
+            ),
+            pytest.param(
+                "/repos/project/worktree/*",
+                "/repos/project/**",
+                None,
+                id="different_segment_count_no_conflict",
+            ),
+        ],
+    )
+    def test_conflict_cases(self, candidate, existing, expected_conflict):
+        config = {"scopes": {existing: {"hives": {}}}}
+        assert check_scope_conflict(candidate, config) == expected_conflict
+
+    def test_empty_scopes_returns_none(self):
+        assert check_scope_conflict("/repos/project/*", {"scopes": {}}) is None
+
+    def test_missing_scopes_key_returns_none(self):
+        assert check_scope_conflict("/repos/project/*", {}) is None

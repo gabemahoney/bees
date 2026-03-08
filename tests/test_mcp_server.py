@@ -123,12 +123,12 @@ class TestUpdateTicket:
         from src.reader import read_ticket
 
         epic_id, _ = create_bee(
-            hive_name=HIVE_BACKEND, title="Original Title", description="Original description",
+            hive_name=HIVE_BACKEND, title="Original Title", body="Original description",
             tags=["label1"], status="open",
         )
 
         result = await _update_ticket(
-            ticket_id=epic_id, title="Updated Title", description="Updated description",
+            ticket_id=epic_id, title="Updated Title", body="Updated description",
             tags=["label1", "label2"], status="in_progress",
         )
 
@@ -138,7 +138,7 @@ class TestUpdateTicket:
         assert result["failed"] == []
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         assert bee.title == "Updated Title"
-        assert bee.description == "Updated description"
+        assert bee.body == "Updated description"
         assert bee.tags == ["label1", "label2"]
         assert bee.status == "in_progress"
 
@@ -203,7 +203,7 @@ class TestUpdateTicket:
         from src.reader import read_ticket
 
         epic_id, _ = create_bee(
-            hive_name=HIVE_BACKEND, title="Original Title", description="Original description",
+            hive_name=HIVE_BACKEND, title="Original Title", body="Original description",
             tags=["label1", "label2"], status="open",
         )
         await _update_ticket(ticket_id=epic_id, title="Updated Title", status="in_progress")
@@ -211,7 +211,7 @@ class TestUpdateTicket:
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         assert bee.title == "Updated Title"
         assert bee.status == "in_progress"
-        assert bee.description == "Original description"
+        assert bee.body == "Original description"
         assert bee.tags == ["label1", "label2"]
 
     @pytest.mark.parametrize(
@@ -336,7 +336,7 @@ class TestColonizeHiveMCPIntegration:
         await _colonize_hive("Test Hive", str(git_repo_tmp_path / "hive1"))
         result = await _colonize_hive("Test Hive", str(git_repo_tmp_path / "hive2"))
         assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_name_error"
+        assert result["error_type"] == "duplicate_hive_name"
         assert "already exists" in result["message"]
 
     async def test_colonize_hive_registers_in_config(self, git_repo_tmp_path):
@@ -580,7 +580,7 @@ class TestShowTicket:
         """Test showing a bee ticket with all fields."""
         repo_root, hive_path, hive_name = hive_env
         ticket_id, _ = create_bee(
-            title=TITLE_TEST_BEE, description="Epic description", tags=["test", "bee"],
+            title=TITLE_TEST_BEE, body="Epic description", tags=["test", "bee"],
             status="open", hive_name=HIVE_BACKEND,
         )
         result = await _show_ticket(ticket_ids=[ticket_id])
@@ -592,7 +592,7 @@ class TestShowTicket:
         assert result["tickets"][0]["tags"] == ["test", "bee"]
         assert result["tickets"][0]["parent"] is None
         # Verify all expected fields present
-        for field in ["created_at", "schema_version", "description", "ticket_status",
+        for field in ["created_at", "schema_version", "body", "ticket_status",
                       "children", "up_dependencies", "down_dependencies"]:
             assert field in result["tickets"][0]
         assert result["not_found"] == []
@@ -602,7 +602,7 @@ class TestShowTicket:
         repo_root, hive_path, hive_name = hive_env
         epic_id, _ = create_bee(title="Parent Epic", hive_name=HIVE_BACKEND)
         task_id, _ = create_child_tier(
-            ticket_type="t1", title=TITLE_TEST_TASK, description="Task description", parent=epic_id,
+            ticket_type="t1", title=TITLE_TEST_TASK, body="Task description", parent=epic_id,
             tags=["backend"], status="in_progress", hive_name=HIVE_BACKEND,
         )
         result = await _show_ticket(ticket_ids=[task_id])

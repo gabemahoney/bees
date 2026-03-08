@@ -971,14 +971,14 @@ class TestUpdateTicketRefactorRegression:
         isolated_bees_env.write_config()
 
         result = await _create_ticket(
-            ticket_type="bee", title="Original Title", description="Original desc", hive_name=HIVE_BACKEND
+            ticket_type="bee", title="Original Title", body="Original desc", hive_name=HIVE_BACKEND
         )
         tid = result["ticket_id"]
 
         update_result = await _update_ticket(
             tid,
             title="Updated Title",
-            description="Updated desc",
+            body="Updated desc",
             status="in_progress",
             tags=["alpha", "beta"],
             hive_name=HIVE_BACKEND,
@@ -989,7 +989,7 @@ class TestUpdateTicketRefactorRegression:
 
         ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
         assert ticket.title == "Updated Title"
-        assert ticket.description == "Updated desc"
+        assert ticket.body == "Updated desc"
         assert ticket.status == "in_progress"
         assert set(ticket.tags) == {"alpha", "beta"}
 

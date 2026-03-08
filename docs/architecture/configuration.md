@@ -77,20 +77,49 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 
 ## Scope Pattern Matching
 
-Scope keys are directory paths supporting glob wildcards:
+Scope keys are directory paths with optional wildcard suffixes. Every scope pattern has a canonical form, and the system uses specificity rules to select the best matching scope when multiple patterns match the same repository root.
 
-- **Exact path**: `/Users/dev/projects/myrepo` matches only that directory
-- **`*`**: Matches within a single path segment. `/Users/dev/projects/bees*` matches `bees`, `bees_other`, `bees123` but not `bees/worktree`
-- **`**`**: Matches recursively through subdirectories. `/Users/dev/projects/bees/**` matches `bees`, `bees/worktree`, `bees/deep/path`
+### Canonical Forms
 
-**Resolution**: First matching scope wins (evaluated in declaration order). More specific patterns should be listed before general ones.
+All scope patterns reduce to one of three canonical forms:
 
-**Implementation**: `match_scope_pattern()` converts patterns to regex (`**` → `(/.*)?`, `*` → `[^/]*`) and uses `re.fullmatch()`. Results are cached per pattern.
+- **Exact / trailing-slash** (`/foo/`): matches only the named directory itself. No subdirectories or children are included. A bare path with no wildcard suffix (e.g., `/foo`) is treated as this form.
+- **Single-level wildcard** (`/foo/*`): matches any immediate child directory of the prefix — exactly one path segment deeper. It does not match the prefix directory itself or any grandchildren.
+- **Recursive wildcard** (`/foo/**`): matches the prefix directory itself and any descendant directory at any depth.
 
-**Functions**:
-- `match_scope_pattern(repo_root, pattern) -> bool`: Check if repo_root matches a scope pattern
-- `find_matching_scope(repo_root, global_config) -> str | None`: Find first matching scope pattern
-- `get_scoped_config(repo_root) -> BeesConfig | None`: Load global config, match scope, return BeesConfig
+**Canonicalization rules**: `canonicalize_scope_pattern()` strips any trailing `/**`, `/*`, or `/` suffix from a raw pattern, then re-appends the appropriate suffix. A raw pattern with no recognized suffix is assigned the trailing-slash (exact) form. This means that `/foo`, `/foo/`, and any variant with redundant suffixes all reduce to the same canonical representation before any comparison or storage operation.
+
+### Specificity
+
+When multiple scope patterns match a repository root, the most specific pattern wins. Specificity is expressed as a two-key tuple:
+
+1. **Segment count** (primary): the number of literal path segments in the bare prefix (the pattern minus its wildcard suffix). More segments means higher specificity.
+2. **Wildcard tier** (secondary): a numeric rank for the terminal wildcard — exact/trailing-slash = 0, `/*` = 1, `/**` = 2. Within the same segment count, a lower wildcard tier is more specific: an exact/trailing-slash match (0) outranks `/*` (1), which outranks `/**` (2).
+
+When two patterns produce identical `(segment_count, wildcard_tier)` values, the pattern that appears first in config dict insertion order wins silently (no error is raised).
+
+### Conflict Detection
+
+A **conflict** exists between a candidate pattern and an existing scope key when both canonicalize to the same bare prefix **and** the same wildcard tier, but the raw strings differ. A conflict is blocked because it would create an ambiguous duplicate scope — there is no way for specificity rules to distinguish them. An exact canonical match (same raw string after canonicalization) is not a conflict; it means the candidate can reuse the existing scope.
+
+**Overlap** is a distinct, permitted condition. Two patterns overlap when they can match the same repository root path. Overlap is determined by whether one pattern's prefix is an ancestor of the other's, and whether the ancestor's wildcard tier reaches the child's depth:
+
+- A `/**` pattern overlaps with any pattern whose prefix starts with its own prefix (any depth).
+- A `/*` pattern overlaps with patterns whose prefix is exactly one level deeper.
+- An exact/trailing-slash pattern overlaps with nothing below its own prefix.
+
+Overlap is allowed and resolved at runtime by specificity ordering — the more specific pattern wins for any given repository root. Conflict, by contrast, is blocked at write time because no specificity difference exists to resolve it.
+
+### Functions
+
+- `match_scope_pattern(repo_root: Path, pattern: str) -> bool`: Check whether repo_root matches a scope pattern; results are cached per pattern
+- `find_matching_scope(repo_root: Path, global_config: dict) -> str | None`: Return the most-specific scope pattern that matches repo_root; on specificity tie, first in insertion order wins
+- `get_scoped_config(repo_root) -> BeesConfig | None`: Load global config, match scope by specificity, return BeesConfig
+- `canonicalize_scope_pattern(pattern: str) -> str`: Convert a raw scope pattern to its canonical form
+- `validate_scope_pattern(pattern: str) -> None`: Raise ValueError if the pattern contains wildcards in invalid positions (only terminal `/*` or `/**` are allowed)
+- `compute_scope_specificity(pattern: str) -> tuple[int, int]`: Return a `(segment_count, wildcard_tier)` tuple for ranking patterns by specificity
+- `scopes_overlap(pattern_a: str, pattern_b: str) -> bool`: Return True if the two scope patterns can match the same repository root
+- `check_scope_conflict(pattern: str, global_config: dict) -> str | None`: Return the first existing scope key that conflicts with the candidate pattern, or None if no conflict exists
 
 ## Child Tiers Configuration
 
@@ -676,7 +705,8 @@ The `colonize_hive` MCP tool creates and registers new hives with optional per-h
 colonize_hive(
     name: str,
     path: str,
-    child_tiers: dict[str, list] | None = None
+    child_tiers: dict[str, list] | None = None,
+    scope: str | None = None
 )
 ```
 
@@ -684,8 +714,25 @@ colonize_hive(
 - `name`: Display name for the hive (e.g., "Back End", "Frontend")
 - `path`: Absolute path to the directory where the hive should be created
 
-**Optional Parameter**:
+**Optional Parameters**:
 - `child_tiers`: Per-hive child tiers configuration (dict or None)
+- `scope`: Scope pattern under which to register the hive (str or None)
+
+### scope Parameter Semantics
+
+The `scope` parameter controls which scope key the hive is registered under in `~/.bees/config.json`.
+
+**When omitted (None, default)**: The hive is registered under an exact-path scope derived from the current repo root. If no scope matching the repo root exists, a new exact-path scope is created automatically.
+
+**When provided**: The hive is registered directly under the given scope key. The pattern must be a valid canonical scope form — exact/trailing-slash (e.g. `/projects/myrepo/`), single-level wildcard (`/projects/*`), or recursive wildcard (`/projects/**`). If the scope key does not yet exist in config, it is created. Use this to share a hive across multiple repos that all fall under a common wildcard scope.
+
+**Scope validation order**:
+1. Pattern syntax is validated — wildcards are only allowed as terminal `/*` or `/**` suffixes. Violations return `invalid_scope_pattern`.
+2. The normalized hive name is checked for duplicates within all scope keys that overlap the candidate pattern — the same hive name cannot exist in two scopes that can match the same repo root. A duplicate returns `duplicate_hive_name`.
+
+**Error types**:
+- `invalid_scope_pattern`: The scope string contains wildcards in invalid positions (mid-path or without a leading `/`)
+- `duplicate_hive_name`: The normalized hive name already exists in an overlapping scope, which would make the hive inaccessible or ambiguous for repos that match both scopes
 
 ### child_tiers Parameter Semantics
 

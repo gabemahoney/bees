@@ -48,7 +48,7 @@ find src -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
 ```
 
 
-## Best practices reference documentation
+## Documentation locations
 If asked to review best practices for this project use the following documents:
 
 ### Engineering Best Practices
@@ -61,3 +61,4 @@ Unit Test review guide at: [test_review_guide.md](docs%2Fguides%2Ftest_review_gu
 
 ### Documentation Best Practices
 Doc writing and review guide at: [docs_guide.md](docs%2Fguides%2Fdocs_guide.md)
+

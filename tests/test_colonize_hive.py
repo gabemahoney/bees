@@ -38,6 +38,7 @@ import pytest
 from src.mcp_hive_ops import _list_hives, colonize_hive_core as colonize_hive
 from src.mcp_hive_utils import scan_for_hive
 from src.repo_context import repo_root_context
+from tests.conftest import write_multi_scope_config
 from tests.test_constants import (
     RESULT_STATUS_SUCCESS,
 )
@@ -428,7 +429,7 @@ class TestColonizeHiveOrchestrationUnit:
 
         mock_validate_unique.assert_called_once_with("backend")
         assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_name_error"
+        assert result["error_type"] == "duplicate_hive_name"
         assert "already exists" in result["message"]
 
     @patch("src.mcp_hive_ops.save_global_config")
@@ -805,3 +806,134 @@ class TestColonizeHiveRepoRootContext:
             "Hive was not registered under the ContextVar repo_root. "
             "colonize_hive_core likely called get_repo_root_from_path() instead of get_repo_root()."
         )
+
+
+# ============================================================================
+# SCOPE PARAMETER TESTS
+# ============================================================================
+
+
+class TestColonizeHiveScope:
+    """Integration tests for the scope parameter in colonize_hive_core."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with repo_root_context(tmp_path):
+            yield tmp_path
+
+    async def test_scope_creates_new_scope_entry(self, git_repo_tmp_path, mock_global_bees_dir):
+        """scope parameter registers hive under the given pattern as config key."""
+        hive_path = git_repo_tmp_path / "scoped_hive"
+        # Use parent/* so it matches git_repo_tmp_path (one level deep from parent)
+        scope = str(git_repo_tmp_path.parent) + "/*"
+
+        result = await colonize_hive("Scoped Hive", str(hive_path), scope=scope)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = json.loads((mock_global_bees_dir / "config.json").read_text())
+        assert scope in config["scopes"]
+        assert "scoped_hive" in config["scopes"][scope]["hives"]
+
+    async def test_scope_adds_hive_to_existing_scope(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Hive is added to existing scope entry while preserving existing hives."""
+        # Use parent/* — matches git_repo_tmp_path so load_bees_config() can find it
+        scope = str(git_repo_tmp_path.parent) + "/*"
+        existing_path = str(git_repo_tmp_path / "existing")
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                scope: {
+                    "hives": {
+                        "existing_hive": {
+                            "path": existing_path,
+                            "display_name": "Existing Hive",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        new_hive_path = git_repo_tmp_path / "new_hive"
+        result = await colonize_hive("New Hive", str(new_hive_path), scope=scope)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = json.loads((mock_global_bees_dir / "config.json").read_text())
+        hives = config["scopes"][scope]["hives"]
+        assert "existing_hive" in hives
+        assert "new_hive" in hives
+
+    @pytest.mark.parametrize(
+        "scope",
+        [
+            pytest.param("/foo/*/bar", id="mid_path_wildcard"),
+            pytest.param("/a/*/b/**", id="mid_wildcard_with_terminal"),
+            pytest.param("/x/*/y/z", id="mid_path_three_segments"),
+        ],
+    )
+    async def test_scope_invalid_pattern_wildcard_non_terminal(self, git_repo_tmp_path, scope):
+        """Mid-path wildcards return invalid_scope_pattern before any filesystem ops."""
+        hive_path = git_repo_tmp_path / "bad_hive"
+        result = await colonize_hive("Bad Hive", str(hive_path), scope=scope)
+        assert result["status"] == "error"
+        assert result["error_type"] == "invalid_scope_pattern"
+
+    async def test_scope_non_canonical_string_reuses_existing_scope(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Non-canonical scope string that canonicalizes to an existing key is treated as re-use, not conflict."""
+        # /foo/bar (no trailing slash) canonicalizes to /foo/bar/ — same as the existing key
+        # → should succeed and place the hive in the existing /foo/bar/ scope entry
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {"/foo/bar/": {"hives": {}}},
+        )
+
+        hive_path = git_repo_tmp_path / "reuse_hive"
+        result = await colonize_hive("Reuse Hive", str(hive_path), scope="/foo/bar")
+
+        assert result["status"] == "success"
+
+    async def test_scope_different_prefix_same_tier_no_conflict(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Different bare prefixes at same tier do NOT conflict (fixes false-positive bug)."""
+        # /foo/bar/* and /baz/qux/* have the same tier but different prefixes → no conflict
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {"/foo/bar/*": {"hives": {}}},
+        )
+
+        hive_path = git_repo_tmp_path / "no_conflict_hive"
+        result = await colonize_hive("No Conflict Hive", str(hive_path), scope="/baz/qux/*")
+
+        # Should succeed (different bare prefix → no scope conflict)
+        assert result["status"] == "success"
+
+    async def test_scope_same_hive_name_at_more_specific_scope_is_allowed(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Same hive name at a more specific (differently-specificity) overlapping scope is allowed.
+
+        A "My Hive" at /projects/** should not block a "My Hive" at /projects/sub/ —
+        the more specific scope shadows the broader one at read time, which is the
+        intended design per the PRD.
+        """
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/projects/**": {
+                    "hives": {
+                        "my_hive": {
+                            "path": str(git_repo_tmp_path / "existing"),
+                            "display_name": "My Hive",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "dup_hive"
+        result = await colonize_hive("My Hive", str(hive_path), scope="/projects/sub/")
+
+        assert result["status"] == "success"
+        assert result["normalized_name"] == "my_hive"
