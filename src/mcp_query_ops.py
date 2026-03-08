@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
+    check_for_config_conflicts,
     check_query_name_conflict,
     find_matching_scope,
     load_global_config,
@@ -44,6 +45,11 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
     Returns:
         dict: Success or error status with query information
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     # Validate name is not empty
     if not name or not name.strip():
         error_msg = "Query name cannot be empty"
@@ -128,6 +134,11 @@ def _delete_named_query(name: str, resolved_root: Path) -> dict[str, Any]:
     Returns:
         dict: Success or error status with query information
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     global_config = load_global_config()
 
     # Search global queries first
@@ -185,6 +196,11 @@ def _list_named_queries(resolved_root: Path | None = None) -> dict[str, Any]:
     Returns:
         dict: Success status with list of query entries
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     global_config = load_global_config()
     result_queries: list[dict[str, Any]] = []
 
@@ -234,6 +250,11 @@ async def _execute_named_query(
     Example:
         execute_named_query("open_tasks")
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     # Resolve query from config-backed storage
     global_config = load_global_config()
     resolution = resolve_named_query(query_name, resolved_root, global_config)
@@ -319,6 +340,11 @@ async def _execute_freeform_query(
         execute_freeform_query("- ['type=bee']\\n- ['children']")
         execute_freeform_query("- ['type=t1', 'status=open', 'hive=backend']")
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     # Parse and validate query structure
     try:
         parser = QueryParser()

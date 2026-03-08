@@ -237,8 +237,8 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 ### Hive Management
 - **colonize_hive**: Create and register new hive directory with validation
-- **list_hives**: List all registered hives with display names, normalized names, and paths
-- **abandon_hive**: Stop tracking a hive without deleting ticket files
+- **list_hives**: List all registered hives with display names, normalized names, paths, and owning scope patterns
+- **abandon_hive**: Stop tracking a hive across all matching scopes without deleting ticket files. Returns `scopes_modified` (count of scopes from which the hive was removed) and `scopes` (list of modified scope patterns). Not blocked in degraded state — serves as the primary conflict resolution mechanism. Error types: `hive_not_found`.
 - **rename_hive**: Rename hive by updating config and identity markers (ticket IDs remain unchanged)
 - **sanitize_hive**: Validate and auto-fix malformed tickets in a hive
 - **move_bee**: Move one or more bee tickets to a different hive within the same scope. Takes `bee_ids` (list of bee IDs), `destination_hive` (normalized hive name), and `force` (optional bool — when true, bypasses cross-hive status-value and tier-type compatibility checks). Before any moves are performed, bees scans the source tree against the destination hive's configuration; if any bee has incompatible status values or tier types, all moves are aborted with a `compatibility_error`. Pass `force=True` to skip that check. Returns counts of moved, skipped, not_found, and failed tickets. Error types: `hive_not_found`, `cemetery_destination`, `compatibility_error`.

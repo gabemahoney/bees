@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import cache
-from .config import get_scope_key_for_hive, load_bees_config, load_global_config
+from .config import check_for_config_conflicts, get_scope_key_for_hive, load_bees_config, load_global_config
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_ticket_id, is_valid_ticket_id, normalize_hive_name
 from .paths import find_ticket_file
@@ -341,6 +341,7 @@ async def _move_bee(
         }
 
     Error Conditions:
+        - config_conflict: hive name appears in multiple matching scopes
         - hive_not_found: destination_hive not registered in config
         - cemetery_destination: destination is the cemetery directory
         - compatibility_error: source tree has statuses or tier types incompatible with
@@ -351,4 +352,9 @@ async def _move_bee(
         - Cross-scope move: source and destination in different scopes → added to failed list
         - Filesystem error: shutil.move fails → added to failed list with exception message
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     return _move_bee_core(bee_ids, destination_hive, force=force)

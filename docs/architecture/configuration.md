@@ -319,7 +319,7 @@ The hive registry tracks all registered hives within a scope, mapping normalized
 
 **Operations**:
 - `colonize_hive(name, path, child_tiers=None)`: Register new hive, create identity marker, write to global config. Creates exact-path scope if no scope matches. Optional `child_tiers` parameter allows setting per-hive tier configuration at creation time (see Hive Colonization section below).
-- `abandon_hive(name)`: Remove from scope's hive registry, leave filesystem intact
+- `abandon_hive(name)`: Remove from all matching scopes' hive registries, leave filesystem intact. See Hive Scope Inheritance section for multi-scope behavior.
 - `rename_hive(old_name, new_name)`: Update scope registry and identity marker. Ticket IDs are globally unique and NOT rewritten during rename.
 
 **Functions**:
@@ -923,3 +923,60 @@ Config state is discarded on process exit. Nothing is written to `~/.bees/config
 `--test-config` applies to `bees serve` and all non-serve CLI subcommands. Ticket file reads and writes are unaffected — only the global config layer is redirected to memory.
 
 **Implementation**: See `_GLOBAL_CONFIG_OVERRIDE`, `_TEST_CONFIG_LOCK`, and `set_test_config_override()` in `src/config.py`.
+
+## Hive Scope Inheritance
+
+When multiple scope patterns in the global config match a repository root, bees collects hives from all of them. This produces a merged union of hives visible to the repo — the hive scope inheritance model.
+
+### Multi-Scope Hive Collection
+
+The function `find_all_matching_scopes()` returns every scope pattern that matches the current repo root, ordered from least-specific to most-specific. Bees iterates these scopes and merges their hive registries into a single view. When the same normalized hive name appears in multiple matching scopes, the most-specific scope wins (last-write-wins during iteration). The `list_hives` tool returns a `scope` field on each hive entry indicating which scope pattern owns the definition.
+
+### Hive Name Conflict Rule
+
+A conflict exists when two overlapping scopes that both match the current repo root define a hive with the same normalized name. Because both scopes contribute hives to the merged view, the system cannot safely determine which definition to use. The function `detect_hive_conflicts()` in `src/config.py` scans all matching scopes and returns a `ConflictRecord` for every conflicting (hive name, scope A, scope B) pair. Conflicts in scopes that do not match the current repo root are invisible and have no effect.
+
+### Degraded State
+
+When one or more hive name conflicts exist, the system enters degraded state. In degraded state, all hive-dependent operations are blocked and return an error with `error_type: config_conflict`. The error message enumerates each conflict, listing the hive name and the two scope patterns involved.
+
+**Blocked operations** (return `config_conflict` error in degraded state):
+
+- Ticket operations: `create_ticket`, `show_ticket`
+- Hive management: `list_hives`, `rename_hive`, `sanitize_hive`
+- Movement and indexing: `move_bee`, `generate_index`
+- Query operations: `add_named_query`, `delete_named_query`, `list_named_queries`, `execute_named_query`, `execute_freeform_query`
+
+**Not blocked** (continue to work in degraded state):
+
+- `abandon_hive` and `colonize_hive` — these are the primary tools for resolving conflicts
+- `update_ticket`, `delete_ticket`, `clone_bee` — ticket mutations that do not require hive registry resolution
+- `set_types`, `set_status_values`, `get_types`, `get_status_values` — config-only operations that do not depend on the hive registry
+- `health_check`
+
+The conflict guard is implemented by `check_for_config_conflicts()` in `src/config.py`, which each blocked operation calls before executing any business logic.
+
+### Resolving Conflicts
+
+The primary resolution mechanism is `abandon_hive`. Because it is not blocked in degraded state, an operator can call it on the conflicting hive name to remove the duplicate definition. When `abandon_hive` removes a hive that exists in multiple matching scopes, it removes the hive from all of them in a single config save, resolving the conflict atomically.
+
+Alternatively, `colonize_hive` can be used to re-register a hive under a different scope or with a different name, depending on the operator's intent.
+
+After the conflict is resolved, subsequent operations resume normal behavior.
+
+### The scope Field in list_hives Output
+
+Each hive entry returned by `list_hives` includes a `scope` field — the scope pattern string that owns the hive definition. This makes it possible to identify which scope contributed each hive when multiple scopes match the repo root. The field is always present on every hive entry.
+
+### abandon_hive Multi-Scope Behavior
+
+The `abandon_hive` tool removes a hive from the config registry across all matching scopes in a single operation. Its success response includes two fields that reflect this multi-scope behavior:
+
+- `scopes_modified` (int): The count of scope patterns from which the hive was removed. A value of 1 means the hive existed in a single scope; a value of 2 or more indicates the hive was defined in multiple overlapping scopes (the conflict scenario).
+- `scopes` (list of strings): The scope pattern strings that were modified. Each entry is a canonical scope pattern from which the hive entry was removed.
+
+The tool uses `get_scope_key_for_hive()` to find all matching scopes that define the target hive, removes the hive from every such scope, and applies all removals in a single `save_global_config()` call.
+
+**Error types**: `hive_not_found` — returned when the normalized hive name does not exist in any scope matching the current repo root.
+
+**Implementation**: See `_abandon_hive()` in `src/mcp_hive_ops.py`.
