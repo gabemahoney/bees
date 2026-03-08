@@ -13,9 +13,10 @@ from typing import Any
 
 from . import cache
 from .config import (
+    BeesConfig,
     check_for_config_conflicts,
+    find_all_matching_scopes,
     get_scope_key_for_hive,
-    load_bees_config,
     load_global_config,
     resolve_owning_scope,
 )
@@ -97,8 +98,18 @@ def _move_bee_core(
 
     # ── Load config and validate destination hive ─────────────────────────
     destination_hive = normalize_hive_name(destination_hive)
-    config = load_bees_config()
-    if not config or destination_hive not in config.hives:
+    global_config = load_global_config()
+    repo_root = get_repo_root()
+
+    # Build merged BeesConfig from all matching scopes so source bees in
+    # less-specific scopes are discoverable alongside the destination hive.
+    matching_scopes = find_all_matching_scopes(repo_root, global_config)
+    merged_hives: dict = {}
+    for _, scope_cfg in matching_scopes:
+        merged_hives.update(scope_cfg.hives)
+    config = BeesConfig(hives=merged_hives)
+
+    if destination_hive not in config.hives:
         return {
             "status": "error",
             "message": f"Destination hive '{destination_hive}' not found.",
@@ -115,11 +126,7 @@ def _move_bee_core(
             "error_type": "cemetery_destination",
         }
 
-    # ── Load global config once for scope lookups ─────────────────────────
-    global_config = load_global_config()
-
     # ── Resolve destination hive scope (fatal if 0 or >1 matches) ────────
-    repo_root = get_repo_root()
     dest_scope, err = resolve_owning_scope(destination_hive, global_config, repo_root)
     if err:
         return err
