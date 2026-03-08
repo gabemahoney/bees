@@ -721,8 +721,33 @@ async def _rename_hive(
             "error_type": "validation_error",
         }
 
-    # Step 2: Load config and validate
-    config = load_bees_config()
+    # Step 2: Multi-scope lookup guard
+    repo_root = resolved_root if resolved_root is not None else get_repo_root()
+    global_config = load_global_config()
+    try:
+        scopes = get_scope_key_for_hive(normalized_old, global_config, repo_root)
+    except ValueError:
+        return {
+            "status": "error",
+            "message": f"Hive '{old_name}' (normalized: '{normalized_old}') does not exist in config",
+            "error_type": "hive_not_found",
+        }
+
+    if len(scopes) > 1:
+        return {
+            "status": "error",
+            "error_type": "config_conflict",
+            "message": (
+                f"Hive '{normalized_old}' is defined in multiple overlapping scopes: "
+                f"'{scopes[0]}' and '{scopes[1]}'. "
+                f"Call abandon_hive('{old_name}') to resolve the conflict before renaming."
+            ),
+        }
+
+    scope_pattern = scopes[0]
+
+    # Load hive config from the owning scope
+    config = parse_scope_to_bees_config(global_config["scopes"][scope_pattern])
     if not config or normalized_old not in config.hives:
         return {
             "status": "error",
@@ -770,17 +795,6 @@ async def _rename_hive(
         # Update the in-memory path to point to the new location
         config.hives[normalized_old].path = str(new_hive_path)
         hive_path = new_hive_path
-
-    # Resolve scope pattern for save_bees_config
-    repo_root = get_repo_root()
-    global_config = load_global_config()
-    scope_pattern = find_matching_scope(repo_root, global_config)
-    if scope_pattern is None:
-        return {
-            "status": "error",
-            "message": f"No scope matches the current repo root '{repo_root}'.",
-            "error_type": "scope_not_found",
-        }
 
     # Step 4: Update config - move hive entry from old key to new key
     hive_config = config.hives[normalized_old]
@@ -905,7 +919,32 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
     # Normalize hive name
     normalized = normalize_hive_name(hive_name)
 
-    config = load_bees_config()
+    # Multi-scope lookup guard
+    repo_root = resolved_root if resolved_root is not None else get_repo_root()
+    global_config = load_global_config()
+    try:
+        scopes = get_scope_key_for_hive(normalized, global_config, repo_root)
+    except ValueError:
+        return {
+            "status": "error",
+            "message": f"Hive '{hive_name}' (normalized: '{normalized}') is not registered. "
+            f"Use colonize_hive() to register a new hive.",
+            "error_type": "hive_not_found",
+        }
+
+    if len(scopes) > 1:
+        return {
+            "status": "error",
+            "error_type": "config_conflict",
+            "message": (
+                f"Hive '{normalized}' is defined in multiple overlapping scopes: "
+                f"'{scopes[0]}' and '{scopes[1]}'. "
+                f"Call abandon_hive('{hive_name}') to resolve the conflict before sanitizing."
+            ),
+        }
+
+    scope_pattern = scopes[0]
+    config = parse_scope_to_bees_config(global_config["scopes"][scope_pattern])
 
     # Check if hive is registered
     if not config or normalized not in config.hives:
@@ -949,7 +988,6 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
 
     # Run linter with hive-aware validations and auto-fix enabled
     logger.info(f"Running linter on hive '{normalized}' with auto-fix enabled")
-    global_config = load_global_config()
     auto_fix_dangling_refs = global_config.get("auto_fix_dangling_refs", False)
 
     try:

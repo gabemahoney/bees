@@ -320,7 +320,10 @@ The hive registry tracks all registered hives within a scope, mapping normalized
 **Operations**:
 - `colonize_hive(name, path, child_tiers=None)`: Register new hive, create identity marker, write to global config. Creates exact-path scope if no scope matches. Optional `child_tiers` parameter allows setting per-hive tier configuration at creation time (see Hive Colonization section below).
 - `abandon_hive(name)`: Remove from all matching scopes' hive registries, leave filesystem intact. See Hive Scope Inheritance section for multi-scope behavior.
-- `rename_hive(old_name, new_name)`: Update scope registry and identity marker. Ticket IDs are globally unique and NOT rewritten during rename.
+- `rename_hive(old_name, new_name)`: Update scope registry and identity marker. Ticket IDs are globally unique and NOT rewritten during rename. When the hive exists in exactly one matching scope (the "owning scope"), the operation targets that scope automatically. Error types: `config_conflict` (hive exists in multiple overlapping scopes — use `abandon_hive` to resolve), `hive_not_found` (hive is not visible to the current repo).
+- `sanitize_hive(name)`: Validate and auto-fix malformed tickets in a hive. When the hive exists in exactly one matching scope (the owning scope), the operation targets that scope automatically. Error types: `config_conflict` (hive exists in multiple overlapping scopes — use `abandon_hive` to resolve), `hive_not_found` (hive is not visible to the current repo).
+
+The **owning scope** is the single scope that defines a hive when no conflict exists. In a multi-scope environment, if only one matching scope contains the hive, that scope is the owning scope and operations proceed without ambiguity.
 
 **Functions**:
 - `get_scope_key_for_hive(normalized_hive_name: str, global_config: dict, repo_root: Path) -> list[str]`: Returns all matching scope keys that contain the given hive, filtered to scopes that match repo_root.

@@ -503,7 +503,8 @@ def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None
         "status": "error",
         "error_type": "config_conflict",
         "message": "Config conflict detected — the same hive name appears in multiple scopes:\n"
-        + "\n".join(lines),
+        + "\n".join(lines)
+        + "\nCall abandon_hive to resolve the conflict.",
     }
 
 
