@@ -216,14 +216,14 @@ Separate test functions for each input variation:
 ```python
 # Old: 8 separate test functions
 def test_create_bee_with_title(): ...
-def test_create_bee_with_description(): ...
+def test_create_bee_with_body(): ...
 def test_create_bee_with_tags(): ...
 # ... 5 more identical functions
 
 # New: 1 parametrized test
 @pytest.mark.parametrize("field,value", [
     ("title", "Test Bee"),
-    ("description", "Test description"),
+    ("body", "Test body"),
     ("tags", ["test", "beta"]),
     # ... 5 more cases
 ])
