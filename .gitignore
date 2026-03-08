@@ -43,7 +43,5 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
-auto_approve.sh
-.claude/skills/
-docker/
+.claude/
 CONTRIBUTING.md
