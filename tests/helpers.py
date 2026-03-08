@@ -11,7 +11,8 @@ Usage:
 
 from pathlib import Path
 
-from src.config import ChildTierConfig, load_bees_config, save_bees_config
+from src.config import ChildTierConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
+from src.repo_context import get_repo_root
 from src.id_utils import generate_guid
 from tests.test_constants import (
     TICKET_ID_TEST_BEE,
@@ -77,7 +78,10 @@ def setup_hive_child_tiers(hive_name: str, tier_config: dict[str, tuple[str, str
 
     # Set child_tiers on the HiveConfig object directly
     config.hives[hive_name].child_tiers = hive_tiers
-    save_bees_config(config)
+    repo_root = get_repo_root()
+    global_config = load_global_config()
+    scope_pattern = find_matching_scope(repo_root, global_config)
+    save_bees_config(config, scope_pattern)
 
 
 def setup_child_tiers(tier_config: dict[str, tuple[str, str]]) -> None:
@@ -113,7 +117,10 @@ def setup_child_tiers(tier_config: dict[str, tuple[str, str]]) -> None:
     config.child_tiers = {
         tier_id: ChildTierConfig(singular, plural) for tier_id, (singular, plural) in tier_config.items()
     }
-    save_bees_config(config)
+    repo_root = get_repo_root()
+    global_config = load_global_config()
+    scope_pattern = find_matching_scope(repo_root, global_config)
+    save_bees_config(config, scope_pattern)
 
 
 

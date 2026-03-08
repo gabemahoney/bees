@@ -114,6 +114,7 @@ Overlap is allowed and resolved at runtime by specificity ordering — the more 
 
 - `match_scope_pattern(repo_root: Path, pattern: str) -> bool`: Check whether repo_root matches a scope pattern; results are cached per pattern
 - `find_matching_scope(repo_root: Path, global_config: dict) -> str | None`: Return the most-specific scope pattern that matches repo_root; on specificity tie, first in insertion order wins
+- `find_all_matching_scopes(repo_root: Path, global_config: dict) -> list[tuple[str, BeesConfig]]`: Return all scope patterns that match repo_root, ordered from least-specific to most-specific
 - `get_scoped_config(repo_root) -> BeesConfig | None`: Load global config, match scope by specificity, return BeesConfig
 - `canonicalize_scope_pattern(pattern: str) -> str`: Convert a raw scope pattern to its canonical form
 - `validate_scope_pattern(pattern: str) -> None`: Raise ValueError if the pattern contains wildcards in invalid positions (only terminal `/*` or `/**` are allowed)
@@ -322,7 +323,7 @@ The hive registry tracks all registered hives within a scope, mapping normalized
 - `rename_hive(old_name, new_name)`: Update scope registry and identity marker. Ticket IDs are globally unique and NOT rewritten during rename.
 
 **Functions**:
-- `get_scope_key_for_hive(normalized_hive_name, global_config) -> str`: Returns the scope key a hive is registered under. Raises ValueError if not found.
+- `get_scope_key_for_hive(normalized_hive_name: str, global_config: dict, repo_root: Path) -> list[str]`: Returns all matching scope keys that contain the given hive, filtered to scopes that match repo_root.
 
 ## Name Normalization
 
@@ -341,7 +342,8 @@ Hive names are normalized to ensure consistent identification across the system 
 - "2024-project" → "_2024_project"
 
 **Collision Prevention**:
-- `validate_unique_hive_name()` checks for duplicate normalized names before registration
+- `validate_unique_hive_name()` checks for duplicate normalized names within the same scope pattern before registration
+- Cross-scope conflict detection for overlapping scopes is planned for future implementation
 - Display names are preserved in `HiveConfig.display_name` for UI/reports
 
 ## Config API
@@ -354,7 +356,7 @@ The config module provides a type-safe dataclass API for all config operations.
 
 **Scoped Config (high-level)**:
 - `load_bees_config() -> BeesConfig | None`: Load config for current repo_root from context
-- `save_bees_config(config: BeesConfig)`: Save config to matching scope. Raises ValueError if no scope matches.
+- `save_bees_config(config: BeesConfig, scope_pattern: str)`: Save config to the specified scope pattern (required parameter, no longer infers scope internally).
 - `parse_scope_to_bees_config(scope_data: dict) -> BeesConfig`: Parse a scope dict into BeesConfig
 - `serialize_bees_config_to_scope(config: BeesConfig) -> dict`: Serialize BeesConfig to scope dict
 

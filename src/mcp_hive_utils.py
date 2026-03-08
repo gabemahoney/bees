@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 
-from .config import BeesConfig, load_bees_config, load_global_config, save_bees_config
+from .config import BeesConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
 from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path
 
@@ -156,10 +156,13 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
 
             # Update config.json with the recovered path
             try:
+                repo_root = get_repo_root()
+                global_cfg = load_global_config()
+                scope_pattern = find_matching_scope(repo_root, global_cfg)
                 config = load_bees_config()
-                if config and name in config.hives:
+                if config and name in config.hives and scope_pattern is not None:
                     config.hives[name].path = str(found_hive_path)
-                    save_bees_config(config)
+                    save_bees_config(config, scope_pattern)
                     logger.info(f"Updated config.json with new path for hive '{name}': {found_hive_path}")
                 else:
                     logger.warning(f"Hive '{name}' not found in config, cannot update path")

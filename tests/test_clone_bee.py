@@ -1,6 +1,6 @@
 """Tests for _clone_bee_core() in src/mcp_clone_bee.py."""
 
-import json
+from pathlib import Path
 
 from src.mcp_clone_bee import _clone_bee_core
 from src.reader import read_ticket
@@ -8,6 +8,8 @@ from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_CLONE_DEST,
     HIVE_TEST,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_CLONE_BEE_ROOT,
     TICKET_ID_CLONE_T1_1,
     TICKET_ID_CLONE_T1_2,
@@ -390,42 +392,42 @@ def test_clone_force_bypass(isolated_bees_env):
 
 
 def test_clone_cross_scope_error(isolated_bees_env):
-    """Cloning to hive in different scope returns cross_scope_error."""
+    """Dest hive only in a less-specific scope → hive_not_found (load_bees_config uses most-specific)."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
 
-    # Write global config with two scope keys:
-    # - "/nonexistent/scope_b" (listed first): contains HIVE_CLONE_DEST only
-    # - str(env.base_path): contains BOTH hives (used by load_bees_config)
-    # get_scope_key_for_hive(HIVE_CLONE_DEST) finds it in "/nonexistent/scope_b" first
-    # get_scope_key_for_hive(HIVE_TEST) not in scope_b, found in str(env.base_path)
-    # source_scope != dest_scope -> cross_scope_error
-    global_config = {
-        "schema_version": "2.0",
-        "scopes": {
-            "/nonexistent/scope_b": {
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    # Most-specific scope (exact) has source hive only.
+    # Less-specific scope (wildcard) has dest hive only.
+    # load_bees_config uses most-specific → dest hive not visible → hive_not_found.
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
                 "hives": {
-                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
-                }
-            },
-            str(env.base_path): {
-                "hives": {
-                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test Hive"},
                     HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
                 },
                 "child_tiers": {},
             },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test Hive"},
+                },
+                "child_tiers": {},
+            },
         },
-    }
-    (env.global_bees_dir / "config.json").write_text(json.dumps(global_config, indent=2))
+    )
 
     write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Cross Scope Bee")
 
-    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
 
     assert result["status"] == "error"
-    assert result["error_type"] == "cross_scope_error"
+    assert result["error_type"] == "hive_not_found"
 
 
 def test_clone_hive_not_found(isolated_bees_env):
@@ -456,3 +458,89 @@ def test_clone_no_destination_same_hive(isolated_bees_env):
     assert result["written"] == 1
     assert (hive_dir / result["ticket_id"]).exists()
     assert (hive_dir / TICKET_ID_CLONE_BEE_ROOT).exists()
+
+
+# ============================================================================
+# Multi-Scope Tests
+# ============================================================================
+
+
+def test_clone_source_hive_zero_scopes(isolated_bees_env):
+    """Source hive not in any matching scope → bee_not_found (config has no matching scope)."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    env.create_hive(HIVE_CLONE_DEST)
+
+    from tests.conftest import write_multi_scope_config
+
+    # Register hives under a non-matching scope only
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            "/nonexistent/scope": {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_CLONE_DEST: {"path": str(env.base_path / HIVE_CLONE_DEST), "display_name": "Clone Dest"},
+                }
+            }
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Zero Scope Clone")
+
+    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    assert result["status"] == "error"
+    # Config has no matching scope → bee can't be found → bee_not_found
+    assert result["error_type"] == "bee_not_found"
+
+
+def test_clone_source_hive_multiple_scopes(isolated_bees_env):
+    """Source hive found in >1 matching scopes → config_conflict error."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                }
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                }
+            },
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Multi Scope Clone")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "config_conflict"
+
+
+def test_clone_source_hive_exactly_one_scope(isolated_bees_env):
+    """Source hive found in exactly 1 matching scope → clone proceeds normally."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+    env.write_config()
+
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Single Scope Clone")
+
+    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    assert result["status"] == "success"
+    assert result["written"] == 1
