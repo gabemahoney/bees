@@ -31,9 +31,7 @@ from src.config import (
     set_test_config_override,
     validate_child_tiers,
     validate_scope_pattern,
-    validate_unique_hive_name,
 )
-from src.id_utils import normalize_hive_name
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config, write_scoped_config
 from tests.test_constants import (
@@ -916,47 +914,6 @@ class TestSaveBeesConfig:
                 save_bees_config(BeesConfig(hives={}), str(tmp_path))
 
         assert (mock_global_bees_dir / "config.json").read_text() == original_content
-
-
-class TestValidateUniqueHiveName:
-    """Test validate_unique_hive_name for duplicate detection."""
-
-    @pytest.mark.parametrize(
-        "existing_hives,check_name",
-        [
-            pytest.param(None, "backend", id="no_config"),
-            pytest.param({}, "backend", id="empty_hives"),
-            pytest.param(
-                {"frontend": HiveConfig(path="tickets/frontend/", display_name="Frontend", created_at=TS)},
-                "backend",
-                id="new_unique_name",
-            ),
-        ],
-    )
-    def test_validate_unique_name_passes(self, existing_hives, check_name, tmp_path, monkeypatch, mock_global_bees_dir):
-        monkeypatch.chdir(tmp_path)
-        if existing_hives is not None:
-            scope_data = {"hives": {}, "child_tiers": {}}
-            write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-            save_bees_config(BeesConfig(hives=existing_hives), str(tmp_path))
-        validate_unique_hive_name(check_name)
-
-    @pytest.mark.parametrize(
-        "registered_name,display_name,check_name,error_match",
-        [
-            pytest.param("back_end", "Back End", "back_end", "normalized name 'back_end' already exists", id="duplicate_normalized"),
-            pytest.param("backend", "BACKEND", normalize_hive_name("BACKEND"), "normalized name 'backend' already exists", id="case_insensitive"),
-            pytest.param("back_end_services", "Back End Services", "back_end_services", "Display name: 'Back End Services'", id="display_name_in_error"),
-        ],
-    )
-    def test_validate_unique_name_collision(self, registered_name, display_name, check_name, error_match, tmp_path, monkeypatch, mock_global_bees_dir):
-        monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path=f"tickets/{registered_name}/", display_name=display_name, created_at=TS)
-        scope_data = {"hives": {}, "child_tiers": {}}
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-        save_bees_config(BeesConfig(hives={registered_name: hive}), str(tmp_path))
-        with pytest.raises(ValueError, match=error_match):
-            validate_unique_hive_name(check_name)
 
 
 # ============================================================================

@@ -236,7 +236,7 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **list_named_queries**: List registered named queries, optionally showing all scopes
 
 ### Hive Management
-- **colonize_hive**: Create and register new hive directory with validation
+- **colonize_hive**: Create and register new hive directory with validation. Returns `cross_scope_hive_conflict` when the normalized hive name already exists in an overlapping scope, or `duplicate_hive_name` for the exact same scope.
 - **list_hives**: List all registered hives with display names, normalized names, paths, and owning scope patterns
 - **abandon_hive**: Stop tracking a hive across all matching scopes without deleting ticket files. Returns `scopes_modified` (count of scopes from which the hive was removed) and `scopes` (list of modified scope patterns). Not blocked in degraded state — serves as the primary conflict resolution mechanism. Error types: `hive_not_found`.
 - **rename_hive**: Rename hive by updating config and identity markers (ticket IDs remain unchanged)

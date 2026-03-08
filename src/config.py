@@ -1109,33 +1109,6 @@ def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
             seen_names.add(tier_config.plural)
 
 
-def validate_unique_hive_name(normalized_name: str, config: BeesConfig | None = None) -> None:
-    """Validate that a normalized hive name is unique.
-
-    Args:
-        normalized_name: The normalized name to check (e.g., 'back_end')
-        config: BeesConfig object to check against (loads from disk if None)
-
-    Raises:
-        ValueError: If the normalized name already exists in the hive registry
-        RuntimeError: If repo_root not set in context
-    """
-    get_repo_root()
-    if config is None:
-        config = load_bees_config()
-
-    # If no config exists yet, name is unique by default
-    if config is None:
-        return
-
-    # Check if normalized name already exists as a hive key
-    if normalized_name in config.hives:
-        raise ValueError(
-            f"A hive with normalized name '{normalized_name}' already exists. "
-            f"Display name: '{config.hives[normalized_name].display_name}'"
-        )
-
-
 def resolve_egg_resolver(normalized_hive: str, config: BeesConfig | None = None) -> str | None:
     """Resolve egg_resolver for a given hive using 3-level fallback.
 
