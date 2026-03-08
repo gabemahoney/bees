@@ -24,6 +24,7 @@ from .config import (
     HiveConfig,
     canonicalize_scope_pattern,
     check_scope_conflict,
+    find_all_matching_scopes,
     find_matching_scope,
     load_bees_config,
     load_global_config,
@@ -469,11 +470,15 @@ async def _colonize_hive(
 
 async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
     """
-    List all registered hives in the repository.
+    List all registered hives visible from the repository.
 
-    Reads ~/.bees/config.json from the client's repository to retrieve all
-    registered hives and returns structured information about each hive
-    including display name, normalized name, and path.
+    Collects hives from all matching scopes (via find_all_matching_scopes),
+    producing a merged union sorted alphabetically by normalized_name.
+    When the same hive name appears in multiple scopes, the most-specific
+    scope wins (last-write-wins during iteration order).
+
+    Each hive entry includes a 'scope' field indicating which scope pattern
+    owns the hive definition.
 
     Args:
         resolved_root: Pre-resolved repo root path (injected by adapter)
@@ -486,7 +491,8 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
                     {
                         'display_name': str,      # User-facing hive name
                         'normalized_name': str,   # Internal identifier
-                        'path': str              # Absolute path to hive directory
+                        'path': str,              # Absolute path to hive directory
+                        'scope': str              # Owning scope pattern
                     },
                     ...
                 ]
@@ -498,42 +504,53 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
             }
 
     Example:
-        >>> await _list_hives()
+        >>> await _list_hives(resolved_root=Path('/projects/myrepo'))
         {
             'status': 'success',
             'hives': [
                 {
                     'display_name': 'Back End',
                     'normalized_name': 'back_end',
-                    'path': '/Users/user/projects/myrepo/tickets/backend'
+                    'path': '/Users/user/projects/myrepo/tickets/backend',
+                    'scope': '/projects/myrepo'
                 },
                 {
                     'display_name': 'Frontend',
                     'normalized_name': 'frontend',
-                    'path': '/Users/user/projects/myrepo/tickets/frontend'
+                    'path': '/Users/user/projects/myrepo/tickets/frontend',
+                    'scope': '/projects/**'
                 }
             ]
         }
     """
     try:
-        # Load config from client's ~/.bees/config.json
-        config = load_bees_config()
+        if resolved_root is None:
+            resolved_root = get_repo_root()
 
-        # Handle case where config doesn't exist or has no hives
-        if not config or not config.hives:
+        # Collect hives from all matching scopes (least→most specific)
+        scope_configs = find_all_matching_scopes(resolved_root, load_global_config())
+
+        if not scope_configs:
             logger.info("No hives configured")
             return {"status": "success", "hives": [], "message": "No hives configured"}
 
-        # Build list of hives with their details
-        hives_list = []
-        for normalized_name, hive_config in config.hives.items():
-            hives_list.append(
-                {
+        # Build dict keyed by normalized_name; more-specific scopes override
+        hives_by_name: dict[str, dict[str, str]] = {}
+        for pattern, config in scope_configs:
+            for normalized_name, hive_config in config.hives.items():
+                hives_by_name[normalized_name] = {
                     "display_name": hive_config.display_name,
                     "normalized_name": normalized_name,
                     "path": hive_config.path,
+                    "scope": pattern,
                 }
-            )
+
+        if not hives_by_name:
+            logger.info("No hives configured")
+            return {"status": "success", "hives": [], "message": "No hives configured"}
+
+        # Sort alphabetically by normalized_name
+        hives_list = sorted(hives_by_name.values(), key=lambda h: h["normalized_name"])
 
         logger.info(f"Listed {len(hives_list)} hives")
         return {"status": "success", "hives": hives_list}
