@@ -16,7 +16,6 @@ from .config import (
     load_bees_config,
     load_global_config,
 )
-from .repo_context import get_repo_root
 from .constants import SCHEMA_VERSION
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import (
@@ -29,6 +28,7 @@ from .id_utils import (
 )
 from .paths import find_ticket_file
 from .reader import read_ticket
+from .repo_context import get_repo_root
 from .writer import write_ticket_file
 
 logger = logging.getLogger(__name__)
