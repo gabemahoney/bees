@@ -31,6 +31,7 @@ from .config import (
     load_bees_config,
     load_global_config,
     parse_scope_to_bees_config,
+    resolve_owning_scope,
     save_bees_config,
     save_global_config,
     scopes_overlap,
@@ -724,27 +725,9 @@ async def _rename_hive(
     # Step 2: Multi-scope lookup guard
     repo_root = resolved_root if resolved_root is not None else get_repo_root()
     global_config = load_global_config()
-    try:
-        scopes = get_scope_key_for_hive(normalized_old, global_config, repo_root)
-    except ValueError:
-        return {
-            "status": "error",
-            "message": f"Hive '{old_name}' (normalized: '{normalized_old}') does not exist in config",
-            "error_type": "hive_not_found",
-        }
-
-    if len(scopes) > 1:
-        return {
-            "status": "error",
-            "error_type": "config_conflict",
-            "message": (
-                f"Hive '{normalized_old}' is defined in multiple overlapping scopes: "
-                f"'{scopes[0]}' and '{scopes[1]}'. "
-                f"Call abandon_hive('{old_name}') to resolve the conflict before renaming."
-            ),
-        }
-
-    scope_pattern = scopes[0]
+    scope_pattern, err = resolve_owning_scope(normalized_old, global_config, repo_root)
+    if err:
+        return err
 
     # Load hive config from the owning scope
     config = parse_scope_to_bees_config(global_config["scopes"][scope_pattern])
@@ -922,28 +905,9 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
     # Multi-scope lookup guard
     repo_root = resolved_root if resolved_root is not None else get_repo_root()
     global_config = load_global_config()
-    try:
-        scopes = get_scope_key_for_hive(normalized, global_config, repo_root)
-    except ValueError:
-        return {
-            "status": "error",
-            "message": f"Hive '{hive_name}' (normalized: '{normalized}') is not registered. "
-            f"Use colonize_hive() to register a new hive.",
-            "error_type": "hive_not_found",
-        }
-
-    if len(scopes) > 1:
-        return {
-            "status": "error",
-            "error_type": "config_conflict",
-            "message": (
-                f"Hive '{normalized}' is defined in multiple overlapping scopes: "
-                f"'{scopes[0]}' and '{scopes[1]}'. "
-                f"Call abandon_hive('{hive_name}') to resolve the conflict before sanitizing."
-            ),
-        }
-
-    scope_pattern = scopes[0]
+    scope_pattern, err = resolve_owning_scope(normalized, global_config, repo_root)
+    if err:
+        return err
     config = parse_scope_to_bees_config(global_config["scopes"][scope_pattern])
 
     # Check if hive is registered
