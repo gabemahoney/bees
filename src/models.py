@@ -45,7 +45,7 @@ class Ticket:
     id: str
     type: TicketType
     title: str
-    description: str = ""
+    body: str = ""
     tags: list[str] = field(default_factory=list)
     up_dependencies: list[str] = field(default_factory=list)
     down_dependencies: list[str] = field(default_factory=list)

@@ -34,7 +34,7 @@ class TestCreateBee:
         """Bee without parent succeeds with correct fields and file."""
         result = await _create_ticket(
             ticket_type="bee", title=TITLE_TEST_BEE,
-            description="Test bee description", tags=["test", "bee"], hive_name=HIVE_BACKEND,
+            body="Test bee description", tags=["test", "bee"], hive_name=HIVE_BACKEND,
         )
         assert result["status"] == "success"
         assert "ticket_id" in result
@@ -51,7 +51,7 @@ class TestCreateBee:
 
         ticket = read_ticket(ticket_id, file_path=ticket_path)
         assert ticket.title == TITLE_TEST_BEE
-        assert ticket.description == "Test bee description"
+        assert ticket.body == "Test bee description"
         assert "test" in ticket.tags
 
     async def test_create_bee_with_parent_fails(self, hive_tier_config):
@@ -149,7 +149,7 @@ class TestCreateChildTicket:
             )
         parent_id = parent_result["ticket_id"]
 
-        child_kwargs = dict(ticket_type=child_type, title=child_title, parent=parent_id, description=child_desc, hive_name=HIVE_BACKEND)
+        child_kwargs = dict(ticket_type=child_type, title=child_title, parent=parent_id, body=child_desc, hive_name=HIVE_BACKEND)
         if child_tags:
             child_kwargs["tags"] = child_tags
         result = await _create_ticket(**child_kwargs)
@@ -484,7 +484,7 @@ class TestDynamicTierTypes:
 
         t1_result = await _create_ticket(
             ticket_type="t1", title="T1 Task", parent=bee_id,
-            description="First tier ticket", tags=["tier1"], hive_name=HIVE_BACKEND,
+            body="First tier ticket", tags=["tier1"], hive_name=HIVE_BACKEND,
         )
         assert t1_result["status"] == "success"
         t1_id = t1_result["ticket_id"]
@@ -582,30 +582,30 @@ class TestEdgeCases:
     async def test_create_ticket_with_all_optional_fields(self, hive_tier_config):
         """All optional fields populated correctly."""
         result = await _create_ticket(
-            ticket_type="bee", title="Full Epic", description="Full description",
+            ticket_type="bee", title="Full Epic", body="Full description",
             tags=["label1", "label2"], status="in_progress", hive_name=HIVE_BACKEND,
         )
         assert result["status"] == "success"
 
         ticket = read_ticket(result["ticket_id"], file_path=get_ticket_path(result["ticket_id"], "bee", HIVE_BACKEND))
         assert ticket.title == "Full Epic"
-        assert ticket.description == "Full description"
+        assert ticket.body == "Full description"
         assert len(ticket.tags) == 2
         assert ticket.status == "in_progress"
 
     @pytest.mark.parametrize(
-        "title,description,verify_fn",
+        "title,body,verify_fn",
         [
             pytest.param("Minimal Epic", None, lambda t: t.title == "Minimal Epic", id="minimal_fields"),
             pytest.param("Unicode Test: \u4f60\u597d \U0001f680", None, lambda t: t.title == "Unicode Test: \u4f60\u597d \U0001f680", id="unicode_title"),
-            pytest.param("Long Description Test", "x" * 10000, lambda t: len(t.description) == 10000, id="long_description"),
+            pytest.param("Long Description Test", "x" * 10000, lambda t: len(t.body) == 10000, id="long_description"),
         ],
     )
-    async def test_create_bee_with_special_content(self, title, description, verify_fn, hive_tier_config):
+    async def test_create_bee_with_special_content(self, title, body, verify_fn, hive_tier_config):
         """Bee tickets with special content variations."""
         kwargs = dict(ticket_type="bee", title=title, hive_name=HIVE_BACKEND)
-        if description is not None:
-            kwargs["description"] = description
+        if body is not None:
+            kwargs["body"] = body
         result = await _create_ticket(**kwargs)
         assert result["status"] == "success"
         ticket = read_ticket(result["ticket_id"], file_path=get_ticket_path(result["ticket_id"], "bee", HIVE_BACKEND))
@@ -803,9 +803,9 @@ class TestCreateTicketWithHive:
             # t1 requires bee parent
             parent_result = await _create_ticket(ticket_type="bee", title="Parent Bee", hive_name=HIVE_BACKEND)
             parent_id = parent_result["ticket_id"]
-            result = await _create_ticket(ticket_type=ticket_type, title=title, description="Backend work", hive_name=HIVE_BACKEND, parent=parent_id)
+            result = await _create_ticket(ticket_type=ticket_type, title=title, body="Backend work", hive_name=HIVE_BACKEND, parent=parent_id)
         else:
-            result = await _create_ticket(ticket_type=ticket_type, title=title, description="Backend work", hive_name=HIVE_BACKEND)
+            result = await _create_ticket(ticket_type=ticket_type, title=title, body="Backend work", hive_name=HIVE_BACKEND)
 
         assert result["status"] == "success"
         ticket_id = result["ticket_id"]
@@ -833,7 +833,7 @@ class TestCreateTicketWithHive:
         parent_id = (await _create_ticket(ticket_type="t1", title="Parent Task", hive_name=HIVE_BACKEND, parent=grandparent_id))["ticket_id"]
 
         result = await _create_ticket(
-            ticket_type="t2", title="Backend Subtask", hive_name=HIVE_BACKEND, parent=parent_id, description="Backend work",
+            ticket_type="t2", title="Backend Subtask", hive_name=HIVE_BACKEND, parent=parent_id, body="Backend work",
         )
         assert result["status"] == "success"
         ticket_id = result["ticket_id"]

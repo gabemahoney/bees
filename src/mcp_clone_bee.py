@@ -1,7 +1,7 @@
 """Clone Bee MCP Tool — clones a bee and its entire subtree within the same hive or to another hive.
 
 Creates a deep copy of a bee ticket and all its child-tier tickets,
-generating fresh IDs and GUIDs while preserving titles, descriptions,
+generating fresh IDs and GUIDs while preserving titles, body content,
 tags, statuses, and internal cross-references (remapped to new IDs).
 """
 
@@ -274,7 +274,7 @@ def _clone_bee_core(
                 ticket_id=new_id,
                 ticket_type=source.type,
                 frontmatter_data=frontmatter,
-                body=source.description or "",
+                body=source.body or "",
                 hive_name=dest_hive,
             )
             written += 1

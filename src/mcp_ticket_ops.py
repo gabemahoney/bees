@@ -257,7 +257,7 @@ async def _create_ticket(
     ticket_type: str,
     title: str,
     hive_name: str,
-    description: str = "",
+    body: str = "",
     parent: str | None = None,
     children: list[str] | None = None,
     up_dependencies: list[str] | None = None,
@@ -274,7 +274,7 @@ async def _create_ticket(
         ticket_type: Type of ticket to create - 'bee' or tier type (t1, t2, t3...) from child_tiers config.
         title: Title of the ticket (required)
         hive_name: Hive name determining storage location (required, e.g., "backend" stores in backend hive)
-        description: Detailed description of the ticket
+        body: Markdown body content of the ticket
         parent: Parent ticket ID (required for tier types, not allowed for bees)
         children: List of child ticket IDs
         up_dependencies: List of ticket IDs that this ticket depends on (blocking tickets)
@@ -446,7 +446,7 @@ async def _create_ticket(
         if ticket_type == "bee":
             ticket_id, guid = create_bee(
                 title=title,
-                description=description,
+                body=body,
                 tags=tags,
                 up_dependencies=up_dependencies,
                 down_dependencies=down_dependencies,
@@ -467,7 +467,7 @@ async def _create_ticket(
                 ticket_type=ticket_type,
                 title=title,
                 parent=parent,
-                description=description,
+                body=body,
                 tags=tags,
                 up_dependencies=up_dependencies,
                 down_dependencies=down_dependencies,
@@ -561,7 +561,7 @@ async def _update_ticket_batch(
     add_tags: list[str] | None,
     remove_tags: list[str] | None,
     title: str | None | Literal["__UNSET__"],
-    description: str | None | Literal["__UNSET__"],
+    body: str | None | Literal["__UNSET__"],
     egg: dict[str, Any] | list[Any] | str | int | float | bool | None,
     tags: list[str] | None,
     up_dependencies: list[str] | None,
@@ -577,7 +577,7 @@ async def _update_ticket_batch(
     # Fail-fast: non-batchable fields must not be set
     NON_BATCHABLE = {
         "title": title,
-        "description": description,
+        "body": body,
         "egg": egg,
         "tags": tags,
         "up_dependencies": up_dependencies,
@@ -650,12 +650,12 @@ async def _update_ticket_batch(
 
             # Write updated ticket
             frontmatter_data = asdict(ticket)
-            frontmatter_data.pop("description", None)
+            frontmatter_data.pop("body", None)
             write_ticket_file(
                 ticket_id=tid,
                 ticket_type=ticket.type,
                 frontmatter_data=frontmatter_data,
-                body=ticket.description or "",
+                body=ticket.body or "",
                 hive_name=resolved_hive,
                 file_path=ticket_path,
             )
@@ -673,7 +673,7 @@ async def _update_ticket_batch(
 async def _update_ticket_single(
     ticket_id: str,
     title: str | None | Literal["__UNSET__"],
-    description: str | None | Literal["__UNSET__"],
+    body: str | None | Literal["__UNSET__"],
     up_dependencies: list[str] | None,
     down_dependencies: list[str] | None,
     tags: list[str] | None,
@@ -761,9 +761,9 @@ async def _update_ticket_single(
             return {"status": "error", "error_type": "invalid_title", "message": error_msg}
         ticket.title = title
 
-    if description is not _UNSET:
-        # description can be None or empty string
-        ticket.description = description if description else ""
+    if body is not _UNSET:
+        # body can be None or empty string
+        ticket.body = body if body else ""
 
     if tags is not _UNSET:
         # tags can be None (which means empty list)
@@ -800,13 +800,13 @@ async def _update_ticket_single(
 
     # Write updated ticket
     frontmatter_data = asdict(ticket)
-    # Remove description from frontmatter - it belongs in the body only
-    frontmatter_data.pop("description", None)
+    # Remove body from frontmatter - it belongs in the body only
+    frontmatter_data.pop("body", None)
     write_ticket_file(
         ticket_id=ticket_id,
         ticket_type=ticket_type,
         frontmatter_data=frontmatter_data,
-        body=ticket.description or "",
+        body=ticket.body or "",
         hive_name=resolved_hive,
     )
     cache.evict(ticket_id)
@@ -845,7 +845,7 @@ async def _update_ticket_single(
 async def _update_ticket(
     ticket_id: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
-    description: str | None | Literal["__UNSET__"] = _UNSET,
+    body: str | None | Literal["__UNSET__"] = _UNSET,
     up_dependencies: list[str] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded to prevent MCP schema conflict
     down_dependencies: list[str] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded to prevent MCP schema conflict
     tags: list[str] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded to prevent MCP schema conflict
@@ -867,7 +867,7 @@ async def _update_ticket(
 
     **Batch update** (``ticket_id`` is a ``list[str]``):
         Updates multiple tickets applying status, add_tags, and remove_tags to each.
-        Non-batchable fields (``title``, ``description``, ``egg``, ``tags``,
+        Non-batchable fields (``title``, ``body``, ``egg``, ``tags``,
         ``up_dependencies``, ``down_dependencies``) raise ``ValueError`` if set.
         Returns ``{"status": "success", "updated": [...], "not_found": [...], "failed": [...]}``.
         An empty list returns success immediately with all arrays empty.
@@ -875,7 +875,7 @@ async def _update_ticket(
     Args:
         ticket_id: ID of the ticket to update (str), or list of IDs for batch update (list[str])
         title: New title for the ticket (single mode only)
-        description: New description for the ticket (single mode only)
+        body: New markdown body for the ticket (single mode only)
         up_dependencies: New list of blocking dependency ticket IDs (single mode only)
         down_dependencies: New list of dependent ticket IDs (single mode only)
         tags: New list of tags, full replace (single mode only)
@@ -906,7 +906,7 @@ async def _update_ticket(
             add_tags=add_tags,
             remove_tags=remove_tags,
             title=title,
-            description=description,
+            body=body,
             egg=egg,
             tags=tags,
             up_dependencies=up_dependencies,
@@ -916,7 +916,7 @@ async def _update_ticket(
     return await _update_ticket_single(
         ticket_id=ticket_id,
         title=title,
-        description=description,
+        body=body,
         up_dependencies=up_dependencies,
         down_dependencies=down_dependencies,
         tags=tags,
@@ -1302,12 +1302,12 @@ async def _delete_ticket(
             if child_id in parent_ticket.children:
                 parent_ticket.children.remove(child_id)
         frontmatter_data = asdict(parent_ticket)
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=pid,
             ticket_type=pid_type,
             frontmatter_data=frontmatter_data,
-            body=parent_ticket.description or "",
+            body=parent_ticket.body or "",
             hive_name=pid_hive,
         )
         cache.evict(pid)
@@ -1335,7 +1335,7 @@ async def _show_ticket(
                         "ticket_id": str,
                         "ticket_type": str,
                         "title": str,
-                        "description": str,
+                        "body": str,
                         "tags": list[str],
                         "parent": str | None,
                         "children": list[str] | None,
@@ -1424,7 +1424,7 @@ async def _show_ticket(
                 "ticket_id": ticket.id,
                 "ticket_type": ticket.type,
                 "title": ticket.title,
-                "description": ticket.description,
+                "body": ticket.body,
                 "tags": ticket.tags,
                 "parent": ticket.parent,
                 "children": ticket.children,

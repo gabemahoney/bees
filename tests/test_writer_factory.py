@@ -249,7 +249,7 @@ class TestCreateEpic:
 
     def test_create_bee_basic(self, test_hive):
         """Should create bee with hierarchical directory structure."""
-        epic_id, _ = create_bee(title=TITLE_TEST_BEE, description="Test description", hive_name=HIVE_TEST)
+        epic_id, _ = create_bee(title=TITLE_TEST_BEE, body="Test description", hive_name=HIVE_TEST)
 
         assert is_valid_ticket_id(epic_id)
         # New format: bees use "b." prefix
@@ -315,7 +315,7 @@ class TestCreateTask:
         parent_id = TICKET_ID_TEST_BEE
         _create_bee_with_id(ticket_id=parent_id, title="Parent Bee", hive_name=HIVE_TEST)
 
-        task_id, _ = create_child_tier(ticket_type="t1", title=TITLE_TEST_TASK, parent=parent_id, description="Test description", hive_name=HIVE_TEST)
+        task_id, _ = create_child_tier(ticket_type="t1", title=TITLE_TEST_TASK, parent=parent_id, body="Test description", hive_name=HIVE_TEST)
 
         assert is_valid_ticket_id(task_id)
         # t1 should be nested under parent in hierarchical structure
@@ -367,7 +367,7 @@ class TestCreateSubtask:
 
         # Create t2 tier ticket
         subtask_id, _ = create_child_tier(
-            ticket_type="t2", title=TITLE_TEST_SUBTASK, parent=parent_id, description="Test description", hive_name=HIVE_TEST,
+            ticket_type="t2", title=TITLE_TEST_SUBTASK, parent=parent_id, body="Test description", hive_name=HIVE_TEST,
         )
 
         assert is_valid_ticket_id(subtask_id)

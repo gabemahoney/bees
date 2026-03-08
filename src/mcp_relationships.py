@@ -162,12 +162,12 @@ def _update_bidirectional_relationships(
         # Write updated parent ticket
         frontmatter_data = asdict(parent_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=parent,
             ticket_type=parent_type,
             frontmatter_data=frontmatter_data,
-            body=parent_ticket.description or "",
+            body=parent_ticket.body or "",
             hive_name=parent_hive,
         )
         logger.info(f"Updated parent {parent} to include child {new_ticket_id}")
@@ -200,12 +200,12 @@ def _update_bidirectional_relationships(
             # Write updated child ticket
             frontmatter_data = asdict(child_ticket)
             # Remove description from frontmatter - it belongs in the body only
-            frontmatter_data.pop("description", None)
+            frontmatter_data.pop("body", None)
             write_ticket_file(
                 ticket_id=child_id,
                 ticket_type=ticket_type,
                 frontmatter_data=frontmatter_data,
-                body=child_ticket.description or "",
+                body=child_ticket.body or "",
                 hive_name=child_hive,
             )
             logger.info(f"Updated child {child_id} to have parent {new_ticket_id}")
@@ -241,12 +241,12 @@ def _update_bidirectional_relationships(
             # Write updated blocking ticket
             frontmatter_data = asdict(blocking_ticket)
             # Remove description from frontmatter - it belongs in the body only
-            frontmatter_data.pop("description", None)
+            frontmatter_data.pop("body", None)
             write_ticket_file(
                 ticket_id=blocking_ticket_id,
                 ticket_type=ticket_type,
                 frontmatter_data=frontmatter_data,
-                body=blocking_ticket.description or "",
+                body=blocking_ticket.body or "",
                 hive_name=blocking_hive,
             )
             logger.info(f"Updated blocking ticket {blocking_ticket_id} to include {new_ticket_id} in down_dependencies")
@@ -282,12 +282,12 @@ def _update_bidirectional_relationships(
             # Write updated blocked ticket
             frontmatter_data = asdict(blocked_ticket)
             # Remove description from frontmatter - it belongs in the body only
-            frontmatter_data.pop("description", None)
+            frontmatter_data.pop("body", None)
             write_ticket_file(
                 ticket_id=blocked_ticket_id,
                 ticket_type=ticket_type,
                 frontmatter_data=frontmatter_data,
-                body=blocked_ticket.description or "",
+                body=blocked_ticket.body or "",
                 hive_name=blocked_hive,
             )
             logger.info(f"Updated blocked ticket {blocked_ticket_id} to include {new_ticket_id} in up_dependencies")
@@ -319,12 +319,12 @@ def _remove_child_from_parent(child_id: str, parent_id: str, hive_name: str | No
 
         frontmatter_data = asdict(parent_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=parent_id,
             ticket_type=parent_type,
             frontmatter_data=frontmatter_data,
-            body=parent_ticket.description or "",
+            body=parent_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Removed {child_id} from parent {parent_id}'s children")
@@ -359,12 +359,12 @@ def _add_child_to_parent(child_id: str, parent_id: str, hive_name: str | None = 
 
         frontmatter_data = asdict(parent_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=parent_id,
             ticket_type=parent_type,
             frontmatter_data=frontmatter_data,
-            body=parent_ticket.description or "",
+            body=parent_ticket.body or "",
             hive_name=parent_hive,
         )
         logger.info(f"Added {child_id} to parent {parent_id}'s children")
@@ -402,12 +402,12 @@ def _remove_parent_from_child(child_id: str, hive_name: str | None = None) -> No
 
         frontmatter_data = asdict(child_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=child_id,
             ticket_type=child_type,
             frontmatter_data=frontmatter_data,
-            body=child_ticket.description or "",
+            body=child_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Removed parent from child {child_id}")
@@ -435,12 +435,12 @@ def _set_parent_on_child(parent_id: str, child_id: str, hive_name: str | None = 
 
     frontmatter_data = asdict(child_ticket)
     # Remove description from frontmatter - it belongs in the body only
-    frontmatter_data.pop("description", None)
+    frontmatter_data.pop("body", None)
     write_ticket_file(
         ticket_id=child_id,
         ticket_type=child_type,
         frontmatter_data=frontmatter_data,
-        body=child_ticket.description or "",
+        body=child_ticket.body or "",
         hive_name=hive_name,
     )
     logger.info(f"Set parent {parent_id} on child {child_id}")
@@ -472,12 +472,12 @@ def _remove_from_down_dependencies(ticket_id: str, blocking_ticket_id: str, hive
 
         frontmatter_data = asdict(blocking_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=blocking_ticket_id,
             ticket_type=blocking_type,
             frontmatter_data=frontmatter_data,
-            body=blocking_ticket.description or "",
+            body=blocking_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Removed {ticket_id} from {blocking_ticket_id}'s down_dependencies")
@@ -508,12 +508,12 @@ def _add_to_down_dependencies(ticket_id: str, blocking_ticket_id: str, hive_name
 
         frontmatter_data = asdict(blocking_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=blocking_ticket_id,
             ticket_type=blocking_type,
             frontmatter_data=frontmatter_data,
-            body=blocking_ticket.description or "",
+            body=blocking_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Added {ticket_id} to {blocking_ticket_id}'s down_dependencies")
@@ -545,12 +545,12 @@ def _remove_from_up_dependencies(ticket_id: str, blocked_ticket_id: str, hive_na
 
         frontmatter_data = asdict(blocked_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=blocked_ticket_id,
             ticket_type=blocked_type,
             frontmatter_data=frontmatter_data,
-            body=blocked_ticket.description or "",
+            body=blocked_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Removed {ticket_id} from {blocked_ticket_id}'s up_dependencies")
@@ -581,12 +581,12 @@ def _add_to_up_dependencies(ticket_id: str, blocked_ticket_id: str, hive_name: s
 
         frontmatter_data = asdict(blocked_ticket)
         # Remove description from frontmatter - it belongs in the body only
-        frontmatter_data.pop("description", None)
+        frontmatter_data.pop("body", None)
         write_ticket_file(
             ticket_id=blocked_ticket_id,
             ticket_type=blocked_type,
             frontmatter_data=frontmatter_data,
-            body=blocked_ticket.description or "",
+            body=blocked_ticket.body or "",
             hive_name=hive_name,
         )
         logger.info(f"Added {ticket_id} to {blocked_ticket_id}'s up_dependencies")

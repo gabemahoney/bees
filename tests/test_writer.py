@@ -92,12 +92,12 @@ class TestFastSerializeFrontmatter:
         assert _parse_fm(result)["tags"] == ["alpha", "beta"]
 
     @pytest.mark.parametrize("body,expected_marker", [
-        pytest.param("Line one\nLine two", "description: |-\n", id="no_trailing_newline"),
-        pytest.param("Line one\nLine two\n", "description: |\n", id="with_trailing_newline"),
+        pytest.param("Line one\nLine two", "body: |-\n", id="no_trailing_newline"),
+        pytest.param("Line one\nLine two\n", "body: |\n", id="with_trailing_newline"),
     ])
     def test_multiline_string_literal_block(self, body, expected_marker):
         """Multi-line strings use literal block style with correct chomp marker."""
-        result = fast_serialize_frontmatter({"description": body})
+        result = fast_serialize_frontmatter({"body": body})
         assert expected_marker in result
         assert "  Line one\n" in result
         assert "  Line two\n" in result
@@ -120,9 +120,9 @@ class TestFastSerializeFrontmatter:
 
     def test_multiline_blank_line_no_trailing_whitespace(self):
         """Blank lines in multiline strings emit as bare newlines, not indented whitespace."""
-        result = fast_serialize_frontmatter({"description": "First\n\nSecond"})
+        result = fast_serialize_frontmatter({"body": "First\n\nSecond"})
         assert "  First\n\n  Second\n" in result
-        assert _parse_fm(result)["description"] == "First\n\nSecond"
+        assert _parse_fm(result)["body"] == "First\n\nSecond"
 
 
 class TestSerializeFrontmatter:
@@ -134,8 +134,8 @@ class TestSerializeFrontmatter:
         pytest.param({"tags": ["a", "b"]}, "nonempty_list"),
         pytest.param({"tags": []}, "empty_list"),
         pytest.param({"status": "true"}, "yaml_keyword_string"),
-        pytest.param({"description": "Line one\nLine two"}, "multiline"),
-        pytest.param({"description": "First\n\nSecond"}, "multiline_blank_line"),
+        pytest.param({"body": "Line one\nLine two"}, "multiline"),
+        pytest.param({"body": "First\n\nSecond"}, "multiline_blank_line"),
         pytest.param({"created_at": datetime(2024, 1, 1)}, "datetime"),
     ])
     def test_uses_fast_path_for_standard_types(self, data, label):
