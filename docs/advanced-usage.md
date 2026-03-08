@@ -113,7 +113,7 @@ Scope patterns have three canonical forms:
 - **`/*`** (e.g. `/projects/*`): matches any immediate child directory of the prefix — exactly one level deeper.
 - **`/**`** (e.g. `/projects/**`): matches the prefix directory itself and any descendant directory at any depth.
 
-When multiple scope patterns match a repository root, bees selects the **most specific** match — not the first. Specificity is ranked by depth first (more path segments wins), then by wildcard tier (exact = tier 0, `/*` = tier 1, `/**` = tier 2; lower tier is more specific at the same depth). `list_hives` always returns hives from the single winning scope — it never merges hives across scopes.
+When multiple scope patterns match a repository root, `list_hives` returns hives from **all** matching scopes, merging them into a single list. Each hive entry includes a `scope` field indicating which scope owns it. If the same normalized hive name appears in more than one matching scope, the most-specific scope's definition wins. Specificity is ranked by depth first (more path segments wins), then by wildcard tier (exact = tier 0, `/*` = tier 1, `/**` = tier 2; lower tier is more specific at the same depth). If two overlapping scopes at equal specificity define the same hive name, the system enters a degraded state and returns a configuration conflict error instead of ambiguous results.
 
 To register a hive under a shared scope instead of the default exact-path scope, pass `--scope <pattern>` to `colonize_hive`:
 

@@ -9,10 +9,13 @@ import pytest
 from src.config import (
     BeesConfig,
     ChildTierConfig,
+    ConflictRecord,
     HiveConfig,
     canonicalize_scope_pattern,
     check_scope_conflict,
     compute_scope_specificity,
+    detect_hive_conflicts,
+    find_all_matching_scopes,
     find_matching_scope,
     get_scoped_config,
     load_bees_config,
@@ -28,16 +31,16 @@ from src.config import (
     set_test_config_override,
     validate_child_tiers,
     validate_scope_pattern,
-    validate_unique_hive_name,
 )
-from src.id_utils import normalize_hive_name
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config, write_scoped_config
 from tests.test_constants import (
     SCOPE_PATTERN_BARE,
     SCOPE_PATTERN_DEEP,
     SCOPE_PATTERN_EXACT,
+    SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_SHALLOW,
+    SCOPE_PATTERN_WILDCARD_PARENT,
 )
 
 TS = "2026-02-01T12:00:00"
@@ -331,6 +334,72 @@ class TestFindMatchingScope:
         # Exact form is more specific, so trailing-slash wins
         result = find_matching_scope(Path("/repos/project"), config)
         assert result == "/repos/project/"
+
+
+class TestFindAllMatchingScopes:
+    """Test find_all_matching_scopes for multi-scope resolution."""
+
+    def test_single_scope_match(self, mock_global_bees_dir):
+        """Single matching scope returns a list of one item."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {SCOPE_PATTERN_EXACT_CHILD: {"hives": {"specific": {}}}},
+        )
+        config = load_global_config()
+        result = find_all_matching_scopes(Path("/Users/dev/projects/bees"), config)
+        assert len(result) == 1
+        assert result[0][0] == SCOPE_PATTERN_EXACT_CHILD
+
+    def test_multiple_scopes_ordered_least_to_most_specific(self, mock_global_bees_dir):
+        """Wildcard parent + exact child both match; ordered least→most specific."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_WILDCARD_PARENT: {"hives": {"general": {}}},
+                SCOPE_PATTERN_EXACT_CHILD: {"hives": {"specific": {}}},
+            },
+        )
+        config = load_global_config()
+        result = find_all_matching_scopes(Path("/Users/dev/projects/bees"), config)
+        assert len(result) == 2
+        assert result[0][0] == SCOPE_PATTERN_WILDCARD_PARENT
+        assert result[1][0] == SCOPE_PATTERN_EXACT_CHILD
+
+    def test_no_scopes_match(self, mock_global_bees_dir):
+        """No matching pattern returns empty list."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {"/other/path/": {"hives": {}}},
+        )
+        config = load_global_config()
+        result = find_all_matching_scopes(Path("/Users/dev/projects/bees"), config)
+        assert result == []
+
+    def test_empty_scopes_dict(self):
+        """Empty scopes dict returns empty list."""
+        result = find_all_matching_scopes(Path("/any/path"), {"scopes": {}})
+        assert result == []
+
+    def test_missing_scopes_key(self):
+        """Missing scopes key returns empty list."""
+        result = find_all_matching_scopes(Path("/any/path"), {})
+        assert result == []
+
+    def test_wildcard_before_exact(self, mock_global_bees_dir):
+        """Wildcard scope appears before exact scope in results (ascending specificity)."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_EXACT_CHILD: {"hives": {"exact": {}}},
+                SCOPE_PATTERN_WILDCARD_PARENT: {"hives": {"wildcard": {}}},
+            },
+        )
+        config = load_global_config()
+        result = find_all_matching_scopes(Path("/Users/dev/projects/bees"), config)
+        assert len(result) == 2
+        # Wildcard (less specific) first, exact (more specific) second
+        assert result[0][0] == SCOPE_PATTERN_WILDCARD_PARENT
+        assert result[1][0] == SCOPE_PATTERN_EXACT_CHILD
 
 
 # ============================================================================
@@ -787,7 +856,7 @@ class TestSaveBeesConfig:
         config = BeesConfig(
             hives={"backend": HiveConfig(path="tickets/backend/", display_name="Backend", created_at=TS)},
         )
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         loaded = load_bees_config()
         assert loaded is not None
@@ -795,8 +864,8 @@ class TestSaveBeesConfig:
 
     def test_save_raises_when_no_matching_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
         monkeypatch.chdir(tmp_path)
-        with pytest.raises(ValueError, match="No scope matches"):
-            save_bees_config(BeesConfig())
+        with pytest.raises(ValueError, match="not found in global config"):
+            save_bees_config(BeesConfig(), "/nonexistent/scope")
 
     def test_save_and_load_roundtrip(self, tmp_path, monkeypatch, mock_global_bees_dir):
         monkeypatch.chdir(tmp_path)
@@ -808,7 +877,7 @@ class TestSaveBeesConfig:
             hives={"backend": HiveConfig(path="/path/to/hive", display_name="Backend", created_at=timestamp)},
             child_tiers={"t1": ChildTierConfig("Task", "Tasks")},
         )
-        save_bees_config(original)
+        save_bees_config(original, str(tmp_path))
         loaded = load_bees_config()
         assert loaded is not None
         assert loaded.hives["backend"].created_at == timestamp
@@ -826,7 +895,7 @@ class TestSaveBeesConfig:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        save_bees_config(BeesConfig(hives={"backend": _make_hive()}))
+        save_bees_config(BeesConfig(hives={"backend": _make_hive()}), str(tmp_path))
 
         loaded_global = json.loads((mock_global_bees_dir / "config.json").read_text())
         assert "/other/repo" in loaded_global["scopes"]
@@ -842,50 +911,9 @@ class TestSaveBeesConfig:
 
         with patch("os.replace", side_effect=OSError("Simulated failure")):
             with pytest.raises(OSError):
-                save_bees_config(BeesConfig(hives={}))
+                save_bees_config(BeesConfig(hives={}), str(tmp_path))
 
         assert (mock_global_bees_dir / "config.json").read_text() == original_content
-
-
-class TestValidateUniqueHiveName:
-    """Test validate_unique_hive_name for duplicate detection."""
-
-    @pytest.mark.parametrize(
-        "existing_hives,check_name",
-        [
-            pytest.param(None, "backend", id="no_config"),
-            pytest.param({}, "backend", id="empty_hives"),
-            pytest.param(
-                {"frontend": HiveConfig(path="tickets/frontend/", display_name="Frontend", created_at=TS)},
-                "backend",
-                id="new_unique_name",
-            ),
-        ],
-    )
-    def test_validate_unique_name_passes(self, existing_hives, check_name, tmp_path, monkeypatch, mock_global_bees_dir):
-        monkeypatch.chdir(tmp_path)
-        if existing_hives is not None:
-            scope_data = {"hives": {}, "child_tiers": {}}
-            write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-            save_bees_config(BeesConfig(hives=existing_hives))
-        validate_unique_hive_name(check_name)
-
-    @pytest.mark.parametrize(
-        "registered_name,display_name,check_name,error_match",
-        [
-            pytest.param("back_end", "Back End", "back_end", "normalized name 'back_end' already exists", id="duplicate_normalized"),
-            pytest.param("backend", "BACKEND", normalize_hive_name("BACKEND"), "normalized name 'backend' already exists", id="case_insensitive"),
-            pytest.param("back_end_services", "Back End Services", "back_end_services", "Display name: 'Back End Services'", id="display_name_in_error"),
-        ],
-    )
-    def test_validate_unique_name_collision(self, registered_name, display_name, check_name, error_match, tmp_path, monkeypatch, mock_global_bees_dir):
-        monkeypatch.chdir(tmp_path)
-        hive = HiveConfig(path=f"tickets/{registered_name}/", display_name=display_name, created_at=TS)
-        scope_data = {"hives": {}, "child_tiers": {}}
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-        save_bees_config(BeesConfig(hives={registered_name: hive}))
-        with pytest.raises(ValueError, match=error_match):
-            validate_unique_hive_name(check_name)
 
 
 # ============================================================================
@@ -1389,7 +1417,7 @@ class TestEggResolverSerialization:
             egg_resolver_timeout=90,
         )
 
-        save_bees_config(original)
+        save_bees_config(original, str(tmp_path))
         loaded = load_bees_config()
 
         assert loaded.hives["backend"].egg_resolver == "python resolve.py"
@@ -1790,7 +1818,7 @@ class TestChildTiersConfigRoundTrip:
 
         config = load_bees_config()
         assert config is not None
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         # Verify per-hive tiers survived in raw JSON
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
@@ -1817,7 +1845,7 @@ class TestChildTiersConfigRoundTrip:
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
 
         config = load_bees_config()
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
         scope = raw["scopes"][str(tmp_path)]
@@ -1847,7 +1875,7 @@ class TestChildTiersConfigRoundTrip:
 
         # Round-trip
         config = load_bees_config()
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         # Resolve after round-trip
         after_features = resolve_child_tiers_for_hive("features")
@@ -2353,7 +2381,7 @@ class TestStatusValuesSerialization:
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
 
         config = load_bees_config()
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
         scope = raw["scopes"][str(tmp_path)]
@@ -2383,7 +2411,7 @@ class TestStatusValuesConfigRoundTrip:
 
         config = load_bees_config()
         assert config is not None
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         # Verify per-hive values survived in raw JSON
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
@@ -2421,7 +2449,7 @@ class TestStatusValuesConfigRoundTrip:
 
         # Round-trip
         config = load_bees_config()
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         # Resolve after round-trip
         after_features = resolve_status_values_for_hive("features")
@@ -2446,7 +2474,7 @@ class TestStatusValuesConfigRoundTrip:
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
 
         config = load_bees_config()
-        save_bees_config(config)
+        save_bees_config(config, str(tmp_path))
 
         # Verify empty lists are preserved in raw JSON
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
@@ -2857,3 +2885,102 @@ class TestCheckScopeConflict:
 
     def test_missing_scopes_key_returns_none(self):
         assert check_scope_conflict("/repos/project/*", {}) is None
+
+
+class TestDetectHiveConflicts:
+    """Test detect_hive_conflicts identifies duplicate hive names across overlapping scopes.
+
+    Uses find_all_matching_scopes output format: list of (scope_pattern, BeesConfig) tuples.
+    Critical: non-overlapping scopes must NOT produce false positives.
+    """
+
+    def _make_matching_scopes(self, scope_hive_map: dict[str, list[str]]) -> list[tuple[str, BeesConfig]]:
+        """Build find_all_matching_scopes-style output from {scope_pattern: [hive_names]}."""
+        result = []
+        for pattern, hive_names in scope_hive_map.items():
+            hives = {name: _make_hive(display_name=name.title()) for name in hive_names}
+            config = BeesConfig(hives=hives)
+            result.append((pattern, config))
+        return result
+
+    def test_same_hive_in_overlapping_scopes_returns_conflict(self):
+        """Same hive name in two matching scopes → ConflictRecord returned."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 1
+        assert conflicts[0].normalized_hive_name == "backend"
+        assert {conflicts[0].scope_a, conflicts[0].scope_b} == {
+            SCOPE_PATTERN_WILDCARD_PARENT,
+            SCOPE_PATTERN_EXACT_CHILD,
+        }
+
+    def test_same_hive_in_non_overlapping_scopes_returns_empty(self):
+        """Same hive name in non-overlapping scopes → empty list (no false positive)."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_DEEP: ["backend"],
+        })
+        # Only one scope matches → no conflict possible
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_different_hive_names_across_scopes_returns_empty(self):
+        """Different hive names across scopes → empty list."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["frontend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_multiple_conflicting_hives_all_captured(self):
+        """Multiple hive names each in multiple scopes → all conflicts captured."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend", "frontend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend", "frontend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        conflict_names = sorted(c.normalized_hive_name for c in conflicts)
+        assert conflict_names == ["backend", "frontend"]
+        assert len(conflicts) == 2
+
+    def test_empty_input_returns_empty(self):
+        """Empty matching_scopes list → empty list."""
+        conflicts = detect_hive_conflicts([])
+        assert conflicts == []
+
+    def test_single_scope_no_conflict(self):
+        """A single scope with multiple hives never conflicts with itself."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend", "frontend", "api"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert conflicts == []
+
+    def test_conflict_record_fields(self):
+        """ConflictRecord contains the expected fields."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 1
+        record = conflicts[0]
+        assert isinstance(record, ConflictRecord)
+        assert record.normalized_hive_name == "backend"
+        assert record.scope_a in (SCOPE_PATTERN_WILDCARD_PARENT, SCOPE_PATTERN_EXACT_CHILD)
+        assert record.scope_b in (SCOPE_PATTERN_WILDCARD_PARENT, SCOPE_PATTERN_EXACT_CHILD)
+        assert record.scope_a != record.scope_b
+
+    def test_three_scopes_same_hive_produces_three_pairs(self):
+        """Three scopes with same hive → C(3,2) = 3 ConflictRecords."""
+        matching = self._make_matching_scopes({
+            SCOPE_PATTERN_WILDCARD_PARENT: ["backend"],
+            SCOPE_PATTERN_EXACT_CHILD: ["backend"],
+            SCOPE_PATTERN_DEEP: ["backend"],
+        })
+        conflicts = detect_hive_conflicts(matching)
+        assert len(conflicts) == 3
+        assert all(c.normalized_hive_name == "backend" for c in conflicts)

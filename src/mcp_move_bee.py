@@ -12,11 +12,19 @@ from pathlib import Path
 from typing import Any
 
 from . import cache
-from .config import get_scope_key_for_hive, load_bees_config, load_global_config
+from .config import (
+    BeesConfig,
+    check_for_config_conflicts,
+    find_all_matching_scopes,
+    get_scope_key_for_hive,
+    load_global_config,
+    resolve_owning_scope,
+)
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_ticket_id, is_valid_ticket_id, normalize_hive_name
 from .paths import find_ticket_file
 from .reader import read_ticket
+from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 
 logger = logging.getLogger(__name__)
@@ -90,8 +98,18 @@ def _move_bee_core(
 
     # ── Load config and validate destination hive ─────────────────────────
     destination_hive = normalize_hive_name(destination_hive)
-    config = load_bees_config()
-    if not config or destination_hive not in config.hives:
+    global_config = load_global_config()
+    repo_root = get_repo_root()
+
+    # Build merged BeesConfig from all matching scopes so source bees in
+    # less-specific scopes are discoverable alongside the destination hive.
+    matching_scopes = find_all_matching_scopes(repo_root, global_config)
+    merged_hives: dict = {}
+    for _, scope_cfg in matching_scopes:
+        merged_hives.update(scope_cfg.hives)
+    config = BeesConfig(hives=merged_hives)
+
+    if destination_hive not in config.hives:
         return {
             "status": "error",
             "message": f"Destination hive '{destination_hive}' not found.",
@@ -108,8 +126,10 @@ def _move_bee_core(
             "error_type": "cemetery_destination",
         }
 
-    # ── Load global config once for scope lookups ─────────────────────────
-    global_config = load_global_config()
+    # ── Resolve destination hive scope (fatal if 0 or >1 matches) ────────
+    dest_scope, err = resolve_owning_scope(destination_hive, global_config, repo_root)
+    if err:
+        return err
 
     # ── Locate all bees first (needed for compatibility pre-scan) ─────────
     # Map: bee_id → (ticket_file, source_hive_name) or reason for failure
@@ -196,11 +216,19 @@ def _move_bee_core(
 
         # Verify source and destination are in the same scope
         try:
-            source_scope = get_scope_key_for_hive(source_hive_name, global_config)
-            dest_scope = get_scope_key_for_hive(destination_hive, global_config)
+            source_scopes = get_scope_key_for_hive(source_hive_name, global_config, repo_root)
         except ValueError as e:
             failed.append({"id": bee_id, "reason": str(e)})
             continue
+
+        if len(source_scopes) > 1:
+            failed.append({
+                "id": bee_id,
+                "reason": f"Source hive '{source_hive_name}' found in multiple scopes: {source_scopes}",
+            })
+            continue
+
+        source_scope = source_scopes[0]
 
         if source_scope != dest_scope:
             failed.append({
@@ -311,6 +339,7 @@ async def _move_bee(
         }
 
     Error Conditions:
+        - config_conflict: hive name appears in multiple matching scopes
         - hive_not_found: destination_hive not registered in config
         - cemetery_destination: destination is the cemetery directory
         - compatibility_error: source tree has statuses or tier types incompatible with
@@ -321,4 +350,9 @@ async def _move_bee(
         - Cross-scope move: source and destination in different scopes → added to failed list
         - Filesystem error: shutil.move fails → added to failed list with exception message
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     return _move_bee_core(bee_ids, destination_hive, force=force)

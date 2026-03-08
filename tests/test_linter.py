@@ -7,17 +7,22 @@ import json
 import os
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from src.linter import Linter, TicketScanner
 from src.linter_report import LinterReport, ValidationError
+from src.repo_context import repo_root_context
+from tests.conftest import write_multi_scope_config
 from tests.helpers import make_ticket, write_ticket_file
 from tests.test_constants import (
     DANGLING_BEE_ID,
     GUID_EXAMPLE_T1,
     HIVE_BACKEND,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_ABC,
     TICKET_ID_LINTER_CHILD1,
     TICKET_ID_LINTER_CHILD2,
@@ -2499,6 +2504,56 @@ class TestSanitizeHiveCrossScopeMap:
         assert "hive_load_failure" in error_types
         # Errors from the valid hive's tickets still appear alongside the load failure
         assert any(et != "hive_load_failure" for et in error_types)
+
+    @pytest.mark.asyncio
+    async def test_sanitize_hive_degraded_state_config_conflict(self, isolated_bees_env):
+        """Two overlapping scopes both define same hive → config_conflict."""
+        from src.mcp_hive_ops import _sanitize_hive
+
+        helper = isolated_bees_env
+        backend_dir = helper.create_hive("backend")
+
+        write_multi_scope_config(helper.global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {HIVE_BACKEND: {"path": str(backend_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {HIVE_BACKEND: {"path": str(backend_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+        })
+
+        with repo_root_context(Path("/Users/dev/projects/bees")):
+            result = await _sanitize_hive(HIVE_BACKEND, resolved_root=Path("/Users/dev/projects/bees"))
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "config_conflict"
+
+    @pytest.mark.asyncio
+    async def test_sanitize_hive_inherited_scope_succeeds(self, isolated_bees_env):
+        """Hive in one non-conflicting inherited broader scope → success."""
+        from src.mcp_hive_ops import _sanitize_hive
+
+        helper = isolated_bees_env
+        backend_dir = helper.create_hive("backend")
+        helper.create_ticket(backend_dir, TICKET_ID_ABC, "bee", "Backend Bee")
+
+        write_multi_scope_config(helper.global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {HIVE_BACKEND: {"path": str(backend_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {},
+                "child_tiers": {},
+            },
+        })
+
+        with repo_root_context(Path("/Users/dev/projects/bees")):
+            result = await _sanitize_hive(HIVE_BACKEND, resolved_root=Path("/Users/dev/projects/bees"))
+
+        assert result["status"] == "success"
 
 
 # ============================================================================

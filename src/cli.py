@@ -827,7 +827,10 @@ def build_parser():
     p_list_hives = subparsers.add_parser(
         "list-hives",
         help="List all registered hives",
-        description="List all registered hives. No arguments required.",
+        description=(
+            "List all registered hives. Each hive entry includes the owning"
+            " scope pattern. No arguments required."
+        ),
     )
     p_list_hives.set_defaults(func=handle_list_hives)
 

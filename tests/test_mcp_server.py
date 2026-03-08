@@ -16,10 +16,12 @@ from src.constants import GUID_LENGTH
 from src.mcp_server import _create_ticket, _show_ticket, _update_ticket
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee, create_child_tier
-from tests.conftest import write_scoped_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TAG_ALPHA,
     TAG_BETA,
     TAG_DELTA,
@@ -447,38 +449,90 @@ class TestListHives:
     """Tests for list_hives MCP tool functionality."""
 
     @pytest.fixture
-    def repo_and_ctx(self, bees_repo, monkeypatch, mock_mcp_context, mock_global_bees_dir):
-        """Provide bees_repo and a mock MCP context."""
+    def repo_and_ctx(self, bees_repo, monkeypatch, mock_global_bees_dir):
+        """Provide bees_repo and mock global bees dir for list_hives tests."""
         monkeypatch.chdir(bees_repo)
         write_scoped_config(mock_global_bees_dir, bees_repo, {
             "hives": {},
-                "child_tiers": {},
+            "child_tiers": {},
         })
         with repo_root_context(bees_repo):
-            yield bees_repo, mock_mcp_context(bees_repo)
+            yield bees_repo, mock_global_bees_dir
 
     async def test_list_hives_returns_all_hives_from_config(self, repo_and_ctx):
-        """Test list_hives returns correct data when config.json exists with hives."""
-        from src.config import BeesConfig, HiveConfig, save_bees_config
+        """Test list_hives returns correct data with scope field on each hive."""
         from src.mcp_hive_ops import _list_hives
 
-        temp_repo, mock_ctx = repo_and_ctx
+        temp_repo, mock_global_bees_dir = repo_and_ctx
         hive1_path = temp_repo / "hive1"
         hive2_path = temp_repo / "hive2"
         hive1_path.mkdir()
         hive2_path.mkdir()
 
-        save_bees_config(BeesConfig(hives={
-            "back_end": HiveConfig(display_name="Back End", path=str(hive1_path), created_at="2024-01-01T00:00:00"),
-            "frontend": HiveConfig(display_name="Frontend", path=str(hive2_path), created_at="2024-01-02T00:00:00"),
-        }))
+        write_scoped_config(mock_global_bees_dir, temp_repo, {
+            "hives": {
+                "back_end": {"path": str(hive1_path), "display_name": "Back End", "created_at": "2024-01-01T00:00:00"},
+                "frontend": {"path": str(hive2_path), "display_name": "Frontend", "created_at": "2024-01-02T00:00:00"},
+            },
+            "child_tiers": {},
+        })
 
-        result = await _list_hives(mock_ctx)
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "success"
         assert len(result["hives"]) == 2
         hives = {h["normalized_name"]: h for h in result["hives"]}
         assert hives["back_end"]["display_name"] == "Back End"
+        assert hives["back_end"]["scope"] == str(temp_repo)
         assert hives["frontend"]["display_name"] == "Frontend"
+        assert hives["frontend"]["scope"] == str(temp_repo)
+
+    async def test_list_hives_merges_hives_from_multiple_scopes(self, repo_and_ctx):
+        """Test list_hives merges hives from multiple matching scopes with correct scope values."""
+        from pathlib import Path
+
+        from src.mcp_hive_ops import _list_hives
+
+        _, mock_global_bees_dir = repo_and_ctx
+        write_multi_scope_config(mock_global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    "shared_hive": {"path": "/some/shared", "display_name": "Shared Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    "local_hive": {"path": "/some/local", "display_name": "Local Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+        })
+
+        # Path matches both SCOPE_PATTERN_WILDCARD_PARENT (/**) and SCOPE_PATTERN_EXACT_CHILD (exact)
+        resolved = Path(SCOPE_PATTERN_EXACT_CHILD.rstrip("/"))
+        result = await _list_hives(resolved_root=resolved)
+        assert result["status"] == "success"
+        assert len(result["hives"]) == 2
+        hives = {h["normalized_name"]: h for h in result["hives"]}
+        assert hives["shared_hive"]["scope"] == SCOPE_PATTERN_WILDCARD_PARENT
+        assert hives["local_hive"]["scope"] == SCOPE_PATTERN_EXACT_CHILD
+
+    async def test_list_hives_sorted_alphabetically(self, repo_and_ctx):
+        """Test list_hives returns hives sorted alphabetically by normalized_name."""
+        from src.mcp_hive_ops import _list_hives
+
+        temp_repo, mock_global_bees_dir = repo_and_ctx
+        write_scoped_config(mock_global_bees_dir, temp_repo, {
+            "hives": {
+                "zebra": {"path": "/z", "display_name": "Zebra"},
+                "alpha": {"path": "/a", "display_name": "Alpha"},
+                "middle": {"path": "/m", "display_name": "Middle"},
+            },
+            "child_tiers": {},
+        })
+
+        result = await _list_hives(resolved_root=temp_repo)
+        assert result["status"] == "success"
+        names = [h["normalized_name"] for h in result["hives"]]
+        assert names == ["alpha", "middle", "zebra"]
 
     @pytest.mark.parametrize(
         "setup",
@@ -489,14 +543,16 @@ class TestListHives:
     )
     async def test_list_hives_empty_scenarios(self, repo_and_ctx, setup):
         """Test list_hives returns empty list with no config or empty hives."""
-        from src.config import BeesConfig, save_bees_config
         from src.mcp_hive_ops import _list_hives
 
-        _, mock_ctx = repo_and_ctx
+        temp_repo, mock_global_bees_dir = repo_and_ctx
         if setup == "empty_config":
-            save_bees_config(BeesConfig(hives={}))
+            write_scoped_config(mock_global_bees_dir, temp_repo, {
+                "hives": {},
+                "child_tiers": {},
+            })
 
-        result = await _list_hives(mock_ctx)
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "success"
         assert result["hives"] == []
 
@@ -504,9 +560,9 @@ class TestListHives:
         """Test list_hives handles exceptions gracefully."""
         from src.mcp_hive_ops import _list_hives
 
-        _, mock_ctx = repo_and_ctx
-        monkeypatch.setattr("src.mcp_hive_ops.load_bees_config", lambda *a, **kw: (_ for _ in ()).throw(Exception("Failed")))
-        result = await _list_hives(mock_ctx)
+        temp_repo, _ = repo_and_ctx
+        monkeypatch.setattr("src.mcp_hive_ops.load_global_config", lambda: (_ for _ in ()).throw(Exception("Failed")))
+        result = await _list_hives(resolved_root=temp_repo)
         assert result["status"] == "error"
         assert result["error_type"] == "list_hives_error"
         assert "Failed to list hives" in result["message"]
@@ -571,6 +627,128 @@ class TestAbandonHive:
         await _colonize_hive("Back End", str(hive_path))
         result = await _abandon_hive(abandon_name)
         assert result["status"] == "success"
+
+class TestAbandonHiveMultiScope:
+    """Tests for _abandon_hive multi-scope removal path."""
+
+    @staticmethod
+    def _overlapping_patterns(tmp_path):
+        """Derive two overlapping scope patterns from tmp_path."""
+        return str(tmp_path.parent) + "/**", str(tmp_path) + "/"
+
+    async def test_single_scope_abandon(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Single-scope abandon: hive removed, scopes_modified: 1 (backward compat regression)."""
+        from src.mcp_hive_ops import _abandon_hive, _colonize_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+        with repo_root_context(tmp_path):
+            hive_path = tmp_path / "test_hive"
+            hive_path.mkdir()
+            await _colonize_hive("Test Hive", str(hive_path))
+            result = await _abandon_hive("Test Hive")
+            assert result["status"] == "success"
+            assert result["scopes_modified"] == 1
+            assert len(result["scopes"]) == 1
+
+    async def test_multi_scope_abandon(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Multi-scope abandon: hive removed from both scopes, scopes_modified: 2."""
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+            exact: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            result = await _abandon_hive("Test Hive")
+            assert result["status"] == "success"
+            assert result["scopes_modified"] == 2
+            assert len(result["scopes"]) == 2
+
+    async def test_multi_scope_abandon_verifies_removal(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Verify both scopes' config entries no longer contain the hive after multi-scope abandon."""
+        from src.config import load_global_config
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+            exact: {
+                "hives": {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            await _abandon_hive("Test Hive")
+            config = load_global_config()
+            for scope_key in (wildcard, exact):
+                scope_data = config["scopes"].get(scope_key, {})
+                assert "test_hive" not in scope_data.get("hives", {})
+
+    async def test_unrelated_hives_unchanged(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Unrelated hives in the same scopes are unchanged after abandon."""
+        from src.config import load_global_config
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        wildcard, exact = self._overlapping_patterns(tmp_path)
+        hive_path = tmp_path / "test_hive"
+        hive_path.mkdir()
+        other_path = tmp_path / "other_hive"
+        other_path.mkdir()
+        write_multi_scope_config(mock_global_bees_dir, {
+            wildcard: {
+                "hives": {
+                    "test_hive": {"path": str(hive_path), "display_name": "Test Hive"},
+                    "other_hive": {"path": str(other_path), "display_name": "Other Hive"},
+                },
+            },
+            exact: {
+                "hives": {
+                    "test_hive": {"path": str(hive_path), "display_name": "Test Hive"},
+                },
+            },
+        })
+        with repo_root_context(tmp_path):
+            await _abandon_hive("Test Hive")
+            config = load_global_config()
+            wildcard_hives = config["scopes"][wildcard].get("hives", {})
+            assert "other_hive" in wildcard_hives
+            assert "test_hive" not in wildcard_hives
+
+    async def test_hive_not_found_error(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """hive_not_found when hive doesn't exist in any matching scope."""
+        from src.mcp_hive_ops import _abandon_hive
+
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        _, exact = self._overlapping_patterns(tmp_path)
+        write_multi_scope_config(mock_global_bees_dir, {
+            exact: {
+                "hives": {"other_hive": {"path": str(tmp_path / "other"), "display_name": "Other"}},
+            },
+        })
+        with repo_root_context(tmp_path):
+            result = await _abandon_hive("NonExistent")
+            assert result["status"] == "error"
+            assert result["error_type"] == "hive_not_found"
+
 
 @pytest.mark.integration
 class TestShowTicket:
@@ -708,7 +886,10 @@ class TestShowTicket:
 
         config = load_bees_config()
         config.egg_resolver = str(resolver_script)
-        save_bees_config(config)
+        from src.config import find_matching_scope, load_global_config
+        global_config = load_global_config()
+        scope_pattern = find_matching_scope(repo_root, global_config)
+        save_bees_config(config, scope_pattern)
 
         write_ticket_file(hive_path, "b.eg3", title="Custom Resolver Bee", egg="input-spec")
         result = await _show_ticket(ticket_ids=["b.eg3"], resolved_root=repo_root)

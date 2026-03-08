@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from .config import load_bees_config
+from .config import check_for_config_conflicts, load_bees_config
 from .index_generator import generate_index
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 
@@ -51,6 +51,11 @@ async def _generate_index(
         result = _generate_index()
         result = _generate_index(hive_name='backend')
     """
+    # Check for config conflicts before proceeding
+    conflict_error = check_for_config_conflicts(resolved_root)
+    if conflict_error is not None:
+        return conflict_error
+
     try:
         if hive_name:
             generate_index(hive_name=hive_name)

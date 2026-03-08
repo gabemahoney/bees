@@ -31,15 +31,21 @@ KEY BEHAVIOR:
 
 import json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from src.config import BeesConfig, HiveConfig, load_bees_config, save_bees_config
+from src.config import BeesConfig, HiveConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
 from src.mcp_hive_ops import _rename_hive
 from src.repo_context import repo_root_context
+from tests.conftest import write_multi_scope_config
 from tests.test_constants import (
+    HIVE_BACKEND,
     RESULT_STATUS_SUCCESS,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_PROJECTS_DEEP,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_MCP_RENAME_TASK1,
     TICKET_ID_MCP_RENAME_TASK2,
     TICKET_ID_MCP_RENAME_TASK3,
@@ -67,7 +73,9 @@ def temp_hive_setup(multi_hive_config):
             },
             schema_version="1.0",
         )
-        save_bees_config(config)
+        global_config = load_global_config()
+        scope_pattern = find_matching_scope(repo_root, global_config)
+        save_bees_config(config, scope_pattern)
 
     # Create sample tickets in backend hive with NEW ID format (type-prefixed)
     ticket1_path = backend_dir / f"{TICKET_ID_MCP_RENAME_TASK1}.md"
@@ -336,3 +344,89 @@ class TestRenameHiveIntegration:
         assert frontend_ticket_path.exists()
         new_content = frontend_ticket_path.read_text()
         assert new_content == original_content
+
+
+class TestRenameHiveMultiScope:
+    """Tests for _rename_hive multi-scope lookup guard behavior."""
+
+    async def test_rename_hive_degraded_state_config_conflict(self, tmp_path, mock_global_bees_dir):
+        """Two overlapping scopes both define target hive → config_conflict with abandon_hive instruction, no config modified."""
+        hive_dir = tmp_path / HIVE_BACKEND
+        hive_dir.mkdir()
+        hive_marker = hive_dir / ".hive"
+        hive_marker.mkdir()
+        (hive_marker / "identity.json").write_text(
+            json.dumps({"normalized_name": HIVE_BACKEND, "display_name": "Backend", "created_at": "2026-01-01T00:00:00"})
+        )
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+        })
+
+        config_before = (mock_global_bees_dir / "config.json").read_text()
+
+        with repo_root_context(Path("/Users/dev/projects/bees")):
+            result = await _rename_hive(HIVE_BACKEND, "new_backend", resolved_root=Path("/Users/dev/projects/bees"))
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "config_conflict"
+        assert "abandon_hive" in result["message"]
+        assert (mock_global_bees_dir / "config.json").read_text() == config_before
+
+    async def test_rename_hive_inherited_scope_succeeds(self, tmp_path, mock_global_bees_dir):
+        """Hive in one non-conflicting broader scope → success, only owning scope's config entry updated."""
+        hive_dir = tmp_path / HIVE_BACKEND
+        hive_dir.mkdir()
+        hive_marker = hive_dir / ".hive"
+        hive_marker.mkdir()
+        (hive_marker / "identity.json").write_text(
+            json.dumps({"normalized_name": HIVE_BACKEND, "display_name": "Backend", "created_at": "2026-01-01T00:00:00"})
+        )
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {},
+                "child_tiers": {},
+            },
+        })
+
+        with repo_root_context(Path("/Users/dev/projects/bees")):
+            result = await _rename_hive(HIVE_BACKEND, "api_layer", resolved_root=Path("/Users/dev/projects/bees"))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        config_data = json.loads((mock_global_bees_dir / "config.json").read_text())
+        wildcard_hives = config_data["scopes"][SCOPE_PATTERN_WILDCARD_PARENT]["hives"]
+        exact_hives = config_data["scopes"][SCOPE_PATTERN_EXACT_CHILD]["hives"]
+        assert "api_layer" in wildcard_hives
+        assert HIVE_BACKEND not in wildcard_hives
+        assert exact_hives == {}
+
+    async def test_rename_hive_not_visible_to_current_repo(self, tmp_path, mock_global_bees_dir):
+        """Hive in scope not matching current repo_root → hive_not_found."""
+        hive_dir = tmp_path / HIVE_BACKEND
+        hive_dir.mkdir()
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            SCOPE_PATTERN_PROJECTS_DEEP: {
+                "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}},
+                "child_tiers": {},
+            },
+        })
+
+        with repo_root_context(Path("/Users/dev/projects/bees")):
+            result = await _rename_hive(HIVE_BACKEND, "new_name", resolved_root=Path("/Users/dev/projects/bees"))
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "hive_not_found"

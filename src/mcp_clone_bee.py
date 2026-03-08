@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
-    get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
+    resolve_owning_scope,
 )
 from .constants import SCHEMA_VERSION
 from .hive_compat import check_cross_hive_compatibility
@@ -28,6 +28,7 @@ from .id_utils import (
 )
 from .paths import find_ticket_file
 from .reader import read_ticket
+from .repo_context import get_repo_root
 from .writer import write_ticket_file
 
 logger = logging.getLogger(__name__)
@@ -122,18 +123,13 @@ def _clone_bee_core(
 
         # Scope check — must run before any write attempt
         global_config = load_global_config()
-        try:
-            source_scope = get_scope_key_for_hive(source_hive, global_config)
-            dest_scope = get_scope_key_for_hive(dest_hive, global_config)
-        except ValueError:
-            return {
-                "status": "error",
-                "error_type": "cross_scope_error",
-                "message": (
-                    f"Cannot clone from hive '{source_hive}' to '{dest_hive}': "
-                    "unable to determine scope for one or both hives."
-                ),
-            }
+        repo_root = get_repo_root()
+        source_scope, err = resolve_owning_scope(source_hive, global_config, repo_root)
+        if err:
+            return err
+        dest_scope, err = resolve_owning_scope(dest_hive, global_config, repo_root)
+        if err:
+            return err
 
         if source_scope != dest_scope:
             return {

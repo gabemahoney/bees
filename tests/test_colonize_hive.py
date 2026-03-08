@@ -41,6 +41,8 @@ from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config
 from tests.test_constants import (
     RESULT_STATUS_SUCCESS,
+    SCOPE_PATTERN_PROJECTS_DEEP,
+    SCOPE_PATTERN_PROJECTS_EXACT,
 )
 
 
@@ -353,7 +355,6 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_hive_ops.load_global_config")
     @patch("src.mcp_hive_ops.save_bees_config")
     @patch("src.mcp_hive_ops.load_bees_config")
-    @patch("src.mcp_hive_ops.validate_unique_hive_name")
     @patch("src.mcp_hive_ops.validate_hive_path")
     @patch("src.mcp_server.get_repo_root")
     @patch("src.mcp_hive_ops.normalize_hive_name")
@@ -366,7 +367,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_normalize,
         mock_get_repo,
         mock_validate_path,
-        mock_validate_unique,
         mock_load_config,
         mock_save_config,
         mock_load_global,
@@ -412,31 +412,10 @@ class TestColonizeHiveOrchestrationUnit:
         assert result["error_type"] == "path_validation_error"
         assert "must be absolute" in result["message"]
 
-    @patch("src.mcp_hive_ops.validate_unique_hive_name")
-    @patch("src.mcp_hive_ops.validate_hive_path")
-    @patch("src.mcp_hive_ops.get_repo_root_from_path")
-    @patch("src.mcp_hive_ops.normalize_hive_name")
-    async def test_validates_unique_name_and_returns_error_on_duplicate(
-        self, mock_normalize, mock_get_repo_from_path, mock_validate_path, mock_validate_unique
-    ):
-        """Test that colonize_hive validates unique name and returns error on duplicate."""
-        mock_normalize.return_value = "backend"
-        mock_get_repo_from_path.return_value = Path("/repo")
-        mock_validate_path.return_value = Path("/repo/tickets")
-        mock_validate_unique.side_effect = ValueError("Hive 'backend' already exists")
-
-        result = await colonize_hive("Backend", "/repo/tickets")
-
-        mock_validate_unique.assert_called_once_with("backend")
-        assert result["status"] == "error"
-        assert result["error_type"] == "duplicate_hive_name"
-        assert "already exists" in result["message"]
-
     @patch("src.mcp_hive_ops.save_global_config")
     @patch("src.mcp_hive_ops.load_global_config")
     @patch("src.mcp_hive_ops.save_bees_config")
     @patch("src.mcp_hive_ops.load_bees_config")
-    @patch("src.mcp_hive_ops.validate_unique_hive_name")
     @patch("src.mcp_hive_ops.validate_hive_path")
     @patch("src.mcp_hive_ops.get_repo_root_from_path")
     @patch("src.mcp_hive_ops.normalize_hive_name")
@@ -449,7 +428,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_normalize,
         mock_get_repo_from_path,
         mock_validate_path,
-        mock_validate_unique,
         mock_load_config,
         mock_save_config,
         mock_load_global,
@@ -910,12 +888,11 @@ class TestColonizeHiveScope:
         # Should succeed (different bare prefix → no scope conflict)
         assert result["status"] == "success"
 
-    async def test_scope_same_hive_name_at_more_specific_scope_is_allowed(self, git_repo_tmp_path, mock_global_bees_dir):
-        """Same hive name at a more specific (differently-specificity) overlapping scope is allowed.
+    async def test_scope_same_hive_name_at_more_specific_scope_is_blocked(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Same hive name at a more specific overlapping scope is now blocked.
 
-        A "My Hive" at /projects/** should not block a "My Hive" at /projects/sub/ —
-        the more specific scope shadows the broader one at read time, which is the
-        intended design per the PRD.
+        A "My Hive" at /projects/** blocks a "My Hive" at /projects/sub/ because
+        the scopes overlap and cross-scope conflict prevention catches it.
         """
         write_multi_scope_config(
             mock_global_bees_dir,
@@ -935,5 +912,113 @@ class TestColonizeHiveScope:
         hive_path = git_repo_tmp_path / "dup_hive"
         result = await colonize_hive("My Hive", str(hive_path), scope="/projects/sub/")
 
-        assert result["status"] == "success"
-        assert result["normalized_name"] == "my_hive"
+        assert result["status"] == "error"
+        assert result["error_type"] == "cross_scope_hive_conflict"
+
+
+# ============================================================================
+# CROSS-SCOPE CONFLICT PREVENTION TESTS
+# ============================================================================
+
+
+class TestColonizeHiveCrossScopeConflict:
+    """Tests for cross-scope hive name conflict detection during colonization."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with repo_root_context(tmp_path):
+            yield tmp_path
+
+    @pytest.mark.parametrize(
+        "existing_scope,colonize_scope",
+        [
+            pytest.param(
+                SCOPE_PATTERN_PROJECTS_EXACT,
+                SCOPE_PATTERN_PROJECTS_DEEP,
+                id="exact_exists_colonize_deep",
+            ),
+            pytest.param(
+                SCOPE_PATTERN_PROJECTS_DEEP,
+                SCOPE_PATTERN_PROJECTS_EXACT,
+                id="deep_exists_colonize_exact",
+            ),
+        ],
+    )
+    async def test_cross_scope_conflict_both_directions(
+        self, git_repo_tmp_path, mock_global_bees_dir, existing_scope, colonize_scope
+    ):
+        """Colonizing a hive name that exists in an overlapping scope returns cross_scope_hive_conflict."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                existing_scope: {
+                    "hives": {
+                        "bugs": {
+                            "path": str(git_repo_tmp_path / "existing_bugs"),
+                            "display_name": "Bugs",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "new_bugs"
+        result = await colonize_hive("Bugs", str(hive_path), scope=colonize_scope)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "cross_scope_hive_conflict"
+        assert "bugs" in result["message"]
+
+    async def test_cross_scope_conflict_disjoint_scopes_succeed(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """Same hive name under completely disjoint scopes succeeds (no overlap)."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                "/alpha/**": {
+                    "hives": {
+                        "bugs": {
+                            "path": str(git_repo_tmp_path / "alpha_bugs"),
+                            "display_name": "Bugs",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "beta_bugs"
+        result = await colonize_hive("Bugs", str(hive_path), scope="/beta/**")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["normalized_name"] == "bugs"
+
+    async def test_cross_scope_conflict_same_scope_regression(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """Same normalized name in the exact same scope returns duplicate_hive_name (not cross_scope)."""
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_PROJECTS_DEEP: {
+                    "hives": {
+                        "bugs": {
+                            "path": str(git_repo_tmp_path / "existing_bugs"),
+                            "display_name": "Bugs",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "dup_bugs"
+        result = await colonize_hive("Bugs", str(hive_path), scope=SCOPE_PATTERN_PROJECTS_DEEP)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "duplicate_hive_name"

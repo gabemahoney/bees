@@ -107,6 +107,15 @@ class BeesConfig:
     status_values: list[str] | None = None
 
 
+@dataclass(frozen=True)
+class ConflictRecord:
+    """A single hive-name conflict between two scopes."""
+
+    normalized_hive_name: str
+    scope_a: str
+    scope_b: str
+
+
 # Constants
 BEES_CONFIG_DIR = ".bees"
 BEES_CONFIG_FILENAME = "config.json"
@@ -369,30 +378,168 @@ def find_matching_scope(repo_root: Path, global_config: dict) -> str | None:
     return best_pattern
 
 
-def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict) -> str:
-    """Find the scope key whose hives dict contains the given hive name.
+def find_all_matching_scopes(
+    repo_root: Path, global_config: dict
+) -> list[tuple[str, "BeesConfig"]]:
+    """Find all scope patterns that match repo_root, sorted least-specific first.
 
-    Scopes are evaluated in declaration order (dict insertion order).
-    First match wins.
+    Iterates all scopes in global_config["scopes"], calls match_scope_pattern
+    for each, collects all matches, and sorts by specificity ascending using
+    compute_scope_specificity key (segment_count, -wildcard_tier).
+
+    Args:
+        repo_root: The repository root path to match
+        global_config: The full global config dict with 'scopes' key
+
+    Returns:
+        List of (pattern_string, parsed_BeesConfig) tuples sorted
+        least-specific first (ascending specificity).
+    """
+    scopes = global_config.get("scopes", {})
+    matches: list[tuple[str, BeesConfig, tuple[int, int]]] = []
+    for pattern, scope_data in scopes.items():
+        if match_scope_pattern(repo_root, pattern):
+            seg, tier = compute_scope_specificity(pattern)
+            parsed = parse_scope_to_bees_config(scope_data)
+            matches.append((pattern, parsed, (seg, -tier)))
+    matches.sort(key=lambda m: m[2])
+    return [(pattern, config) for pattern, config, _key in matches]
+
+
+def resolve_owning_scope(
+    normalized_hive_name: str, global_config: dict, repo_root: Path
+) -> tuple[str, None] | tuple[None, dict]:
+    """Resolve a hive to its single owning scope, or return an error dict.
+
+    Wraps get_scope_key_for_hive with the standard 0/1/>1 guard pattern:
+    - 0 matches  → (None, {hive_not_found error})
+    - >1 matches → (None, {config_conflict error})
+    - 1 match    → (scope_pattern, None)
+
+    Returns:
+        (scope_pattern, None) on success, or (None, error_dict) on failure.
+    """
+    try:
+        scopes = get_scope_key_for_hive(normalized_hive_name, global_config, repo_root)
+    except ValueError:
+        return (None, {
+            "status": "error",
+            "error_type": "hive_not_found",
+            "message": f"Hive '{normalized_hive_name}' does not exist in any scope visible to this repo.",
+        })
+    if len(scopes) > 1:
+        return (None, {
+            "status": "error",
+            "error_type": "config_conflict",
+            "message": (
+                f"Hive '{normalized_hive_name}' exists in multiple overlapping scopes: "
+                f"'{scopes[0]}' and '{scopes[1]}'. "
+                f"Call abandon_hive to resolve the conflict."
+            ),
+        })
+    return (scopes[0], None)
+
+
+def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict, repo_root: Path) -> list[str]:
+    """Find all matching scope keys that define the given hive name.
+
+    Filters scopes using match_scope_pattern(repo_root, scope_key) and
+    returns all matching scope patterns that contain the hive.
 
     Args:
         normalized_hive_name: The normalized hive name to search for
         global_config: The full global config dict with 'scopes' key
+        repo_root: The repository root path to filter scopes by
 
     Returns:
-        The scope key string that contains the hive
+        List of scope key strings that contain the hive and match repo_root
 
     Raises:
-        ValueError: If the hive name is not found in any scope
+        ValueError: If the hive name is not found in any matching scope
     """
     scopes = global_config.get("scopes", {})
+    result: list[str] = []
     for scope_key, scope_data in scopes.items():
+        if not match_scope_pattern(repo_root, scope_key):
+            continue
         hives = scope_data.get("hives", {})
         if normalized_hive_name in hives:
-            return scope_key
-    raise ValueError(
-        f"Hive '{normalized_hive_name}' not found in any scope in the global config."
-    )
+            result.append(scope_key)
+    if not result:
+        raise ValueError(
+            f"Hive '{normalized_hive_name}' not found in any scope in the global config."
+        )
+    return result
+
+
+def detect_hive_conflicts(
+    matching_scopes: list[tuple[str, "BeesConfig"]],
+) -> list[ConflictRecord]:
+    """Detect hive names that appear in more than one matching scope.
+
+    Args:
+        matching_scopes: Output of find_all_matching_scopes — list of
+            (scope_pattern, BeesConfig) tuples.
+
+    Returns:
+        List of ConflictRecord for every unique (hive_name, scope_a, scope_b)
+        pair. Empty list means no conflicts.
+    """
+    # Build mapping: hive_name → list of scope patterns it appears in
+    hive_scopes: dict[str, list[str]] = {}
+    for pattern, config in matching_scopes:
+        for hive_name in config.hives:
+            hive_scopes.setdefault(hive_name, []).append(pattern)
+
+    conflicts: list[ConflictRecord] = []
+    for hive_name, scopes in sorted(hive_scopes.items()):
+        if len(scopes) < 2:
+            continue
+        # Emit a ConflictRecord for each unique pair
+        for i in range(len(scopes)):
+            for j in range(i + 1, len(scopes)):
+                conflicts.append(
+                    ConflictRecord(
+                        normalized_hive_name=hive_name,
+                        scope_a=scopes[i],
+                        scope_b=scopes[j],
+                    )
+                )
+    return conflicts
+
+
+def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None:
+    """Check whether the current repo has hive-name conflicts across scopes.
+
+    Loads the global config, finds all matching scopes for the repo root,
+    and runs detect_hive_conflicts.  Returns an error dict if conflicts
+    exist, or None when the config is clean.
+
+    Args:
+        resolved_root: Pre-resolved repo root path.  Falls back to
+            get_repo_root() when None.
+
+    Returns:
+        None if no conflicts; otherwise a dict with keys
+        ``status``, ``error_type``, and ``message``.
+    """
+    if resolved_root is None:
+        resolved_root = get_repo_root()
+    global_config = load_global_config()
+    matching = find_all_matching_scopes(resolved_root, global_config)
+    conflicts = detect_hive_conflicts(matching)
+    if not conflicts:
+        return None
+    lines = []
+    for c in conflicts:
+        lines.append(f"  - hive '{c.normalized_hive_name}' in '{c.scope_a}' and '{c.scope_b}'")
+    return {
+        "status": "error",
+        "error_type": "config_conflict",
+        "message": "Config conflict detected — the same hive name appears in multiple scopes:\n"
+        + "\n".join(lines)
+        + "\nCall abandon_hive to resolve the conflict.",
+    }
 
 
 def _bare_prefix(canonical: str) -> str:
@@ -878,31 +1025,30 @@ def load_bees_config() -> BeesConfig | None:
     return get_scoped_config(repo_root)
 
 
-def save_bees_config(config: BeesConfig) -> None:
-    """Save BeesConfig to the matching scope in ~/.bees/config.json.
+def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
+    """Save BeesConfig to the specified scope in ~/.bees/config.json.
 
-    Finds the scope matching the current repo_root and updates it.
+    Writes directly to the given scope_pattern key in global config.
     Uses atomic write for crash safety.
 
     Args:
         config: BeesConfig object to save
+        scope_pattern: The scope pattern key to write to (must already exist
+            in global config scopes)
 
     Raises:
-        ValueError: If no scope matches the current repo_root
+        ValueError: If scope_pattern is not in global config scopes
         OSError: If writing fails
-        RuntimeError: If repo_root not set in context
     """
-    repo_root = get_repo_root()
     global_config = load_global_config()
-    pattern = find_matching_scope(repo_root, global_config)
 
-    if pattern is None:
+    if scope_pattern not in global_config.get("scopes", {}):
         raise ValueError(
-            f"No scope matches repo_root '{repo_root}' in global config. "
+            f"Scope pattern '{scope_pattern}' not found in global config. "
             "Use colonize_hive to create a scope entry first."
         )
 
-    global_config["scopes"][pattern] = serialize_bees_config_to_scope(config)
+    global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(config)
     save_global_config(global_config)
 
 
@@ -996,33 +1142,6 @@ def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
 
             seen_names.add(tier_config.singular)
             seen_names.add(tier_config.plural)
-
-
-def validate_unique_hive_name(normalized_name: str, config: BeesConfig | None = None) -> None:
-    """Validate that a normalized hive name is unique.
-
-    Args:
-        normalized_name: The normalized name to check (e.g., 'back_end')
-        config: BeesConfig object to check against (loads from disk if None)
-
-    Raises:
-        ValueError: If the normalized name already exists in the hive registry
-        RuntimeError: If repo_root not set in context
-    """
-    get_repo_root()
-    if config is None:
-        config = load_bees_config()
-
-    # If no config exists yet, name is unique by default
-    if config is None:
-        return
-
-    # Check if normalized name already exists as a hive key
-    if normalized_name in config.hives:
-        raise ValueError(
-            f"A hive with normalized name '{normalized_name}' already exists. "
-            f"Display name: '{config.hives[normalized_name].display_name}'"
-        )
 
 
 def resolve_egg_resolver(normalized_hive: str, config: BeesConfig | None = None) -> str | None:

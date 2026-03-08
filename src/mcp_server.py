@@ -514,7 +514,11 @@ async def list_hives(
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
-    """List all available hives."""
+    """List all available hives.
+
+    Returns a merged union of hives from all matching scopes. Each hive entry
+    includes a 'scope' field with the owning scope pattern.
+    """
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:

@@ -438,6 +438,40 @@ class TestHiveCommands:
         assert result["status"] == "success"
         hive_names = [h["normalized_name"] for h in result["hives"]]
         assert "listed" in hive_names
+        for hive in result["hives"]:
+            assert "scope" in hive
+
+    def test_list_hives_shows_scope_from_multiple_scopes(self, cli_runner, isolated_bees_env, mock_global_bees_dir, tmp_path):
+        """list-hives merges hives from multiple scopes with correct scope values."""
+        scope_wildcard = str(tmp_path.parent) + "/**"
+        scope_exact = str(isolated_bees_env.base_path)
+
+        hive_path_a = tmp_path / "hive_a"
+        hive_path_a.mkdir(exist_ok=True)
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            scope_wildcard: {
+                "hives": {
+                    "alpha_hive": {"path": str(hive_path_a), "display_name": "Alpha Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+            scope_exact: {
+                "hives": {
+                    "beta_hive": {"path": str(tmp_path / "hive_b"), "display_name": "Beta Hive", "created_at": "2024-01-01T00:00:00"},
+                },
+            },
+        })
+
+        stdout, exit_code = cli_runner(["list-hives"])
+
+        assert exit_code == 0
+        result = json.loads(stdout)
+        assert result["status"] == "success"
+        hives = {h["normalized_name"]: h for h in result["hives"]}
+        assert "alpha_hive" in hives
+        assert "beta_hive" in hives
+        assert hives["alpha_hive"]["scope"] == scope_wildcard
+        assert hives["beta_hive"]["scope"] == scope_exact
 
     def test_abandon_hive_happy_path(self, cli_runner, isolated_bees_env, create_hive):
         create_hive("myabandoned")
