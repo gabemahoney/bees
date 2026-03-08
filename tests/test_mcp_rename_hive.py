@@ -35,7 +35,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.config import BeesConfig, HiveConfig, load_bees_config, save_bees_config
+from src.config import BeesConfig, HiveConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
 from src.mcp_hive_ops import _rename_hive
 from src.repo_context import repo_root_context
 from tests.test_constants import (
@@ -67,7 +67,9 @@ def temp_hive_setup(multi_hive_config):
             },
             schema_version="1.0",
         )
-        save_bees_config(config)
+        global_config = load_global_config()
+        scope_pattern = find_matching_scope(repo_root, global_config)
+        save_bees_config(config, scope_pattern)
 
     # Create sample tickets in backend hive with NEW ID format (type-prefixed)
     ticket1_path = backend_dir / f"{TICKET_ID_MCP_RENAME_TASK1}.md"

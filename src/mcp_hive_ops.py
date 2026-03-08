@@ -30,7 +30,6 @@ from .config import (
     parse_scope_to_bees_config,
     save_bees_config,
     save_global_config,
-    scopes_overlap,
     serialize_bees_config_to_scope,
     validate_scope_pattern,
     validate_unique_hive_name,
@@ -319,7 +318,7 @@ async def colonize_hive_core(
                         if config is None:
                             config = BeesConfig()
                         config.hives[normalized_name] = new_hive
-                        save_bees_config(config)
+                        save_bees_config(config, pattern)
                     else:
                         # No scope — create exact-path scope with this hive
                         config = BeesConfig(hives={normalized_name: new_hive})
@@ -605,8 +604,17 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
     # Remove hive from config
     del config.hives[normalized_name]
 
-    # Save updated config
-    save_bees_config(config)
+    # Save updated config — resolve scope pattern first
+    repo_root = get_repo_root()
+    global_config = load_global_config()
+    scope_pattern = find_matching_scope(repo_root, global_config)
+    if scope_pattern is None:
+        return {
+            "status": "error",
+            "error_type": "scope_not_found",
+            "message": f"No scope matches the current repo root '{repo_root}'.",
+        }
+    save_bees_config(config, scope_pattern)
     logger.info(f"Removed hive '{normalized_name}' from config.json")
 
     # Success response
@@ -743,6 +751,17 @@ async def _rename_hive(
         config.hives[normalized_old].path = str(new_hive_path)
         hive_path = new_hive_path
 
+    # Resolve scope pattern for save_bees_config
+    repo_root = get_repo_root()
+    global_config = load_global_config()
+    scope_pattern = find_matching_scope(repo_root, global_config)
+    if scope_pattern is None:
+        return {
+            "status": "error",
+            "message": f"No scope matches the current repo root '{repo_root}'.",
+            "error_type": "scope_not_found",
+        }
+
     # Step 4: Update config - move hive entry from old key to new key
     hive_config = config.hives[normalized_old]
     # Update display name to the new name
@@ -754,7 +773,7 @@ async def _rename_hive(
 
     # Save updated config
     try:
-        save_bees_config(config)
+        save_bees_config(config, scope_pattern)
         logger.info(f"Updated config: renamed hive from '{normalized_old}' to '{normalized_new}'")
     except Exception as e:
         # Rollback: move folder back if we renamed it

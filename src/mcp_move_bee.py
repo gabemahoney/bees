@@ -17,6 +17,7 @@ from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_ticket_id, is_valid_ticket_id, normalize_hive_name
 from .paths import find_ticket_file
 from .reader import read_ticket
+from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,27 @@ def _move_bee_core(
     # ── Load global config once for scope lookups ─────────────────────────
     global_config = load_global_config()
 
+    # ── Resolve destination hive scope (fatal if 0 or >1 matches) ────────
+    repo_root = get_repo_root()
+    try:
+        dest_scopes = get_scope_key_for_hive(destination_hive, global_config, repo_root)
+    except ValueError:
+        return {
+            "status": "error",
+            "error_type": "hive_not_found",
+            "message": f"Destination hive '{destination_hive}' not found in any matching scope.",
+        }
+    if len(dest_scopes) > 1:
+        return {
+            "status": "error",
+            "error_type": "config_conflict",
+            "message": (
+                f"Destination hive '{destination_hive}' found in multiple scopes: "
+                f"{dest_scopes}. Cannot determine which scope to use."
+            ),
+        }
+    dest_scope = dest_scopes[0]
+
     # ── Locate all bees first (needed for compatibility pre-scan) ─────────
     # Map: bee_id → (ticket_file, source_hive_name) or reason for failure
     located: dict[str, tuple[Path, str] | dict[str, str]] = {}
@@ -196,11 +218,19 @@ def _move_bee_core(
 
         # Verify source and destination are in the same scope
         try:
-            source_scope = get_scope_key_for_hive(source_hive_name, global_config)
-            dest_scope = get_scope_key_for_hive(destination_hive, global_config)
+            source_scopes = get_scope_key_for_hive(source_hive_name, global_config, repo_root)
         except ValueError as e:
             failed.append({"id": bee_id, "reason": str(e)})
             continue
+
+        if len(source_scopes) > 1:
+            failed.append({
+                "id": bee_id,
+                "reason": f"Source hive '{source_hive_name}' found in multiple scopes: {source_scopes}",
+            })
+            continue
+
+        source_scope = source_scopes[0]
 
         if source_scope != dest_scope:
             failed.append({

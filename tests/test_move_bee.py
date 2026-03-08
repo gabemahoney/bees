@@ -1,7 +1,7 @@
 """Tests for get_scope_key_for_hive() in src/config.py and _move_bee_core() in src/mcp_move_bee.py."""
 
-import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +17,8 @@ from tests.test_constants import (
     HIVE_FRONTEND,
     HIVE_OTHER_SCOPE,
     HIVE_TEST,
+    SCOPE_PATTERN_EXACT_CHILD,
+    SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_CORRUPT_BEE,
     TICKET_ID_MOVE_BEE_1,
     TICKET_ID_MOVE_BEE_2,
@@ -25,7 +27,7 @@ from tests.test_constants import (
 
 
 @pytest.mark.parametrize(
-    "global_config,lookup_name,expected_key,expect_raises",
+    "global_config,lookup_name,repo_root,expected_keys,expect_raises",
     [
         pytest.param(
             {
@@ -36,9 +38,10 @@ from tests.test_constants import (
                 }
             },
             HIVE_TEST,
-            "/repo/scope_a",
+            Path("/repo/scope_a"),
+            ["/repo/scope_a"],
             False,
-            id="found_in_first_scope",
+            id="found_in_single_scope",
         ),
         pytest.param(
             {
@@ -52,9 +55,10 @@ from tests.test_constants import (
                 }
             },
             HIVE_FRONTEND,
-            "/repo/scope_b",
+            Path("/repo/scope_b"),
+            ["/repo/scope_b"],
             False,
-            id="found_in_later_scope",
+            id="found_in_matching_scope_only",
         ),
         pytest.param(
             {
@@ -65,18 +69,54 @@ from tests.test_constants import (
                 }
             },
             HIVE_FRONTEND,
+            Path("/repo/scope_a"),
             None,
             True,
             id="hive_not_found_raises",
         ),
+        pytest.param(
+            {
+                "scopes": {
+                    SCOPE_PATTERN_WILDCARD_PARENT: {
+                        "hives": {HIVE_TEST: {"path": "/test", "display_name": "Test"}},
+                    },
+                    SCOPE_PATTERN_EXACT_CHILD: {
+                        "hives": {HIVE_TEST: {"path": "/test", "display_name": "Test"}},
+                    },
+                }
+            },
+            HIVE_TEST,
+            Path("/Users/dev/projects/bees"),
+            [SCOPE_PATTERN_WILDCARD_PARENT, SCOPE_PATTERN_EXACT_CHILD],
+            False,
+            id="hive_in_multiple_matching_scopes",
+        ),
+        pytest.param(
+            {
+                "scopes": {
+                    "/other/path": {
+                        "hives": {HIVE_TEST: {"path": "/test", "display_name": "Test"}},
+                    },
+                    "/repo/scope_a": {
+                        "hives": {HIVE_TEST: {"path": "/test", "display_name": "Test"}},
+                    },
+                }
+            },
+            HIVE_TEST,
+            Path("/repo/scope_a"),
+            ["/repo/scope_a"],
+            False,
+            id="hive_in_non_matching_scope_excluded",
+        ),
     ],
 )
-def test_get_scope_key_for_hive(isolated_bees_env, global_config, lookup_name, expected_key, expect_raises):
+def test_get_scope_key_for_hive(isolated_bees_env, global_config, lookup_name, repo_root, expected_keys, expect_raises):
     if expect_raises:
         with pytest.raises(ValueError):
-            get_scope_key_for_hive(lookup_name, global_config)
+            get_scope_key_for_hive(lookup_name, global_config, repo_root)
     else:
-        assert get_scope_key_for_hive(lookup_name, global_config) == expected_key
+        result = get_scope_key_for_hive(lookup_name, global_config, repo_root)
+        assert sorted(result) == sorted(expected_keys)
 
 
 # ============================================================================
@@ -349,55 +389,46 @@ def test_move_bee_invalid_id_type(isolated_bees_env, bad_id, expected_reason_sub
 
 
 def test_move_bee_cross_scope_rejection(isolated_bees_env):
-    """Bee in scope A fails to move to hive in scope B; bee in failed with 'different scopes'."""
+    """Dest hive only in a less-specific scope → hive_not_found (load_bees_config uses most-specific)."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_OTHER_SCOPE)
 
-    # Write global config with two scope keys:
-    # - "/nonexistent/scope_b" (listed first): contains HIVE_OTHER_SCOPE only
-    # - str(env.base_path) (matches current repo root): contains BOTH hives
-    #
-    # load_bees_config() → matches str(env.base_path) → config.hives has both hives ✓
-    # get_scope_key_for_hive(HIVE_OTHER_SCOPE) → finds it in "/nonexistent/scope_b" first
-    # get_scope_key_for_hive(HIVE_TEST)        → not in scope_b, found in str(env.base_path)
-    # source_scope != dest_scope → cross-scope rejection ✓
-    global_config = {
-        "schema_version": "2.0",
-        "scopes": {
-            "/nonexistent/scope_b": {
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    # Most-specific scope (exact) has source hive only.
+    # Less-specific scope (wildcard) has dest hive only.
+    # load_bees_config uses most-specific → dest hive not visible → hive_not_found.
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
                 "hives": {
                     HIVE_OTHER_SCOPE: {
                         "path": str(dest_dir),
                         "display_name": "Other Scope Hive",
-                    }
+                    },
                 }
             },
-            str(env.base_path): {
+            SCOPE_PATTERN_EXACT_CHILD: {
                 "hives": {
                     HIVE_TEST: {
                         "path": str(source_dir),
                         "display_name": "Test Hive",
                     },
-                    HIVE_OTHER_SCOPE: {
-                        "path": str(dest_dir),
-                        "display_name": "Other Scope Hive",
-                    },
                 }
             },
         },
-    }
-    (env.global_bees_dir / "config.json").write_text(json.dumps(global_config, indent=2))
+    )
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Cross Scope Bee")
 
-    result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_OTHER_SCOPE)
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_OTHER_SCOPE)
 
-    assert result["status"] == "success"
-    assert len(result["failed"]) == 1
-    failed_entry = result["failed"][0]
-    assert failed_entry["id"] == TICKET_ID_MOVE_BEE_1
-    assert "different scopes" in failed_entry["reason"]
+    assert result["status"] == "error"
+    assert result["error_type"] == "hive_not_found"
 
 
 def test_move_bee_evicts_cache_entry_on_success(isolated_bees_env):
@@ -633,3 +664,126 @@ def test_move_bee_compatible_cross_hive_unaffected(isolated_bees_env):
     assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
     assert not (source_dir / TICKET_ID_MOVE_BEE_1).exists()
     assert (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
+
+
+# ============================================================================
+# Multi-Scope Tests
+# ============================================================================
+
+
+def test_move_bee_source_hive_zero_scopes(isolated_bees_env):
+    """Source hive not in any matching scope → hive_not_found error."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    env.create_hive(HIVE_DESTINATION)
+
+    from tests.conftest import write_multi_scope_config
+
+    # Register hives under a non-matching scope only
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            "/nonexistent/scope": {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_DESTINATION: {"path": str(env.base_path / HIVE_DESTINATION), "display_name": "Dest"},
+                }
+            }
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Zero Scope Bee")
+
+    result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_DESTINATION)
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "hive_not_found"
+
+
+def test_move_bee_dest_hive_multiple_scopes(isolated_bees_env):
+    """Dest hive found in >1 matching scopes → top-level config_conflict error."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_DESTINATION)
+
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    # Both scopes match and contain HIVE_DESTINATION → config_conflict before per-bee loop
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_DESTINATION: {"path": str(dest_dir), "display_name": "Dest"},
+                }
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_DESTINATION: {"path": str(dest_dir), "display_name": "Dest"},
+                }
+            },
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Multi Scope Bee")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_DESTINATION)
+
+    assert result["status"] == "error"
+    assert result["error_type"] == "config_conflict"
+
+
+def test_move_bee_source_hive_multiple_scopes(isolated_bees_env):
+    """Source hive in >1 matching scopes, dest in only 1 → per-bee failed with 'multiple scopes'."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_DESTINATION)
+
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    # Source hive in both scopes; dest hive only in the exact scope
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                }
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_DESTINATION: {"path": str(dest_dir), "display_name": "Dest"},
+                }
+            },
+        },
+    )
+
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Multi Scope Bee")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_DESTINATION)
+
+    assert result["status"] == "success"
+    assert len(result["failed"]) == 1
+    assert "multiple scopes" in result["failed"][0]["reason"]
+
+
+def test_move_bee_source_hive_exactly_one_scope(isolated_bees_env):
+    """Source hive found in exactly 1 matching scope → move proceeds normally."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_DESTINATION)
+    env.write_config()
+
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Single Scope Bee")
+
+    result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_DESTINATION)
+
+    assert result["status"] == "success"
+    assert result["moved"] == [TICKET_ID_MOVE_BEE_1]

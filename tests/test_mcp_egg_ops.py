@@ -384,11 +384,13 @@ echo '["resolved_file1.txt", "resolved_file2.txt"]'
         resolver_script.chmod(0o755)
 
         # Configure custom resolver in config
-        from src.config import load_bees_config, save_bees_config
+        from src.config import find_matching_scope, load_bees_config, load_global_config, save_bees_config
 
         config = load_bees_config()
         config.egg_resolver = str(resolver_script)
-        save_bees_config(config)
+        global_config = load_global_config()
+        scope_pattern = find_matching_scope(tmp_path, global_config)
+        save_bees_config(config, scope_pattern)
 
         # Create bee with egg
         write_ticket_file(hive_dir, "b.dmx", title="Custom Resolver Bee", type="bee", egg="input-spec")

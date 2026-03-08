@@ -471,7 +471,7 @@ class TestListHives:
         save_bees_config(BeesConfig(hives={
             "back_end": HiveConfig(display_name="Back End", path=str(hive1_path), created_at="2024-01-01T00:00:00"),
             "frontend": HiveConfig(display_name="Frontend", path=str(hive2_path), created_at="2024-01-02T00:00:00"),
-        }))
+        }), str(temp_repo))
 
         result = await _list_hives(mock_ctx)
         assert result["status"] == "success"
@@ -492,9 +492,9 @@ class TestListHives:
         from src.config import BeesConfig, save_bees_config
         from src.mcp_hive_ops import _list_hives
 
-        _, mock_ctx = repo_and_ctx
+        temp_repo, mock_ctx = repo_and_ctx
         if setup == "empty_config":
-            save_bees_config(BeesConfig(hives={}))
+            save_bees_config(BeesConfig(hives={}), str(temp_repo))
 
         result = await _list_hives(mock_ctx)
         assert result["status"] == "success"
@@ -708,7 +708,10 @@ class TestShowTicket:
 
         config = load_bees_config()
         config.egg_resolver = str(resolver_script)
-        save_bees_config(config)
+        from src.config import find_matching_scope, load_global_config
+        global_config = load_global_config()
+        scope_pattern = find_matching_scope(repo_root, global_config)
+        save_bees_config(config, scope_pattern)
 
         write_ticket_file(hive_path, "b.eg3", title="Custom Resolver Bee", egg="input-spec")
         result = await _show_ticket(ticket_ids=["b.eg3"], resolved_root=repo_root)

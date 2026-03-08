@@ -16,6 +16,7 @@ from .config import (
     load_bees_config,
     load_global_config,
 )
+from .repo_context import get_repo_root
 from .constants import SCHEMA_VERSION
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import (
@@ -122,18 +123,46 @@ def _clone_bee_core(
 
         # Scope check — must run before any write attempt
         global_config = load_global_config()
+        repo_root = get_repo_root()
         try:
-            source_scope = get_scope_key_for_hive(source_hive, global_config)
-            dest_scope = get_scope_key_for_hive(dest_hive, global_config)
+            source_scopes = get_scope_key_for_hive(source_hive, global_config, repo_root)
         except ValueError:
             return {
                 "status": "error",
-                "error_type": "cross_scope_error",
+                "error_type": "hive_not_found",
+                "message": f"Source hive '{source_hive}' not found in any matching scope.",
+            }
+        try:
+            dest_scopes = get_scope_key_for_hive(dest_hive, global_config, repo_root)
+        except ValueError:
+            return {
+                "status": "error",
+                "error_type": "hive_not_found",
+                "message": f"Destination hive '{dest_hive}' not found in any matching scope.",
+            }
+
+        # Handle 0/1/>1 scope cases
+        if len(source_scopes) > 1:
+            return {
+                "status": "error",
+                "error_type": "config_conflict",
                 "message": (
-                    f"Cannot clone from hive '{source_hive}' to '{dest_hive}': "
-                    "unable to determine scope for one or both hives."
+                    f"Source hive '{source_hive}' found in multiple scopes: "
+                    f"{source_scopes}. Cannot determine which scope to use."
                 ),
             }
+        if len(dest_scopes) > 1:
+            return {
+                "status": "error",
+                "error_type": "config_conflict",
+                "message": (
+                    f"Destination hive '{dest_hive}' found in multiple scopes: "
+                    f"{dest_scopes}. Cannot determine which scope to use."
+                ),
+            }
+
+        source_scope = source_scopes[0]
+        dest_scope = dest_scopes[0]
 
         if source_scope != dest_scope:
             return {

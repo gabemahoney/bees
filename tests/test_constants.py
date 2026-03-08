@@ -355,6 +355,10 @@ SCOPE_PATTERN_SHALLOW = "/repos/project/*"  # shallow single-segment form (/* su
 SCOPE_PATTERN_EXACT = "/repos/project/"     # trailing-slash exact form (/ suffix)
 SCOPE_PATTERN_BARE = "/repos/project"       # bare path form (no suffix)
 
+# Multi-scope test patterns: wildcard parent + exact child
+SCOPE_PATTERN_WILDCARD_PARENT = "/Users/dev/projects/**"  # broad wildcard scope
+SCOPE_PATTERN_EXACT_CHILD = "/Users/dev/projects/bees/"   # exact child scope under wildcard
+
 # ============================================================================
 # Clone Bee Tests
 # ============================================================================
