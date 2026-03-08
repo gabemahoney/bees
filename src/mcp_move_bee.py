@@ -12,7 +12,13 @@ from pathlib import Path
 from typing import Any
 
 from . import cache
-from .config import check_for_config_conflicts, get_scope_key_for_hive, load_bees_config, load_global_config
+from .config import (
+    check_for_config_conflicts,
+    get_scope_key_for_hive,
+    load_bees_config,
+    load_global_config,
+    resolve_owning_scope,
+)
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_ticket_id, is_valid_ticket_id, normalize_hive_name
 from .paths import find_ticket_file
@@ -114,24 +120,9 @@ def _move_bee_core(
 
     # ── Resolve destination hive scope (fatal if 0 or >1 matches) ────────
     repo_root = get_repo_root()
-    try:
-        dest_scopes = get_scope_key_for_hive(destination_hive, global_config, repo_root)
-    except ValueError:
-        return {
-            "status": "error",
-            "error_type": "hive_not_found",
-            "message": f"Destination hive '{destination_hive}' not found in any matching scope.",
-        }
-    if len(dest_scopes) > 1:
-        return {
-            "status": "error",
-            "error_type": "config_conflict",
-            "message": (
-                f"Destination hive '{destination_hive}' found in multiple scopes: "
-                f"{dest_scopes}. Cannot determine which scope to use."
-            ),
-        }
-    dest_scope = dest_scopes[0]
+    dest_scope, err = resolve_owning_scope(destination_hive, global_config, repo_root)
+    if err:
+        return err
 
     # ── Locate all bees first (needed for compatibility pre-scan) ─────────
     # Map: bee_id → (ticket_file, source_hive_name) or reason for failure

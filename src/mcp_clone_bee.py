@@ -12,9 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
-    get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
+    resolve_owning_scope,
 )
 from .constants import SCHEMA_VERSION
 from .hive_compat import check_cross_hive_compatibility
@@ -124,45 +124,12 @@ def _clone_bee_core(
         # Scope check — must run before any write attempt
         global_config = load_global_config()
         repo_root = get_repo_root()
-        try:
-            source_scopes = get_scope_key_for_hive(source_hive, global_config, repo_root)
-        except ValueError:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Source hive '{source_hive}' not found in any matching scope.",
-            }
-        try:
-            dest_scopes = get_scope_key_for_hive(dest_hive, global_config, repo_root)
-        except ValueError:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Destination hive '{dest_hive}' not found in any matching scope.",
-            }
-
-        # Handle 0/1/>1 scope cases
-        if len(source_scopes) > 1:
-            return {
-                "status": "error",
-                "error_type": "config_conflict",
-                "message": (
-                    f"Source hive '{source_hive}' found in multiple scopes: "
-                    f"{source_scopes}. Cannot determine which scope to use."
-                ),
-            }
-        if len(dest_scopes) > 1:
-            return {
-                "status": "error",
-                "error_type": "config_conflict",
-                "message": (
-                    f"Destination hive '{dest_hive}' found in multiple scopes: "
-                    f"{dest_scopes}. Cannot determine which scope to use."
-                ),
-            }
-
-        source_scope = source_scopes[0]
-        dest_scope = dest_scopes[0]
+        source_scope, err = resolve_owning_scope(source_hive, global_config, repo_root)
+        if err:
+            return err
+        dest_scope, err = resolve_owning_scope(dest_hive, global_config, repo_root)
+        if err:
+            return err
 
         if source_scope != dest_scope:
             return {

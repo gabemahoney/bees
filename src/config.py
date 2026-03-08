@@ -406,6 +406,40 @@ def find_all_matching_scopes(
     return [(pattern, config) for pattern, config, _key in matches]
 
 
+def resolve_owning_scope(
+    normalized_hive_name: str, global_config: dict, repo_root: Path
+) -> tuple[str, None] | tuple[None, dict]:
+    """Resolve a hive to its single owning scope, or return an error dict.
+
+    Wraps get_scope_key_for_hive with the standard 0/1/>1 guard pattern:
+    - 0 matches  → (None, {hive_not_found error})
+    - >1 matches → (None, {config_conflict error})
+    - 1 match    → (scope_pattern, None)
+
+    Returns:
+        (scope_pattern, None) on success, or (None, error_dict) on failure.
+    """
+    try:
+        scopes = get_scope_key_for_hive(normalized_hive_name, global_config, repo_root)
+    except ValueError:
+        return (None, {
+            "status": "error",
+            "error_type": "hive_not_found",
+            "message": f"Hive '{normalized_hive_name}' does not exist in any scope visible to this repo.",
+        })
+    if len(scopes) > 1:
+        return (None, {
+            "status": "error",
+            "error_type": "config_conflict",
+            "message": (
+                f"Hive '{normalized_hive_name}' exists in multiple overlapping scopes: "
+                f"'{scopes[0]}' and '{scopes[1]}'. "
+                f"Call abandon_hive to resolve the conflict."
+            ),
+        })
+    return (scopes[0], None)
+
+
 def get_scope_key_for_hive(normalized_hive_name: str, global_config: dict, repo_root: Path) -> list[str]:
     """Find all matching scope keys that define the given hive name.
 
