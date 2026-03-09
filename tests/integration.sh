@@ -3132,7 +3132,7 @@ test_scope_specificity() {
         fail_test "Scope specificity" "Narrow colonize failed: $CMD_OUT"
     fi
 
-    # From narrow match path — narrow wins
+    # From narrow match path — BOTH scopes match, so BOTH different-named hives appear
     cd /tmp/spec_test/projects/active/repo
     capture_cmd bees list-hives
     local has_narrow has_broad
@@ -3141,8 +3141,8 @@ test_scope_specificity() {
     if [ "$has_narrow" != "True" ]; then
         fail_test "Scope specificity" "Narrow hive not found from narrow path"
     fi
-    if [ "$has_broad" = "True" ]; then
-        fail_test "Scope specificity" "Broad hive should not appear from narrow path"
+    if [ "$has_broad" != "True" ]; then
+        fail_test "Scope specificity" "Broad hive missing from narrow path — broad scope also matches, both hives should appear"
     fi
 
     # From broad-only match path — broad wins
@@ -3232,6 +3232,109 @@ test_scope_shadow_more_specific() {
 run_test test_scope_specificity
 run_test test_scope_duplicate_same_scope
 run_test test_scope_shadow_more_specific
+
+# === FORMER PHASE 5 GROUP B: CROSS-SCOPE INHERITANCE ===
+# Tests that a repo matching both a narrow and a broad scope sees hives
+# from ALL matching scopes (different-named hives accumulate; same-named
+# hives resolve to the most specific scope).
+
+test_scope_cross_inherit() {
+    mkdir -p "$REPO/tickets/inh_broad" "$REPO/tickets/inh_narrow"
+    mkdir -p /tmp/inh_test/work/team/repo
+    mkdir -p /tmp/inh_test/work/other/repo
+
+    # Broad scope hive — visible to any repo under /tmp/inh_test/work/
+    capture_cmd bees colonize-hive \
+        --name "Inherit Broad" \
+        --path "$REPO/tickets/inh_broad" \
+        --scope "/tmp/inh_test/work/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope cross inherit" "Broad colonize failed: $CMD_OUT"
+    fi
+
+    # Narrow scope hive — only for repos directly under /tmp/inh_test/work/team/
+    capture_cmd bees colonize-hive \
+        --name "Inherit Narrow" \
+        --path "$REPO/tickets/inh_narrow" \
+        --scope "/tmp/inh_test/work/team/*"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope cross inherit" "Narrow colonize failed: $CMD_OUT"
+    fi
+
+    # From a path that matches BOTH scopes — both hives should appear
+    cd /tmp/inh_test/work/team/repo
+    capture_cmd bees list-hives
+    local has_broad has_narrow
+    has_broad=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='inherit_broad' for h in d.get('hives',[]))")
+    has_narrow=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='inherit_narrow' for h in d.get('hives',[]))")
+    if [ "$has_broad" != "True" ]; then
+        fail_test "Scope cross inherit" "Broad hive missing from path matching both scopes"
+    fi
+    if [ "$has_narrow" != "True" ]; then
+        fail_test "Scope cross inherit" "Narrow hive missing from path matching both scopes"
+    fi
+
+    # From a path that matches ONLY the broad scope — only broad hive appears
+    cd /tmp/inh_test/work/other/repo
+    capture_cmd bees list-hives
+    has_broad=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='inherit_broad' for h in d.get('hives',[]))")
+    has_narrow=$(check_json "$CMD_OUT" "any(h.get('normalized_name')=='inherit_narrow' for h in d.get('hives',[]))")
+    if [ "$has_broad" != "True" ]; then
+        fail_test "Scope cross inherit" "Broad hive missing from broad-only path"
+    fi
+    if [ "$has_narrow" = "True" ]; then
+        fail_test "Scope cross inherit" "Narrow hive should not appear from broad-only path"
+    fi
+
+    cd "$REPO"
+    pass_test "Scope cross inherit"
+}
+
+test_scope_same_name_narrow_wins() {
+    mkdir -p "$REPO/tickets/shared_broad" "$REPO/tickets/shared_narrow"
+    mkdir -p /tmp/same_test/work/team/repo
+    mkdir -p /tmp/same_test/work/other/repo
+
+    # Both scopes define a hive named "Shared Work" — narrow scope should win
+    capture_cmd bees colonize-hive \
+        --name "Shared Work" \
+        --path "$REPO/tickets/shared_broad" \
+        --scope "/tmp/same_test/work/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope same name narrow wins" "Broad colonize failed: $CMD_OUT"
+    fi
+
+    capture_cmd bees colonize-hive \
+        --name "Shared Work" \
+        --path "$REPO/tickets/shared_narrow" \
+        --scope "/tmp/same_test/work/team/*"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Scope same name narrow wins" "Narrow colonize failed: $CMD_OUT"
+    fi
+
+    # From path matching both — narrow scope's path wins
+    cd /tmp/same_test/work/team/repo
+    capture_cmd bees list-hives
+    local shared_path
+    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
+    if ! echo "$shared_path" | grep -q "shared_narrow"; then
+        fail_test "Scope same name narrow wins" "Expected shared_narrow path, got: $shared_path"
+    fi
+
+    # From broad-only path — broad scope's path wins
+    cd /tmp/same_test/work/other/repo
+    capture_cmd bees list-hives
+    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
+    if ! echo "$shared_path" | grep -q "shared_broad"; then
+        fail_test "Scope same name narrow wins" "Expected shared_broad path, got: $shared_path"
+    fi
+
+    cd "$REPO"
+    pass_test "Scope same name narrow wins"
+}
+
+run_test test_scope_cross_inherit
+run_test test_scope_same_name_narrow_wins
 
 # === FORMER PHASE 5 GROUP B: ID CHARSET AND HIERARCHICAL IDS ===
 
