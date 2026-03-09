@@ -43,5 +43,5 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
-.claude/
+.claude/memory/
 CONTRIBUTING.md
