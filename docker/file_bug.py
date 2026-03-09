@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """File a bug ticket against a remote bees MCP server over HTTP.
+Needed because we cannot use the prod bees server when configured to use the in-test bees server.
+This allows Claude in the docker to file bugs.
 
 Usage:
     python file_bug.py --url URL --title TITLE --description DESC
