@@ -35,6 +35,7 @@ from unittest.mock import mock_open, patch
 
 import pytest
 
+from src.config import load_global_config
 from src.mcp_hive_ops import _list_hives, colonize_hive_core as colonize_hive
 from src.mcp_hive_utils import scan_for_hive
 from src.repo_context import repo_root_context
@@ -1022,3 +1023,140 @@ class TestColonizeHiveCrossScopeConflict:
 
         assert result["status"] == "error"
         assert result["error_type"] == "duplicate_hive_name"
+
+
+# ============================================================================
+# SCOPE SELECTION TESTS (wildcard vs exact-path)
+# ============================================================================
+
+
+class TestColonizeHiveScopeSelection:
+    """Tests that colonize_hive registers hives in exact-path scopes, not wildcard parents."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        """Create a temporary directory with git repo structure."""
+        (tmp_path / ".git").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with repo_root_context(tmp_path):
+            yield tmp_path
+
+    async def test_wildcard_parent_scope_creates_new_exact_scope(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """Wildcard parent scope exists but no exact scope → hive goes in new exact-path scope, not wildcard."""
+        wildcard_pattern = str(git_repo_tmp_path.parent) + "/**"
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                wildcard_pattern: {
+                    "hives": {
+                        "other_hive": {
+                            "path": str(git_repo_tmp_path.parent / "other" / "tickets"),
+                            "display_name": "Other Hive",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "tickets"
+        result = await colonize_hive("Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        exact_scope = str(git_repo_tmp_path)
+        # Hive must be in the new exact-path scope keyed by str(repo_root) (no trailing slash)
+        assert exact_scope in config["scopes"]
+        assert "tickets" in config["scopes"][exact_scope]["hives"]
+        # Hive must NOT appear in the wildcard scope
+        assert "tickets" not in config["scopes"].get(wildcard_pattern, {}).get("hives", {})
+
+    async def test_exact_scope_exists_hive_added_to_it(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """Exact scope already exists for repo_root → new hive is added to that scope."""
+        exact_scope = str(git_repo_tmp_path) + "/"
+        existing_hive_path = str(git_repo_tmp_path / "existing_tickets")
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                exact_scope: {
+                    "hives": {
+                        "existing": {
+                            "path": existing_hive_path,
+                            "display_name": "Existing",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                }
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "new_tickets"
+        result = await colonize_hive("New Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        scope_hives = config["scopes"][exact_scope]["hives"]
+        # Both old and new hive present in the same exact scope
+        assert "existing" in scope_hives
+        assert "new_tickets" in scope_hives
+        # No extra scope was created
+        assert len(config["scopes"]) == 1
+
+    async def test_no_scope_creates_exact_path_scope(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """No pre-existing scopes → colonize_hive creates a new exact-path scope for repo_root."""
+        hive_path = git_repo_tmp_path / "tickets"
+        result = await colonize_hive("Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        # Exactly one scope should exist, keyed by repo_root (exact path, no wildcards)
+        assert len(config["scopes"]) == 1
+        scope_key = next(iter(config["scopes"]))
+        assert "*" not in scope_key
+        assert "tickets" in config["scopes"][scope_key]["hives"]
+
+    async def test_wildcard_and_exact_scope_both_exist_uses_exact(
+        self, git_repo_tmp_path, mock_global_bees_dir
+    ):
+        """Both wildcard parent AND exact scope exist → hive is added to exact scope, not wildcard."""
+        wildcard_pattern = str(git_repo_tmp_path.parent) + "/**"
+        exact_scope = str(git_repo_tmp_path)
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                wildcard_pattern: {
+                    "hives": {
+                        "parent_hive": {
+                            "path": str(git_repo_tmp_path.parent / "parent_tickets"),
+                            "display_name": "Parent Hive",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                },
+                exact_scope: {
+                    "hives": {
+                        "existing": {
+                            "path": str(git_repo_tmp_path / "existing"),
+                            "display_name": "Existing",
+                            "created_at": "2026-01-01T00:00:00",
+                        }
+                    }
+                },
+            },
+        )
+
+        hive_path = git_repo_tmp_path / "new_tickets"
+        result = await colonize_hive("New Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        # New hive must be in the exact scope
+        assert "new_tickets" in config["scopes"][exact_scope]["hives"]
+        # Wildcard scope must be untouched
+        assert "new_tickets" not in config["scopes"].get(wildcard_pattern, {}).get("hives", {})

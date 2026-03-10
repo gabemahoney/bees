@@ -25,11 +25,13 @@ from .config import (
     canonicalize_scope_pattern,
     check_for_config_conflicts,
     check_scope_conflict,
+    compute_scope_specificity,
     find_all_matching_scopes,
     find_matching_scope,
     get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
+    match_scope_pattern,
     parse_scope_to_bees_config,
     resolve_owning_scope,
     save_bees_config,
@@ -45,6 +47,16 @@ from .repo_context import get_repo_root, repo_root_context
 from .repo_utils import get_repo_root_from_path
 
 logger = logging.getLogger(__name__)
+
+
+def _find_exact_scope(repo_root: Path, global_config: dict) -> str | None:
+    """Return the scope pattern that matches repo_root exactly (no wildcards), or None."""
+    for pattern in global_config.get("scopes", {}):
+        if match_scope_pattern(repo_root, pattern):
+            _, wildcard_tier = compute_scope_specificity(pattern)
+            if wildcard_tier == 0:
+                return pattern
+    return None
 
 
 async def colonize_hive_core(
@@ -315,8 +327,8 @@ async def colonize_hive_core(
                         )
                     save_global_config(global_config)
                 else:
-                    # No explicit scope — find matching scope by repo root
-                    pattern = find_matching_scope(repo_root, global_config)
+                    # No explicit scope — find exact (non-wildcard) scope by repo root
+                    pattern = _find_exact_scope(repo_root, global_config)
 
                     if pattern is not None:
                         # Scope exists — load it, add hive, save back
@@ -529,16 +541,20 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         }
     """
     try:
+        logger.info("DEBUG _list_hives ENTRY")
         if resolved_root is None:
             resolved_root = get_repo_root()
 
         # Check for config conflicts before proceeding
         conflict_error = check_for_config_conflicts(resolved_root)
+        logger.info(f"_list_hives: resolved_root={resolved_root}, conflict_error={conflict_error}")
         if conflict_error is not None:
             return conflict_error
 
         # Collect hives from all matching scopes (least→most specific)
-        scope_configs = find_all_matching_scopes(resolved_root, load_global_config())
+        global_cfg = load_global_config()
+        scope_configs = find_all_matching_scopes(resolved_root, global_cfg)
+        logger.info(f"_list_hives: {len(scope_configs)} matching scope(s): {[p for p, _ in scope_configs]}")
 
         if not scope_configs:
             logger.info("No hives configured")
