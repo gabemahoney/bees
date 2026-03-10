@@ -787,6 +787,70 @@ class TestGetScopedConfig:
     def test_returns_none_for_no_match(self, mock_global_bees_dir):
         assert get_scoped_config(Path("/nonexistent/path")) is None
 
+    def test_merges_hives_from_parent_and_child_scopes(self, mock_global_bees_dir):
+        """Hive in a parent wildcard scope is visible alongside hives in the child scope.
+
+        This is the core regression test for the multi-scope fix: a hive registered
+        under /Users/dev/projects/** must be visible when the repo root matches the
+        more-specific /Users/dev/projects/bees/ scope.
+        """
+        repo_root = Path("/Users/dev/projects/bees")
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_WILDCARD_PARENT: {
+                    "hives": {"bugs": {"path": "/bugs", "display_name": "Bugs", "created_at": TS}},
+                },
+                SCOPE_PATTERN_EXACT_CHILD: {
+                    "hives": {"backend": {"path": "/backend", "display_name": "Backend", "created_at": TS}},
+                    "child_tiers": {"t1": ["Task", "Tasks"]},
+                },
+            },
+        )
+        config = get_scoped_config(repo_root)
+        assert config is not None
+        assert "bugs" in config.hives, "parent-scope hive must be visible"
+        assert "backend" in config.hives, "child-scope hive must be visible"
+
+    def test_most_specific_scope_wins_hive_conflict(self, mock_global_bees_dir):
+        """When the same hive name appears in both parent and child scopes, child wins."""
+        repo_root = Path("/Users/dev/projects/bees")
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_WILDCARD_PARENT: {
+                    "hives": {"shared": {"path": "/parent/shared", "display_name": "Shared-Parent", "created_at": TS}},
+                },
+                SCOPE_PATTERN_EXACT_CHILD: {
+                    "hives": {"shared": {"path": "/child/shared", "display_name": "Shared-Child", "created_at": TS}},
+                },
+            },
+        )
+        config = get_scoped_config(repo_root)
+        assert config is not None
+        assert config.hives["shared"].path == "/child/shared"
+
+    def test_non_hive_settings_come_from_most_specific_scope(self, mock_global_bees_dir):
+        """child_tiers and other non-hive settings are taken from the most-specific scope."""
+        repo_root = Path("/Users/dev/projects/bees")
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                SCOPE_PATTERN_WILDCARD_PARENT: {
+                    "hives": {"bugs": {"path": "/bugs", "display_name": "Bugs", "created_at": TS}},
+                    "child_tiers": {"t1": ["Story", "Stories"]},
+                },
+                SCOPE_PATTERN_EXACT_CHILD: {
+                    "hives": {"backend": {"path": "/backend", "display_name": "Backend", "created_at": TS}},
+                    "child_tiers": {"t1": ["Task", "Tasks"]},
+                },
+            },
+        )
+        config = get_scoped_config(repo_root)
+        assert config is not None
+        assert config.child_tiers is not None
+        assert config.child_tiers["t1"].singular == "Task"
+
 
 # ============================================================================
 # SCOPED LOAD/SAVE TESTS

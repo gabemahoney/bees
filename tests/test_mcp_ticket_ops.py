@@ -1599,3 +1599,69 @@ class TestBulkDeleteBatchParentCleanup:
         parent = read_ticket("b.dwd", file_path=parent_path)
         assert "t1.dwd.c1" not in (parent.children or [])
         assert "t1.dwd.c2" not in (parent.children or [])
+
+
+# ===========================================================================
+# Tests for _sanitize_escape_sequences applied via _create_ticket / _update_ticket
+# ===========================================================================
+
+
+class TestSanitizeEscapeSequencesViaCreate:
+    """Verify that literal \\n and \\t in body are expanded when creating a ticket."""
+
+    @pytest.mark.parametrize(
+        "raw_body,expected_body",
+        [
+            pytest.param("line1\\nline2", "line1\nline2", id="literal_backslash_n"),
+            pytest.param("col1\\tcol2", "col1\tcol2", id="literal_backslash_t"),
+            pytest.param("line1\nline2", "line1\nline2", id="real_newline_passthrough"),
+        ],
+    )
+    async def test_create_ticket_sanitizes_body(self, isolated_bees_env, raw_body, expected_body):
+        """Body escape sequences are expanded (or left alone) on ticket creation."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        result = await _create_ticket(
+            ticket_type="bee",
+            title="Escape Test",
+            hive_name=HIVE_BACKEND,
+            body=raw_body,
+        )
+
+        assert result["status"] == "success"
+        tid = result["ticket_id"]
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert ticket.body == expected_body
+
+
+class TestSanitizeEscapeSequencesViaUpdate:
+    """Verify that literal escape sequences in body are expanded when updating a ticket."""
+
+    @pytest.mark.parametrize(
+        "input_body,expected_body",
+        [
+            ("first\\nsecond", "first\nsecond"),
+            ("col1\\tcol2", "col1\tcol2"),
+        ],
+        ids=["literal_backslash_n", "literal_backslash_t"],
+    )
+    async def test_update_ticket_sanitizes_body(self, isolated_bees_env, input_body, expected_body):
+        """Updating body with literal escape sequences stores real characters on disk."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        result = await _create_ticket(
+            ticket_type="bee", title="Update Escape Test", hive_name=HIVE_BACKEND
+        )
+        tid = result["ticket_id"]
+
+        update_result = await _update_ticket(
+            ticket_id=tid,
+            body=input_body,
+            hive_name=HIVE_BACKEND,
+        )
+        assert update_result["status"] == "success"
+
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert ticket.body == expected_body

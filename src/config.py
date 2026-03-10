@@ -994,19 +994,35 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
 
 
 def get_scoped_config(repo_root: Path) -> BeesConfig | None:
-    """Load global config, find matching scope for repo_root, return its BeesConfig.
+    """Load global config, find all matching scopes for repo_root, return merged BeesConfig.
+
+    Merges hives from all matching scopes (least-specific to most-specific), so hives
+    defined in parent scopes (e.g. /Users/foo/**) are visible alongside hives in more
+    specific scopes (e.g. /Users/foo/projects/myrepo/**).  More-specific scopes win on
+    hive name conflicts.  Non-hive settings (child_tiers, egg_resolver, etc.) come from
+    the most-specific scope.
 
     Args:
         repo_root: The repository root to match against scope patterns
 
     Returns:
-        BeesConfig for the matching scope, or None if no scope matches
+        BeesConfig with merged hives from all matching scopes, or None if no scope matches
     """
     global_config = load_global_config()
-    pattern = find_matching_scope(repo_root, global_config)
-    if pattern is None:
+    scope_configs = find_all_matching_scopes(repo_root, global_config)
+    if not scope_configs:
         return None
-    return parse_scope_to_bees_config(global_config["scopes"][pattern])
+
+    # Use most-specific scope as the base config (non-hive settings)
+    _, base_config = scope_configs[-1]
+
+    # Merge hives from least-specific to most-specific (most-specific wins conflicts)
+    merged_hives: dict[str, HiveConfig] = {}
+    for _, config in scope_configs:
+        merged_hives.update(config.hives)
+
+    base_config.hives = merged_hives
+    return base_config
 
 
 def load_bees_config() -> BeesConfig | None:

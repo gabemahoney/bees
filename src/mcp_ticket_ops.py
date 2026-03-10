@@ -66,6 +66,11 @@ logger = logging.getLogger(__name__)
 _UNSET: Literal["__UNSET__"] = "__UNSET__"
 
 
+def _sanitize_escape_sequences(text: str) -> str:
+    """Replace literal escape sequences (from LLM JSON output) with real characters."""
+    return text.replace("\\n", "\n").replace("\\t", "\t")
+
+
 def find_hive_for_ticket(ticket_id: str) -> str | None:
     """
     Scan all configured hives to find which one contains the given ticket.
@@ -308,6 +313,8 @@ async def _create_ticket(
         error_msg = f"Invalid hive_name: '{hive_name}'. Hive name must contain at least one alphanumeric character"
         logger.error(error_msg)
         return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
+
+    body = _sanitize_escape_sequences(body)
 
     # Check for config conflicts before proceeding
     conflict_error = check_for_config_conflicts(resolved_root)
@@ -769,7 +776,7 @@ async def _update_ticket_single(
 
     if body is not _UNSET:
         # body can be None or empty string
-        ticket.body = body if body else ""
+        ticket.body = _sanitize_escape_sequences(body) if body else ""
 
     if tags is not _UNSET:
         # tags can be None (which means empty list)
