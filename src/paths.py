@@ -3,6 +3,7 @@
 import os
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from .id_utils import is_ticket_id, normalize_hive_name
 from .reader import get_ticket_type, read_ticket
@@ -52,19 +53,34 @@ def iter_ticket_files_deep(hive_root: Path) -> Generator[Path, None, None]:
             yield Path(dirpath) / md_name
 
 
-def build_ticket_path_map(ticket_ids: set[str]) -> dict[str, tuple[str, Path]]:
+def build_ticket_path_map(
+    ticket_ids: set[str],
+    hive_collection: list[tuple[str, Any]] | None = None,
+) -> dict[str, tuple[str, Path]]:
     """Walk all hives once to find paths for multiple tickets.
 
     Returns {ticket_id: (hive_name, path)} for all found tickets.
-    """
-    from .config import load_bees_config
 
-    config = load_bees_config()
-    if not config or not config.hives:
-        return {}
+    Args:
+        ticket_ids: Set of ticket IDs to locate.
+        hive_collection: Optional list of (hive_name, hive_config) pairs. When
+            provided, used instead of calling load_bees_config(). Allows callers
+            (e.g. queen repos) to supply a merged collection spanning multiple
+            scopes, including duplicate normalized names.
+    """
+    if hive_collection is not None:
+        hive_items: list[tuple[str, Any]] = hive_collection
+    else:
+        from .config import load_bees_config
+
+        config = load_bees_config()
+        if not config or not config.hives:
+            return {}
+        hive_items = list(config.hives.items())
+
     result: dict[str, tuple[str, Path]] = {}
     needed = set(ticket_ids)
-    for hive_name, hive_config in config.hives.items():
+    for hive_name, hive_config in hive_items:
         if not needed:
             break
         hive_path = Path(hive_config.path)
