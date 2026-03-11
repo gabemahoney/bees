@@ -30,11 +30,15 @@ class PipelineEvaluator:
     - Batch query execution support
     """
 
-    def __init__(self, tickets_dir: str | None = None):
+    def __init__(self, tickets_dir: str | None = None, hive_collection: list[tuple[str, Any]] | None = None):
         """Initialize pipeline and load all tickets into memory from configured hives.
 
         Args:
             tickets_dir: DEPRECATED - kept for backward compatibility, not used
+            hive_collection: Optional list of (hive_name, hive_config) pairs to use
+                instead of loading from the local bees config. When provided, all
+                pairs are walked (including duplicates with the same name from
+                different scopes). When None, loads from load_bees_config() as usual.
 
         Raises:
             FileNotFoundError: If hive directories not found
@@ -45,6 +49,9 @@ class PipelineEvaluator:
 
         # In-memory ticket storage: ticket_id -> ticket_data
         self.tickets: dict[str, dict[str, Any]] = {}
+
+        # Optional external hive collection (used by queen-aware callers)
+        self.hive_collection = hive_collection
 
         # Initialize executors
         self.search_executor = SearchExecutor()
@@ -75,19 +82,26 @@ class PipelineEvaluator:
         Raises:
             FileNotFoundError: If hive directory not found
         """
-        from src.config import load_bees_config
         from src.fast_parser import fast_parse_frontmatter
 
-        # Load hive configuration
-        config = load_bees_config()
+        # Determine which hives to load from
+        if self.hive_collection is not None:
+            hive_items = self.hive_collection
+        else:
+            from src.config import load_bees_config
 
-        if not config or not config.hives:
-            # No hives configured - return with empty ticket set
+            config = load_bees_config()
+            if not config or not config.hives:
+                logger.warning("No hives configured, no tickets will be loaded")
+                return
+            hive_items = list(config.hives.items())
+
+        if not hive_items:
             logger.warning("No hives configured, no tickets will be loaded")
             return
 
         # Load tickets from each hive
-        for hive_name, hive_config in config.hives.items():
+        for hive_name, hive_config in hive_items:
             hive_path = Path(hive_config.path)
 
             if not hive_path.exists():

@@ -20,6 +20,7 @@ from .config import (
     resolve_named_query,
     save_global_config,
 )
+from .paths import _build_queen_hive_collection
 from .pipeline import PipelineEvaluator
 from .query_parser import QueryParser, QueryValidationError
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -231,6 +232,7 @@ def _list_named_queries(resolved_root: Path | None = None) -> dict[str, Any]:
     }
 
 
+
 async def _execute_named_query(
     query_name: str, resolved_root: Path | None = None
 ) -> dict[str, Any]:
@@ -292,7 +294,8 @@ async def _execute_named_query(
 
     # Execute query using pipeline evaluator
     try:
-        evaluator = PipelineEvaluator()
+        hive_collection = _build_queen_hive_collection(resolved_root)
+        evaluator = PipelineEvaluator(hive_collection=hive_collection)
         result_ids = evaluator.execute_query(stages)
 
         logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
@@ -361,7 +364,8 @@ async def _execute_freeform_query(
 
     # Execute query using pipeline evaluator
     try:
-        evaluator = PipelineEvaluator()
+        hive_collection = _build_queen_hive_collection(resolved_root)
+        evaluator = PipelineEvaluator(hive_collection=hive_collection)
         result_ids = evaluator.execute_query(stages)
 
         logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")

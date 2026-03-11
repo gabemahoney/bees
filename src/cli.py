@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import set_config_path, set_test_config_override
+from .config import check_queen_write_access, load_global_config, set_config_path, set_test_config_override
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import _abandon_hive, _list_hives, _rename_hive, _sanitize_hive, colonize_hive_core
 from .mcp_index_ops import _generate_index
@@ -77,11 +77,19 @@ def _output_result(result: dict) -> None:
     sys.exit(0 if result.get("status") == "success" else 1)
 
 
-def _run_in_repo(coro) -> dict:
+def _run_in_repo(coro, root: Path | None = None) -> dict:
     """Resolve repo root, set context, and run an async coroutine."""
-    root = get_repo_root_from_path(Path.cwd())
-    with repo_root_context(root):
+    resolved = root if root is not None else get_repo_root_from_path(Path.cwd())
+    with repo_root_context(resolved):
         return asyncio.run(coro)
+
+
+def _guard_queen_write_cli(root: Path) -> bool:
+    """Output permission_denied and return True if queen lacks write access."""
+    if write_err := check_queen_write_access(root, load_global_config()):
+        _output_result(write_err)
+        return True
+    return False
 
 
 def _configure_file_logging() -> Path:
@@ -105,6 +113,9 @@ def _configure_file_logging() -> Path:
 # ---------------------------------------------------------------------------
 
 def handle_create_ticket(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -118,7 +129,8 @@ def handle_create_ticket(args):
             tags=parse_json_arg(args.tags, "--tags") if args.tags is not None else None,
             status=args.status,
             egg=parse_json_arg(args.egg, "--egg") if args.egg is not None else None,
-        )
+        ),
+        root=root,
     )
     _output_result(result)
 
@@ -136,6 +148,8 @@ def handle_update_ticket(args):
         return
 
     root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     kwargs = {
@@ -169,12 +183,16 @@ def handle_update_ticket(args):
 
 
 def handle_delete_ticket(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
     result = _run_in_repo(
         _delete_ticket(
             ticket_ids=ticket_ids,
             hive_name=args.hive if args.hive is not None else None,
-        )
+        ),
+        root=root,
     )
     _output_result(result)
 
@@ -192,6 +210,9 @@ def handle_get_status_values(args):
 
 
 def handle_set_types(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     if args.scope == "global":
         result = asyncio.run(
             _set_types(
@@ -199,7 +220,6 @@ def handle_set_types(args):
             )
         )
     else:
-        root = get_repo_root_from_path(Path.cwd())
         with repo_root_context(root):
             result = asyncio.run(
                 _set_types(
@@ -211,6 +231,9 @@ def handle_set_types(args):
 
 
 def handle_set_status_values(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     if args.scope == "global":
         result = asyncio.run(
             _set_status_values(
@@ -218,7 +241,6 @@ def handle_set_status_values(args):
             )
         )
     else:
-        root = get_repo_root_from_path(Path.cwd())
         with repo_root_context(root):
             result = asyncio.run(
                 _set_status_values(
@@ -238,6 +260,8 @@ def handle_set_status_values(args):
 
 def handle_add_named_query(args):
     root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     result = _add_named_query(name=args.query_name, query_yaml=args.query_yaml, scope=args.scope, resolved_root=root)
     _output_result(result)
 
@@ -258,6 +282,8 @@ def handle_execute_freeform_query(args):
 
 def handle_delete_named_query(args):
     root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     result = _delete_named_query(name=args.query_name, resolved_root=root)
     _output_result(result)
 
@@ -273,6 +299,9 @@ def handle_list_named_queries(args):
 # ---------------------------------------------------------------------------
 
 def handle_colonize_hive(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     parsed_child_tiers = parse_json_arg(args.child_tiers, "--child-tiers") if args.child_tiers is not None else None
     result = _run_in_repo(
         colonize_hive_core(
@@ -282,7 +311,8 @@ def handle_colonize_hive(args):
             egg_resolver=args.egg_resolver,
             egg_resolver_timeout=args.egg_resolver_timeout,
             scope=args.scope,
-        )
+        ),
+        root=root,
     )
     _output_result(result)
 
@@ -293,19 +323,29 @@ def handle_list_hives(args):
 
 
 def handle_abandon_hive(args):
-    result = _run_in_repo(_abandon_hive(hive_name=args.hive))
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    result = _run_in_repo(_abandon_hive(hive_name=args.hive), root=root)
     _output_result(result)
 
 
 def handle_rename_hive(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     result = _run_in_repo(
-        _rename_hive(old_name=args.old_name, new_name=args.new_name, rename_folder=args.rename_folder)
+        _rename_hive(old_name=args.old_name, new_name=args.new_name, rename_folder=args.rename_folder),
+        root=root,
     )
     _output_result(result)
 
 
 def handle_sanitize_hive(args):
-    result = _run_in_repo(_sanitize_hive(hive_name=args.hive))
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    result = _run_in_repo(_sanitize_hive(hive_name=args.hive), root=root)
     _output_result(result)
 
 
@@ -314,27 +354,40 @@ def handle_sanitize_hive(args):
 # ---------------------------------------------------------------------------
 
 def handle_generate_index(args):
-    result = _run_in_repo(_generate_index(hive_name=args.hive))
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    result = _run_in_repo(_generate_index(hive_name=args.hive), root=root)
     _output_result(result)
 
 
 def handle_move_bee(args):
-    result = _run_in_repo(_move_bee(bee_ids=args.ids, destination_hive=args.hive, force=args.force))
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    result = _run_in_repo(_move_bee(bee_ids=args.ids, destination_hive=args.hive, force=args.force), root=root)
     _output_result(result)
 
 
 def handle_clone_bee(args):
-    result = _run_in_repo(_clone_bee(bee_id=args.bee_id, destination_hive=args.hive, force=args.force))
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    result = _run_in_repo(_clone_bee(bee_id=args.bee_id, destination_hive=args.hive, force=args.force), root=root)
     _output_result(result)
 
 
 def handle_undertaker(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
     result = _run_in_repo(
         _undertaker(
             hive_name=args.hive,
             query_yaml=args.query_yaml,
             query_name=args.query_name,
-        )
+        ),
+        root=root,
     )
     _output_result(result)
 

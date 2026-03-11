@@ -24,10 +24,12 @@ from .config import (
     HiveConfig,
     canonicalize_scope_pattern,
     check_for_config_conflicts,
+    check_queen_elevation,
     check_scope_conflict,
     compute_scope_specificity,
     find_all_matching_scopes,
     find_matching_scope,
+    get_all_scopes_config,
     get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
@@ -375,6 +377,9 @@ async def colonize_hive_core(
                 result["egg_resolver_timeout"] = egg_resolver_timeout
             return result
 
+    except ValueError as e:
+        logger.error(f"Config validation error in colonize_hive: {e}")
+        return {"status": "error", "error_type": "invalid_config", "message": str(e)}
     except Exception as e:
         # Catch-all for unexpected errors
         logger.error(f"Unexpected error in colonize_hive: {e}")
@@ -553,6 +558,27 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
 
         # Collect hives from all matching scopes (least→most specific)
         global_cfg = load_global_config()
+
+        is_queen, _ = check_queen_elevation(resolved_root, global_cfg)
+
+        if is_queen:
+            # Queen repos see ALL hives from ALL scopes, no deduplication
+            all_scopes = get_all_scopes_config(global_cfg)
+            logger.info(f"_list_hives (queen): {len(all_scopes)} total scope(s)")
+            hives_list: list[dict[str, str]] = []
+            for pattern, config in all_scopes.items():
+                for normalized_name, hive_config in config.hives.items():
+                    hives_list.append({
+                        "display_name": hive_config.display_name,
+                        "normalized_name": normalized_name,
+                        "path": hive_config.path,
+                        "scope": pattern,
+                    })
+            if not hives_list:
+                logger.info("No hives configured")
+                return {"status": "success", "hives": [], "message": "No hives configured"}
+            return {"status": "success", "hives": sorted(hives_list, key=lambda h: h["normalized_name"])}
+
         scope_configs = find_all_matching_scopes(resolved_root, global_cfg)
         logger.info(f"_list_hives: {len(scope_configs)} matching scope(s): {[p for p, _ in scope_configs]}")
 
@@ -581,6 +607,10 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         logger.info(f"Listed {len(hives_list)} hives")
         return {"status": "success", "hives": hives_list}
 
+    except ValueError as e:
+        error_msg = str(e)
+        logger.error(f"Config validation error in list_hives: {error_msg}")
+        return {"status": "error", "error_type": "invalid_config", "message": error_msg}
     except Exception as e:
         error_msg = f"Failed to list hives: {e}"
         logger.error(error_msg)

@@ -3,6 +3,7 @@
 import os
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from .id_utils import is_ticket_id, normalize_hive_name
 from .reader import get_ticket_type, read_ticket
@@ -52,19 +53,34 @@ def iter_ticket_files_deep(hive_root: Path) -> Generator[Path, None, None]:
             yield Path(dirpath) / md_name
 
 
-def build_ticket_path_map(ticket_ids: set[str]) -> dict[str, tuple[str, Path]]:
+def build_ticket_path_map(
+    ticket_ids: set[str],
+    hive_collection: list[tuple[str, Any]] | None = None,
+) -> dict[str, tuple[str, Path]]:
     """Walk all hives once to find paths for multiple tickets.
 
     Returns {ticket_id: (hive_name, path)} for all found tickets.
-    """
-    from .config import load_bees_config
 
-    config = load_bees_config()
-    if not config or not config.hives:
-        return {}
+    Args:
+        ticket_ids: Set of ticket IDs to locate.
+        hive_collection: Optional list of (hive_name, hive_config) pairs. When
+            provided, used instead of calling load_bees_config(). Allows callers
+            (e.g. queen repos) to supply a merged collection spanning multiple
+            scopes, including duplicate normalized names.
+    """
+    if hive_collection is not None:
+        hive_items: list[tuple[str, Any]] = hive_collection
+    else:
+        from .config import load_bees_config
+
+        config = load_bees_config()
+        if not config or not config.hives:
+            return {}
+        hive_items = list(config.hives.items())
+
     result: dict[str, tuple[str, Path]] = {}
     needed = set(ticket_ids)
-    for hive_name, hive_config in config.hives.items():
+    for hive_name, hive_config in hive_items:
         if not needed:
             break
         hive_path = Path(hive_config.path)
@@ -76,6 +92,57 @@ def build_ticket_path_map(ticket_ids: set[str]) -> dict[str, tuple[str, Path]]:
                 result[tid] = (hive_name, candidate)
                 needed.discard(tid)
     return result
+
+
+def _build_queen_hive_collection(resolved_root: Path | None) -> list[tuple[str, Any]] | None:
+    """Return a merged hive collection for queen repos, or None for non-queens.
+
+    When resolved_root is a queen repo, flattens all hive configs from every
+    scope in global config into a flat list of (hive_name, hive_config) pairs.
+    Hives with the same normalized name from different scopes are both included
+    so all paths are walked. Returns None for non-queen repos (existing behavior).
+
+    Args:
+        resolved_root: Repo root path, or None if unknown.
+
+    Returns:
+        List of (hive_name, hive_config) pairs for queen repos, else None.
+    """
+    if resolved_root is None:
+        return None
+    from .config import check_queen_elevation, get_all_scopes_config, load_global_config
+
+    global_config = load_global_config()
+    is_queen, _ = check_queen_elevation(resolved_root, global_config)
+    if not is_queen:
+        return None
+    all_scopes = get_all_scopes_config(global_config)
+    merged: list[tuple[str, Any]] = []
+    for scope_config in all_scopes.values():
+        for hive_name, hive_config in scope_config.hives.items():
+            merged.append((hive_name, hive_config))
+    return merged
+
+
+def _build_queen_hive_scope_map(resolved_root: Path | None) -> "dict[str, Any] | None":
+    """Return {hive_name: BeesConfig} for queen repos for per-hive scope config lookup.
+
+    Returns None for non-queen repos. When multiple scopes share the same normalized
+    hive name, the first scope encountered wins (consistent with _build_queen_hive_collection).
+    """
+    if resolved_root is None:
+        return None
+    from .config import BeesConfig, check_queen_elevation, get_all_scopes_config, load_global_config
+
+    global_config = load_global_config()
+    is_queen, _ = check_queen_elevation(resolved_root, global_config)
+    if not is_queen:
+        return None
+    scope_map: dict[str, BeesConfig] = {}
+    for scope_cfg in get_all_scopes_config(global_config).values():
+        for hive_name in scope_cfg.hives:
+            scope_map.setdefault(hive_name, scope_cfg)
+    return scope_map
 
 
 def compute_ticket_path(ticket_id: str, hive_root: Path) -> Path:

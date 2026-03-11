@@ -679,6 +679,27 @@ def load_global_config() -> dict:
         if not isinstance(val, bool):
             raise ValueError(f"Global auto_fix_dangling_refs must be a boolean, got {type(val)}")
 
+    # Validate global-level elevated_repos if present
+    if "elevated_repos" in data:
+        elevated_repos = data["elevated_repos"]
+        if not isinstance(elevated_repos, list):
+            raise ValueError(f"Global elevated_repos must be a list, got {type(elevated_repos)}")
+        for i, entry in enumerate(elevated_repos):
+            if not isinstance(entry, dict):
+                raise ValueError(f"elevated_repos[{i}] must be a dict, got {type(entry)}")
+            if "path" not in entry:
+                raise ValueError(f"elevated_repos[{i}] missing required 'path' key")
+            if not isinstance(entry["path"], str):
+                raise ValueError(
+                    f"elevated_repos[{i}]['path'] must be a string, got {type(entry['path'])}"
+                )
+            if not os.path.isabs(entry["path"]):
+                raise ValueError(f"elevated_repos entry 'path' must be absolute, got: {entry['path']!r}")
+            if "write" in entry and not isinstance(entry["write"], bool):
+                raise ValueError(
+                    f"elevated_repos[{i}]['write'] must be a boolean, got {type(entry['write'])}"
+                )
+
     _GLOBAL_CONFIG_CACHE = data
     _GLOBAL_CONFIG_CACHE_MTIME = current_mtime
     return data
@@ -1066,6 +1087,72 @@ def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
 
     global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(config)
     save_global_config(global_config)
+
+
+def check_queen_elevation(resolved_root: Path, global_config: dict) -> tuple[bool, bool]:
+    """Check whether resolved_root is listed as a queen (elevated) repo.
+
+    Args:
+        resolved_root: Absolute path to the repo root to check.
+        global_config: The loaded global config dict.
+
+    Returns:
+        (is_queen, has_write): is_queen is True if resolved_root matches an
+        elevated_repos entry whose path exists on disk. has_write is True only
+        if the matching entry has "write": true. If is_queen is False,
+        has_write is always False.
+    """
+    elevated_repos = global_config.get("elevated_repos", [])
+    resolved = resolved_root.resolve()
+    for entry in elevated_repos:
+        entry_path = Path(entry["path"])
+        if not entry_path.exists():
+            logger.warning("elevated_repos path does not exist, skipping: %s", entry_path)
+            continue
+        if entry_path.resolve() == resolved:
+            return True, bool(entry.get("write", False))
+    return False, False
+
+
+def get_all_scopes_config(global_config: dict) -> dict[str, BeesConfig]:
+    """Return a BeesConfig for every scope in global_config, unfiltered.
+
+    Args:
+        global_config: The loaded global config dict.
+
+    Returns:
+        Mapping of scope_pattern → BeesConfig. Empty dict when no scopes.
+    """
+    result: dict[str, BeesConfig] = {}
+    for pattern, scope_data in global_config.get("scopes", {}).items():
+        result[pattern] = parse_scope_to_bees_config(scope_data)
+    return result
+
+
+def check_queen_write_access(resolved_root: Path, global_config: dict) -> dict | None:
+    """Check whether a queen repo has write access.
+
+    Non-queen repos always have write access (returns None).
+    Queen repos with write=true also return None.
+    Queen repos without write access return a permission_denied error dict.
+
+    Args:
+        resolved_root: Absolute path to the repo root to check.
+        global_config: The loaded global config dict.
+
+    Returns:
+        None if write is allowed, or an error dict if permission is denied.
+    """
+    is_queen, has_write = check_queen_elevation(resolved_root, global_config)
+    if not is_queen:
+        return None
+    if has_write:
+        return None
+    return {
+        "status": "error",
+        "error_type": "permission_denied",
+        "message": f"Write access denied: '{resolved_root}' is a queen repo without write permission",
+    }
 
 
 def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
