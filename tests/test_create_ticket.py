@@ -751,7 +751,7 @@ class TestCrossTypeDependencyValidation:
         t1_id = t1_result["ticket_id"]
 
         result = await _update_ticket(
-            ticket_id=t1_id,
+            ticket_ids=t1_id,
             **{dep_field: [bee_id]},
             hive_name=HIVE_BACKEND,
         )
@@ -989,7 +989,7 @@ class TestParentRelationships:
             ticket_type="bee", title="Test Bee", hive_name=HIVE_BACKEND
         ))["ticket_id"]
         with pytest.raises(TypeError):
-            await _update_ticket(ticket_id=bee_id, **{kwarg: value})
+            await _update_ticket(ticket_ids=bee_id, **{kwarg: value})
 
     async def test_create_with_parent_then_update_other_fields_succeeds(self, hive_tier_config):
         """Creating ticket with parent, then updating non-relationship fields succeeds."""
@@ -1012,7 +1012,7 @@ class TestParentRelationships:
 
         # Update non-relationship fields should succeed
         await _update_ticket(
-            ticket_id=child_id,
+            ticket_ids=child_id,
             title="Updated Title",
             status="in_progress",
             tags=["updated", "test"],
@@ -1081,7 +1081,7 @@ class TestParentRelationships:
 
         # Update ticket2 to depend on ticket1 and block ticket3
         await _update_ticket(
-            ticket_id=ticket2_id,
+            ticket_ids=ticket2_id,
             up_dependencies=[ticket1_id],
             down_dependencies=[ticket3_id],
             hive_name=HIVE_BACKEND,
@@ -1607,7 +1607,7 @@ class TestUpdateTicketPerHive:
 
             # Update the t1 ticket
             update_result = await _update_ticket(
-                ticket_id=t1_id,
+                ticket_ids=t1_id,
                 title="Updated Epic",
                 status="in_progress",
                 tags=["updated", "backend"],
@@ -1658,7 +1658,7 @@ class TestUpdateTicketPerHive:
 
             # Update without hive_name - should auto-resolve
             update_result = await _update_ticket(
-                ticket_id=bee_id,
+                ticket_ids=bee_id,
                 title="Updated Bee",
                 status="in_progress",
             )
@@ -1736,7 +1736,7 @@ class TestUpdateTicketPerHive:
 
             # Update backend ticket
             await _update_ticket(
-                ticket_id=backend_t1_id,
+                ticket_ids=backend_t1_id,
                 title="Updated Backend Epic",
                 status="in_progress",
                 tags=["backend"],
@@ -1745,7 +1745,7 @@ class TestUpdateTicketPerHive:
 
             # Update frontend ticket
             await _update_ticket(
-                ticket_id=frontend_t1_id,
+                ticket_ids=frontend_t1_id,
                 title="Updated Frontend Story",
                 status="completed",
                 tags=["frontend"],

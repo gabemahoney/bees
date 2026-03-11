@@ -856,7 +856,7 @@ async def _update_ticket_single(
 
 
 async def _update_ticket(
-    ticket_id: str | list[str],
+    ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
     body: str | None | Literal["__UNSET__"] = _UNSET,
     up_dependencies: list[str] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded to prevent MCP schema conflict
@@ -874,11 +874,11 @@ async def _update_ticket(
 
     Supports two call signatures:
 
-    **Single update** (``ticket_id`` is a ``str``):
+    **Single update** (``ticket_ids`` is a ``str``):
         Updates one ticket with any combination of fields.
-        Returns ``{"status": "success", "updated": [ticket_id], "not_found": [], "failed": []}``.
+        Returns ``{"status": "success", "updated": [ticket_ids], "not_found": [], "failed": []}``.
 
-    **Batch update** (``ticket_id`` is a ``list[str]``):
+    **Batch update** (``ticket_ids`` is a ``list[str]``):
         Updates multiple tickets applying status, add_tags, and remove_tags to each.
         Non-batchable fields (``title``, ``body``, ``egg``, ``tags``,
         ``up_dependencies``, ``down_dependencies``) raise ``ValueError`` if set.
@@ -886,7 +886,7 @@ async def _update_ticket(
         An empty list returns success immediately with all arrays empty.
 
     Args:
-        ticket_id: ID of the ticket to update (str), or list of IDs for batch update (list[str])
+        ticket_ids: ID of the ticket to update (str), or list of IDs for batch update (list[str])
         title: New title for the ticket (single mode only)
         body: New markdown body for the ticket (single mode only)
         up_dependencies: New list of blocking dependency ticket IDs (single mode only)
@@ -912,9 +912,9 @@ async def _update_ticket(
         then ``remove_tags``. If a tag appears in both ``add_tags`` and
         ``remove_tags``, it ends up removed.
     """
-    if isinstance(ticket_id, list):
+    if isinstance(ticket_ids, list):
         return await _update_ticket_batch(
-            ticket_ids_raw=ticket_id,
+            ticket_ids_raw=ticket_ids,
             status=status,
             add_tags=add_tags,
             remove_tags=remove_tags,
@@ -927,7 +927,7 @@ async def _update_ticket(
             hive_name=hive_name,
         )
     return await _update_ticket_single(
-        ticket_id=ticket_id,
+        ticket_id=ticket_ids,
         title=title,
         body=body,
         up_dependencies=up_dependencies,

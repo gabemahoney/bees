@@ -146,7 +146,7 @@ class TestCacheWriteEviction:
         assert ticket1.title == "Original Title"
 
         # Write via MCP update path — must evict the cache entry
-        await _update_ticket(ticket_id=TICKET_ID_TEST_BEE, title="Updated Title", hive_name="backend")
+        await _update_ticket(ticket_ids=TICKET_ID_TEST_BEE, title="Updated Title", hive_name="backend")
 
         assert ticket_cache.get(TICKET_ID_TEST_BEE) is None
 

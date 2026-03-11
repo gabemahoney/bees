@@ -139,7 +139,7 @@ def handle_update_ticket(args):
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     kwargs = {
-        "ticket_id": args.ticket_id,
+        "ticket_ids": args.ticket_id,
     }
 
     if args.title is not _UNSET:

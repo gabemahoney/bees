@@ -130,7 +130,7 @@ class TestUpdateTicket:
         )
 
         result = await _update_ticket(
-            ticket_id=epic_id, title="Updated Title", body="Updated description",
+            ticket_ids=epic_id, title="Updated Title", body="Updated description",
             tags=["label1", "label2"], status="in_progress",
         )
 
@@ -150,14 +150,14 @@ class TestUpdateTicket:
     async def test_update_ticket_empty_title(self, hive_tier_config, invalid_title):
         """Test updating with empty/whitespace title returns error dict."""
         epic_id, _ = create_bee(hive_name=HIVE_BACKEND, title="Original Title")
-        result = await _update_ticket(ticket_id=epic_id, title=invalid_title)
+        result = await _update_ticket(ticket_ids=epic_id, title=invalid_title)
         assert result["status"] == "error"
         assert result["error_type"] == "invalid_title"
         assert "Ticket title cannot be empty" in result["message"]
 
     async def test_update_ticket_nonexistent(self, hive_tier_config):
         """Test updating a non-existent ticket returns error dict."""
-        result = await _update_ticket(ticket_id=TICKET_ID_NONEXISTENT, title="Test")
+        result = await _update_ticket(ticket_ids=TICKET_ID_NONEXISTENT, title="Test")
         assert result["status"] == "error"
         assert result["error_type"] == "ticket_not_found"
 
@@ -181,7 +181,7 @@ class TestUpdateTicket:
         else:
             factory_fn = create_bee
         ticket_id, _ = factory_fn(hive_name=HIVE_BACKEND, **factory_kwargs)
-        result = await _update_ticket(ticket_id=ticket_id, **update_kwargs)
+        result = await _update_ticket(ticket_ids=ticket_id, **update_kwargs)
         assert result["status"] == "error"
         assert result["error_type"] == "invalid_dependency"
         assert error_match in result["message"]
@@ -194,7 +194,7 @@ class TestUpdateTicket:
         parent_id, _ = create_bee(title="Parent Bee", hive_name=HIVE_BACKEND)
         task1_id, _ = create_child_tier(ticket_type="t1", hive_name=HIVE_BACKEND, title="Task 1", parent=parent_id)
         task2_id, _ = create_child_tier(ticket_type="t1", hive_name=HIVE_BACKEND, title="Task 2", parent=parent_id)
-        result = await _update_ticket(ticket_id=task1_id, up_dependencies=[task2_id], down_dependencies=[task2_id])
+        result = await _update_ticket(ticket_ids=task1_id, up_dependencies=[task2_id], down_dependencies=[task2_id])
         assert result["status"] == "error"
         assert result["error_type"] == "circular_dependency"
         assert "Circular dependency detected" in result["message"]
@@ -208,7 +208,7 @@ class TestUpdateTicket:
             hive_name=HIVE_BACKEND, title="Original Title", body="Original description",
             tags=["label1", "label2"], status="open",
         )
-        await _update_ticket(ticket_id=epic_id, title="Updated Title", status="in_progress")
+        await _update_ticket(ticket_ids=epic_id, title="Updated Title", status="in_progress")
 
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         assert bee.title == "Updated Title"
@@ -232,7 +232,7 @@ class TestUpdateTicket:
         epic_id, _ = create_bee(
             hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, egg=initial_egg,
         )
-        result = await _update_ticket(ticket_id=epic_id, egg=updated_egg)
+        result = await _update_ticket(ticket_ids=epic_id, egg=updated_egg)
 
         assert result["status"] == "success"
         assert result["updated"] == [epic_id]
@@ -249,7 +249,7 @@ class TestUpdateTicket:
         epic_id, _ = create_bee(
             hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, egg="b.Original",
         )
-        await _update_ticket(ticket_id=epic_id, title="New Title")
+        await _update_ticket(ticket_ids=epic_id, title="New Title")
 
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         assert bee.egg == "b.Original"
@@ -264,7 +264,7 @@ class TestUpdateTicket:
         original = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         original_created_at = original.created_at
 
-        await _update_ticket(ticket_id=epic_id, status="finished")
+        await _update_ticket(ticket_ids=epic_id, status="finished")
 
         updated = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
         assert updated.created_at == original_created_at
@@ -845,7 +845,7 @@ class TestShowTicket:
         parent_id, _ = create_bee(title="Parent Bee", hive_name=HIVE_BACKEND)
         blocking_id, _ = create_child_tier(ticket_type="t1", title="Blocking Task", parent=parent_id, hive_name=HIVE_BACKEND)
         ticket_id, _ = create_child_tier(ticket_type="t1", title="Dependent Task", parent=parent_id, hive_name=HIVE_BACKEND)
-        await _update_ticket(ticket_id=ticket_id, up_dependencies=[blocking_id])
+        await _update_ticket(ticket_ids=ticket_id, up_dependencies=[blocking_id])
         result = await _show_ticket(ticket_ids=[ticket_id])
         assert result["tickets"][0]["up_dependencies"] == [blocking_id]
 
@@ -943,9 +943,9 @@ class TestGuidInTicketOps:
         repo_root, hive_path, hive_name = hive_env
         ticket_id, _ = create_bee(title="Immutable Test", hive_name=HIVE_BACKEND)
         with pytest.raises(TypeError):
-            await _update_ticket(ticket_id=ticket_id, id="anything")
+            await _update_ticket(ticket_ids=ticket_id, id="anything")
         with pytest.raises(TypeError):
-            await _update_ticket(ticket_id=ticket_id, guid="anything")
+            await _update_ticket(ticket_ids=ticket_id, guid="anything")
 
 
 class TestAddRemoveTags:
@@ -964,7 +964,7 @@ class TestAddRemoveTags:
         from src.reader import read_ticket
 
         bee_id, _ = create_bee(hive_name=HIVE_BACKEND, title="Tag Test Bee", tags=initial_tags)
-        result = await _update_ticket(ticket_id=bee_id, add_tags=add)
+        result = await _update_ticket(ticket_ids=bee_id, add_tags=add)
 
         assert result["updated"] == [bee_id]
         assert result["not_found"] == []
@@ -985,7 +985,7 @@ class TestAddRemoveTags:
         from src.reader import read_ticket
 
         bee_id, _ = create_bee(hive_name=HIVE_BACKEND, title="Remove Tag Bee", tags=initial_tags)
-        result = await _update_ticket(ticket_id=bee_id, remove_tags=remove)
+        result = await _update_ticket(ticket_ids=bee_id, remove_tags=remove)
 
         assert result["updated"] == [bee_id]
         assert result["not_found"] == []
@@ -1000,7 +1000,7 @@ class TestAddRemoveTags:
 
         bee_id, _ = create_bee(hive_name=HIVE_BACKEND, title="Combined Tag Bee", tags=[TAG_ALPHA])
         result = await _update_ticket(
-            ticket_id=bee_id,
+            ticket_ids=bee_id,
             add_tags=[TAG_GAMMA],
             remove_tags=[TAG_ALPHA],
             status="worker",
@@ -1020,7 +1020,7 @@ class TestAddRemoveTags:
 
         bee_id, _ = create_bee(hive_name=HIVE_BACKEND, title="Add-Remove Conflict Bee", tags=[TAG_ALPHA])
         result = await _update_ticket(
-            ticket_id=bee_id,
+            ticket_ids=bee_id,
             add_tags=[TAG_DELTA],
             remove_tags=[TAG_DELTA],
         )

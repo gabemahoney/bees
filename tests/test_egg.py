@@ -317,7 +317,7 @@ class TestUpdateTicketEgg:
         )
         ticket_id = result["ticket_id"]
 
-        await _update_ticket(ticket_id=ticket_id, egg=egg_value, hive_name=HIVE_BACKEND)
+        await _update_ticket(ticket_ids=ticket_id, egg=egg_value, hive_name=HIVE_BACKEND)
 
         show_result = await _show_ticket(ticket_ids=[ticket_id])
         assert show_result["tickets"][0]["egg"] == expected
@@ -332,7 +332,7 @@ class TestUpdateTicketEgg:
         ticket_id = result["ticket_id"]
 
         egg_obj = {"type": "spec", "url": "https://example.com"}
-        await _update_ticket(ticket_id=ticket_id, egg=egg_obj, hive_name=HIVE_BACKEND)
+        await _update_ticket(ticket_ids=ticket_id, egg=egg_obj, hive_name=HIVE_BACKEND)
 
         show_result = await _show_ticket(ticket_ids=[ticket_id])
         # show_ticket returns resolved egg values (default resolver: identity, returns value unchanged)

@@ -699,7 +699,7 @@ class TestBatchUpdateTicket:
             result = await _create_ticket(ticket_type="bee", title=f"Batch Bee {i}", hive_name=HIVE_BACKEND)
             ids.append(result["ticket_id"])
 
-        result = await _update_ticket(ticket_id=ids, status="in_progress")
+        result = await _update_ticket(ticket_ids=ids, status="in_progress")
 
         assert result["status"] == "success"
         assert set(result["updated"]) == set(ids)
@@ -722,7 +722,7 @@ class TestBatchUpdateTicket:
         )
         ids = [r1["ticket_id"], r2["ticket_id"]]
 
-        result = await _update_ticket(ticket_id=ids, add_tags=[TAG_BATCH_FOO])
+        result = await _update_ticket(ticket_ids=ids, add_tags=[TAG_BATCH_FOO])
 
         assert result["status"] == "success"
         assert set(result["updated"]) == set(ids)
@@ -744,7 +744,7 @@ class TestBatchUpdateTicket:
         r2 = await _create_ticket(ticket_type="bee", title="No Tag", hive_name=HIVE_BACKEND)
         ids = [r1["ticket_id"], r2["ticket_id"]]
 
-        result = await _update_ticket(ticket_id=ids, remove_tags=[TAG_BATCH_BAR])
+        result = await _update_ticket(ticket_ids=ids, remove_tags=[TAG_BATCH_BAR])
 
         assert result["status"] == "success"
         assert set(result["updated"]) == set(ids)
@@ -771,7 +771,7 @@ class TestBatchUpdateTicket:
         ids = [r1["ticket_id"], r2["ticket_id"]]
 
         result = await _update_ticket(
-            ticket_id=ids,
+            ticket_ids=ids,
             status="in_progress",
             add_tags=[TAG_BATCH_FOO],
             remove_tags=[TAG_BATCH_BAR],
@@ -795,7 +795,7 @@ class TestBatchUpdateTicket:
         ids = [r1["ticket_id"]]
 
         result = await _update_ticket(
-            ticket_id=ids,
+            ticket_ids=ids,
             add_tags=[TAG_BATCH_BAZ],
             remove_tags=[TAG_BATCH_BAZ],
         )
@@ -811,7 +811,7 @@ class TestBatchUpdateTicket:
         isolated_bees_env.create_hive(HIVE_BACKEND)
         isolated_bees_env.write_config()
 
-        result = await _update_ticket(ticket_id=[], status="in_progress")
+        result = await _update_ticket(ticket_ids=[], status="in_progress")
 
         assert result == {"status": "success", "updated": [], "not_found": [], "failed": []}
 
@@ -823,7 +823,7 @@ class TestBatchUpdateTicket:
         r = await _create_ticket(ticket_type="bee", title="Dedup Bee", hive_name=HIVE_BACKEND)
         tid = r["ticket_id"]
 
-        result = await _update_ticket(ticket_id=[tid, tid, tid], status="in_progress")
+        result = await _update_ticket(ticket_ids=[tid, tid, tid], status="in_progress")
 
         assert result["status"] == "success"
         assert result["updated"].count(tid) == 1
@@ -839,7 +839,7 @@ class TestBatchUpdateTicket:
         real_id = r["ticket_id"]
         fake_id = TICKET_ID_NONEXISTENT
 
-        result = await _update_ticket(ticket_id=[real_id, fake_id], status="in_progress")
+        result = await _update_ticket(ticket_ids=[real_id, fake_id], status="in_progress")
 
         assert result["status"] == "success"
         assert real_id in result["updated"]
@@ -858,7 +858,7 @@ class TestBatchUpdateTicket:
         r2 = await _create_ticket(ticket_type="bee", title="Original Two", hive_name=HIVE_BACKEND)
         ids = [r1["ticket_id"], r2["ticket_id"]]
 
-        update_result = await _update_ticket(ticket_id=ids, title="Attempted Title Change")
+        update_result = await _update_ticket(ticket_ids=ids, title="Attempted Title Change")
         assert update_result["status"] == "error"
         assert update_result["error_type"] == "invalid_field"
         assert "title" in update_result["message"]
@@ -876,7 +876,7 @@ class TestBatchUpdateTicket:
         r = await _create_ticket(ticket_type="bee", title="Single Bee", hive_name=HIVE_BACKEND)
         tid = r["ticket_id"]
 
-        result = await _update_ticket(ticket_id=tid, status="in_progress")
+        result = await _update_ticket(ticket_ids=tid, status="in_progress")
 
         assert result["status"] == "success"
         assert "updated" in result
@@ -886,6 +886,19 @@ class TestBatchUpdateTicket:
         # Must NOT be legacy shape
         assert "ticket_type" not in result
         assert "title" not in result
+
+    async def test_ticket_ids_keyword_accepted(self, isolated_bees_env):
+        """Regression: calling _update_ticket with ticket_ids= keyword must succeed."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        r = await _create_ticket(ticket_type="bee", title="KW Regression Bee", hive_name=HIVE_BACKEND)
+        tid = r["ticket_id"]
+
+        result = await _update_ticket(ticket_ids=[tid], status="finished")
+
+        assert result["status"] == "success"
+        assert tid in result["updated"]
 
 
 # ===========================================================================
@@ -1130,7 +1143,7 @@ class TestUpdateTicketStatusValidation:
         bee_id = result["ticket_id"]
 
         update_result = await _update_ticket(
-            ticket_id=bee_id,
+            ticket_ids=bee_id,
             status="bogus",
             hive_name=HIVE_BACKEND,
         )
@@ -1153,7 +1166,7 @@ class TestUpdateTicketStatusValidation:
         bee_id = result["ticket_id"]
 
         update_result = await _update_ticket(
-            ticket_id=bee_id,
+            ticket_ids=bee_id,
             status="closed",
             hive_name=HIVE_BACKEND,
         )
@@ -1175,7 +1188,7 @@ class TestUpdateTicketStatusValidation:
         bee_id = result["ticket_id"]
 
         update_result = await _update_ticket(
-            ticket_id=[bee_id],
+            ticket_ids=[bee_id],
             status="bogus",
             hive_name=HIVE_BACKEND,
         )
@@ -1249,7 +1262,7 @@ class TestBatchUpdateWalkCount:
             ids.append(result["ticket_id"])
 
         with patch("os.walk", wraps=os.walk) as mock_walk:
-            result = await _update_ticket(ticket_id=ids, status="in_progress")
+            result = await _update_ticket(ticket_ids=ids, status="in_progress")
 
         assert result["status"] == "success"
         assert set(result["updated"]) == set(ids)
@@ -1290,7 +1303,7 @@ class TestMalformedIdGracefulErrors:
         isolated_bees_env.create_hive(HIVE_BACKEND)
         isolated_bees_env.write_config(child_tiers={})
 
-        result = await _update_ticket(ticket_id=_MALFORMED_ID, status="in_progress")
+        result = await _update_ticket(ticket_ids=_MALFORMED_ID, status="in_progress")
 
         assert result["status"] == "error"
         assert "error_type" in result
@@ -1657,7 +1670,7 @@ class TestSanitizeEscapeSequencesViaUpdate:
         tid = result["ticket_id"]
 
         update_result = await _update_ticket(
-            ticket_id=tid,
+            ticket_ids=tid,
             body=input_body,
             hive_name=HIVE_BACKEND,
         )

@@ -206,7 +206,7 @@ async def create_ticket(
 
 @mcp.tool()
 async def update_ticket(
-    ticket_id: str | list[str],
+    ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
     body: str | None | Literal["__UNSET__"] = _UNSET,
     up_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
@@ -222,11 +222,11 @@ async def update_ticket(
 ) -> dict[str, Any]:
     """Update one or more existing tickets.
 
-    Supports single update (ticket_id as str) or batch update (ticket_id as list[str]).
+    Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]).
     Batch mode only allows status, add_tags, and remove_tags — other fields raise ValueError.
 
     Args:
-        ticket_id: Ticket ID to update, or list of IDs for batch update.
+        ticket_ids: Ticket ID to update, or list of IDs for batch update.
         title: New title (single mode only).
         body: New markdown body (single mode only).
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
@@ -245,7 +245,7 @@ async def update_ticket(
         resolved_root = get_repo_root_from_path(Path.cwd())
     with repo_root_context(resolved_root):
         return await _update_ticket(
-            ticket_id=ticket_id,
+            ticket_ids=ticket_ids,
             title=title,
             body=body,
             up_dependencies=up_deps,
