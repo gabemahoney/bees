@@ -679,6 +679,25 @@ def load_global_config() -> dict:
         if not isinstance(val, bool):
             raise ValueError(f"Global auto_fix_dangling_refs must be a boolean, got {type(val)}")
 
+    # Validate global-level elevated_repos if present
+    if "elevated_repos" in data:
+        elevated_repos = data["elevated_repos"]
+        if not isinstance(elevated_repos, list):
+            raise ValueError(f"Global elevated_repos must be a list, got {type(elevated_repos)}")
+        for i, entry in enumerate(elevated_repos):
+            if not isinstance(entry, dict):
+                raise ValueError(f"elevated_repos[{i}] must be a dict, got {type(entry)}")
+            if "path" not in entry:
+                raise ValueError(f"elevated_repos[{i}] missing required 'path' key")
+            if not isinstance(entry["path"], str):
+                raise ValueError(
+                    f"elevated_repos[{i}]['path'] must be a string, got {type(entry['path'])}"
+                )
+            if "write" in entry and not isinstance(entry["write"], bool):
+                raise ValueError(
+                    f"elevated_repos[{i}]['write'] must be a boolean, got {type(entry['write'])}"
+                )
+
     _GLOBAL_CONFIG_CACHE = data
     _GLOBAL_CONFIG_CACHE_MTIME = current_mtime
     return data

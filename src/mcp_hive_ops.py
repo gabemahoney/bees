@@ -375,6 +375,9 @@ async def colonize_hive_core(
                 result["egg_resolver_timeout"] = egg_resolver_timeout
             return result
 
+    except ValueError as e:
+        logger.error(f"Config validation error in colonize_hive: {e}")
+        return {"status": "error", "error_type": "invalid_config", "message": str(e)}
     except Exception as e:
         # Catch-all for unexpected errors
         logger.error(f"Unexpected error in colonize_hive: {e}")
@@ -581,6 +584,10 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         logger.info(f"Listed {len(hives_list)} hives")
         return {"status": "success", "hives": hives_list}
 
+    except ValueError as e:
+        error_msg = str(e)
+        logger.error(f"Config validation error in list_hives: {error_msg}")
+        return {"status": "error", "error_type": "invalid_config", "message": error_msg}
     except Exception as e:
         error_msg = f"Failed to list hives: {e}"
         logger.error(error_msg)
