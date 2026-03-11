@@ -28,10 +28,9 @@ async def file_bug(url: str, title: str, description: str) -> str:
                 {
                     "ticket_type": "bee",
                     "title": title,
-                    "hive_name": "bugs",
+                    "hive": "bugs",
                     "status": "open",
                     "description": description,
-                    "repo_root": "/Users/gmahoney/projects/bees_project",
                 },
             )
             # result.content is a list of TextContent objects

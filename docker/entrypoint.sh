@@ -36,7 +36,6 @@ d['mcpServers'] = servers
 d['hasCompletedOnboarding'] = True
 d.setdefault('projects', {})
 d['projects']['/test-repo'] = {'hasTrustDialogAccepted': True}
-d['projects']['/Users/gmahoney/projects/bees_project'] = {'hasTrustDialogAccepted': True}
 json.dump(d, open('${TESTUSER_HOME}/.claude.json', 'w'), indent=2)
 "
 else

@@ -22,7 +22,8 @@ SESSION="bees-ci-${PHASE}"
 # Find testplans hive path from host bees config
 TESTPLANS_PATH=$(python3 - <<'EOF'
 import json, sys
-with open('/Users/gmahoney/.bees/config.json') as f:
+import os; config_path = os.path.expanduser('~/.bees/config.json')
+with open(config_path) as f:
     c = json.load(f)
 for scope in c.get('scopes', {}).values():
     for hname, hdata in scope.get('hives', {}).items():
