@@ -20,7 +20,7 @@ from src.mcp_hive_ops import _list_hives
 from src.mcp_query_ops import _execute_freeform_query, _execute_named_query
 from src.mcp_ticket_ops import _show_ticket
 from src.repo_context import repo_root_context
-from tests.conftest import write_elevated_repos_config, write_global_queries, write_multi_scope_config
+from tests.conftest import write_elevated_repos_config, write_global_queries, write_multi_scope_config, write_scoped_config
 from tests.helpers import write_ticket_file
 
 
@@ -475,3 +475,125 @@ class TestQueenQueries:
         assert result["status"] == "success"
         assert "b.aaa" in result["ticket_ids"]
         assert "b.bbb" not in result["ticket_ids"]
+
+
+# ---------------------------------------------------------------------------
+# Queen write-gate tests
+# ---------------------------------------------------------------------------
+
+
+class TestQueenWriteGateMCP:
+    """Queen repo write gate is enforced in create_ticket MCP tool."""
+
+    async def test_queen_without_write_denied_create_ticket(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch, mock_mcp_context
+    ):
+        """Queen without write:true gets permission_denied; no ticket file created."""
+        from src.mcp_server import create_ticket
+
+        monkeypatch.chdir(tmp_path)
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+        (queen_root / ".git").mkdir()
+        hive_dir = tmp_path / "ext_project" / "test_hive"
+        hive_dir.mkdir(parents=True)
+
+        write_scoped_config(
+            mock_global_bees_dir,
+            queen_root,
+            {"hives": {"test_hive": {"path": str(hive_dir), "display_name": "Test Hive"}}, "child_tiers": {}},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), False)])
+
+        ctx = mock_mcp_context(queen_root)
+        result = await create_ticket(ctx=ctx, ticket_type="bee", title="Should Not Exist", hive="test_hive")
+
+        assert result["error_type"] == "permission_denied"
+        assert not list(hive_dir.rglob("*.md"))
+
+    async def test_queen_with_write_allowed_create_ticket(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch, mock_mcp_context
+    ):
+        """Queen with write:true creates a ticket; file exists on disk."""
+        from src.mcp_server import create_ticket
+        from src.paths import compute_ticket_path
+
+        monkeypatch.chdir(tmp_path)
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+        (queen_root / ".git").mkdir()
+        hive_dir = tmp_path / "ext_project" / "test_hive"
+        hive_dir.mkdir(parents=True)
+
+        write_scoped_config(
+            mock_global_bees_dir,
+            queen_root,
+            {"hives": {"test_hive": {"path": str(hive_dir), "display_name": "Test Hive"}}, "child_tiers": {}},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), True)])
+
+        ctx = mock_mcp_context(queen_root)
+        result = await create_ticket(ctx=ctx, ticket_type="bee", title="Queen Ticket", hive="test_hive")
+
+        assert result["status"] == "success"
+        ticket_id = result["ticket_id"]
+        ticket_file = compute_ticket_path(ticket_id, hive_dir)
+        assert ticket_file.exists()
+
+
+class TestQueenWriteGateCLI:
+    """Queen repo write gate is enforced in create-ticket CLI command."""
+
+    def test_queen_without_write_denied_cli_create(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch, cli_runner
+    ):
+        """Queen CLI create-ticket without write:true exits 1 with permission_denied."""
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+        (queen_root / ".git").mkdir()
+        hive_dir = tmp_path / "ext_project" / "test_hive"
+        hive_dir.mkdir(parents=True)
+
+        write_scoped_config(
+            mock_global_bees_dir,
+            queen_root,
+            {"hives": {"test_hive": {"path": str(hive_dir), "display_name": "Test Hive"}}, "child_tiers": {}},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), False)])
+
+        monkeypatch.chdir(queen_root)
+        out, exit_code = cli_runner(["create-ticket", "--ticket-type", "bee", "--title", "X", "--hive", "test_hive"])
+
+        assert exit_code == 1
+        assert "permission_denied" in out
+
+    def test_queen_with_write_allowed_cli_create(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch, cli_runner
+    ):
+        """Queen CLI create-ticket with write:true exits 0 and ticket file exists."""
+        from src.paths import compute_ticket_path
+
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+        (queen_root / ".git").mkdir()
+        hive_dir = tmp_path / "ext_project" / "test_hive"
+        hive_dir.mkdir(parents=True)
+
+        write_scoped_config(
+            mock_global_bees_dir,
+            queen_root,
+            {"hives": {"test_hive": {"path": str(hive_dir), "display_name": "Test Hive"}}, "child_tiers": {}},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), True)])
+
+        monkeypatch.chdir(queen_root)
+        out, exit_code = cli_runner(
+            ["create-ticket", "--ticket-type", "bee", "--title", "Queen CLI Ticket", "--hive", "test_hive"]
+        )
+
+        assert exit_code == 0
+        result = json.loads(out)
+        assert result["status"] == "success"
+        ticket_id = result["ticket_id"]
+        ticket_file = compute_ticket_path(ticket_id, hive_dir)
+        assert ticket_file.exists()
