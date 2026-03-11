@@ -99,10 +99,13 @@ async def resolve_repo_root(ctx: Context, explicit_root: str | None) -> Path:
         >>> resolved = await resolve_repo_root(ctx, "/path/to/repo")
     """
     # Try Roots protocol first
+    logger.info(f"resolve_repo_root called with explicit_root={explicit_root!r}")
     client_root = await get_client_repo_root(ctx)
     if client_root:
         repo_root = get_repo_root_from_path(client_root)
         logger.info(f"Resolved repo root from MCP client roots: {repo_root}")
+        if explicit_root:
+            logger.info(f"NOTE: explicit_root={explicit_root!r} was provided but ignored (roots protocol took priority)")
         return repo_root
 
     # Roots not available, try explicit parameter

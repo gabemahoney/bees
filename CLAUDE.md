@@ -4,49 +4,15 @@ You are building the bees ticket management system but also using the bees ticke
 Bear this in mind when talking with the user. Sometimes they will be asking you to just use bees.
 Other times they will be asking you to build or debug bees.
 
-## Bees MCP Server Management (for dev and debugging)
+## Bees MCP Server
 
-**First-time / after dependency changes:**
-```bash
-poetry install -E serve
-```
+The MCP server runs automatically via stdio — Claude Code manages the lifecycle.
+The globally installed `bees` binary (via pipx) is used: `bees serve --stdio`.
 
-**Start server:**
+For CI/Docker testing, the HTTP server can still be started manually:
 ```bash
 poetry run bees serve --http > /tmp/bees_server.log 2>&1 &
 ```
-
-**Stop server:**
-```bash
-kill $(ps aux | grep "[b]ees serve" | awk '{print $2}')
-```
-
-**Restart server (clean):**
-```bash
-kill $(ps aux | grep "[b]ees serve" | awk '{print $2}') 2>/dev/null; find src -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; sleep 2 && poetry run bees serve --http > /tmp/bees_server.log 2>&1 &
-```
-
-**Check for duplicate servers:**
-```bash
-ps aux | grep "[b]ees serve"
-```
-Shows PID and start time. If multiple processes exist, kill old ones before restarting.
-
-**Check server health:**
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-**View logs:**
-```bash
-tail -f ~/.bees/mcp.log
-```
-
-**Clear pycache:**
-```bash
-find src -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null
-```
-
 
 ## Documentation locations
 If asked to review best practices for this project use the following documents:
