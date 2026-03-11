@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 from fastmcp import Context, FastMCP
 
-from .config import load_bees_config  # noqa: F401 - re-exported for test mocking
+from .config import check_queen_write_access, load_bees_config, load_global_config  # noqa: F401 - re-exported for test mocking
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import (
     _abandon_hive,
@@ -187,6 +187,9 @@ async def create_ticket(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _create_ticket(
             ticket_type=ticket_type,
@@ -243,6 +246,9 @@ async def update_ticket(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _update_ticket(
             ticket_ids=ticket_ids,
@@ -284,6 +290,9 @@ async def delete_ticket(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _delete_ticket(
             ticket_ids=ticket_ids,
@@ -352,6 +361,13 @@ async def set_types(
                      Pass {} for bees-only (no child tiers). Required unless unset=True.
         unset: If True, removes child_tiers from the target scope.
     """
+    if ctx:
+        resolved_root = await resolve_repo_root(ctx, repo_root)
+    else:
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     if scope == "global":
         return await _set_types(
             scope="global",
@@ -361,10 +377,6 @@ async def set_types(
             resolved_root=None,
         )
     else:
-        if ctx:
-            resolved_root = await resolve_repo_root(ctx, repo_root)
-        else:
-            resolved_root = get_repo_root_from_path(Path.cwd())
         with repo_root_context(resolved_root):
             return await _set_types(
                 scope=scope,
@@ -396,6 +408,13 @@ async def set_status_values(
                        Required unless unset=True.
         unset: If True, removes status_values from the target scope.
     """
+    if ctx:
+        resolved_root = await resolve_repo_root(ctx, repo_root)
+    else:
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     if scope == "global":
         return await _set_status_values(
             scope="global",
@@ -405,10 +424,6 @@ async def set_status_values(
             resolved_root=None,
         )
     else:
-        if ctx:
-            resolved_root = await resolve_repo_root(ctx, repo_root)
-        else:
-            resolved_root = get_repo_root_from_path(Path.cwd())
         with repo_root_context(resolved_root):
             return await _set_status_values(
                 scope=scope,
@@ -498,6 +513,10 @@ async def colonize_hive(
     else:
         resolved_root = get_repo_root_from_path(hive_path)
 
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
+
     return await _colonize_hive(
         name=name,
         path=path,
@@ -545,6 +564,9 @@ async def abandon_hive(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _abandon_hive(hive_name=hive, resolved_root=resolved_root)
 
@@ -568,6 +590,9 @@ async def rename_hive(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _rename_hive(
             old_name=old_name, new_name=new_name, resolved_root=resolved_root, rename_folder=rename_folder
@@ -592,6 +617,9 @@ async def sanitize_hive(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _sanitize_hive(hive_name=hive, resolved_root=resolved_root)
 
@@ -616,6 +644,9 @@ async def add_named_query(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return _add_named_query(name=name, query_yaml=query_yaml, scope=scope, resolved_root=resolved_root)
 
@@ -700,6 +731,9 @@ async def delete_named_query(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return _delete_named_query(name=name, resolved_root=resolved_root)
 
@@ -733,6 +767,9 @@ async def generate_index(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _generate_index(
             hive_name=hive,
@@ -773,6 +810,9 @@ async def undertaker(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _undertaker(
             hive_name=hive,
@@ -804,6 +844,9 @@ async def move_bee(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _move_bee(
             bee_ids=bee_ids,
@@ -839,6 +882,9 @@ async def clone_bee(
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
         resolved_root = get_repo_root_from_path(Path.cwd())
+    err = check_queen_write_access(resolved_root, load_global_config())
+    if err is not None:
+        return err
     with repo_root_context(resolved_root):
         return await _clone_bee(
             bee_id=bee_id,
