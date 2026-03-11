@@ -14,14 +14,13 @@ from typing import Any
 
 from .config import (
     check_for_config_conflicts,
-    check_queen_elevation,
     check_query_name_conflict,
     find_matching_scope,
-    get_all_scopes_config,
     load_global_config,
     resolve_named_query,
     save_global_config,
 )
+from .paths import _build_queen_hive_collection
 from .pipeline import PipelineEvaluator
 from .query_parser import QueryParser, QueryValidationError
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -232,33 +231,6 @@ def _list_named_queries(resolved_root: Path | None = None) -> dict[str, Any]:
         "count": len(result_queries),
     }
 
-
-def _build_queen_hive_collection(resolved_root: Path | None) -> list[tuple[str, Any]] | None:
-    """Return a merged hive collection for queen repos, or None for non-queens.
-
-    When resolved_root is a queen repo, flattens all hive configs from every
-    scope in global config into a flat list of (hive_name, hive_config) pairs.
-    Hives with the same normalized name from different scopes are both included
-    so all paths are walked. Returns None for non-queen repos (existing behavior).
-
-    Args:
-        resolved_root: Repo root path, or None if unknown.
-
-    Returns:
-        List of (hive_name, hive_config) pairs for queen repos, else None.
-    """
-    if resolved_root is None:
-        return None
-    global_config = load_global_config()
-    is_queen, _ = check_queen_elevation(resolved_root, global_config)
-    if not is_queen:
-        return None
-    all_scopes = get_all_scopes_config(global_config)
-    merged: list[tuple[str, Any]] = []
-    for scope_config in all_scopes.values():
-        for hive_name, hive_config in scope_config.hives.items():
-            merged.append((hive_name, hive_config))
-    return merged
 
 
 async def _execute_named_query(

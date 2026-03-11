@@ -577,7 +577,7 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
             if not hives_list:
                 logger.info("No hives configured")
                 return {"status": "success", "hives": [], "message": "No hives configured"}
-            return {"status": "success", "hives": hives_list}
+            return {"status": "success", "hives": sorted(hives_list, key=lambda h: h["normalized_name"])}
 
         scope_configs = find_all_matching_scopes(resolved_root, global_cfg)
         logger.info(f"_list_hives: {len(scope_configs)} matching scope(s): {[p for p, _ in scope_configs]}")

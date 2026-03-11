@@ -7,6 +7,7 @@ Covers:
 - Queen repo read access: list_hives, show_ticket across scopes
 - Non-queen regression: only matching-scope hives visible
 - MCP roots protocol path governs elevation check over repo_root param
+- Queen-aware query execution: freeform and named queries span all scopes
 """
 
 import json
@@ -16,9 +17,10 @@ import pytest
 
 from src.config import check_queen_elevation, check_queen_write_access
 from src.mcp_hive_ops import _list_hives
+from src.mcp_query_ops import _execute_freeform_query, _execute_named_query
 from src.mcp_ticket_ops import _show_ticket
 from src.repo_context import repo_root_context
-from tests.conftest import write_elevated_repos_config, write_multi_scope_config
+from tests.conftest import write_elevated_repos_config, write_global_queries, write_multi_scope_config
 from tests.helpers import write_ticket_file
 
 
@@ -374,3 +376,102 @@ class TestRootsWinsElevationCheck:
         # Queen sees BOTH hives; roots protocol chose queen over repo_root
         assert "alpha" in names
         assert "beta" in names
+
+
+class TestQueenQueries:
+    """Queen repo executes freeform and named queries spanning all scopes."""
+
+    async def test_queen_freeform_query_finds_tickets_from_non_matching_scope(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen freeform query returns a ticket in a hive invisible to normal repos."""
+        monkeypatch.chdir(tmp_path)
+        scope_other = tmp_path / "other_project"
+        scope_other.mkdir()
+        hive_other = scope_other / "other_hive"
+        hive_other.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir, {str(scope_other): _scope_entry(hive_other, "other_hive")}
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        write_ticket_file(hive_other, "b.tst", title="Out-of-Scope Bee")
+
+        with repo_root_context(queen_root):
+            result = await _execute_freeform_query("- [type=bee]", resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert "b.tst" in result["ticket_ids"]
+
+    async def test_queen_named_query_spans_multiple_scopes(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen named query returns tickets from all scopes."""
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        hive_a = scope_a / "hive_a"
+        hive_b = scope_b / "hive_b"
+        hive_a.mkdir()
+        hive_b.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope_a): _scope_entry(hive_a, "hive_a"),
+                str(scope_b): _scope_entry(hive_b, "hive_b"),
+            },
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_global_queries(mock_global_bees_dir, {"all_bees": [["type=bee"]]})
+
+        write_ticket_file(hive_a, "b.aaa", title="Scope A Bee")
+        write_ticket_file(hive_b, "b.bbb", title="Scope B Bee")
+
+        with repo_root_context(queen_root):
+            result = await _execute_named_query("all_bees", resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert "b.aaa" in result["ticket_ids"]
+        assert "b.bbb" in result["ticket_ids"]
+
+    async def test_non_queen_freeform_query_only_sees_matching_scope(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Normal repo freeform query does NOT return tickets from non-matching scope."""
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        hive_a = scope_a / "hive_a"
+        hive_b = scope_b / "hive_b"
+        hive_a.mkdir()
+        hive_b.mkdir()
+        # normal_root exactly matches scope_a, NOT in elevated_repos
+        normal_root = scope_a
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope_a): _scope_entry(hive_a, "hive_a"),
+                str(scope_b): _scope_entry(hive_b, "hive_b"),
+            },
+        )
+
+        write_ticket_file(hive_a, "b.aaa", title="Scope A Bee")
+        write_ticket_file(hive_b, "b.bbb", title="Scope B Bee")
+
+        with repo_root_context(normal_root):
+            result = await _execute_freeform_query("- [type=bee]", resolved_root=normal_root)
+
+        assert result["status"] == "success"
+        assert "b.aaa" in result["ticket_ids"]
+        assert "b.bbb" not in result["ticket_ids"]

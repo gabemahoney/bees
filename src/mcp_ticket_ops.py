@@ -27,9 +27,7 @@ from .config import (
     _serialize_child_tiers,
     _validate_status_values,
     check_for_config_conflicts,
-    check_queen_elevation,
     find_matching_scope,
-    get_all_scopes_config,
     load_bees_config,
     load_global_config,
     resolve_child_tiers_for_hive,
@@ -54,7 +52,7 @@ from .mcp_relationships import (
     _remove_from_up_dependencies,
     _update_bidirectional_relationships,
 )
-from .paths import build_ticket_path_map, compute_ticket_path, get_ticket_path
+from .paths import _build_queen_hive_collection, build_ticket_path_map, compute_ticket_path, get_ticket_path
 from .reader import read_ticket
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 from .ticket_factory import create_bee, create_child_tier
@@ -1406,20 +1404,8 @@ async def _show_ticket(
             }
         valid_ids.append(ticket_id)
 
-    # Build merged hive collection for queen repos
-    hive_collection = None
-    if resolved_root is not None:
-        global_cfg = load_global_config()
-        is_queen, _ = check_queen_elevation(resolved_root, global_cfg)
-        if is_queen:
-            all_scopes = get_all_scopes_config(global_cfg)
-            hive_collection = [
-                (hive_name, hive_cfg)
-                for scope_bees_config in all_scopes.values()
-                for hive_name, hive_cfg in scope_bees_config.hives.items()
-            ]
-
     # Single walk across all hives to resolve paths for every ticket
+    hive_collection = _build_queen_hive_collection(resolved_root)
     path_map = build_ticket_path_map(set(valid_ids), hive_collection=hive_collection)
 
     for ticket_id in valid_ids:
