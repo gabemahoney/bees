@@ -612,6 +612,132 @@ class TestQueenShowTicketEggResolver:
             "This likely means the wrong BeesConfig was used (regression b.8wn)."
         )
 
+    async def test_resolver_failure_returns_raw_egg_with_error_entry(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """When the egg resolver exits non-zero, the raw egg is returned and errors contains the ticket ID."""
+        monkeypatch.chdir(tmp_path)
+
+        scope_foreign = tmp_path / "foreign_project"
+        scope_foreign.mkdir()
+        hive_foreign = scope_foreign / "foreign_hive"
+        hive_foreign.mkdir()
+
+        # Resolver script that always fails
+        resolver_script = tmp_path / "bad_resolver.sh"
+        resolver_script.write_text("#!/bin/bash\nexit 1\n")
+        resolver_script.chmod(0o755)
+
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope_foreign): {
+                    "hives": {
+                        "foreign_hive": {
+                            "path": str(hive_foreign),
+                            "display_name": "Foreign Hive",
+                            "egg_resolver": str(resolver_script),
+                        }
+                    },
+                    "child_tiers": {},
+                }
+            },
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        ticket_id = "b.bad"
+        write_ticket_file(hive_foreign, ticket_id, title="Bad Resolver Bee", egg="raw-egg-data")
+
+        with repo_root_context(queen_root):
+            result = await _show_ticket(ticket_ids=[ticket_id], resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert len(result["tickets"]) == 1
+        # Raw egg is preserved when resolver fails
+        assert result["tickets"][0]["egg"] == "raw-egg-data"
+        # The ticket ID must appear in the errors list (entries use key "id")
+        error_ids = [e.get("id") for e in result["errors"]]
+        assert ticket_id in error_ids, f"Expected {ticket_id} in errors, got {result['errors']}"
+
+    async def test_same_name_hive_collision_first_scope_wins(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """When two foreign scopes have a hive with the same name, the first scope's resolver is used.
+
+        This confirms that setdefault in _build_queen_hive_scope_map picks the first scope
+        and the behaviour is intentional.
+        """
+        monkeypatch.chdir(tmp_path)
+
+        scope1 = tmp_path / "scope1"
+        scope1.mkdir()
+        hive1 = scope1 / "shared_hive"
+        hive1.mkdir()
+
+        scope2 = tmp_path / "scope2"
+        scope2.mkdir()
+        hive2 = scope2 / "shared_hive"
+        hive2.mkdir()
+
+        resolver1 = tmp_path / "resolver1.sh"
+        resolver1.write_text('#!/bin/bash\necho \'{"source": "scope1"}\'\n')
+        resolver1.chmod(0o755)
+
+        resolver2 = tmp_path / "resolver2.sh"
+        resolver2.write_text('#!/bin/bash\necho \'{"source": "scope2"}\'\n')
+        resolver2.chmod(0o755)
+
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        # scope1 is listed first so its hive should win the name collision
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope1): {
+                    "hives": {
+                        "shared_hive": {
+                            "path": str(hive1),
+                            "display_name": "Shared Hive",
+                            "egg_resolver": str(resolver1),
+                        }
+                    },
+                    "child_tiers": {},
+                },
+                str(scope2): {
+                    "hives": {
+                        "shared_hive": {
+                            "path": str(hive2),
+                            "display_name": "Shared Hive",
+                            "egg_resolver": str(resolver2),
+                        }
+                    },
+                    "child_tiers": {},
+                },
+            },
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        # Ticket lives in scope1's hive
+        ticket_id = "b.s1t"
+        write_ticket_file(hive1, ticket_id, title="Scope1 Hive Bee", egg="collision-egg")
+
+        with repo_root_context(queen_root):
+            result = await _show_ticket(ticket_ids=[ticket_id], resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert len(result["tickets"]) == 1
+        assert not result["errors"], f"Unexpected errors: {result['errors']}"
+
+        resolved_egg = result["tickets"][0]["egg"]
+        assert resolved_egg == {"source": "scope1"}, (
+            f"Expected scope1 resolver output, got {resolved_egg!r}. "
+            "First-scope-wins rule may be broken."
+        )
+
 
 class TestQueenWriteGateCLI:
     """Queen repo write gate is enforced in create-ticket CLI command."""
