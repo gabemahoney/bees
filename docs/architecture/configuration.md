@@ -78,7 +78,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 
 ## Elevated Repos Configuration
 
-The `elevated_repos` field grants one or more "queen repos" elevated access to list and read tickets from all hives across all scopes, regardless of normal scope filtering. A queen repo can see every hive registered in the global config, not just the hives that would ordinarily match its own scope.
+The `elevated_repos` field grants one or more "queen repos" elevated cross-scope access to all hive operations regardless of normal scope filtering. A queen repo can operate on every hive registered in the global config, not just the hives that would ordinarily match its own scope.
 
 ### Schema
 
@@ -89,20 +89,11 @@ The `elevated_repos` field grants one or more "queen repos" elevated access to l
 
 ### Examples
 
-Read-only queen repo:
 ```json
 {
   "elevated_repos": [
-    { "path": "/Users/dev/projects/queen-repo" }
-  ]
-}
-```
-
-Write-enabled queen repo:
-```json
-{
-  "elevated_repos": [
-    { "path": "/Users/dev/projects/queen-repo", "write": true }
+    { "path": "/Users/dev/projects/read-only-queen" },
+    { "path": "/Users/dev/projects/write-queen", "write": true }
   ]
 }
 ```

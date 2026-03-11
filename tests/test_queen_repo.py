@@ -1,7 +1,9 @@
 """Tests for queen repo (elevated_repos) configuration validation.
 
-Covers load_global_config() validation of the elevated_repos key, surfaced through
-the _list_hives() MCP operation which returns invalid_config on any violation.
+Covers:
+- load_global_config() validation of elevated_repos, surfaced through _list_hives()
+- check_queen_elevation() pure function
+- check_queen_write_access() pure function
 """
 
 import json
@@ -9,16 +11,13 @@ from pathlib import Path
 
 import pytest
 
+from src.config import check_queen_elevation, check_queen_write_access
 from src.mcp_hive_ops import _list_hives
 from src.repo_context import repo_root_context
 from tests.conftest import write_elevated_repos_config
 
 # ---------------------------------------------------------------------------
 # Parametrize cases for invalid elevated_repos structures
-# Each value is written directly as the elevated_repos field in config.json.
-# The helper write_elevated_repos_config() only accepts well-typed tuples, so
-# invalid structures that cannot be expressed as (str, bool|None) tuples are
-# written via direct config manipulation.
 # ---------------------------------------------------------------------------
 _INVALID_ELEVATED_REPOS_VALUES = [
     pytest.param([{"write": True}], id="missing_path_key"),
@@ -72,30 +71,83 @@ class TestElevatedReposConfigValidation:
 
         assert result["status"] == "success"
 
-    async def test_write_elevated_repos_config_preserves_scopes(
-        self,
-        tmp_path: Path,
-        mock_global_bees_dir: Path,
-        monkeypatch,
-    ):
-        """write_elevated_repos_config() merges elevated_repos without clobbering scopes."""
-        from tests.conftest import write_scoped_config
 
-        monkeypatch.chdir(tmp_path)
-        # First write a scoped config so scopes is populated
-        write_scoped_config(
-            mock_global_bees_dir,
-            tmp_path,
-            {"hives": {}, "child_tiers": {}},
-        )
-        config_before = json.loads((mock_global_bees_dir / "config.json").read_text())
-        assert "scopes" in config_before
+class TestCheckQueenElevation:
+    """Unit tests for check_queen_elevation() in src/config.py."""
 
-        # Now add elevated_repos — scopes must be preserved
-        write_elevated_repos_config(mock_global_bees_dir, [("/some/path", None)])
-        config_after = json.loads((mock_global_bees_dir / "config.json").read_text())
+    def test_no_elevated_repos_key(self, tmp_path: Path):
+        """Returns (False, False) when elevated_repos absent from config."""
+        is_queen, has_write = check_queen_elevation(tmp_path, {})
+        assert (is_queen, has_write) == (False, False)
 
-        assert "scopes" in config_after
-        assert config_after["scopes"] == config_before["scopes"]
-        assert "elevated_repos" in config_after
-        assert config_after["elevated_repos"] == [{"path": "/some/path"}]
+    def test_repo_not_in_list(self, tmp_path: Path):
+        """Returns (False, False) when resolved_root not in elevated_repos."""
+        other = tmp_path / "other"
+        other.mkdir()
+        config = {"elevated_repos": [{"path": str(other)}]}
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (False, False)
+
+    def test_matching_entry_no_write_key(self, tmp_path: Path):
+        """Returns (True, False) when matching entry has no write key."""
+        config = {"elevated_repos": [{"path": str(tmp_path)}]}
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (True, False)
+
+    def test_matching_entry_write_true(self, tmp_path: Path):
+        """Returns (True, True) when matching entry has write: true."""
+        config = {"elevated_repos": [{"path": str(tmp_path), "write": True}]}
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (True, True)
+
+    def test_matching_entry_write_false(self, tmp_path: Path):
+        """Returns (True, False) when matching entry has write: false."""
+        config = {"elevated_repos": [{"path": str(tmp_path), "write": False}]}
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (True, False)
+
+    def test_nonexistent_path_skipped(self, tmp_path: Path):
+        """Entries whose path doesn't exist on disk are skipped — no match, no error."""
+        config = {"elevated_repos": [{"path": "/nonexistent/path/xyz"}]}
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (False, False)
+
+    def test_nonexistent_path_skipped_even_if_listed_before_real_match(self, tmp_path: Path):
+        """Nonexistent entries before a real match are skipped; real match still found."""
+        config = {
+            "elevated_repos": [
+                {"path": "/nonexistent/path/xyz"},
+                {"path": str(tmp_path), "write": True},
+            ]
+        }
+        is_queen, has_write = check_queen_elevation(tmp_path, config)
+        assert (is_queen, has_write) == (True, True)
+
+
+class TestCheckQueenWriteAccess:
+    """Unit tests for check_queen_write_access() in src/config.py."""
+
+    def test_non_queen_repo_returns_none(self, tmp_path: Path):
+        """Non-queen repo always has write access — returns None."""
+        result = check_queen_write_access(tmp_path, {})
+        assert result is None
+
+    def test_queen_with_write_true_returns_none(self, tmp_path: Path):
+        """Queen repo with write=True has write access — returns None."""
+        config = {"elevated_repos": [{"path": str(tmp_path), "write": True}]}
+        result = check_queen_write_access(tmp_path, config)
+        assert result is None
+
+    def test_queen_without_write_returns_permission_denied(self, tmp_path: Path):
+        """Queen repo without write access returns permission_denied error dict."""
+        config = {"elevated_repos": [{"path": str(tmp_path)}]}
+        result = check_queen_write_access(tmp_path, config)
+        assert result is not None
+        assert result["error_type"] == "permission_denied"
+
+    def test_queen_with_write_false_returns_permission_denied(self, tmp_path: Path):
+        """Queen repo with write=False returns permission_denied error dict."""
+        config = {"elevated_repos": [{"path": str(tmp_path), "write": False}]}
+        result = check_queen_write_access(tmp_path, config)
+        assert result is not None
+        assert result["error_type"] == "permission_denied"

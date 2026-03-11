@@ -693,6 +693,8 @@ def load_global_config() -> dict:
                 raise ValueError(
                     f"elevated_repos[{i}]['path'] must be a string, got {type(entry['path'])}"
                 )
+            if not os.path.isabs(entry["path"]):
+                raise ValueError(f"elevated_repos entry 'path' must be absolute, got: {entry['path']!r}")
             if "write" in entry and not isinstance(entry["write"], bool):
                 raise ValueError(
                     f"elevated_repos[{i}]['write'] must be a boolean, got {type(entry['write'])}"
@@ -1105,6 +1107,7 @@ def check_queen_elevation(resolved_root: Path, global_config: dict) -> tuple[boo
     for entry in elevated_repos:
         entry_path = Path(entry["path"])
         if not entry_path.exists():
+            logger.warning("elevated_repos path does not exist, skipping: %s", entry_path)
             continue
         if entry_path.resolve() == resolved:
             return True, bool(entry.get("write", False))
