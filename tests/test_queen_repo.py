@@ -4,6 +4,9 @@ Covers:
 - load_global_config() validation of elevated_repos, surfaced through _list_hives()
 - check_queen_elevation() pure function
 - check_queen_write_access() pure function
+- Queen repo read access: list_hives, show_ticket across scopes
+- Non-queen regression: only matching-scope hives visible
+- MCP roots protocol path governs elevation check over repo_root param
 """
 
 import json
@@ -13,8 +16,18 @@ import pytest
 
 from src.config import check_queen_elevation, check_queen_write_access
 from src.mcp_hive_ops import _list_hives
+from src.mcp_ticket_ops import _show_ticket
 from src.repo_context import repo_root_context
-from tests.conftest import write_elevated_repos_config
+from tests.conftest import write_elevated_repos_config, write_multi_scope_config
+from tests.helpers import write_ticket_file
+
+
+def _scope_entry(hive_dir: Path, hive_name: str) -> dict:
+    """Build a minimal scope config entry for a single hive."""
+    return {
+        "hives": {hive_name: {"path": str(hive_dir), "display_name": hive_name.title()}},
+        "child_tiers": {},
+    }
 
 # ---------------------------------------------------------------------------
 # Parametrize cases for invalid elevated_repos structures
@@ -151,3 +164,213 @@ class TestCheckQueenWriteAccess:
         result = check_queen_write_access(tmp_path, config)
         assert result is not None
         assert result["error_type"] == "permission_denied"
+
+
+# ---------------------------------------------------------------------------
+# Queen repo read-access tests
+# ---------------------------------------------------------------------------
+
+
+class TestQueenListHives:
+    """Queen repo sees hives from ALL scopes via _list_hives."""
+
+    async def test_queen_sees_all_scopes_with_scope_fields(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen returns hives from all scopes; each entry has correct scope field."""
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        hive_a = scope_a / "alpha"
+        hive_b = scope_b / "beta"
+        hive_a.mkdir()
+        hive_b.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {str(scope_a): _scope_entry(hive_a, "alpha"), str(scope_b): _scope_entry(hive_b, "beta")},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        with repo_root_context(queen_root):
+            result = await _list_hives(resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        by_name = {h["normalized_name"]: h for h in result["hives"]}
+        assert set(by_name) == {"alpha", "beta"}
+        assert by_name["alpha"]["scope"] == str(scope_a)
+        assert by_name["beta"]["scope"] == str(scope_b)
+
+    async def test_same_name_hives_from_different_scopes_both_returned(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen list_hives returns both 'bugs' hives from different scopes as distinct entries."""
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        bugs_a = scope_a / "bugs"
+        bugs_b = scope_b / "bugs"
+        bugs_a.mkdir()
+        bugs_b.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {str(scope_a): _scope_entry(bugs_a, "bugs"), str(scope_b): _scope_entry(bugs_b, "bugs")},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        with repo_root_context(queen_root):
+            result = await _list_hives(resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        bugs_entries = [h for h in result["hives"] if h["normalized_name"] == "bugs"]
+        assert len(bugs_entries) == 2
+        assert {h["scope"] for h in bugs_entries} == {str(scope_a), str(scope_b)}
+        assert {h["path"] for h in bugs_entries} == {str(bugs_a), str(bugs_b)}
+
+
+class TestQueenShowTicket:
+    """Queen repo can read tickets from hives outside its own matching scope."""
+
+    async def test_queen_reads_ticket_from_non_matching_scope(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen show_ticket finds a ticket in a hive invisible to normal repos."""
+        monkeypatch.chdir(tmp_path)
+        scope_other = tmp_path / "other_project"
+        scope_other.mkdir()
+        hive_other = scope_other / "other_hive"
+        hive_other.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        write_multi_scope_config(
+            mock_global_bees_dir, {str(scope_other): _scope_entry(hive_other, "other_hive")}
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        ticket_id = "b.abc"
+        write_ticket_file(hive_other, ticket_id, title="Cross-Scope Ticket")
+
+        with repo_root_context(queen_root):
+            result = await _show_ticket(ticket_ids=[ticket_id], resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert len(result["tickets"]) == 1
+        assert result["tickets"][0]["ticket_id"] == ticket_id
+        assert not result["not_found"]
+
+    async def test_non_queen_cannot_find_ticket_in_other_scope(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Normal repo cannot read a ticket from a non-matching scope."""
+        monkeypatch.chdir(tmp_path)
+        scope_other = tmp_path / "other_project"
+        scope_other.mkdir()
+        hive_other = scope_other / "other_hive"
+        hive_other.mkdir()
+        # normal_root matches scope_normal; does NOT match scope_other
+        scope_normal = tmp_path / "normal_project"
+        scope_normal.mkdir()
+        normal_root = scope_normal
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope_other): _scope_entry(hive_other, "other_hive"),
+                str(normal_root): {"hives": {}, "child_tiers": {}},
+            },
+        )
+        # normal_root NOT in elevated_repos
+
+        ticket_id = "b.abc"
+        write_ticket_file(hive_other, ticket_id, title="Cross-Scope Ticket")
+
+        with repo_root_context(normal_root):
+            result = await _show_ticket(ticket_ids=[ticket_id], resolved_root=normal_root)
+
+        assert result["status"] == "success"
+        assert ticket_id in result["not_found"]
+
+
+class TestNonQueenRegression:
+    """Normal repos only see hives from their matching scope (SR-5 regression guard)."""
+
+    async def test_non_queen_list_hives_only_from_matching_scope(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Normal repo list_hives omits hives from non-matching scopes."""
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        hive_a = scope_a / "alpha"
+        hive_b = scope_b / "beta"
+        hive_a.mkdir()
+        hive_b.mkdir()
+        # normal_root exactly matches scope_a, not in elevated_repos
+        normal_root = scope_a
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {str(scope_a): _scope_entry(hive_a, "alpha"), str(scope_b): _scope_entry(hive_b, "beta")},
+        )
+
+        with repo_root_context(normal_root):
+            result = await _list_hives(resolved_root=normal_root)
+
+        assert result["status"] == "success"
+        names = {h["normalized_name"] for h in result["hives"]}
+        assert "alpha" in names
+        assert "beta" not in names
+
+
+class TestRootsWinsElevationCheck:
+    """MCP roots protocol path governs elevation when both roots and repo_root param are present."""
+
+    async def test_roots_protocol_beats_repo_root_param(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch, mock_mcp_context
+    ):
+        """When ctx provides queen root via roots, repo_root param (non-queen) is ignored."""
+        from src.mcp_server import list_hives
+
+        monkeypatch.chdir(tmp_path)
+        scope_a = tmp_path / "project_a"
+        scope_b = tmp_path / "project_b"
+        scope_a.mkdir()
+        scope_b.mkdir()
+        hive_a = scope_a / "alpha"
+        hive_b = scope_b / "beta"
+        hive_a.mkdir()
+        hive_b.mkdir()
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+        (queen_root / ".git").mkdir()  # needed so get_repo_root_from_path resolves to queen_root
+        # normal_root matches scope_a; NOT in elevated_repos
+        normal_root = scope_a
+
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {str(scope_a): _scope_entry(hive_a, "alpha"), str(scope_b): _scope_entry(hive_b, "beta")},
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        # ctx provides queen_root via roots protocol; repo_root param is the non-queen path
+        ctx = mock_mcp_context(queen_root)
+
+        result = await list_hives(ctx=ctx, repo_root=str(normal_root))
+
+        assert result["status"] == "success"
+        names = {h["normalized_name"] for h in result["hives"]}
+        # Queen sees BOTH hives; roots protocol chose queen over repo_root
+        assert "alpha" in names
+        assert "beta" in names
