@@ -23,6 +23,7 @@ from typing import Any, Literal
 
 from . import cache
 from .config import (
+    BeesConfig,
     _parse_child_tiers_data,
     _serialize_child_tiers,
     _validate_status_values,
@@ -52,7 +53,13 @@ from .mcp_relationships import (
     _remove_from_up_dependencies,
     _update_bidirectional_relationships,
 )
-from .paths import _build_queen_hive_collection, build_ticket_path_map, compute_ticket_path, get_ticket_path
+from .paths import (
+    _build_queen_hive_collection,
+    _build_queen_hive_scope_map,
+    build_ticket_path_map,
+    compute_ticket_path,
+    get_ticket_path,
+)
 from .reader import read_ticket
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 from .ticket_factory import create_bee, create_child_tier
@@ -1408,6 +1415,10 @@ async def _show_ticket(
     hive_collection = _build_queen_hive_collection(resolved_root)
     path_map = build_ticket_path_map(set(valid_ids), hive_collection=hive_collection)
 
+    # In queen mode, build a hive→BeesConfig map so foreign-scope hives resolve
+    # egg resolvers from their own scope config rather than the queen's local config.
+    queen_hive_scope_map: dict[str, BeesConfig] = _build_queen_hive_scope_map(resolved_root) or {}
+
     for ticket_id in valid_ids:
         try:
             if ticket_id not in path_map:
@@ -1420,7 +1431,12 @@ async def _show_ticket(
             # Resolve egg for bee tickets via resolver pipeline
             if ticket.type == "bee":
                 try:
-                    egg_resolver = resolve_egg_resolver(resolved_hive, config)
+                    effective_config = (
+                        queen_hive_scope_map.get(resolved_hive, config)
+                        if queen_hive_scope_map
+                        else config
+                    )
+                    egg_resolver = resolve_egg_resolver(resolved_hive, effective_config)
                     if egg_resolver is None:
                         resolved_egg = _default_resolver(ticket.egg)
                     else:
@@ -1428,7 +1444,7 @@ async def _show_ticket(
                             raise ValueError(
                                 "resolved_root is required when a custom egg resolver is configured"
                             )
-                        timeout = resolve_egg_resolver_timeout(resolved_hive, config)
+                        timeout = resolve_egg_resolver_timeout(resolved_hive, effective_config)
                         resolved_egg = await _invoke_custom_resolver(
                             egg_resolver, ticket.egg, resolved_root, timeout
                         )

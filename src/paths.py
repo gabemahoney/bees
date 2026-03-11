@@ -124,6 +124,27 @@ def _build_queen_hive_collection(resolved_root: Path | None) -> list[tuple[str, 
     return merged
 
 
+def _build_queen_hive_scope_map(resolved_root: Path | None) -> "dict[str, Any] | None":
+    """Return {hive_name: BeesConfig} for queen repos for per-hive scope config lookup.
+
+    Returns None for non-queen repos. When multiple scopes share the same normalized
+    hive name, the first scope encountered wins (consistent with _build_queen_hive_collection).
+    """
+    if resolved_root is None:
+        return None
+    from .config import BeesConfig, check_queen_elevation, get_all_scopes_config, load_global_config
+
+    global_config = load_global_config()
+    is_queen, _ = check_queen_elevation(resolved_root, global_config)
+    if not is_queen:
+        return None
+    scope_map: dict[str, BeesConfig] = {}
+    for scope_cfg in get_all_scopes_config(global_config).values():
+        for hive_name in scope_cfg.hives:
+            scope_map.setdefault(hive_name, scope_cfg)
+    return scope_map
+
+
 def compute_ticket_path(ticket_id: str, hive_root: Path) -> Path:
     """Compute the expected filesystem path for a ticket without any directory scan.
 

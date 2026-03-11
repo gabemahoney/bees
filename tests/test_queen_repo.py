@@ -20,7 +20,12 @@ from src.mcp_hive_ops import _list_hives
 from src.mcp_query_ops import _execute_freeform_query, _execute_named_query
 from src.mcp_ticket_ops import _show_ticket
 from src.repo_context import repo_root_context
-from tests.conftest import write_elevated_repos_config, write_global_queries, write_multi_scope_config, write_scoped_config
+from tests.conftest import (
+    write_elevated_repos_config,
+    write_global_queries,
+    write_multi_scope_config,
+    write_scoped_config,
+)
 from tests.helpers import write_ticket_file
 
 
@@ -536,6 +541,76 @@ class TestQueenWriteGateMCP:
         assert result["status"] == "success"
         ticket_id = result["ticket_id"]
         assert compute_ticket_path(ticket_id, hive_dir).exists()
+
+
+class TestQueenShowTicketEggResolver:
+    """Regression b.8wn: queen show_ticket uses the foreign scope's BeesConfig for egg resolution."""
+
+    async def test_queen_show_ticket_uses_foreign_scope_egg_resolver(
+        self, tmp_path: Path, mock_global_bees_dir: Path, monkeypatch
+    ):
+        """Queen reads a ticket from a foreign scope and the hive-level egg resolver is invoked.
+
+        Before the fix, _show_ticket passed the queen's local BeesConfig to
+        resolve_egg_resolver.  That config has no entry for the foreign hive, so
+        resolve_egg_resolver raised ValueError and the except-block fell back to the
+        raw egg value.  After the fix, the correct foreign-scope BeesConfig is used,
+        the resolver runs, and the resolved value is returned.
+        """
+        monkeypatch.chdir(tmp_path)
+
+        # Set up foreign scope with its hive
+        scope_foreign = tmp_path / "foreign_project"
+        scope_foreign.mkdir()
+        hive_foreign = scope_foreign / "foreign_hive"
+        hive_foreign.mkdir()
+
+        # Create an egg resolver script that outputs a known JSON payload
+        resolver_script = tmp_path / "egg_resolver.sh"
+        resolver_script.write_text(
+            '#!/bin/bash\necho \'{"resolved": true}\'\n'
+        )
+        resolver_script.chmod(0o755)
+
+        # Set up a queen repo directory (no hives of its own)
+        queen_root = tmp_path / "queen"
+        queen_root.mkdir()
+
+        # Write the foreign scope config with egg_resolver on the hive
+        write_multi_scope_config(
+            mock_global_bees_dir,
+            {
+                str(scope_foreign): {
+                    "hives": {
+                        "foreign_hive": {
+                            "path": str(hive_foreign),
+                            "display_name": "Foreign Hive",
+                            "egg_resolver": str(resolver_script),
+                        }
+                    },
+                    "child_tiers": {},
+                }
+            },
+        )
+        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+
+        # Write a bee ticket with a raw egg value in the foreign hive
+        ticket_id = "b.r8n"
+        write_ticket_file(hive_foreign, ticket_id, title="Foreign Egg Bee", egg="raw-egg-data")
+
+        with repo_root_context(queen_root):
+            result = await _show_ticket(ticket_ids=[ticket_id], resolved_root=queen_root)
+
+        assert result["status"] == "success"
+        assert len(result["tickets"]) == 1
+        assert not result["errors"], f"Unexpected errors: {result['errors']}"
+
+        resolved_egg = result["tickets"][0]["egg"]
+        # The resolver script outputs {"resolved": true}; confirm it ran (not raw string)
+        assert resolved_egg == {"resolved": True}, (
+            f"Expected resolved egg {{'resolved': True}}, got {resolved_egg!r}. "
+            "This likely means the wrong BeesConfig was used (regression b.8wn)."
+        )
 
 
 class TestQueenWriteGateCLI:
