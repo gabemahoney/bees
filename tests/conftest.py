@@ -109,11 +109,11 @@ def write_global_queries(global_bees_dir: Path, queries: dict) -> None:
     config_path.write_text(json.dumps(config, indent=2))
 
 
-def write_elevated_repos_config(global_bees_dir: Path, entries: list[tuple[str, bool | None]]) -> None:
-    """Write elevated_repos into global config.json, merging with pre-existing config.
+def write_queen_repos_config(global_bees_dir: Path, entries: list[tuple[str, bool | None]]) -> None:
+    """Write queen_repos into global config.json, merging with pre-existing config.
 
     Loads any pre-existing config.json (e.g. written by write_scoped_config) and merges
-    the elevated_repos key without overwriting the scopes key. Writes the result back to
+    the queen_repos key without overwriting the scopes key. Writes the result back to
     global_bees_dir / "config.json".
 
     Args:
@@ -126,14 +126,14 @@ def write_elevated_repos_config(global_bees_dir: Path, entries: list[tuple[str, 
     else:
         config = {"scopes": {}, "schema_version": "2.0"}
 
-    elevated_repos = []
+    queen_repos = []
     for path_str, write in entries:
         entry: dict = {"path": path_str}
         if write is not None:
             entry["write"] = write
-        elevated_repos.append(entry)
+        queen_repos.append(entry)
 
-    config["elevated_repos"] = elevated_repos
+    config["queen_repos"] = queen_repos
     config_path.write_text(json.dumps(config, indent=2))
 
 

@@ -152,12 +152,12 @@ shared  /projects/shared/tickets
 A **queen repo** is a repository granted elevated cross-scope access — it can list and read tickets from every hive in `~/.bees/config.json`, regardless of which scope normally owns those hives. 
 This is useful for dashboard, reporting, or orchestration repos that need a global view across all projects.
 
-Queen repos are registered manually in `~/.bees/config.json` via the `elevated_repos` key. **LLMs cannot register a queen repo through bees tools** — you must edit the config file yourself. 
-Add an entry under `elevated_repos` at the top level:
+Queen repos are registered manually in `~/.bees/config.json` via the `queen_repos` key. **LLMs cannot register a queen repo through bees tools** — you must edit the config file yourself.
+Add an entry under `queen_repos` at the top level:
 
 ```json
 {
-  "elevated_repos": [
+  "queen_repos": [
     { "path": "/Users/dev/projects/my-dashboard" },
     { "path": "/Users/dev/projects/orchestrator", "write": true }
   ],

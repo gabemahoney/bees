@@ -54,7 +54,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 - `queries`: (Optional) Global-level named queries dictionary. See Named Queries Configuration below.
 - `delete_with_dependencies`: (Optional) Boolean, default `false`. When `true`, deleting a ticket automatically removes its ID from surviving tickets' `up_dependencies` and `down_dependencies` arrays before deletion. **Global-only** — cannot be set at scope or hive level.
 - `auto_fix_dangling_refs`: (Optional) Boolean, default `false`. When `true`, `sanitize_hive` automatically removes dangling dependency and parent references from ticket files instead of reporting them as errors. Each fix is recorded in the response as `remove_dangling_dependency` or `clear_dangling_parent`. **Global-only** — cannot be set at scope or hive level.
-- `elevated_repos`: (Optional) List of queen repo entries granting elevated cross-scope access. Absent or empty means no elevated repos. Non-existent paths are silently ignored; invalid entries produce an `invalid_config` error at tool call time. See Elevated Repos Configuration below.
+- `queen_repos`: (Optional) List of queen repo entries granting elevated cross-scope access. Absent or empty means no queen repos. Non-existent paths are silently ignored; invalid entries produce an `invalid_config` error at tool call time. See Queen Repos Configuration below.
 - `scopes`: Dictionary mapping directory patterns to scope configurations
 
 **Scope Fields**:
@@ -76,13 +76,13 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 
 **Implementation**: See `src/config.py` for BeesConfig, HiveConfig dataclasses, scope matching, and load/save functions.
 
-## Elevated Repos Configuration
+## Queen Repos Configuration
 
-The `elevated_repos` field grants one or more "queen repos" elevated cross-scope access to all hive operations regardless of normal scope filtering. A queen repo can operate on every hive registered in the global config, not just the hives that would ordinarily match its own scope.
+The `queen_repos` field grants one or more "queen repos" elevated cross-scope access to all hive operations regardless of normal scope filtering. A queen repo can operate on every hive registered in the global config, not just the hives that would ordinarily match its own scope.
 
 ### Schema
 
-`elevated_repos` is a top-level list of objects. Each object has:
+`queen_repos` is a top-level list of objects. Each object has:
 
 - `path` (required, string): Absolute path to the repository root that receives elevated access.
 - `write` (optional, boolean, default `false`): When `false` (or absent), the repo has read-only elevated access. When `true`, the repo also has write access across all hives.
@@ -91,7 +91,7 @@ The `elevated_repos` field grants one or more "queen repos" elevated cross-scope
 
 ```json
 {
-  "elevated_repos": [
+  "queen_repos": [
     { "path": "/Users/dev/projects/read-only-queen" },
     { "path": "/Users/dev/projects/write-queen", "write": true }
   ]

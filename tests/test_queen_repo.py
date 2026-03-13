@@ -1,7 +1,7 @@
-"""Tests for queen repo (elevated_repos) configuration validation.
+"""Tests for queen repo (queen_repos) configuration validation.
 
 Covers:
-- load_global_config() validation of elevated_repos, surfaced through _list_hives()
+- load_global_config() validation of queen_repos, surfaced through _list_hives()
 - check_queen_elevation() pure function
 - check_queen_write_access() pure function
 - Queen repo read access: list_hives, show_ticket across scopes
@@ -21,7 +21,7 @@ from src.mcp_query_ops import _execute_freeform_query, _execute_named_query
 from src.mcp_ticket_ops import _show_ticket
 from src.repo_context import repo_root_context
 from tests.conftest import (
-    write_elevated_repos_config,
+    write_queen_repos_config,
     write_global_queries,
     write_multi_scope_config,
     write_scoped_config,
@@ -37,9 +37,9 @@ def _scope_entry(hive_dir: Path, hive_name: str) -> dict:
     }
 
 # ---------------------------------------------------------------------------
-# Parametrize cases for invalid elevated_repos structures
+# Parametrize cases for invalid queen_repos structures
 # ---------------------------------------------------------------------------
-_INVALID_ELEVATED_REPOS_VALUES = [
+_INVALID_QUEEN_REPOS_VALUES = [
     pytest.param([{"write": True}], id="missing_path_key"),
     pytest.param([{"path": 123}], id="path_not_a_string"),
     pytest.param([{"path": "/some/path", "write": "yes"}], id="write_not_bool"),
@@ -47,23 +47,23 @@ _INVALID_ELEVATED_REPOS_VALUES = [
 ]
 
 
-class TestElevatedReposConfigValidation:
-    """Config validation for elevated_repos surfaced via list_hives."""
+class TestQueenReposConfigValidation:
+    """Config validation for queen_repos surfaced via list_hives."""
 
-    @pytest.mark.parametrize("elevated_repos_value", _INVALID_ELEVATED_REPOS_VALUES)
-    async def test_invalid_elevated_repos_returns_invalid_config(
+    @pytest.mark.parametrize("queen_repos_value", _INVALID_QUEEN_REPOS_VALUES)
+    async def test_invalid_queen_repos_returns_invalid_config(
         self,
-        elevated_repos_value,
+        queen_repos_value,
         tmp_path: Path,
         mock_global_bees_dir: Path,
         monkeypatch,
     ):
-        """Invalid elevated_repos structures cause list_hives to return invalid_config."""
+        """Invalid queen_repos structures cause list_hives to return invalid_config."""
         monkeypatch.chdir(tmp_path)
         config = {
             "scopes": {},
             "schema_version": "2.0",
-            "elevated_repos": elevated_repos_value,
+            "queen_repos": queen_repos_value,
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(config))
 
@@ -73,15 +73,15 @@ class TestElevatedReposConfigValidation:
         assert result["status"] == "error"
         assert result["error_type"] == "invalid_config"
 
-    async def test_nonexistent_elevated_repos_path_no_error(
+    async def test_nonexistent_queen_repos_path_no_error(
         self,
         tmp_path: Path,
         mock_global_bees_dir: Path,
         monkeypatch,
     ):
-        """Non-existent path in elevated_repos is silently accepted (no error)."""
+        """Non-existent path in queen_repos is silently accepted (no error)."""
         monkeypatch.chdir(tmp_path)
-        write_elevated_repos_config(
+        write_queen_repos_config(
             mock_global_bees_dir,
             [("/nonexistent/path/that/does/not/exist", True)],
         )
@@ -95,47 +95,47 @@ class TestElevatedReposConfigValidation:
 class TestCheckQueenElevation:
     """Unit tests for check_queen_elevation() in src/config.py."""
 
-    def test_no_elevated_repos_key(self, tmp_path: Path):
-        """Returns (False, False) when elevated_repos absent from config."""
+    def test_no_queen_repos_key(self, tmp_path: Path):
+        """Returns (False, False) when queen_repos absent from config."""
         is_queen, has_write = check_queen_elevation(tmp_path, {})
         assert (is_queen, has_write) == (False, False)
 
     def test_repo_not_in_list(self, tmp_path: Path):
-        """Returns (False, False) when resolved_root not in elevated_repos."""
+        """Returns (False, False) when resolved_root not in queen_repos."""
         other = tmp_path / "other"
         other.mkdir()
-        config = {"elevated_repos": [{"path": str(other)}]}
+        config = {"queen_repos": [{"path": str(other)}]}
         is_queen, has_write = check_queen_elevation(tmp_path, config)
         assert (is_queen, has_write) == (False, False)
 
     def test_matching_entry_no_write_key(self, tmp_path: Path):
         """Returns (True, False) when matching entry has no write key."""
-        config = {"elevated_repos": [{"path": str(tmp_path)}]}
+        config = {"queen_repos": [{"path": str(tmp_path)}]}
         is_queen, has_write = check_queen_elevation(tmp_path, config)
         assert (is_queen, has_write) == (True, False)
 
     def test_matching_entry_write_true(self, tmp_path: Path):
         """Returns (True, True) when matching entry has write: true."""
-        config = {"elevated_repos": [{"path": str(tmp_path), "write": True}]}
+        config = {"queen_repos": [{"path": str(tmp_path), "write": True}]}
         is_queen, has_write = check_queen_elevation(tmp_path, config)
         assert (is_queen, has_write) == (True, True)
 
     def test_matching_entry_write_false(self, tmp_path: Path):
         """Returns (True, False) when matching entry has write: false."""
-        config = {"elevated_repos": [{"path": str(tmp_path), "write": False}]}
+        config = {"queen_repos": [{"path": str(tmp_path), "write": False}]}
         is_queen, has_write = check_queen_elevation(tmp_path, config)
         assert (is_queen, has_write) == (True, False)
 
     def test_nonexistent_path_skipped(self, tmp_path: Path):
         """Entries whose path doesn't exist on disk are skipped — no match, no error."""
-        config = {"elevated_repos": [{"path": "/nonexistent/path/xyz"}]}
+        config = {"queen_repos": [{"path": "/nonexistent/path/xyz"}]}
         is_queen, has_write = check_queen_elevation(tmp_path, config)
         assert (is_queen, has_write) == (False, False)
 
     def test_nonexistent_path_skipped_even_if_listed_before_real_match(self, tmp_path: Path):
         """Nonexistent entries before a real match are skipped; real match still found."""
         config = {
-            "elevated_repos": [
+            "queen_repos": [
                 {"path": "/nonexistent/path/xyz"},
                 {"path": str(tmp_path), "write": True},
             ]
@@ -154,20 +154,20 @@ class TestCheckQueenWriteAccess:
 
     def test_queen_with_write_true_returns_none(self, tmp_path: Path):
         """Queen repo with write=True has write access — returns None."""
-        config = {"elevated_repos": [{"path": str(tmp_path), "write": True}]}
+        config = {"queen_repos": [{"path": str(tmp_path), "write": True}]}
         result = check_queen_write_access(tmp_path, config)
         assert result is None
 
     def test_queen_without_write_returns_permission_denied(self, tmp_path: Path):
         """Queen repo without write access returns permission_denied error dict."""
-        config = {"elevated_repos": [{"path": str(tmp_path)}]}
+        config = {"queen_repos": [{"path": str(tmp_path)}]}
         result = check_queen_write_access(tmp_path, config)
         assert result is not None
         assert result["error_type"] == "permission_denied"
 
     def test_queen_with_write_false_returns_permission_denied(self, tmp_path: Path):
         """Queen repo with write=False returns permission_denied error dict."""
-        config = {"elevated_repos": [{"path": str(tmp_path), "write": False}]}
+        config = {"queen_repos": [{"path": str(tmp_path), "write": False}]}
         result = check_queen_write_access(tmp_path, config)
         assert result is not None
         assert result["error_type"] == "permission_denied"
@@ -201,7 +201,7 @@ class TestQueenListHives:
             mock_global_bees_dir,
             {str(scope_a): _scope_entry(hive_a, "alpha"), str(scope_b): _scope_entry(hive_b, "beta")},
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         with repo_root_context(queen_root):
             result = await _list_hives(resolved_root=queen_root)
@@ -232,7 +232,7 @@ class TestQueenListHives:
             mock_global_bees_dir,
             {str(scope_a): _scope_entry(bugs_a, "bugs"), str(scope_b): _scope_entry(bugs_b, "bugs")},
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         with repo_root_context(queen_root):
             result = await _list_hives(resolved_root=queen_root)
@@ -262,7 +262,7 @@ class TestQueenShowTicket:
         write_multi_scope_config(
             mock_global_bees_dir, {str(scope_other): _scope_entry(hive_other, "other_hive")}
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         ticket_id = "b.abc"
         write_ticket_file(hive_other, ticket_id, title="Cross-Scope Ticket")
@@ -296,7 +296,7 @@ class TestQueenShowTicket:
                 str(normal_root): {"hives": {}, "child_tiers": {}},
             },
         )
-        # normal_root NOT in elevated_repos
+        # normal_root NOT in queen_repos
 
         ticket_id = "b.abc"
         write_ticket_file(hive_other, ticket_id, title="Cross-Scope Ticket")
@@ -324,7 +324,7 @@ class TestNonQueenRegression:
         hive_b = scope_b / "beta"
         hive_a.mkdir()
         hive_b.mkdir()
-        # normal_root exactly matches scope_a, not in elevated_repos
+        # normal_root exactly matches scope_a, not in queen_repos
         normal_root = scope_a
 
         write_multi_scope_config(
@@ -362,14 +362,14 @@ class TestRootsWinsElevationCheck:
         queen_root = tmp_path / "queen"
         queen_root.mkdir()
         (queen_root / ".git").mkdir()  # needed so get_repo_root_from_path resolves to queen_root
-        # normal_root matches scope_a; NOT in elevated_repos
+        # normal_root matches scope_a; NOT in queen_repos
         normal_root = scope_a
 
         write_multi_scope_config(
             mock_global_bees_dir,
             {str(scope_a): _scope_entry(hive_a, "alpha"), str(scope_b): _scope_entry(hive_b, "beta")},
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         # ctx provides queen_root via roots protocol; repo_root param is the non-queen path
         ctx = mock_mcp_context(queen_root)
@@ -401,7 +401,7 @@ class TestQueenQueries:
         write_multi_scope_config(
             mock_global_bees_dir, {str(scope_other): _scope_entry(hive_other, "other_hive")}
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         write_ticket_file(hive_other, "b.tst", title="Out-of-Scope Bee")
 
@@ -434,7 +434,7 @@ class TestQueenQueries:
                 str(scope_b): _scope_entry(hive_b, "hive_b"),
             },
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
         write_global_queries(mock_global_bees_dir, {"all_bees": [["type=bee"]]})
 
         write_ticket_file(hive_a, "b.aaa", title="Scope A Bee")
@@ -460,7 +460,7 @@ class TestQueenQueries:
         hive_b = scope_b / "hive_b"
         hive_a.mkdir()
         hive_b.mkdir()
-        # normal_root exactly matches scope_a, NOT in elevated_repos
+        # normal_root exactly matches scope_a, NOT in queen_repos
         normal_root = scope_a
 
         write_multi_scope_config(
@@ -504,7 +504,7 @@ def queen_write_env(tmp_path, mock_global_bees_dir, monkeypatch):
             queen_root,
             {"hives": {"test_hive": {"path": str(hive_dir), "display_name": "Test Hive"}}, "child_tiers": {}},
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), write)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), write)])
         monkeypatch.chdir(queen_root)
         return queen_root, hive_dir
 
@@ -592,7 +592,7 @@ class TestQueenShowTicketEggResolver:
                 }
             },
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         # Write a bee ticket with a raw egg value in the foreign hive
         ticket_id = "b.r8n"
@@ -646,7 +646,7 @@ class TestQueenShowTicketEggResolver:
                 }
             },
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         ticket_id = "b.bad"
         write_ticket_file(hive_foreign, ticket_id, title="Bad Resolver Bee", egg="raw-egg-data")
@@ -719,7 +719,7 @@ class TestQueenShowTicketEggResolver:
                 },
             },
         )
-        write_elevated_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
+        write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
 
         # Ticket lives in scope1's hive
         ticket_id = "b.s1t"

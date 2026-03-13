@@ -679,25 +679,25 @@ def load_global_config() -> dict:
         if not isinstance(val, bool):
             raise ValueError(f"Global auto_fix_dangling_refs must be a boolean, got {type(val)}")
 
-    # Validate global-level elevated_repos if present
-    if "elevated_repos" in data:
-        elevated_repos = data["elevated_repos"]
-        if not isinstance(elevated_repos, list):
-            raise ValueError(f"Global elevated_repos must be a list, got {type(elevated_repos)}")
-        for i, entry in enumerate(elevated_repos):
+    # Validate global-level queen_repos if present
+    if "queen_repos" in data:
+        queen_repos = data["queen_repos"]
+        if not isinstance(queen_repos, list):
+            raise ValueError(f"Global queen_repos must be a list, got {type(queen_repos)}")
+        for i, entry in enumerate(queen_repos):
             if not isinstance(entry, dict):
-                raise ValueError(f"elevated_repos[{i}] must be a dict, got {type(entry)}")
+                raise ValueError(f"queen_repos[{i}] must be a dict, got {type(entry)}")
             if "path" not in entry:
-                raise ValueError(f"elevated_repos[{i}] missing required 'path' key")
+                raise ValueError(f"queen_repos[{i}] missing required 'path' key")
             if not isinstance(entry["path"], str):
                 raise ValueError(
-                    f"elevated_repos[{i}]['path'] must be a string, got {type(entry['path'])}"
+                    f"queen_repos[{i}]['path'] must be a string, got {type(entry['path'])}"
                 )
             if not os.path.isabs(entry["path"]):
-                raise ValueError(f"elevated_repos entry 'path' must be absolute, got: {entry['path']!r}")
+                raise ValueError(f"queen_repos entry 'path' must be absolute, got: {entry['path']!r}")
             if "write" in entry and not isinstance(entry["write"], bool):
                 raise ValueError(
-                    f"elevated_repos[{i}]['write'] must be a boolean, got {type(entry['write'])}"
+                    f"queen_repos[{i}]['write'] must be a boolean, got {type(entry['write'])}"
                 )
 
     _GLOBAL_CONFIG_CACHE = data
@@ -1098,16 +1098,16 @@ def check_queen_elevation(resolved_root: Path, global_config: dict) -> tuple[boo
 
     Returns:
         (is_queen, has_write): is_queen is True if resolved_root matches an
-        elevated_repos entry whose path exists on disk. has_write is True only
+        queen_repos entry whose path exists on disk. has_write is True only
         if the matching entry has "write": true. If is_queen is False,
         has_write is always False.
     """
-    elevated_repos = global_config.get("elevated_repos", [])
+    queen_repos = global_config.get("queen_repos", [])
     resolved = resolved_root.resolve()
-    for entry in elevated_repos:
+    for entry in queen_repos:
         entry_path = Path(entry["path"])
         if not entry_path.exists():
-            logger.warning("elevated_repos path does not exist, skipping: %s", entry_path)
+            logger.warning("queen_repos path does not exist, skipping: %s", entry_path)
             continue
         if entry_path.resolve() == resolved:
             return True, bool(entry.get("write", False))
