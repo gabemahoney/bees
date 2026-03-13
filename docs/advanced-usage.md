@@ -147,6 +147,31 @@ Running `bees list-hives` from `/projects/myrepo` (which matches `/projects/**`)
 shared  /projects/shared/tickets
 ```
 
+### Queen Repos
+
+A **queen repo** is a repository granted elevated cross-scope access — it can list and read tickets from every hive in `~/.bees/config.json`, regardless of which scope normally owns those hives. 
+This is useful for dashboard, reporting, or orchestration repos that need a global view across all projects.
+
+Queen repos are registered manually in `~/.bees/config.json` via the `elevated_repos` key. **LLMs cannot register a queen repo through bees tools** — you must edit the config file yourself. 
+Add an entry under `elevated_repos` at the top level:
+
+```json
+{
+  "elevated_repos": [
+    { "path": "/Users/dev/projects/my-dashboard" },
+    { "path": "/Users/dev/projects/orchestrator", "write": true }
+  ],
+  "scopes": { ... }
+}
+```
+
+- **`path`** (required): Absolute path to the repo root that receives elevated access.
+- **`write`** (optional, default `false`): When `false`, the queen repo has read-only access across all hives. Write operations (`create_ticket`, `update_ticket`, `delete_ticket`, hive management, etc.) return a `permission_denied` error. Set to `true` to grant full write access.
+
+Once configured, a queen repo calling `list_hives` receives hives from all scopes (each entry includes a `scope` field). `show_ticket` and query tools search across all hives. Non-queen repos are unaffected — they continue to see only their own scoped hives.
+
+Paths that don't exist on disk are silently ignored. Entries with invalid structure produce an `invalid_config` error at tool-call time.
+
 ### Hives
 
 Each scope contains a `hives` map — the ticket folders registered for that repo.

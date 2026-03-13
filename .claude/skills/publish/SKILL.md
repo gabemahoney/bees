@@ -198,9 +198,20 @@ git push && git push --tags
 
 On failure, stop: "Push failed. Output above."
 
+## Step 9 — Install locally
+
+Reinstall the newly published version via pipx:
+
+```bash
+/opt/homebrew/bin/pipx install bees-md=={version} --force
+```
+
+On failure, stop: "Local install failed. Output above."
+
 Report:
 ```
 Published bees-md <version> to PyPI.
   https://pypi.org/project/bees-md/<version>/
   https://github.com/gabemahoney/bees/releases/tag/v<version>
+  Installed locally via pipx.
 ```
