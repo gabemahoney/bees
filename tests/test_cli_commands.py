@@ -160,7 +160,7 @@ def test_show_ticket_happy_path(cli_runner, isolated_bees_env):
 def test_update_ticket_happy_path(cli_runner, isolated_bees_env):
     ticket_id = _create_bee(cli_runner, isolated_bees_env)
 
-    stdout, exit_code = cli_runner(["update-ticket", "--ticket-id", ticket_id, "--status", "worker"])
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--status", "worker"])
 
     assert exit_code == 0
     result = json.loads(stdout)
@@ -171,7 +171,7 @@ def test_update_ticket_unset_preserves_title(cli_runner, isolated_bees_env):
     """Updating only --status must leave title unchanged."""
     ticket_id = _create_bee(cli_runner, isolated_bees_env, title="Original Title")
 
-    cli_runner(["update-ticket", "--ticket-id", ticket_id, "--status", "worker"])
+    cli_runner(["update-ticket", "--ids", ticket_id, "--status", "worker"])
 
     stdout, exit_code = cli_runner(["show-ticket", "--ids", ticket_id])
     assert exit_code == 0
@@ -196,7 +196,7 @@ def test_update_ticket_tag_ops(cli_runner, isolated_bees_env, flag, json_val, ex
     """--add-tags and --remove-tags flags wire through to _update_ticket."""
     ticket_id = _create_bee(cli_runner, isolated_bees_env)
 
-    stdout, exit_code = cli_runner(["update-ticket", "--ticket-id", ticket_id, flag, json_val])
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, flag, json_val])
 
     assert exit_code == 0
     result = json.loads(stdout)
@@ -211,10 +211,10 @@ def test_update_ticket_add_then_remove_tags(cli_runner, isolated_bees_env):
     """Add tags then remove a subset; verifies both flags mutate tags correctly."""
     ticket_id = _create_bee(cli_runner, isolated_bees_env)
 
-    cli_runner(["update-ticket", "--ticket-id", ticket_id, "--add-tags", '["alpha","beta","gamma"]'])
+    cli_runner(["update-ticket", "--ids", ticket_id, "--add-tags", '["alpha","beta","gamma"]'])
 
     stdout, exit_code = cli_runner(
-        ["update-ticket", "--ticket-id", ticket_id, "--remove-tags", '["beta"]']
+        ["update-ticket", "--ids", ticket_id, "--remove-tags", '["beta"]']
     )
 
     assert exit_code == 0
@@ -228,13 +228,35 @@ def test_update_ticket_parent_is_immutable(cli_runner, isolated_bees_env):
     ticket_id = _create_bee(cli_runner, isolated_bees_env)
 
     stdout, exit_code = cli_runner(
-        ["update-ticket", "--ticket-id", ticket_id, "--parent", "b.fake"]
+        ["update-ticket", "--ids", ticket_id, "--parent", "b.fake"]
     )
 
     assert exit_code == 1
     result = json.loads(stdout)
     assert result["status"] == "error"
     assert "error_type" in result
+
+
+def test_update_ticket_single_id_with_title(cli_runner, isolated_bees_env):
+    """Regression: single-ID update with non-batchable field (title) must succeed (b.p1a).
+
+    _update_ticket rejects title/body/egg on batch (multi-ID) calls. The CLI
+    must unwrap a single-element --ids list so the backend treats it as a
+    single-ticket update and allows the non-batchable field through.
+    """
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, title="Old Title")
+
+    stdout, exit_code = cli_runner(
+        ["update-ticket", "--ids", ticket_id, "--title", "New Title"]
+    )
+
+    assert exit_code == 0
+    result = json.loads(stdout)
+    assert result["status"] == "success"
+
+    show_out, _ = cli_runner(["show-ticket", "--ids", ticket_id])
+    ticket = json.loads(show_out)["tickets"][0]
+    assert ticket["title"] == "New Title"
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +272,28 @@ def test_delete_ticket_happy_path(cli_runner, isolated_bees_env):
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["status"] == "success"
+
+
+def test_delete_ticket_single_id_passes_list(cli_runner, isolated_bees_env, monkeypatch):
+    """Regression: handle_delete_ticket must pass args.ids as a list even for a single ID (b.p1a)."""
+    ticket_id = _create_bee(cli_runner, isolated_bees_env)
+
+    captured = {}
+    from src.mcp_ticket_ops import _delete_ticket as real_delete
+
+    async def spy_delete(ticket_ids, **kwargs):
+        captured["ticket_ids"] = ticket_ids
+        return await real_delete(ticket_ids=ticket_ids, **kwargs)
+
+    monkeypatch.setattr("src.cli._delete_ticket", spy_delete)
+
+    stdout, exit_code = cli_runner(["delete-ticket", "--ids", ticket_id])
+
+    assert exit_code == 0
+    assert isinstance(captured["ticket_ids"], list), (
+        f"Expected list, got {type(captured['ticket_ids']).__name__}: {captured['ticket_ids']}"
+    )
+    assert captured["ticket_ids"] == [ticket_id]
 
 
 @pytest.mark.parametrize("flag", ["--clean-dependencies", "--no-clean-dependencies"], ids=["clean", "no_clean"])

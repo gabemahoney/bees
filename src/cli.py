@@ -152,8 +152,9 @@ def handle_update_ticket(args):
         return
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
+    ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
     kwargs = {
-        "ticket_ids": args.ticket_id,
+        "ticket_ids": ticket_ids,
     }
 
     if args.title is not _UNSET:
@@ -186,7 +187,7 @@ def handle_delete_ticket(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
-    ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
+    ticket_ids = args.ids
     result = _run_in_repo(
         _delete_ticket(
             ticket_ids=ticket_ids,
@@ -703,7 +704,7 @@ def build_parser():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_update.add_argument("--ticket-id", required=True, metavar="ID", help="Ticket ID to update")
+    p_update.add_argument("--ids", required=True, nargs="+", metavar="ID", help="One or more ticket IDs to update")
     p_update.add_argument("--title", default=_UNSET, help="New title")
     p_update.add_argument("--body", default=_UNSET, help="New body (markdown)")
     p_update.add_argument("--status", default=_UNSET, help="New status")
