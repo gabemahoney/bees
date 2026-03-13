@@ -368,8 +368,9 @@ Child IDs embed the parent's short ID as a prefix (hierarchical): bee `b.amx` â†
 ```bash
 bees create-ticket --type bee --title "Bug fix" --hive backend
 bees show-ticket b.amx t1.amx.12
-bees update-ticket b.amx --status worker --tags '["urgent"]'
-bees update-ticket b.amx --add-tags '["reviewed"]' --remove-tags '["urgent"]'
+bees update-ticket --ids b.amx --status worker --tags '["urgent"]'
+bees update-ticket --ids b.amx --add-tags '["reviewed"]' --remove-tags '["urgent"]'
+bees update-ticket --ids b.amx b.x4f --status worker
 bees delete-ticket b.amx
 bees get-types
 bees set-types --scope global --tiers '{"t1":["Epic","Epics"]}'
