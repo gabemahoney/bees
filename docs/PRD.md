@@ -355,9 +355,8 @@ Mutually exclusive with `--config`. Ephemeral (discarded on exit).
 
 ### 6.8 Repo Root Resolution
 
-- **CLI**: resolved from the current working directory by walking up to find `.git`
+- **CLI**: resolved to the current working directory (no git traversal required)
 - **MCP**: via MCP roots protocol or explicit `repo_root` parameter
-- **No git repo**: uses the current directory itself as repo root
 
 ---
 

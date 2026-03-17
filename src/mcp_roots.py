@@ -105,7 +105,9 @@ async def resolve_repo_root(ctx: Context, explicit_root: str | None) -> Path:
         repo_root = get_repo_root_from_path(client_root)
         logger.info(f"Resolved repo root from MCP client roots: {repo_root}")
         if explicit_root:
-            logger.info(f"NOTE: explicit_root={explicit_root!r} was provided but ignored (roots protocol took priority)")
+            logger.info(
+                f"NOTE: explicit_root={explicit_root!r} was provided but ignored (roots protocol took priority)"
+            )
         return repo_root
 
     # Roots not available, try explicit parameter
@@ -123,12 +125,12 @@ async def resolve_repo_root(ctx: Context, explicit_root: str | None) -> Path:
 
 async def get_repo_root(ctx: Context | None) -> Path | None:
     """
-    Find the git repository root from MCP client context.
+    Find the project root from MCP client context.
 
     When called with MCP context, uses the roots protocol. If the client
     doesn't support roots or the protocol fails, returns None so the caller
     can implement appropriate fallback logic (since MCP server runs in a
-    different repo than the client, we can't just use server's cwd).
+    different working directory than the client, we can't just use server's cwd).
 
     Args:
         ctx: FastMCP Context object (optional, auto-injected by FastMCP)
@@ -137,7 +139,7 @@ async def get_repo_root(ctx: Context | None) -> Path | None:
         Path if repo root can be determined, None if roots protocol unavailable
 
     Raises:
-        ValueError: If not in a git repository (only when ctx is None)
+        ValueError: If a root path cannot be determined (only when ctx is None)
 
     Example:
         >>> ctx = get_context()

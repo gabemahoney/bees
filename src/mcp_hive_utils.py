@@ -90,7 +90,7 @@ def scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None:
         Path to the hive directory if found, None otherwise
 
     Raises:
-        ValueError: If not in a git repository
+        ValueError: If a project root cannot be determined
 
     Example:
         >>> scan_for_hive('back_end')

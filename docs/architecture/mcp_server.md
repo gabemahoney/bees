@@ -90,14 +90,14 @@ The `mcp_id_utils` module provides foundational ticket ID parsing utilities extr
 
 ### repo_utils Module
 
-The `repo_utils` module provides transport-agnostic repository root detection. It contains a single function for path-based git repository discovery.
+The `repo_utils` module provides transport-agnostic repository root detection. It contains a single function for path-based root resolution.
 
 **Design Rationale**:
-- Isolates the git-walk logic so it can be used by any module without pulling in MCP dependencies
+- Isolates the root resolution logic so it can be used by any module without pulling in MCP dependencies
 - MCP-context-aware functions (`get_client_repo_root`, `resolve_repo_root`, `get_repo_root`) live in `mcp_roots.py` and are re-exported from `repo_utils` for backward compatibility
 
 **Functions**:
-- `get_repo_root_from_path(start_path: Path) -> Path`: Walks up the directory tree from the given path looking for a `.git` directory. Returns the repo root if found, or the resolved start path if no git repository exists (supporting scope-based config matching without a git repo).
+- `get_repo_root_from_path(start_path: Path) -> Path`: Returns the resolved absolute path of `start_path`. Bees does not require a git repository and does not traverse the directory tree looking for one.
 
 **Module Dependencies**:
 - Used by: `mcp_roots.py`, `mcp_hive_utils.py`, and other modules needing path-based repo detection

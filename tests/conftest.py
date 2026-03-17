@@ -193,23 +193,12 @@ def mock_global_bees_dir(request, tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def mock_git_repo_check(request, monkeypatch):
-    """Mock git repo detection to allow tests in tmp_path. Opt-out: @pytest.mark.needs_real_git_check"""
+    """Patch get_repo_root_from_path to return resolved start_path directly (matches real behavior)."""
     if "needs_real_git_check" in request.keywords:
         return
 
     def mock_get_repo_root(start_path: Path) -> Path:
-        """Mock get_repo_root_from_path for test isolation."""
-        current = start_path.resolve()
-
-        while current != current.parent:
-            if (current / ".git").exists() or (current / ".bees").exists():
-                return current
-            current = current.parent
-
-        if (current / ".git").exists() or (current / ".bees").exists():
-            return current
-
-        return Path.cwd().resolve()
+        return start_path.resolve()
 
     # Patch get_repo_root_from_path in all modules that import it
     monkeypatch.setattr("src.repo_utils.get_repo_root_from_path", mock_get_repo_root)
