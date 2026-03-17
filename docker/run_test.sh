@@ -19,20 +19,16 @@ BEES_MCP_URL="${BEES_MCP_URL:-http://host.docker.internal:8000}"
 CONTAINER_NAME="bees-ci-${PHASE}"
 SESSION="bees-ci-${PHASE}"
 
-# Find testplans hive path from host bees config
-TESTPLANS_PATH=$(python3 - <<'EOF'
+# Find testplans hive path using bees CLI (scoped to this repo)
+TESTPLANS_PATH=$(cd "${PROJECT_ROOT}" && bees list-hives 2>/dev/null | python3 -c "
 import json, sys
-import os; config_path = os.path.expanduser('~/.bees/config.json')
-with open(config_path) as f:
-    c = json.load(f)
-for scope in c.get('scopes', {}).values():
-    for hname, hdata in scope.get('hives', {}).items():
-        if hname == 'testplans':
-            print(hdata['path'])
-            sys.exit(0)
+d = json.load(sys.stdin)
+for h in d.get('hives', []):
+    if h['normalized_name'] == 'testplans':
+        print(h['path'])
+        sys.exit(0)
 sys.exit(1)
-EOF
-)
+")
 if [[ -z "${TESTPLANS_PATH}" ]]; then
   echo "ERROR: testplans hive not found in ~/.bees/config.json"
   exit 1

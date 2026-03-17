@@ -12,6 +12,8 @@ Bees operates under strict constraints to maintain simplicity and reliability:
 
 - **Limited caching**: An mtime-based in-memory cache accelerates `read_ticket()` results while remaining consistent — cache entries are invalidated when the file's modification time changes. No persistent or distributed caching.
 
+- **No external tool dependencies**: Bees must work without any external tools installed on the host — including git, curl, or any other CLI tools. Root detection uses the current working directory directly; no git traversal or git-based discovery is permitted anywhere in the codebase. A project directory does not need to be a git repository for Bees to function.
+
 - **Scale limit**: Designed for tens of directories (hives) and thousands of tickets. This constraint enables the no-database and no-cache architecture while meeting the needs of small-to-medium development teams.
 
 ### Rationale
