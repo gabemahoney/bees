@@ -1,6 +1,6 @@
 [project]
 name = "bees-md"
-version = "0.4.0"
+version = "0.4.1"
 description = "A markdown-based ticket management system designed for LLMs"
 requires-python = ">=3.10"
 readme = "docs/PYPI_README.md"
@@ -30,7 +30,7 @@ bees = "src.cli:main"
 
 [tool.poetry]
 name = "bees-md"
-version = "0.4.0"
+version = "0.4.1"
 description = "A markdown-based ticket management system designed for LLMs"
 authors = ["Gabe Mahoney"]
 readme = "docs/PYPI_README.md"
