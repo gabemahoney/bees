@@ -136,6 +136,8 @@ class PipelineEvaluator:
                     "down_dependencies": fm.get("down_dependencies", []),
                     "hive": hive_name,
                     "guid": fm.get("guid"),
+                    "created_at": fm.get("created_at"),
+                    "schema_version": fm.get("schema_version"),
                 }
 
         # Second pass: Build reverse relationships (children from parents, etc)

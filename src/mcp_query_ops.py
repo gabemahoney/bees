@@ -29,6 +29,43 @@ from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeyp
 
 logger = logging.getLogger(__name__)
 
+# Maps internal ticket dict keys to output field names
+_FIELD_NAME_MAP = {
+    "id": "ticket_id",
+    "issue_type": "ticket_type",
+    "status": "ticket_status",
+}
+
+
+def _project_tickets(
+    ticket_ids: set[str],
+    report: list[str],
+    tickets: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build projection of ticket data for the requested report fields.
+
+    Args:
+        ticket_ids: Set of matching ticket IDs
+        report: List of field names to include (already validated)
+        tickets: In-memory ticket dict from PipelineEvaluator
+
+    Returns:
+        List of dicts sorted by ticket_id ascending. Each dict contains
+        ticket_id plus the requested fields. Missing values are None.
+    """
+    # Internal key for each report field (reverse of _FIELD_NAME_MAP)
+    _output_to_internal = {v: k for k, v in _FIELD_NAME_MAP.items()}
+
+    rows = []
+    for tid in sorted(ticket_ids):
+        ticket = tickets.get(tid, {})
+        row: dict[str, Any] = {"ticket_id": tid}
+        for field in report:
+            internal_key = _output_to_internal.get(field, field)
+            row[field] = ticket.get(internal_key)
+        rows.append(row)
+    return rows
+
 
 def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path) -> dict[str, Any]:
     """
@@ -302,6 +339,7 @@ async def _execute_named_query(
         }
 
     stages = resolution["stages"]
+    report: list[str] | None = resolution.get("report")
 
     # Execute query using pipeline evaluator
     try:
@@ -311,6 +349,13 @@ async def _execute_named_query(
 
         logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
 
+        if report is not None:
+            return {
+                "status": "success",
+                "query_name": query_name,
+                "result_count": len(result_ids),
+                "tickets": _project_tickets(result_ids, report, evaluator.tickets),
+            }
         return {
             "status": "success",
             "query_name": query_name,
@@ -368,6 +413,7 @@ async def _execute_freeform_query(
         parser = QueryParser()
         parsed = parser.parse_and_validate(query_data)
         stages = parsed.stages
+        report: list[str] | None = parsed.report
         logger.info(f"Parsed and validated freeform query with {len(stages)} stages")
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
@@ -386,6 +432,13 @@ async def _execute_freeform_query(
 
         logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")
 
+        if report is not None:
+            return {
+                "status": "success",
+                "result_count": len(result_ids),
+                "tickets": _project_tickets(result_ids, report, evaluator.tickets),
+                "stages_executed": len(stages),
+            }
         return {
             "status": "success",
             "result_count": len(result_ids),

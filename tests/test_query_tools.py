@@ -717,3 +717,241 @@ class TestFreeformQueryWithCorruptTicket:
 
         assert result["status"] == "success"
         assert "b.vet" in result["ticket_ids"]
+
+
+# ===========================================================================
+# Projection and response format tests
+# ===========================================================================
+
+
+class TestProjection:
+    """Tests for _project_tickets field mapping, null handling, and sort order."""
+
+    async def test_field_name_mapping_ticket_type(self, isolated_bees_env):
+        """ticket_type in report maps to the internal issue_type field (from 'type' frontmatter)."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.typ", title="Type Mapping", type="bee")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- ticket_type",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert rows["b.typ"]["ticket_type"] == "bee"
+
+    async def test_field_name_mapping_ticket_status(self, isolated_bees_env):
+        """ticket_status in report maps to the internal status field."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.sts", title="Status Mapping", status="pupa")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- ticket_status",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert rows["b.sts"]["ticket_status"] == "pupa"
+
+    async def test_ticket_id_always_present_in_each_row(self, isolated_bees_env):
+        """Every projected row always includes ticket_id even when not in report list."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.tid", title="ID Always Present")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) >= 1
+        for row in result["tickets"]:
+            assert "ticket_id" in row
+
+    async def test_null_value_for_absent_field(self, isolated_bees_env):
+        """A ticket field absent in the pipeline dict is projected as None."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        # Root bee ticket has no parent → parent field is None in pipeline dict
+        write_ticket_file(hive_dir, "b.nup", title="Null Parent")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- parent",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) >= 1
+        # All returned tickets are root bees with no parent
+        for row in result["tickets"]:
+            assert row["parent"] is None
+
+    async def test_results_sorted_by_ticket_id(self, isolated_bees_env):
+        """Projected rows are sorted ascending by ticket_id regardless of creation order."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        # Write tickets in reverse alphabetical order
+        write_ticket_file(hive_dir, "b.zzz", title="Last Ticket")
+        write_ticket_file(hive_dir, "b.aaa", title="First Ticket")
+        write_ticket_file(hive_dir, "b.mmm", title="Middle Ticket")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        ids = [r["ticket_id"] for r in result["tickets"]]
+        assert ids == sorted(ids)
+        assert ids.index("b.aaa") < ids.index("b.mmm") < ids.index("b.zzz")
+
+    async def test_multiple_fields_projected(self, isolated_bees_env):
+        """Multiple valid report fields all appear in each row."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.mfp", title="Multi Field", status="worker")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['id=b.mfp']\nreport:\n- title\n- ticket_type\n- ticket_status",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) == 1
+        row = result["tickets"][0]
+        assert row["ticket_id"] == "b.mfp"
+        assert row["title"] == "Multi Field"
+        assert row["ticket_type"] == "bee"
+        assert row["ticket_status"] == "worker"
+
+
+class TestResponseFormatBranching:
+    """Tests for the report-vs-ticket_ids response format branching."""
+
+    async def test_freeform_without_report_returns_ticket_ids(self, isolated_bees_env):
+        """Freeform query without report returns ticket_ids list, no tickets key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.fwr", title="Freeform Without Report")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']", resolved_root=helper.base_path
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "ticket_ids" in result
+        assert "tickets" not in result
+        assert "stages_executed" in result
+
+    async def test_freeform_with_report_returns_tickets_list(self, isolated_bees_env):
+        """Freeform query with report returns tickets list, no ticket_ids key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.fwp", title="Freeform With Report")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        assert "ticket_ids" not in result
+        assert "stages_executed" in result
+
+    async def test_named_query_without_report_returns_ticket_ids(self, isolated_bees_env):
+        """Named query without report returns ticket_ids list, no tickets key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.nwr", title="Named Without Report")
+        write_scoped_config(
+            helper.global_bees_dir, helper.base_path,
+            {"hives": helper.hives, "child_tiers": {}},
+            queries={"q_no_report": build_query([["type=bee"]])},
+        )
+
+        result = await _execute_named_query("q_no_report", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "ticket_ids" in result
+        assert "tickets" not in result
+        assert result["query_name"] == "q_no_report"
+
+    async def test_named_query_with_report_returns_tickets_list(self, isolated_bees_env):
+        """Named query with report returns tickets list, no ticket_ids key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.nwp", title="Named With Report")
+        write_scoped_config(
+            helper.global_bees_dir, helper.base_path,
+            {"hives": helper.hives, "child_tiers": {}},
+            queries={"q_with_report": build_query([["type=bee"]], report=["title"])},
+        )
+
+        result = await _execute_named_query("q_with_report", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        assert "ticket_ids" not in result
+        assert result["query_name"] == "q_with_report"
+
+    async def test_named_query_config_roundtrip_with_projection(self, isolated_bees_env):
+        """Named query stored with report field executes and returns projected rows."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.rtp", title="Round Trip Bee", status="finished")
+
+        # Store query with report via _add_named_query
+        _add_named_query(
+            "rtrip",
+            "stages:\n- ['type=bee']\nreport:\n- title\n- ticket_status",
+            scope="global",
+            resolved_root=helper.base_path,
+        )
+
+        result = await _execute_named_query("rtrip", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert "b.rtp" in rows
+        assert rows["b.rtp"]["title"] == "Round Trip Bee"
+        assert rows["b.rtp"]["ticket_status"] == "finished"
