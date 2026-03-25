@@ -801,7 +801,7 @@ def build_parser():
     p_anq = subparsers.add_parser(
         "add-named-query",
         help="Register a named query",
-        description="Save a query for reuse. Accepts a YAML dict with a 'stages' key — run bees execute-freeform-query -h to learn query syntax.",
+        description="Save a query for reuse. Accepts a YAML dict with a 'stages' key.",  # noqa: E501
     )
     p_anq.add_argument("--query-name", required=True, metavar="NAME", help="Name for the query (used to execute it later)")  # noqa: E501
     p_anq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML dict with a "stages" key. Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"')  # noqa: E501
