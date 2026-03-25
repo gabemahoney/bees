@@ -631,3 +631,72 @@ class TestFastParserIntegration:
         pipeline = PipelineEvaluator()
         assert "b.bkd" in pipeline.tickets
         assert "b.bkd" in pipeline.tickets["b.bkr"]["down_dependencies"]
+
+
+class TestPipelineFieldLoading:
+    """Tests that created_at and schema_version are loaded from frontmatter."""
+
+    def test_created_at_loaded_from_frontmatter(self, isolated_bees_env):
+        """created_at value written to frontmatter is present in the loaded ticket dict."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        write_ticket_file(hive_dir, "b.cat", title="Has Created At",
+                          created_at="2025-06-01T08:30:00+00:00")
+
+        pipeline = PipelineEvaluator()
+        assert "b.cat" in pipeline.tickets
+        assert pipeline.tickets["b.cat"]["created_at"] == "2025-06-01T08:30:00+00:00"
+
+    def test_schema_version_loaded_from_frontmatter(self, isolated_bees_env):
+        """schema_version value from frontmatter is present in the loaded ticket dict."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        write_ticket_file(hive_dir, "b.svt", title="Schema Version Ticket")
+
+        pipeline = PipelineEvaluator()
+        assert "b.svt" in pipeline.tickets
+        assert pipeline.tickets["b.svt"]["schema_version"] == "0.1"
+
+    def test_created_at_is_none_when_absent(self, isolated_bees_env):
+        """created_at is None when the field is not present in frontmatter."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        # Write ticket manually without created_at field
+        ticket_id = "b.nca"
+        ticket_dir = hive_dir / ticket_id
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        (ticket_dir / f"{ticket_id}.md").write_text(
+            "---\n"
+            "id: b.nca\n"
+            "schema_version: '0.1'\n"
+            "title: No Created At\n"
+            "type: bee\n"
+            "status: open\n"
+            "tags: []\n"
+            "children: []\n"
+            "up_dependencies: []\n"
+            "down_dependencies: []\n"
+            "---\n\nContent.\n"
+        )
+
+        pipeline = PipelineEvaluator()
+        assert "b.nca" in pipeline.tickets
+        assert pipeline.tickets["b.nca"]["created_at"] is None
+
+    def test_fixture_tickets_without_created_at_load_as_none(self, pipeline):
+        """Tickets written without created_at in the existing fixture load with None."""
+        for ticket_id, ticket_data in pipeline.tickets.items():
+            assert "created_at" in ticket_data, f"{ticket_id} missing created_at key"
+            assert ticket_data["created_at"] is None, (
+                f"{ticket_id} expected created_at=None, got {ticket_data['created_at']!r}"
+            )

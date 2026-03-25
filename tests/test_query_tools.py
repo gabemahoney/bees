@@ -40,7 +40,7 @@ from src.mcp_query_ops import (
     _execute_named_query,
     _list_named_queries,
 )
-from tests.conftest import write_global_queries, write_scoped_config
+from tests.conftest import build_query, write_global_queries, write_scoped_config
 from tests.test_constants import (
     HIVE_BACKEND,
     RESULT_STATUS_SUCCESS,
@@ -54,7 +54,7 @@ class TestAddNamedQueryTool:
         """scope='global' succeeds; query readable from global config."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
 
-        result = _add_named_query("my_query", "- [type=t1]", scope="global", resolved_root=tmp_path)
+        result = _add_named_query("my_query", "stages:\n- [type=t1]", scope="global", resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["query_name"] == "my_query"
 
@@ -67,7 +67,7 @@ class TestAddNamedQueryTool:
         """scope='repo' succeeds when repo root is registered."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
 
-        result = _add_named_query("repo_q", "- [type=t1]", scope="repo", resolved_root=tmp_path)
+        result = _add_named_query("repo_q", "stages:\n- [type=t1]", scope="repo", resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
 
         from src.config import load_global_config
@@ -79,7 +79,7 @@ class TestAddNamedQueryTool:
         """scope='repo' returns scope_not_found for unregistered repo root."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
 
-        result = _add_named_query("q", "- [type=t1]", scope="repo", resolved_root=Path("/unregistered/repo"))
+        result = _add_named_query("q", "stages:\n- [type=t1]", scope="repo", resolved_root=Path("/unregistered/repo"))
         assert result["status"] == "error"
         assert result["error_type"] == "scope_not_found"
 
@@ -87,26 +87,26 @@ class TestAddNamedQueryTool:
         """Returns invalid_scope for unrecognized scope value."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
 
-        result = _add_named_query("q", "- [type=t1]", scope="invalid", resolved_root=tmp_path)
+        result = _add_named_query("q", "stages:\n- [type=t1]", scope="invalid", resolved_root=tmp_path)
         assert result["status"] == "error"
         assert result["error_type"] == "invalid_scope"
 
     def test_global_name_conflict(self, tmp_path, mock_global_bees_dir):
         """Rejects name at global level with query_name_conflict."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
-        write_global_queries(mock_global_bees_dir, {"q1": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"q1": build_query([["type=bee"]])})
 
-        result = _add_named_query("q1", "- [type=t1]", scope="global", resolved_root=tmp_path)
+        result = _add_named_query("q1", "stages:\n- [type=t1]", scope="global", resolved_root=tmp_path)
         assert result["status"] == "error"
         assert result["error_type"] == "query_name_conflict"
 
     def test_repo_name_conflict(self, tmp_path, mock_global_bees_dir):
         """Rejects name at caller's repo scope with query_name_conflict."""
         write_scoped_config(
-            mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}}, queries={"q1": [["type=t1"]]}
+            mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}}, queries={"q1": build_query([["type=t1"]])}
         )
 
-        result = _add_named_query("q1", "- [type=bee]", scope="repo", resolved_root=tmp_path)
+        result = _add_named_query("q1", "stages:\n- [type=bee]", scope="repo", resolved_root=tmp_path)
         assert result["status"] == "error"
         assert result["error_type"] == "query_name_conflict"
 
@@ -117,10 +117,10 @@ class TestAddNamedQueryTool:
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": [["type=t1"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
-        result = _add_named_query("q1", "- [type=bee]", scope="repo", resolved_root=tmp_path)
+        result = _add_named_query("q1", "stages:\n- [type=bee]", scope="repo", resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
 
     def test_global_conflict_any_repo(self, tmp_path, mock_global_bees_dir):
@@ -130,10 +130,10 @@ class TestAddNamedQueryTool:
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": [["type=t1"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
-        result = _add_named_query("q1", "- [type=bee]", scope="global", resolved_root=tmp_path)
+        result = _add_named_query("q1", "stages:\n- [type=bee]", scope="global", resolved_root=tmp_path)
         assert result["status"] == "error"
         assert result["error_type"] == "query_name_conflict"
 
@@ -141,10 +141,29 @@ class TestAddNamedQueryTool:
         """Empty name returns error dict."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
 
-        result = _add_named_query("", "- [type=t1]", scope="global", resolved_root=tmp_path)
+        result = _add_named_query("", "stages:\n- [type=t1]", scope="global", resolved_root=tmp_path)
         assert result["status"] == "error"
         assert result["error_type"] == "invalid_query"
         assert "cannot be empty" in result["message"]
+
+    def test_report_field_round_trip(self, tmp_path, mock_global_bees_dir):
+        """Query with report field is stored and retrievable with stages and report intact."""
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+
+        result = _add_named_query(
+            "q_with_report",
+            "stages:\n- [type=t1]\nreport:\n- title\n- ticket_status",
+            scope="global",
+            resolved_root=tmp_path,
+        )
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        from src.config import load_global_config
+
+        gc = load_global_config()
+        stored = gc["queries"]["q_with_report"]
+        assert stored["stages"] == [["type=t1"]]
+        assert stored["report"] == ["title", "ticket_status"]
 
 
 class TestExecuteNamedQueryTool:
@@ -156,7 +175,7 @@ class TestExecuteNamedQueryTool:
         env.create_hive("test_hive", "Test Hive")
         write_scoped_config(
             env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}},
-            queries={"my_query": [["type=t1"]]},
+            queries={"my_query": build_query([["type=t1"]])},
         )
 
         result = await _execute_named_query("my_query", resolved_root=env.base_path)
@@ -169,7 +188,7 @@ class TestExecuteNamedQueryTool:
         env = isolated_bees_env
         env.create_hive("test_hive", "Test Hive")
         write_scoped_config(env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}})
-        write_global_queries(env.global_bees_dir, {"global_q": [["type=bee"]]})
+        write_global_queries(env.global_bees_dir, {"global_q": build_query([["type=bee"]])})
 
         result = await _execute_named_query("global_q", resolved_root=env.base_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
@@ -184,7 +203,7 @@ class TestExecuteNamedQueryTool:
         write_scoped_config(env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}})
         config_path = env.global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": [["type=t1"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
         result = await _execute_named_query("other_q", resolved_root=env.base_path)
@@ -197,9 +216,9 @@ class TestExecuteNamedQueryTool:
         env.create_hive("test_hive", "Test Hive")
         write_scoped_config(
             env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}},
-            queries={"repo_q": [["type=t1"]]},
+            queries={"repo_q": build_query([["type=t1"]])},
         )
-        write_global_queries(env.global_bees_dir, {"global_q": [["type=bee"]]})
+        write_global_queries(env.global_bees_dir, {"global_q": build_query([["type=bee"]])})
 
         result = await _execute_named_query("nonexistent", resolved_root=env.base_path)
         assert result["status"] == "error"
@@ -212,7 +231,7 @@ class TestExecuteNamedQueryTool:
         env = isolated_bees_env
         env.create_hive("test_hive", "Test Hive")
         write_scoped_config(env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}})
-        _add_named_query("repo_q", "- [type=bee]", scope="repo", resolved_root=env.base_path)
+        _add_named_query("repo_q", "stages:\n- [type=bee]", scope="repo", resolved_root=env.base_path)
 
         result = await _execute_named_query("repo_q", resolved_root=env.base_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
@@ -223,7 +242,7 @@ class TestExecuteNamedQueryTool:
         env = isolated_bees_env
         env.create_hive("test_hive", "Test Hive")
         write_scoped_config(env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}})
-        _add_named_query("repo_q", "- [type=bee]", scope="repo", resolved_root=env.base_path)
+        _add_named_query("repo_q", "stages:\n- [type=bee]", scope="repo", resolved_root=env.base_path)
 
         result = await _execute_named_query("repo_q", resolved_root=None)
         assert result["status"] == "error"
@@ -238,7 +257,7 @@ class TestExecuteFreeformQuery:
         isolated_bees_env.create_hive("test_hive", "Test Hive")
         isolated_bees_env.write_config()
 
-        result = await _execute_freeform_query("- [type=t1]")
+        result = await _execute_freeform_query("stages:\n- [type=t1]")
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["result_count"] == 0
         assert result["ticket_ids"] == []
@@ -265,7 +284,7 @@ class TestExecuteFreeformQuery:
         isolated_bees_env.create_hive("backend", "Backend")
         isolated_bees_env.write_config()
 
-        result = await _execute_freeform_query("- [type=t1, hive=backend]")
+        result = await _execute_freeform_query("stages:\n- [type=t1, hive=backend]")
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["result_count"] == 0
 
@@ -274,16 +293,16 @@ class TestExecuteFreeformQuery:
         isolated_bees_env.create_hive("test_hive", "Test Hive")
         isolated_bees_env.write_config()
 
-        result = await _execute_freeform_query("- [type=bee]\n- [children]")
+        result = await _execute_freeform_query("stages:\n- [type=bee]\n- [children]")
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["result_count"] == 0
 
     @pytest.mark.parametrize(
         "query_yaml",
         [
-            "- [parent=some-bee-id]",
-            "- [type=t1, parent=bee-123]",
-            "- [parent=bee-123, tag~beta]",
+            "stages:\n- [parent=some-bee-id]",
+            "stages:\n- [type=t1, parent=bee-123]",
+            "stages:\n- [parent=bee-123, tag~beta]",
         ],
     )
     async def test_execute_freeform_query_with_parent_filter(self, isolated_bees_env, query_yaml):
@@ -300,7 +319,7 @@ class TestExecuteFreeformQuery:
         isolated_bees_env.create_hive("test_hive", "Test Hive")
         isolated_bees_env.write_config()
 
-        result = await _execute_freeform_query("- [parent=bee-123]\n- [parent]")
+        result = await _execute_freeform_query("stages:\n- [parent=bee-123]\n- [parent]")
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["result_count"] == 0
 
@@ -312,7 +331,7 @@ class TestResolveNamedQuery:
         """Query found in caller's repo scope returns with scope='repo'."""
         scope_data = {"hives": {}, "child_tiers": {}}
         stages = [["type=t1"]]
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"my_query": stages})
+        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"my_query": build_query(stages)})
 
         from src.config import load_global_config
 
@@ -324,7 +343,7 @@ class TestResolveNamedQuery:
         """Query only in global scope returns with scope='global'."""
         scope_data = {"hives": {}, "child_tiers": {}}
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-        write_global_queries(mock_global_bees_dir, {"global_q": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"global_q": build_query([["type=bee"]])})
 
         from src.config import load_global_config
 
@@ -337,8 +356,8 @@ class TestResolveNamedQuery:
         repo_stages = [["type=t1"]]
         global_stages = [["type=bee"]]
         scope_data = {"hives": {}, "child_tiers": {}}
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"shared_q": repo_stages})
-        write_global_queries(mock_global_bees_dir, {"shared_q": global_stages})
+        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"shared_q": build_query(repo_stages)})
+        write_global_queries(mock_global_bees_dir, {"shared_q": build_query(global_stages)})
 
         from src.config import load_global_config
 
@@ -357,7 +376,7 @@ class TestResolveNamedQuery:
 
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"][str(other_repo)] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": [["type=t1"]]}}
+        config["scopes"][str(other_repo)] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
         from src.config import load_global_config
@@ -384,7 +403,7 @@ class TestCheckQueryNameConflict:
     def test_repo_scope_conflict_at_repo(self, tmp_path, mock_global_bees_dir):
         """scope='repo', name in caller's repo scope → conflict returned."""
         scope_data = {"hives": {}, "child_tiers": {}}
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"q1": [["type=t1"]]})
+        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data, queries={"q1": build_query([["type=t1"]])})
 
         from src.config import load_global_config
 
@@ -398,7 +417,7 @@ class TestCheckQueryNameConflict:
         """scope='repo', name in global → conflict returned."""
         scope_data = {"hives": {}, "child_tiers": {}}
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-        write_global_queries(mock_global_bees_dir, {"q1": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"q1": build_query([["type=bee"]])})
 
         from src.config import load_global_config
 
@@ -417,7 +436,7 @@ class TestCheckQueryNameConflict:
         # Add another scope with the query
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": [["type=t1"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
         from src.config import load_global_config
@@ -430,7 +449,7 @@ class TestCheckQueryNameConflict:
         """scope='global', name in global → conflict returned."""
         scope_data = {"hives": {}, "child_tiers": {}}
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-        write_global_queries(mock_global_bees_dir, {"q1": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"q1": build_query([["type=bee"]])})
 
         from src.config import load_global_config
 
@@ -449,7 +468,7 @@ class TestCheckQueryNameConflict:
         # Add another repo scope with the query
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": [["type=t1"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"q1": build_query([["type=t1"]])}}
         config_path.write_text(json.dumps(config, indent=2))
 
         from src.config import load_global_config
@@ -478,7 +497,7 @@ class TestDeleteNamedQueryTool:
     def test_delete_global_query_by_name(self, tmp_path, mock_global_bees_dir):
         """Deletes a globally-registered query by name, leaving others intact."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
-        write_global_queries(mock_global_bees_dir, {"doomed": [["type=bee"]], "keeper": [["type=t1"]]})
+        write_global_queries(mock_global_bees_dir, {"doomed": build_query([["type=bee"]]), "keeper": build_query([["type=t1"]])})
 
         result = _delete_named_query("doomed", resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
@@ -494,7 +513,7 @@ class TestDeleteNamedQueryTool:
         """Deletes a repo-scoped query by name, leaving others intact."""
         write_scoped_config(
             mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}},
-            queries={"doomed": [["type=t1"]], "keeper": [["type=bee"]]},
+            queries={"doomed": build_query([["type=t1"]]), "keeper": build_query([["type=bee"]])},
         )
 
         result = _delete_named_query("doomed", resolved_root=tmp_path)
@@ -512,7 +531,7 @@ class TestDeleteNamedQueryTool:
         """After deleting last repo query, 'queries' key is absent from scope entry."""
         write_scoped_config(
             mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}},
-            queries={"only_one": [["type=t1"]]},
+            queries={"only_one": build_query([["type=t1"]])},
         )
 
         result = _delete_named_query("only_one", resolved_root=tmp_path)
@@ -526,7 +545,7 @@ class TestDeleteNamedQueryTool:
     def test_empty_dict_cleanup_global(self, tmp_path, mock_global_bees_dir):
         """After deleting last global query, top-level 'queries' key is absent."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
-        write_global_queries(mock_global_bees_dir, {"only_one": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"only_one": build_query([["type=bee"]])})
 
         result = _delete_named_query("only_one", resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
@@ -549,9 +568,9 @@ class TestDeleteNamedQueryTool:
         # Register one query at global scope and one at repo scope
         write_scoped_config(
             mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}},
-            queries={"repo_q": [["type=t1"]]},
+            queries={"repo_q": build_query([["type=t1"]])},
         )
-        write_global_queries(mock_global_bees_dir, {"global_q": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"global_q": build_query([["type=bee"]])})
 
         # Delete the repo-scoped query (no scope arg needed)
         result_repo = _delete_named_query("repo_q", resolved_root=tmp_path)
@@ -582,7 +601,7 @@ class TestDeleteNamedQueryTool:
             "schema_version": "2.0",
             "scopes": {
                 str(repo_a): {"hives": {}, "child_tiers": {}},
-                str(repo_b): {"hives": {}, "child_tiers": {}, "queries": {"target_q": [["type=bee"]]}},
+                str(repo_b): {"hives": {}, "child_tiers": {}, "queries": {"target_q": build_query([["type=bee"]])}},
             },
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -606,14 +625,14 @@ class TestListNamedQueryTool:
 
         write_scoped_config(
             mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}},
-            queries={"repo_q": [["type=t1"]]},
+            queries={"repo_q": build_query([["type=t1"]])},
         )
         # Add a second repo scope with its own query
         config_path = mock_global_bees_dir / "config.json"
         config = json.loads(config_path.read_text())
-        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": [["type=bee"]]}}
+        config["scopes"]["/other/repo"] = {"hives": {}, "child_tiers": {}, "queries": {"other_q": build_query([["type=bee"]])}}
         config_path.write_text(json.dumps(config, indent=2))
-        write_global_queries(mock_global_bees_dir, {"global_q": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"global_q": build_query([["type=bee"]])})
 
         result = _list_named_queries(resolved_root=tmp_path)
         assert result["status"] == RESULT_STATUS_SUCCESS
@@ -637,8 +656,8 @@ class TestListNamedQueryTool:
         # Write config with a scope that does NOT match tmp_path
         config_path = mock_global_bees_dir / "config.json"
         config = {
-            "scopes": {"/some/other/repo": {"hives": {}, "child_tiers": {}, "queries": {"hidden": [["type=t1"]]}}},
-            "queries": {"visible": [["type=bee"]]},
+            "scopes": {"/some/other/repo": {"hives": {}, "child_tiers": {}, "queries": {"hidden": build_query([["type=t1"]])}}},
+            "queries": {"visible": build_query([["type=bee"]])},
             "schema_version": "2.0",
         }
         config_path.write_text(json.dumps(config, indent=2))
@@ -654,9 +673,9 @@ class TestListNamedQueryTool:
         """count field equals len(queries) in both default and show_all modes."""
         write_scoped_config(
             mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}},
-            queries={"q1": [["type=t1"]], "q2": [["type=bee"]]},
+            queries={"q1": build_query([["type=t1"]]), "q2": build_query([["type=bee"]])},
         )
-        write_global_queries(mock_global_bees_dir, {"gq": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"gq": build_query([["type=bee"]])})
 
         default_result = _list_named_queries(resolved_root=tmp_path)
         assert default_result["count"] == len(default_result["queries"])
@@ -694,7 +713,245 @@ class TestFreeformQueryWithCorruptTicket:
         from tests.helpers import write_corrupt_ticket
         write_corrupt_ticket(hive_dir, "b.crp")
 
-        result = await _execute_freeform_query("- ['type=bee']", resolved_root=helper.base_path)
+        result = await _execute_freeform_query("stages:\n- ['type=bee']", resolved_root=helper.base_path)
 
         assert result["status"] == "success"
         assert "b.vet" in result["ticket_ids"]
+
+
+# ===========================================================================
+# Projection and response format tests
+# ===========================================================================
+
+
+class TestProjection:
+    """Tests for _project_tickets field mapping, null handling, and sort order."""
+
+    async def test_field_name_mapping_ticket_type(self, isolated_bees_env):
+        """ticket_type in report maps to the internal issue_type field (from 'type' frontmatter)."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.typ", title="Type Mapping", type="bee")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- ticket_type",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert rows["b.typ"]["ticket_type"] == "bee"
+
+    async def test_field_name_mapping_ticket_status(self, isolated_bees_env):
+        """ticket_status in report maps to the internal status field."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.sts", title="Status Mapping", status="pupa")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- ticket_status",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert rows["b.sts"]["ticket_status"] == "pupa"
+
+    async def test_ticket_id_always_present_in_each_row(self, isolated_bees_env):
+        """Every projected row always includes ticket_id even when not in report list."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.tid", title="ID Always Present")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) >= 1
+        for row in result["tickets"]:
+            assert "ticket_id" in row
+
+    async def test_null_value_for_absent_field(self, isolated_bees_env):
+        """A ticket field absent in the pipeline dict is projected as None."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        # Root bee ticket has no parent → parent field is None in pipeline dict
+        write_ticket_file(hive_dir, "b.nup", title="Null Parent")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- parent",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) >= 1
+        # All returned tickets are root bees with no parent
+        for row in result["tickets"]:
+            assert row["parent"] is None
+
+    async def test_results_sorted_by_ticket_id(self, isolated_bees_env):
+        """Projected rows are sorted ascending by ticket_id regardless of creation order."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        # Write tickets in reverse alphabetical order
+        write_ticket_file(hive_dir, "b.zzz", title="Last Ticket")
+        write_ticket_file(hive_dir, "b.aaa", title="First Ticket")
+        write_ticket_file(hive_dir, "b.mmm", title="Middle Ticket")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        ids = [r["ticket_id"] for r in result["tickets"]]
+        assert ids == sorted(ids)
+        assert ids.index("b.aaa") < ids.index("b.mmm") < ids.index("b.zzz")
+
+    async def test_multiple_fields_projected(self, isolated_bees_env):
+        """Multiple valid report fields all appear in each row."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.mfp", title="Multi Field", status="worker")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['id=b.mfp']\nreport:\n- title\n- ticket_type\n- ticket_status",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) == 1
+        row = result["tickets"][0]
+        assert row["ticket_id"] == "b.mfp"
+        assert row["title"] == "Multi Field"
+        assert row["ticket_type"] == "bee"
+        assert row["ticket_status"] == "worker"
+
+
+class TestResponseFormatBranching:
+    """Tests for the report-vs-ticket_ids response format branching."""
+
+    async def test_freeform_without_report_returns_ticket_ids(self, isolated_bees_env):
+        """Freeform query without report returns ticket_ids list, no tickets key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.fwr", title="Freeform Without Report")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']", resolved_root=helper.base_path
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "ticket_ids" in result
+        assert "tickets" not in result
+        assert "stages_executed" in result
+
+    async def test_freeform_with_report_returns_tickets_list(self, isolated_bees_env):
+        """Freeform query with report returns tickets list, no ticket_ids key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.fwp", title="Freeform With Report")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['type=bee']\nreport:\n- title",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        assert "ticket_ids" not in result
+        assert "stages_executed" in result
+
+    async def test_named_query_without_report_returns_ticket_ids(self, isolated_bees_env):
+        """Named query without report returns ticket_ids list, no tickets key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.nwr", title="Named Without Report")
+        write_scoped_config(
+            helper.global_bees_dir, helper.base_path,
+            {"hives": helper.hives, "child_tiers": {}},
+            queries={"q_no_report": build_query([["type=bee"]])},
+        )
+
+        result = await _execute_named_query("q_no_report", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "ticket_ids" in result
+        assert "tickets" not in result
+        assert result["query_name"] == "q_no_report"
+
+    async def test_named_query_with_report_returns_tickets_list(self, isolated_bees_env):
+        """Named query with report returns tickets list, no ticket_ids key."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.nwp", title="Named With Report")
+        write_scoped_config(
+            helper.global_bees_dir, helper.base_path,
+            {"hives": helper.hives, "child_tiers": {}},
+            queries={"q_with_report": build_query([["type=bee"]], report=["title"])},
+        )
+
+        result = await _execute_named_query("q_with_report", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        assert "ticket_ids" not in result
+        assert result["query_name"] == "q_with_report"
+
+    async def test_named_query_config_roundtrip_with_projection(self, isolated_bees_env):
+        """Named query stored with report field executes and returns projected rows."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.rtp", title="Round Trip Bee", status="finished")
+
+        # Store query with report via _add_named_query
+        _add_named_query(
+            "rtrip",
+            "stages:\n- ['type=bee']\nreport:\n- title\n- ticket_status",
+            scope="global",
+            resolved_root=helper.base_path,
+        )
+
+        result = await _execute_named_query("rtrip", resolved_root=helper.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "tickets" in result
+        rows = {r["ticket_id"]: r for r in result["tickets"]}
+        assert "b.rtp" in rows
+        assert rows["b.rtp"]["title"] == "Round Trip Bee"
+        assert rows["b.rtp"]["ticket_status"] == "finished"

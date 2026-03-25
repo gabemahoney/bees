@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .config import (
     check_for_config_conflicts,
     check_query_name_conflict,
@@ -26,6 +28,43 @@ from .query_parser import QueryParser, QueryValidationError
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 
 logger = logging.getLogger(__name__)
+
+# Maps internal ticket dict keys to output field names
+_FIELD_NAME_MAP = {
+    "id": "ticket_id",
+    "issue_type": "ticket_type",
+    "status": "ticket_status",
+}
+
+
+def _project_tickets(
+    ticket_ids: set[str],
+    report: list[str],
+    tickets: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build projection of ticket data for the requested report fields.
+
+    Args:
+        ticket_ids: Set of matching ticket IDs
+        report: List of field names to include (already validated)
+        tickets: In-memory ticket dict from PipelineEvaluator
+
+    Returns:
+        List of dicts sorted by ticket_id ascending. Each dict contains
+        ticket_id plus the requested fields. Missing values are None.
+    """
+    # Internal key for each report field (reverse of _FIELD_NAME_MAP)
+    _output_to_internal = {v: k for k, v in _FIELD_NAME_MAP.items()}
+
+    rows = []
+    for tid in sorted(ticket_ids):
+        ticket = tickets.get(tid, {})
+        row: dict[str, Any] = {"ticket_id": tid}
+        for field in report:
+            internal_key = _output_to_internal.get(field, field)
+            row[field] = ticket.get(internal_key)
+        rows.append(row)
+    return rows
 
 
 def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path) -> dict[str, Any]:
@@ -91,23 +130,32 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
 
     # Parse and validate query structure
     try:
+        try:
+            query_data = yaml.safe_load(query_yaml)
+        except yaml.YAMLError as e:
+            raise QueryValidationError(f"Invalid YAML: {e}") from e
         parser = QueryParser()
-        stages = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_data)
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
         logger.error(error_msg)
         return {"status": "error", "error_type": "parse_error", "message": error_msg}
 
-    # Write parsed stages to the appropriate queries dict in global config
+    # Build stored query dict
+    stored_query: dict = {"stages": parsed.stages}
+    if parsed.report is not None:
+        stored_query["report"] = parsed.report
+
+    # Write parsed query to the appropriate queries dict in global config
     if scope == "global":
         if "queries" not in global_config:
             global_config["queries"] = {}
-        global_config["queries"][name] = stages
+        global_config["queries"][name] = stored_query
     else:  # scope == "repo"
         scope_data = global_config["scopes"][matched_pattern]
         if "queries" not in scope_data:
             scope_data["queries"] = {}
-        scope_data["queries"][name] = stages
+        scope_data["queries"][name] = stored_query
 
     save_global_config(global_config)
 
@@ -291,6 +339,7 @@ async def _execute_named_query(
         }
 
     stages = resolution["stages"]
+    report: list[str] | None = resolution.get("report")
 
     # Execute query using pipeline evaluator
     try:
@@ -300,6 +349,13 @@ async def _execute_named_query(
 
         logger.info(f"Query '{query_name}' returned {len(result_ids)} tickets")
 
+        if report is not None:
+            return {
+                "status": "success",
+                "query_name": query_name,
+                "result_count": len(result_ids),
+                "tickets": _project_tickets(result_ids, report, evaluator.tickets),
+            }
         return {
             "status": "success",
             "query_name": query_name,
@@ -350,8 +406,14 @@ async def _execute_freeform_query(
 
     # Parse and validate query structure
     try:
+        try:
+            query_data = yaml.safe_load(query_yaml)
+        except yaml.YAMLError as e:
+            raise QueryValidationError(f"Invalid YAML: {e}") from e
         parser = QueryParser()
-        stages = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_data)
+        stages = parsed.stages
+        report: list[str] | None = parsed.report
         logger.info(f"Parsed and validated freeform query with {len(stages)} stages")
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
@@ -370,6 +432,13 @@ async def _execute_freeform_query(
 
         logger.info(f"Freeform query returned {len(result_ids)} tickets across {len(stages)} stages")
 
+        if report is not None:
+            return {
+                "status": "success",
+                "result_count": len(result_ids),
+                "tickets": _project_tickets(result_ids, report, evaluator.tickets),
+                "stages_executed": len(stages),
+            }
         return {
             "status": "success",
             "result_count": len(result_ids),

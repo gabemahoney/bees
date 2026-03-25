@@ -2,11 +2,11 @@
 Unit tests for query parsing and validation.
 
 PURPOSE:
-Tests the query parser that converts YAML query pipelines into validated
+Tests the query parser that converts dict query structures into validated
 internal representations, enforcing query syntax rules.
 
 SCOPE - Tests that belong here:
-- QueryParser: Parsing YAML query pipelines
+- QueryParser: Parsing dict query structures
 - Query syntax validation (stage structure, term format)
 - Stage type detection (search vs graph)
 - Term parsing (type=, id=, title~, tag~, parent, children, etc.)
@@ -29,7 +29,7 @@ RELATED FILES:
 
 import pytest
 
-from src.query_parser import QueryParser, QueryValidationError
+from src.query_parser import VALID_REPORT_FIELDS, ParsedQuery, QueryParser, QueryValidationError
 from tests.test_constants import TICKET_ID_TEST_BEE
 
 
@@ -37,7 +37,7 @@ class TestQueryParserBasics:
     """Tests for basic query parsing."""
 
     @pytest.mark.parametrize(
-        "query,expected_len,expected_stages",
+        "stages,expected_len,expected_stages",
         [
             pytest.param([["type=bee"]], 1, [["type=bee"]], id="simple_single_stage"),
             pytest.param(
@@ -48,34 +48,32 @@ class TestQueryParserBasics:
             ),
         ],
     )
-    def test_parse_valid_queries(self, query, expected_len, expected_stages):
-        """Should parse valid queries."""
+    def test_parse_valid_queries(self, stages, expected_len, expected_stages):
+        """Should parse valid dict queries."""
         parser = QueryParser()
-        stages = parser.parse(query)
-        assert len(stages) == expected_len
-        assert stages == expected_stages
+        result = parser.parse({"stages": stages})
+        assert len(result) == expected_len
+        assert result == expected_stages
 
-    def test_parse_yaml_string(self):
-        """Should parse YAML string input."""
+    def test_parse_dict_with_extra_keys(self):
+        """Should parse dict and ignore unrecognised keys (report etc.)."""
         parser = QueryParser()
-        yaml_query = """
-        - ['type=t1']
-        - ['parent']
-        """
-        stages = parser.parse(yaml_query)
-        assert len(stages) == 2
-        assert stages[0] == ["type=t1"]
-        assert stages[1] == ["parent"]
+        result = parser.parse({"stages": [["type=t1"]], "report": ["title"]})
+        assert result == [["type=t1"]]
 
     @pytest.mark.parametrize(
         "invalid_query,expected_error",
         [
-            pytest.param([], "cannot be empty", id="empty_query"),
-            pytest.param("not-a-list", "must be a list", id="non_list_query"),
-            pytest.param(["not-a-list"], "Stage 0 must be a list", id="non_list_stage"),
-            pytest.param([[]], "Stage 0 cannot be empty", id="empty_stage"),
-            pytest.param([[123]], "must be a string", id="non_string_term"),
-            pytest.param("[invalid: yaml: syntax", "Invalid YAML", id="invalid_yaml"),
+            pytest.param({"stages": []}, "cannot be empty", id="empty_stages"),
+            pytest.param({"stages": "not-a-list"}, '"stages" must be a list', id="stages_not_list"),
+            pytest.param({"stages": ["not-a-list"]}, "Stage 0 must be a list", id="non_list_stage"),
+            pytest.param({"stages": [[]]}, "Stage 0 cannot be empty", id="empty_stage"),
+            pytest.param({"stages": [[123]]}, "must be a string", id="non_string_term"),
+            # Bare-list rejection (new format requirement)
+            pytest.param([["type=bee"]], "Query must be a dict", id="bare_list_rejected"),
+            pytest.param("not-a-dict", "Query must be a dict", id="string_rejected"),
+            # Missing stages key
+            pytest.param({}, '"stages" key', id="missing_stages_key"),
         ],
     )
     def test_parse_errors(self, invalid_query, expected_error):
@@ -115,7 +113,7 @@ class TestSearchTermValidation:
     def test_valid_search_terms(self, query):
         """Should accept valid search terms."""
         parser = QueryParser()
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         parser.validate(stages)
 
     @pytest.mark.parametrize(
@@ -142,7 +140,7 @@ class TestSearchTermValidation:
     def test_invalid_search_terms(self, query, expected_error):
         """Should reject invalid search terms."""
         parser = QueryParser()
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         with pytest.raises(QueryValidationError, match=expected_error):
             parser.validate(stages)
 
@@ -162,14 +160,14 @@ class TestGraphTermValidation:
     def test_valid_graph_terms(self, query):
         """Should accept valid graph terms."""
         parser = QueryParser()
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         parser.validate(stages)
 
     def test_invalid_graph_term_raises_error(self):
         """Should reject invalid graph term names."""
         parser = QueryParser()
         query = [["invalid_term"]]
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         with pytest.raises(QueryValidationError, match="Unknown term"):
             parser.validate(stages)
 
@@ -190,14 +188,14 @@ class TestStagePurityEnforcement:
     def test_valid_stage_purity(self, query):
         """Should accept pure search or pure graph stages."""
         parser = QueryParser()
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         parser.validate(stages)
 
     def test_mixed_stage_raises_error(self):
         """Should reject stage mixing search and graph terms."""
         parser = QueryParser()
         query = [["type=bee", "children"]]
-        stages = parser.parse(query)
+        stages = parser.parse({"stages": query})
         with pytest.raises(QueryValidationError, match="Cannot mix search and graph terms"):
             parser.validate(stages)
 
@@ -225,8 +223,9 @@ class TestPRDExampleQueries:
     def test_prd_queries(self, query, expected_len):
         """Should validate PRD example queries."""
         parser = QueryParser()
-        stages = parser.parse_and_validate(query)
-        assert len(stages) == expected_len
+        result = parser.parse_and_validate({"stages": query})
+        assert isinstance(result, ParsedQuery)
+        assert len(result.stages) == expected_len
 
 
 class TestParseAndValidate:
@@ -235,20 +234,35 @@ class TestParseAndValidate:
     def test_parse_and_validate_valid_query(self):
         """Should parse and validate in one step."""
         parser = QueryParser()
-        stages = parser.parse_and_validate([["type=bee", "tag~beta"]])
-        assert len(stages) == 1
+        result = parser.parse_and_validate({"stages": [["type=bee", "tag~beta"]]})
+        assert isinstance(result, ParsedQuery)
+        assert len(result.stages) == 1
 
     def test_parse_and_validate_invalid_query(self):
         """Should raise error on invalid query."""
         parser = QueryParser()
         with pytest.raises(QueryValidationError):
-            parser.parse_and_validate([["type=invalid"]])
+            parser.parse_and_validate({"stages": [["type=invalid"]]})
 
-    def test_parse_and_validate_yaml_string(self):
-        """Should parse and validate YAML string."""
+    def test_parse_and_validate_with_report(self):
+        """Should preserve report field in ParsedQuery result."""
         parser = QueryParser()
-        stages = parser.parse_and_validate("- ['type=t1', 'tag~open']\n- ['parent']")
-        assert len(stages) == 2
+        result = parser.parse_and_validate({"stages": [["type=t1"]], "report": ["title", "ticket_status"]})
+        assert isinstance(result, ParsedQuery)
+        assert result.stages == [["type=t1"]]
+        assert result.report == ["title", "ticket_status"]
+
+    def test_parse_and_validate_bare_list_rejected(self):
+        """Should raise error when bare list passed instead of dict."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="Query must be a dict"):
+            parser.parse_and_validate([["type=t1"]])
+
+    def test_parse_and_validate_missing_stages_key_rejected(self):
+        """Should raise error when dict is missing the stages key."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match='"stages" key'):
+            parser.parse_and_validate({})
 
 
 class TestRegexPatterns:
@@ -267,8 +281,82 @@ class TestRegexPatterns:
     def test_regex_patterns(self, query, expected_term):
         """Should accept various regex patterns."""
         parser = QueryParser()
-        stages = parser.parse_and_validate(query)
-        assert stages[0] == expected_term
+        result = parser.parse_and_validate({"stages": query})
+        assert result.stages[0] == expected_term
+
+
+class TestReportFieldValidation:
+    """Tests for report field validation in parse_and_validate."""
+
+    @pytest.mark.parametrize(
+        "field",
+        [pytest.param(f, id=f) for f in sorted(VALID_REPORT_FIELDS)],
+    )
+    def test_valid_report_field_accepted(self, field):
+        """Should accept each valid report field individually."""
+        parser = QueryParser()
+        result = parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})
+        assert isinstance(result, ParsedQuery)
+        assert field in result.report
+
+    def test_multiple_valid_fields_accepted(self):
+        """Should accept a list of multiple valid report fields."""
+        parser = QueryParser()
+        result = parser.parse_and_validate(
+            {"stages": [["type=t1"]], "report": ["title", "ticket_status", "tags"]}
+        )
+        assert result.report == ["title", "ticket_status", "tags"]
+
+    def test_ticket_id_silently_stripped(self):
+        """ticket_id should be removed from report without raising an error."""
+        parser = QueryParser()
+        result = parser.parse_and_validate(
+            {"stages": [["type=t1"]], "report": ["title", "ticket_id"]}
+        )
+        assert "ticket_id" not in result.report
+        assert "title" in result.report
+
+    def test_report_only_ticket_id_raises_after_strip(self):
+        """report: [ticket_id] should error after strip leaves an empty list."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="cannot be empty"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["ticket_id"]})
+
+    def test_empty_report_list_raises(self):
+        """report: [] should raise a validation error."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="cannot be empty"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": []})
+
+    @pytest.mark.parametrize(
+        "field",
+        [pytest.param("body", id="body"), pytest.param("egg", id="egg")],
+    )
+    def test_body_and_egg_rejected_with_show_ticket_hint(self, field):
+        """body and egg should be rejected with a message mentioning show_ticket."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="show_ticket"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})
+
+    def test_hive_rejected(self):
+        """hive should be rejected as not available in query results."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="hive"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["hive"]})
+
+    def test_unrecognized_field_error_names_the_field(self):
+        """An unrecognized field name should appear in the error message."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="banana"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["banana"]})
+
+    def test_mix_of_valid_and_invalid_catches_first_invalid(self):
+        """First invalid field in a mixed list should be caught."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="hive"):
+            parser.parse_and_validate(
+                {"stages": [["type=t1"]], "report": ["title", "hive", "tags"]}
+            )
 
 
 class TestErrorMessages:
@@ -277,7 +365,7 @@ class TestErrorMessages:
     def test_stage_mixing_error_message(self):
         """Should provide clear error for mixing stage types."""
         parser = QueryParser()
-        stages = parser.parse([["type=bee", "children"]])
+        stages = parser.parse({"stages": [["type=bee", "children"]]})
         with pytest.raises(QueryValidationError) as exc_info:
             parser.validate(stages)
         assert "Cannot mix search and graph terms" in str(exc_info.value)
@@ -286,7 +374,7 @@ class TestErrorMessages:
     def test_invalid_type_error_message(self):
         """Should provide clear error for invalid type."""
         parser = QueryParser()
-        stages = parser.parse([["type=invalid"]])
+        stages = parser.parse({"stages": [["type=invalid"]]})
         with pytest.raises(QueryValidationError) as exc_info:
             parser.validate(stages)
         error_msg = str(exc_info.value)
@@ -297,7 +385,7 @@ class TestErrorMessages:
     def test_unknown_term_error_includes_parent(self):
         """Should include parent= in valid search terms and show unknown term."""
         parser = QueryParser()
-        stages = parser.parse([["unknown_term"]])
+        stages = parser.parse({"stages": [["unknown_term"]]})
         with pytest.raises(QueryValidationError) as exc_info:
             parser.validate(stages)
         error_msg = str(exc_info.value)

@@ -22,6 +22,7 @@ _KNOWN_FIELDS = frozenset(
         "down_dependencies",
         "guid",
         "schema_version",
+        "created_at",
     ]
 )
 

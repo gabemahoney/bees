@@ -15,6 +15,22 @@ from src.id_utils import generate_guid
 from src.repo_context import repo_root_context
 
 
+def build_query(stages: list[list[str]], report: list[str] | None = None) -> dict:
+    """Build a query dict in the storage format used by config helpers.
+
+    Args:
+        stages: List of pipeline stages (each stage is a list of term strings)
+        report: Optional report field list
+
+    Returns:
+        Dict with "stages" key and optional "report" key
+    """
+    q: dict = {"stages": stages}
+    if report is not None:
+        q["report"] = report
+    return q
+
+
 def write_scoped_config(
     global_bees_dir: Path,
     repo_root: Path,
@@ -22,7 +38,7 @@ def write_scoped_config(
     *,
     hive_child_tiers: dict[str, dict | None] | None = None,
     hive_status_values: dict[str, list[str] | None] | None = None,
-    queries: dict[str, list] | None = None,
+    queries: dict[str, dict] | None = None,
 ):
     """Write a scoped global config matching the given repo_root.
 
@@ -40,7 +56,7 @@ def write_scoped_config(
                            Value of [] means empty list (falls through to next level).
                            Value of None (or key absent) means omit key (inherit from scope/global).
                            Example: {"features": ["open", "closed"], "bugs": []}
-        queries: Optional dict mapping query names to stage lists.
+        queries: Optional dict mapping query names to query dicts ({"stages": [...]}).
                  When provided, written into the scope entry alongside hives/child_tiers.
                  When omitted, no queries key appears in the scope entry.
     """
@@ -94,8 +110,12 @@ def write_multi_scope_config(global_bees_dir: Path, scopes_dict: dict) -> None:
     config_path.write_text(json.dumps(global_config, indent=2))
 
 
-def write_global_queries(global_bees_dir: Path, queries: dict) -> None:
+def write_global_queries(global_bees_dir: Path, queries: dict[str, dict]) -> None:
     """Write queries under the top-level queries key of config.json.
+
+    Args:
+        global_bees_dir: The (mocked) global ~/.bees/ directory
+        queries: Dict mapping query names to query dicts ({"stages": [...]})
 
     Loads existing config (or creates minimal one), merges queries at the top level, and saves.
     Result is readable via load_global_config()["queries"].

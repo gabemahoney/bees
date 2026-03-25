@@ -10,10 +10,10 @@ The query system provides a powerful multi-stage pipeline for filtering and trav
 
 ### Core Design
 
-The Query Parser (`src/query_parser.py`) validates YAML query structures before execution, enforcing strict rules to ensure well-formed queries and providing clear error messages.
+The Query Parser (`src/query_parser.py`) validates dict-based query structures before execution, enforcing strict rules to ensure well-formed queries and providing clear error messages.
 
 **Responsibilities**:
-- Parse YAML query structure into list of stages
+- Parse dict query structure (`{"stages": [...]}`) into validated stages
 - Validate search terms (type=, id=, title~, tag~, parent=)
 - Validate graph terms (children, parent, up_dependencies, down_dependencies)
 - Enforce stage purity (no mixing search and graph terms)
@@ -160,18 +160,20 @@ Named queries are persisted in config-backed storage within `~/.bees/config.json
 - **Global queries**: Stored under the top-level `queries` dictionary. Accessible from any repo.
 - **Repo-scoped queries**: Stored under a scope's `queries` dictionary. Accessible only from repos matching that scope pattern.
 
-Repo scope queries shadow global queries of the same name. Validated stage lists (list of lists of strings) are persisted directly — the original YAML string is not retained.
+Repo scope queries shadow global queries of the same name. Validated queries are persisted as dicts with a `stages` key — `{"stages": [...]}`. The original YAML string is not retained.
 
 ### MCP Tools
 
 **add_named_query** — Register a new named query for reuse.
-- Parameters: `name` (str, required), `query_yaml` (str, required), `scope` (str, "global" or "repo", default: "global")
+- Parameters: `name` (str, required), `query_yaml` (str, required — YAML dict with a `stages` key, e.g. `"stages:\n  - [type=bee, status=pupa]"`), `scope` (str, "global" or "repo", default: "global")
 - Returns on success: `{status: "success", query_name, scope, message}`
 - Returns on error: `{status: "error", error_type, message}` (see Error Types below)
 
 **execute_named_query** — Execute a previously registered named query.
-- Parameters: `query_name` (str, required), `hive_names` (list[str] | None, optional)
-- Returns on success: `{status: "success", query_name, result_count, ticket_ids}`
+- Parameters: `query_name` (str, required)
+- Returns on success (no report): `{status: "success", query_name, result_count, ticket_ids}`
+- Returns on success (with report): `{status: "success", query_name, result_count, tickets}` where `tickets` is a list of field dicts
+- Report behavior is determined by the `report` key stored at `add_named_query` time
 - Returns on error: `{status: "error", error_type, message}` with optional `available_queries` list for `query_not_found`
 - Performs pre-flight hive integrity check before execution
 
@@ -188,21 +190,56 @@ Repo scope queries shadow global queries of the same name. Validated stage lists
 - Returns: `{status: "success", queries: [{name, definition, scope, repo_root}, ...], count}`
 
 **execute_freeform_query** — One-step ad-hoc query execution without persistence.
-- Parameters: `query_yaml` (str, required), `hive_names` (list[str] | None, optional)
-- Returns on success: `{status: "success", result_count, ticket_ids, stages_executed}`
+- Parameters: `query_yaml` (str, required — YAML dict with a `stages` key and optional `report` key, e.g. `"stages:\n  - [type=bee, status=pupa]\nreport: [title, ticket_status]"`)
+- Returns on success (no report): `{status: "success", result_count, ticket_ids, stages_executed}`
+- Returns on success (with report): `{status: "success", result_count, tickets, stages_executed}` where `tickets` is a list of field dicts
 - Performs pre-flight hive integrity check before execution
+
+### Report Field Projection
+
+The `report` parameter enables field projection on query results. When omitted, queries return a flat list of ticket IDs. When provided, queries return a list of ticket dicts containing only the requested fields.
+
+**The `report` key**:
+- Accepted by `execute_named_query` and `execute_freeform_query`
+- Value is a list of field name strings, e.g. `["title", "ticket_status"]`
+- An empty list is treated the same as omitting the parameter (returns `ticket_ids`)
+
+**Response format**:
+- Without `report`: response contains `ticket_ids` (list of ID strings)
+- With `report`: response contains `tickets` (list of dicts, one per result ticket)
+
+**Output field names**: The response always uses the external/output names, not internal model field names.
+
+| Output name | Notes |
+|---|---|
+| `ticket_id` | Always included automatically. Silently stripped if caller supplies it in the list. |
+| `ticket_type` | The ticket type (bee, t1, t2, etc.) |
+| `ticket_status` | The ticket's current status |
+| `title` | Ticket title |
+| `tags` | List of tag strings |
+| `parent` | Parent ticket ID, or null |
+| `children` | List of child ticket IDs |
+| `up_dependencies` | List of blocking dependency IDs |
+| `down_dependencies` | List of blocked dependent IDs |
+| `created_at` | ISO 8601 creation timestamp |
+| `schema_version` | Internal schema version string |
+| `guid` | Globally unique ticket identifier |
+
+**Excluded fields**:
+- `body` / `egg` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
+- `hive` — Not stored in ticket data; cannot be projected.
 
 ### CLI Commands
 
-**bees add-named-query NAME --yaml YAML [--scope {global,repo}]** — Register a named query. Scope defaults to "global".
+**bees add-named-query --query-name NAME --query-yaml YAML [--scope {global,repo}]** — Register a named query. Scope defaults to "global". YAML must be a dict with a `stages` key and optional `report` key.
 
-**bees execute-named-query NAME [--hives HIVES]** — Execute a named query. HIVES is a comma-separated list of hive names to filter results.
+**bees execute-named-query --query-name NAME** — Execute a previously registered named query. Report behavior is determined by the stored query definition.
 
-**bees delete-named-query NAME --scope {global,repo}** — Delete a named query at the specified scope level. Scope is required.
+**bees delete-named-query --query-name NAME** — Delete a named query. Searches all scopes automatically.
 
-**bees list-named-queries [--all]** — List accessible named queries. With `--all`, lists queries from every scope and global.
+**bees list-named-queries** — List accessible named queries from current repo scope and global.
 
-**bees execute-freeform-query --yaml YAML [--hives HIVES]** — Execute an ad-hoc YAML query without persistence.
+**bees execute-freeform-query --query-yaml YAML** — Execute an ad-hoc YAML query without persistence. YAML must be a dict with a `stages` key and optional `report` key for field projection.
 
 ### Error Types
 

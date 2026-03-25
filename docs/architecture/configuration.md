@@ -16,7 +16,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
     "t3": ["Subtask", "Subtasks"]
   },
   "queries": {
-    "global_open_bees": [["type=bee", "status=open"]]
+    "global_open_bees": {"stages": [["type=bee", "status=open"]]}
   },
   "scopes": {
     "/Users/dev/projects/myrepo": {
@@ -36,8 +36,8 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
         "t2": ["Feature", "Features"]
       },
       "queries": {
-        "open_tasks": [["type=t1", "status=open"]],
-        "all_bees_with_children": [["type=bee"], ["children"]]
+        "open_tasks": {"stages": [["type=t1", "status=open"]]},
+        "all_bees_with_children": {"stages": [["type=bee"], ["children"]]}
       }
     },
     "/Users/dev/projects/bees/**": {
@@ -668,14 +668,14 @@ Named queries allow reusable query pipelines to be stored in config and executed
 
 ### Data Structure
 
-The `queries` key is a dictionary mapping query name strings to stage lists. Each stage list is a list of lists of strings, matching the output of `QueryParser.parse_and_validate()`.
+The `queries` key is a dictionary mapping query name strings to query dicts. Each query dict has a `stages` key containing a list of stages (list of lists of strings), matching the output of `QueryParser.parse_and_validate()`.
 
 **Global Level** (top-level in `~/.bees/config.json`):
 ```json
 {
   "queries": {
-    "open_bees": [["type=bee", "status=open"]],
-    "bees_with_children": [["type=bee"], ["children"]]
+    "open_bees": {"stages": [["type=bee", "status=open"]]},
+    "bees_with_children": {"stages": [["type=bee"], ["children"]]}
   },
   "scopes": { ... }
 }
@@ -687,8 +687,8 @@ The `queries` key is a dictionary mapping query name strings to stage lists. Eac
   "scopes": {
     "/path/to/repo": {
       "queries": {
-        "open_tasks": [["type=t1", "status=open"]],
-        "finished_epics": [["type=t1", "status=finished"]]
+        "open_tasks": {"stages": [["type=t1", "status=open"]]},
+        "finished_epics": {"stages": [["type=t1", "status=finished"]]}
       },
       "hives": { ... }
     }
@@ -719,7 +719,7 @@ If a conflict is detected, the operation returns a `query_name_conflict` error w
 
 ### Validation
 
-Queries are validated at registration time via `QueryParser.parse_and_validate()`. Only structurally valid query pipelines can be stored. The validated stage lists (list of lists of strings) are persisted directly — the original YAML string is not retained.
+Queries are validated at registration time via `QueryParser.parse_and_validate()`. Only structurally valid query pipelines can be stored. The validated query is persisted as a dict with a `stages` key — `{"stages": [...]}`. The original YAML string is not retained.
 
 ### Implementation
 

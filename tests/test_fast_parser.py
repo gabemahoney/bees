@@ -376,7 +376,9 @@ class TestAllPipelineFields:
         path = _write(tmp_path, content)
         result = fast_parse_frontmatter(path)
         assert result is not None
-        assert "created_at" not in result
+        # created_at is a known pipeline field — it IS extracted
+        assert result["created_at"] == "2026-01-01T00:00:00"
+        # egg and custom_field are not pipeline fields — they are ignored
         assert "egg" not in result
         assert "custom_field" not in result
         assert result["id"] == "b.abc"
@@ -385,7 +387,8 @@ class TestAllPipelineFields:
         """Result dict should contain only fields from the known pipeline set."""
         known_fields = frozenset(
             ["id", "type", "title", "status", "tags", "parent",
-             "children", "up_dependencies", "down_dependencies", "guid", "schema_version"]
+             "children", "up_dependencies", "down_dependencies", "guid", "schema_version",
+             "created_at"]
         )
         content = (
             "---\n"
