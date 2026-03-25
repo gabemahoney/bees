@@ -12,6 +12,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .config import (
     check_for_config_conflicts,
     check_query_name_conflict,
@@ -91,23 +93,32 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
 
     # Parse and validate query structure
     try:
+        try:
+            query_data = yaml.safe_load(query_yaml)
+        except yaml.YAMLError as e:
+            raise QueryValidationError(f"Invalid YAML: {e}") from e
         parser = QueryParser()
-        parsed = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_data)
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
         logger.error(error_msg)
         return {"status": "error", "error_type": "parse_error", "message": error_msg}
 
-    # Write parsed stages to the appropriate queries dict in global config
+    # Build stored query dict
+    stored_query: dict = {"stages": parsed.stages}
+    if parsed.report is not None:
+        stored_query["report"] = parsed.report
+
+    # Write parsed query to the appropriate queries dict in global config
     if scope == "global":
         if "queries" not in global_config:
             global_config["queries"] = {}
-        global_config["queries"][name] = parsed.stages
+        global_config["queries"][name] = stored_query
     else:  # scope == "repo"
         scope_data = global_config["scopes"][matched_pattern]
         if "queries" not in scope_data:
             scope_data["queries"] = {}
-        scope_data["queries"][name] = parsed.stages
+        scope_data["queries"][name] = stored_query
 
     save_global_config(global_config)
 
@@ -350,8 +361,12 @@ async def _execute_freeform_query(
 
     # Parse and validate query structure
     try:
+        try:
+            query_data = yaml.safe_load(query_yaml)
+        except yaml.YAMLError as e:
+            raise QueryValidationError(f"Invalid YAML: {e}") from e
         parser = QueryParser()
-        parsed = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_data)
         stages = parsed.stages
         logger.info(f"Parsed and validated freeform query with {len(stages)} stages")
     except QueryValidationError as e:

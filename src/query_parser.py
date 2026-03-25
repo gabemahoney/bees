@@ -6,8 +6,6 @@ Parses and validates YAML query structures for the multi-stage pipeline system.
 import re
 from dataclasses import dataclass
 
-import yaml
-
 __all__ = ["ParsedQuery", "QueryParser", "QueryValidationError"]
 
 
@@ -84,11 +82,11 @@ class QueryParser:
                 return False
         return False
 
-    def parse(self, query_yaml: str | list) -> list[list[str]]:
-        """Parse YAML query into list of stages.
+    def parse(self, query_input: dict) -> list[list[str]]:
+        """Parse query dict into list of stages.
 
         Args:
-            query_yaml: YAML string or already parsed list structure
+            query_input: Dict with a "stages" key containing a list of stages
 
         Returns:
             List of stages, where each stage is a list of term strings
@@ -96,25 +94,26 @@ class QueryParser:
         Raises:
             QueryValidationError: If query structure is invalid
         """
-        # Parse YAML if string
-        if isinstance(query_yaml, str):
-            try:
-                query_data = yaml.safe_load(query_yaml)
-            except yaml.YAMLError as e:
-                raise QueryValidationError(f"Invalid YAML: {e}") from e
-        else:
-            query_data = query_yaml
+        if not isinstance(query_input, dict):
+            raise QueryValidationError(
+                f'Query must be a dict with a "stages" key, e.g. {{"stages": [...]}}, '
+                f"got {type(query_input).__name__}"
+            )
 
-        # Validate basic structure
-        if not isinstance(query_data, list):
-            raise QueryValidationError(f"Query must be a list, got {type(query_data).__name__}")
+        if "stages" not in query_input:
+            raise QueryValidationError('Query dict must contain a "stages" key')
 
-        if len(query_data) == 0:
+        stages_data = query_input["stages"]
+
+        if not isinstance(stages_data, list):
+            raise QueryValidationError(f'"stages" must be a list, got {type(stages_data).__name__}')
+
+        if len(stages_data) == 0:
             raise QueryValidationError("Query cannot be empty")
 
         # Parse each stage
         stages = []
-        for stage_idx, stage in enumerate(query_data):
+        for stage_idx, stage in enumerate(stages_data):
             if not isinstance(stage, list):
                 raise QueryValidationError(f"Stage {stage_idx} must be a list, got {type(stage).__name__}")
 
@@ -279,18 +278,32 @@ class QueryParser:
                 f"Stage {stage_idx}: Invalid graph term '{term}'. Valid graph terms: {', '.join(self.GRAPH_TERMS)}"
             )
 
-    def parse_and_validate(self, query_yaml: str | list) -> ParsedQuery:
+    def parse_and_validate(self, query_input: dict) -> ParsedQuery:
         """Parse and validate query in one step.
 
         Args:
-            query_yaml: YAML string or already parsed list structure
+            query_input: Dict with a "stages" key and optional "report" key
 
         Returns:
-            ParsedQuery with validated stages
+            ParsedQuery with validated stages and optional report
 
         Raises:
             QueryValidationError: If query is invalid
         """
-        validated_stages = self.parse(query_yaml)
+        if not isinstance(query_input, dict):
+            raise QueryValidationError(
+                f'Query must be a dict with a "stages" key, e.g. {{"stages": [...]}}, '
+                f"got {type(query_input).__name__}"
+            )
+
+        report = None
+        if "report" in query_input:
+            report = query_input["report"]
+            if not isinstance(report, list):
+                raise QueryValidationError(
+                    f'"report" must be a list, got {type(report).__name__}'
+                )
+
+        validated_stages = self.parse(query_input)
         self.validate(validated_stages)
-        return ParsedQuery(stages=validated_stages, report=None)
+        return ParsedQuery(stages=validated_stages, report=report)

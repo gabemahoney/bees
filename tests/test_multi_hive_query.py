@@ -29,7 +29,7 @@ RELATED FILES:
 
 from src.mcp_query_ops import _execute_named_query
 from src.pipeline import PipelineEvaluator
-from tests.conftest import write_scoped_config
+from tests.conftest import build_query, write_scoped_config
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
     TICKET_ID_INDEX_BEE_BACKEND1 as TICKET_ID_BACKEND_ABC,
@@ -154,7 +154,7 @@ class TestPipelineHiveFiltering:
         frontend_dir = env.create_hive("frontend", "Frontend")
         write_scoped_config(
             env.global_bees_dir, env.base_path, {"hives": env.hives, "child_tiers": {}},
-            queries={"backend_bees": [["hive=backend", "type=bee"]]},
+            queries={"backend_bees": build_query([["hive=backend", "type=bee"]])},
         )
 
         write_ticket_file(backend_dir, TICKET_ID_BACKEND_ABC, title="Backend Epic", body="Backend bee description")

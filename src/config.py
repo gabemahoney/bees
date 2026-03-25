@@ -1506,17 +1506,23 @@ def resolve_named_query(name: str, repo_root: Path, global_config: dict) -> dict
     """
     matched_pattern = find_matching_scope(repo_root, global_config)
 
+    def _build_found(query_def: dict, scope: str) -> dict:
+        result: dict = {"status": "found", "stages": query_def["stages"], "scope": scope}
+        if "report" in query_def:
+            result["report"] = query_def["report"]
+        return result
+
     # Check caller's repo scope queries
     if matched_pattern is not None:
         scope_data = global_config.get("scopes", {}).get(matched_pattern, {})
         repo_queries = scope_data.get("queries", {})
         if name in repo_queries:
-            return {"status": "found", "stages": repo_queries[name], "scope": "repo"}
+            return _build_found(repo_queries[name], "repo")
 
     # Check top-level global queries
     global_queries = global_config.get("queries", {})
     if name in global_queries:
-        return {"status": "found", "stages": global_queries[name], "scope": "global"}
+        return _build_found(global_queries[name], "global")
 
     # Scan all other scope entries for out-of-scope detection
     scopes = global_config.get("scopes", {})
