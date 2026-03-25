@@ -387,7 +387,8 @@ class TestAllPipelineFields:
         """Result dict should contain only fields from the known pipeline set."""
         known_fields = frozenset(
             ["id", "type", "title", "status", "tags", "parent",
-             "children", "up_dependencies", "down_dependencies", "guid", "schema_version"]
+             "children", "up_dependencies", "down_dependencies", "guid", "schema_version",
+             "created_at"]
         )
         content = (
             "---\n"
