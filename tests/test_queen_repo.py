@@ -406,7 +406,7 @@ class TestQueenQueries:
         write_ticket_file(hive_other, "b.tst", title="Out-of-Scope Bee")
 
         with repo_root_context(queen_root):
-            result = await _execute_freeform_query("- [type=bee]", resolved_root=queen_root)
+            result = await _execute_freeform_query("stages:\n- [type=bee]", resolved_root=queen_root)
 
         assert result["status"] == "success"
         assert "b.tst" in result["ticket_ids"]
@@ -435,7 +435,7 @@ class TestQueenQueries:
             },
         )
         write_queen_repos_config(mock_global_bees_dir, [(str(queen_root), None)])
-        write_global_queries(mock_global_bees_dir, {"all_bees": [["type=bee"]]})
+        write_global_queries(mock_global_bees_dir, {"all_bees": {"stages": [["type=bee"]]}})
 
         write_ticket_file(hive_a, "b.aaa", title="Scope A Bee")
         write_ticket_file(hive_b, "b.bbb", title="Scope B Bee")
@@ -475,7 +475,7 @@ class TestQueenQueries:
         write_ticket_file(hive_b, "b.bbb", title="Scope B Bee")
 
         with repo_root_context(normal_root):
-            result = await _execute_freeform_query("- [type=bee]", resolved_root=normal_root)
+            result = await _execute_freeform_query("stages:\n- [type=bee]", resolved_root=normal_root)
 
         assert result["status"] == "success"
         assert "b.aaa" in result["ticket_ids"]

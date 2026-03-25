@@ -29,7 +29,7 @@ RELATED FILES:
 
 import pytest
 
-from src.query_parser import ParsedQuery, QueryParser, QueryValidationError
+from src.query_parser import VALID_REPORT_FIELDS, ParsedQuery, QueryParser, QueryValidationError
 from tests.test_constants import TICKET_ID_TEST_BEE
 
 
@@ -247,10 +247,10 @@ class TestParseAndValidate:
     def test_parse_and_validate_with_report(self):
         """Should preserve report field in ParsedQuery result."""
         parser = QueryParser()
-        result = parser.parse_and_validate({"stages": [["type=t1"]], "report": ["title", "status"]})
+        result = parser.parse_and_validate({"stages": [["type=t1"]], "report": ["title", "ticket_status"]})
         assert isinstance(result, ParsedQuery)
         assert result.stages == [["type=t1"]]
-        assert result.report == ["title", "status"]
+        assert result.report == ["title", "ticket_status"]
 
     def test_parse_and_validate_bare_list_rejected(self):
         """Should raise error when bare list passed instead of dict."""
@@ -283,6 +283,80 @@ class TestRegexPatterns:
         parser = QueryParser()
         result = parser.parse_and_validate({"stages": query})
         assert result.stages[0] == expected_term
+
+
+class TestReportFieldValidation:
+    """Tests for report field validation in parse_and_validate."""
+
+    @pytest.mark.parametrize(
+        "field",
+        [pytest.param(f, id=f) for f in sorted(VALID_REPORT_FIELDS)],
+    )
+    def test_valid_report_field_accepted(self, field):
+        """Should accept each valid report field individually."""
+        parser = QueryParser()
+        result = parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})
+        assert isinstance(result, ParsedQuery)
+        assert field in result.report
+
+    def test_multiple_valid_fields_accepted(self):
+        """Should accept a list of multiple valid report fields."""
+        parser = QueryParser()
+        result = parser.parse_and_validate(
+            {"stages": [["type=t1"]], "report": ["title", "ticket_status", "tags"]}
+        )
+        assert result.report == ["title", "ticket_status", "tags"]
+
+    def test_ticket_id_silently_stripped(self):
+        """ticket_id should be removed from report without raising an error."""
+        parser = QueryParser()
+        result = parser.parse_and_validate(
+            {"stages": [["type=t1"]], "report": ["title", "ticket_id"]}
+        )
+        assert "ticket_id" not in result.report
+        assert "title" in result.report
+
+    def test_report_only_ticket_id_raises_after_strip(self):
+        """report: [ticket_id] should error after strip leaves an empty list."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="cannot be empty"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["ticket_id"]})
+
+    def test_empty_report_list_raises(self):
+        """report: [] should raise a validation error."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="cannot be empty"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": []})
+
+    @pytest.mark.parametrize(
+        "field",
+        [pytest.param("body", id="body"), pytest.param("egg", id="egg")],
+    )
+    def test_body_and_egg_rejected_with_show_ticket_hint(self, field):
+        """body and egg should be rejected with a message mentioning show_ticket."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="show_ticket"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})
+
+    def test_hive_rejected(self):
+        """hive should be rejected as not available in query results."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="hive"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["hive"]})
+
+    def test_unrecognized_field_error_names_the_field(self):
+        """An unrecognized field name should appear in the error message."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="banana"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["banana"]})
+
+    def test_mix_of_valid_and_invalid_catches_first_invalid(self):
+        """First invalid field in a mixed list should be caught."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match="hive"):
+            parser.parse_and_validate(
+                {"stages": [["type=t1"]], "report": ["title", "hive", "tags"]}
+            )
 
 
 class TestErrorMessages:

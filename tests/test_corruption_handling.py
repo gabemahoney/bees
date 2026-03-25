@@ -325,7 +325,7 @@ async def test_query_succeeds_on_hive_with_corrupt_ticket(isolated_bees_env):
     write_scoped_config(
         helper.global_bees_dir, helper.base_path,
         {"hives": helper.hives, "child_tiers": {"t1": ["Task", "Tasks"]}},
-        queries={"all_bees": [["type=bee"]]},
+        queries={"all_bees": {"stages": [["type=bee"]]}},
     )
 
     write_ticket_file(corrupt_dir, TICKET_ID_CORRUPT_BEE, title="Test Bee", children=[])
@@ -350,7 +350,7 @@ async def test_query_scoped_to_healthy_hive_succeeds(isolated_bees_env):
     write_scoped_config(
         helper.global_bees_dir, helper.base_path,
         {"hives": helper.hives, "child_tiers": {"t1": ["Task", "Tasks"]}},
-        queries={"all_bees": [["type=bee", f"hive={HIVE_FRONTEND}"]]},
+        queries={"all_bees": {"stages": [["type=bee", f"hive={HIVE_FRONTEND}"]]}},
     )
 
     write_ticket_file(corrupt_dir, TICKET_ID_CORRUPT_BEE, title="Test Bee", children=[])

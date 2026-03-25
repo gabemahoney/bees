@@ -6,7 +6,21 @@ Parses and validates YAML query structures for the multi-stage pipeline system.
 import re
 from dataclasses import dataclass
 
-__all__ = ["ParsedQuery", "QueryParser", "QueryValidationError"]
+__all__ = ["ParsedQuery", "QueryParser", "QueryValidationError", "VALID_REPORT_FIELDS"]
+
+VALID_REPORT_FIELDS: frozenset[str] = frozenset({
+    "ticket_type",
+    "ticket_status",
+    "title",
+    "tags",
+    "parent",
+    "children",
+    "up_dependencies",
+    "down_dependencies",
+    "created_at",
+    "schema_version",
+    "guid",
+})
 
 
 @dataclass
@@ -303,6 +317,26 @@ class QueryParser:
                 raise QueryValidationError(
                     f'"report" must be a list, got {type(report).__name__}'
                 )
+
+            # Silently strip ticket_id
+            report = [f for f in report if f != "ticket_id"]
+
+            if len(report) == 0:
+                raise QueryValidationError("report list cannot be empty")
+
+            for field in report:
+                if field in ("body", "egg"):
+                    raise QueryValidationError(
+                        f'report field "{field}" is not available in query results; use show_ticket to retrieve it'
+                    )
+                if field == "hive":
+                    raise QueryValidationError(
+                        'report field "hive" is not available in query results'
+                    )
+                if field not in VALID_REPORT_FIELDS:
+                    raise QueryValidationError(
+                        f'report field "{field}" is not recognized'
+                    )
 
         validated_stages = self.parse(query_input)
         self.validate(validated_stages)

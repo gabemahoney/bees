@@ -366,7 +366,7 @@ class TestQueryCommands:
         isolated_bees_env.write_config()
 
         stdout, exit_code = cli_runner(
-            ["add-named-query", "--query-name", "my-query", "--query-yaml", "- ['type=bee']"]
+            ["add-named-query", "--query-name", "my-query", "--query-yaml", "stages:\n- ['type=bee']"]
         )
 
         assert exit_code == 0
@@ -378,7 +378,7 @@ class TestQueryCommands:
         _create_bee(cli_runner, isolated_bees_env)
 
         stdout, exit_code = cli_runner(
-            ["execute-freeform-query", "--query-yaml", "- ['type=bee']"]
+            ["execute-freeform-query", "--query-yaml", "stages:\n- ['type=bee']"]
         )
 
         assert exit_code == 0
@@ -390,7 +390,7 @@ class TestQueryCommands:
         isolated_bees_env.create_hive("test", "Test")
         isolated_bees_env.write_config()
 
-        cli_runner(["add-named-query", "--query-name", "bee-query", "--query-yaml", "- ['type=bee']"])
+        cli_runner(["add-named-query", "--query-name", "bee-query", "--query-yaml", "stages:\n- ['type=bee']"])
 
         stdout, exit_code = cli_runner(["execute-named-query", "--query-name", "bee-query"])
 
@@ -402,7 +402,7 @@ class TestQueryCommands:
         isolated_bees_env.create_hive("test", "Test")
         isolated_bees_env.write_config()
 
-        cli_runner(["add-named-query", "--query-name", "my-query", "--query-yaml", "- ['type=bee']"])
+        cli_runner(["add-named-query", "--query-name", "my-query", "--query-yaml", "stages:\n- ['type=bee']"])
 
         stdout, exit_code = cli_runner(["list-named-queries"])
 
@@ -660,7 +660,7 @@ class TestUtilityCommands:
         isolated_bees_env.write_config()
 
         stdout, exit_code = cli_runner(
-            ["undertaker", "--hive", "test", "--query-yaml", "- ['status=finished']"]
+            ["undertaker", "--hive", "test", "--query-yaml", "stages:\n- ['status=finished']"]
         )
 
         assert exit_code == 0
@@ -675,7 +675,7 @@ class TestUtilityCommands:
             [
                 "undertaker",
                 "--hive", "test",
-                "--query-yaml", "- ['type=bee']",
+                "--query-yaml", "stages:\n- ['type=bee']",
                 "--query-name", "some-query",
             ]
         )
@@ -686,7 +686,7 @@ class TestUtilityCommands:
         isolated_bees_env.create_hive("test", "Test")
         isolated_bees_env.write_config()
 
-        cli_runner(["add-named-query", "--query-name", "archive-finished", "--query-yaml", "- ['status=finished']"])
+        cli_runner(["add-named-query", "--query-name", "archive-finished", "--query-yaml", "stages:\n- ['status=finished']"])
 
         stdout, exit_code = cli_runner(
             ["undertaker", "--hive", "test", "--query-name", "archive-finished"]
@@ -815,7 +815,7 @@ class TestTestConfigFlag:
         else:  # add_query
             argv = [
                 "add-named-query", "--query-name", "myquery",
-                "--query-yaml", "- ['type=bee']",
+                "--query-yaml", "stages:\n- ['type=bee']",
                 "--test-config", str(config_file),
             ]
 

@@ -152,7 +152,7 @@ class TestAddNamedQueryTool:
 
         result = _add_named_query(
             "q_with_report",
-            "stages:\n- [type=t1]\nreport:\n- title\n- status",
+            "stages:\n- [type=t1]\nreport:\n- title\n- ticket_status",
             scope="global",
             resolved_root=tmp_path,
         )
@@ -163,7 +163,7 @@ class TestAddNamedQueryTool:
         gc = load_global_config()
         stored = gc["queries"]["q_with_report"]
         assert stored["stages"] == [["type=t1"]]
-        assert stored["report"] == ["title", "status"]
+        assert stored["report"] == ["title", "ticket_status"]
 
 
 class TestExecuteNamedQueryTool:

@@ -54,12 +54,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .config import BeesConfig, load_bees_config, load_global_config, resolve_named_query
 from .id_utils import is_ticket_id
 from .index_generator import generate_index
 from .paths import find_ticket_file
 from .pipeline import PipelineEvaluator
-from .query_parser import QueryParser
+from .query_parser import QueryParser, QueryValidationError
 from .reader import read_ticket
 from .repo_context import get_repo_root, repo_root_context
 
@@ -127,8 +129,13 @@ def _undertaker_core(
                 }
             stages = resolution["stages"]
         else:
+            try:
+                query_data = yaml.safe_load(query_yaml)
+            except yaml.YAMLError as e:
+                raise QueryValidationError(f"Invalid YAML: {e}") from e
             parser = QueryParser()
-            stages = parser.parse_and_validate(query_yaml)
+            parsed = parser.parse_and_validate(query_data)
+            stages = parsed.stages
     except Exception as e:
         return {"status": "error", "message": f"Query error: {e}"}
 

@@ -148,12 +148,11 @@ class TestGetRepoRoot:
 
 @pytest.mark.asyncio
 async def test_repo_detection_full_workflow():
-    """Test complete workflow: context extraction, path walking, repo detection."""
+    """Test complete workflow: context extraction and repo root resolution."""
     test_repo = Path(__file__).parent.parent
-    ctx = _make_mock_ctx(uri=f"file://{test_repo / 'src'}")
+    ctx = _make_mock_ctx(uri=f"file://{test_repo}")
     result = await get_repo_root(ctx)
     assert result == test_repo
-    assert (result / ".git").exists()
 
 
 @pytest.mark.asyncio

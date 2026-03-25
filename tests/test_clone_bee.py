@@ -392,7 +392,7 @@ def test_clone_force_bypass(isolated_bees_env):
 
 
 def test_clone_dest_hive_less_specific_scope_not_visible(isolated_bees_env):
-    """Dest hive only in a less-specific scope → hive_not_found (load_bees_config uses most-specific)."""
+    """Dest hive only in a less-specific scope → cross_scope_error (source and dest in different scopes)."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
@@ -402,7 +402,7 @@ def test_clone_dest_hive_less_specific_scope_not_visible(isolated_bees_env):
 
     # Most-specific scope (exact) has source hive only.
     # Less-specific scope (wildcard) has dest hive only.
-    # load_bees_config uses most-specific → dest hive not visible → hive_not_found.
+    # Source and dest are in different scopes → cross_scope_error.
     write_multi_scope_config(
         env.global_bees_dir,
         {
@@ -427,7 +427,7 @@ def test_clone_dest_hive_less_specific_scope_not_visible(isolated_bees_env):
         result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
 
     assert result["status"] == "error"
-    assert result["error_type"] == "hive_not_found"
+    assert result["error_type"] == "cross_scope_error"
 
 
 def test_clone_hive_not_found(isolated_bees_env):

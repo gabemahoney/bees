@@ -55,7 +55,7 @@ class TestUndertaker:
 
         result = await _undertaker(
             hive_name="test_hive",
-            query_yaml="- ['type=bee']",
+            query_yaml="stages:\n- ['type=bee']",
         )
 
         assert result["status"] == "success"
@@ -85,7 +85,7 @@ class TestUndertaker:
 
         result = await _undertaker(
             hive_name="test_hive",
-            query_yaml="- ['type=t1']",
+            query_yaml="stages:\n- ['type=t1']",
         )
 
         assert result["status"] == "success"
@@ -106,7 +106,7 @@ class TestUndertaker:
 
         result = await _undertaker(
             hive_name="test_hive",
-            query_yaml="- ['type=bee']",
+            query_yaml="stages:\n- ['type=bee']",
             query_name="some_query",
         )
 
@@ -178,7 +178,7 @@ class TestUndertaker:
 
         result = await _undertaker(
             hive_name="test_hive",
-            query_yaml="- ['type=bee']",
+            query_yaml="stages:\n- ['type=bee']",
         )
 
         assert result["status"] == "success"
@@ -199,7 +199,7 @@ class TestUndertaker:
 
         result = await _undertaker(
             hive_name="test_hive",
-            query_yaml="- ['type=bee']",
+            query_yaml="stages:\n- ['type=bee']",
         )
 
         assert result["status"] == "success"
@@ -222,7 +222,7 @@ class TestUndertaker:
         with patch("src.mcp_undertaker.read_ticket", return_value=mock_ticket) as mock_read:
             result = await _undertaker(
                 hive_name="test_hive",
-                query_yaml="- ['type=bee']",
+                query_yaml="stages:\n- ['type=bee']",
             )
 
         assert result["status"] == "success"
@@ -243,7 +243,7 @@ class TestUndertaker:
         with patch("src.mcp_undertaker.read_ticket", side_effect=Exception("parse error")):
             result = await _undertaker(
                 hive_name="test_hive",
-                query_yaml="- ['type=bee']",
+                query_yaml="stages:\n- ['type=bee']",
             )
 
         assert result["status"] == "success"
