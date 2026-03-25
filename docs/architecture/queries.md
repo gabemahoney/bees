@@ -224,10 +224,10 @@ The `report` parameter enables field projection on query results. When omitted, 
 | `created_at` | ISO 8601 creation timestamp |
 | `schema_version` | Internal schema version string |
 | `guid` | Globally unique ticket identifier |
+| `hive` | The hive's normalized name (the hive directory name) |
 
 **Excluded fields**:
 - `body` / `egg` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
-- `hive` — Not stored in ticket data; cannot be projected.
 
 ### CLI Commands
 

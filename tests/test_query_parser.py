@@ -338,12 +338,6 @@ class TestReportFieldValidation:
         with pytest.raises(QueryValidationError, match="show_ticket"):
             parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})
 
-    def test_hive_rejected(self):
-        """hive should be rejected as not available in query results."""
-        parser = QueryParser()
-        with pytest.raises(QueryValidationError, match="hive"):
-            parser.parse_and_validate({"stages": [["type=t1"]], "report": ["hive"]})
-
     def test_unrecognized_field_error_names_the_field(self):
         """An unrecognized field name should appear in the error message."""
         parser = QueryParser()
@@ -353,9 +347,9 @@ class TestReportFieldValidation:
     def test_mix_of_valid_and_invalid_catches_first_invalid(self):
         """First invalid field in a mixed list should be caught."""
         parser = QueryParser()
-        with pytest.raises(QueryValidationError, match="hive"):
+        with pytest.raises(QueryValidationError, match="banana"):
             parser.parse_and_validate(
-                {"stages": [["type=t1"]], "report": ["title", "hive", "tags"]}
+                {"stages": [["type=t1"]], "report": ["title", "banana", "tags"]}
             )
 
 

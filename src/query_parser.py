@@ -20,6 +20,7 @@ VALID_REPORT_FIELDS: frozenset[str] = frozenset({
     "created_at",
     "schema_version",
     "guid",
+    "hive",
 })
 
 
@@ -328,10 +329,6 @@ class QueryParser:
                 if field in ("body", "egg"):
                     raise QueryValidationError(
                         f'report field "{field}" is not available in query results; use show_ticket to retrieve it'
-                    )
-                if field == "hive":
-                    raise QueryValidationError(
-                        'report field "hive" is not available in query results'
                     )
                 if field not in VALID_REPORT_FIELDS:
                     raise QueryValidationError(

@@ -728,11 +728,10 @@ async def execute_freeform_query(
 
         Valid fields: ticket_type, ticket_status, title, tags, parent,
             children, up_dependencies, down_dependencies, created_at,
-            schema_version, guid
+            schema_version, guid, hive
 
         Excluded fields:
             body, egg    — not available in query results; use show_ticket
-            hive         — not available in query results
 
         Example:
             stages:

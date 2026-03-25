@@ -848,6 +848,27 @@ class TestProjection:
         assert row["ticket_status"] == "worker"
 
 
+    async def test_hive_field_returns_hive_name(self, isolated_bees_env):
+        """report: ['hive'] returns the hive's name for each ticket in the result."""
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("my_hive", "My Hive")
+        helper.write_config()
+        write_ticket_file(hive_dir, "b.hv1", title="Hive Field Test")
+
+        result = await _execute_freeform_query(
+            "stages:\n- ['id=b.hv1']\nreport:\n- hive",
+            resolved_root=helper.base_path,
+        )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["tickets"]) == 1
+        row = result["tickets"][0]
+        assert row["ticket_id"] == "b.hv1"
+        assert row["hive"] == "my_hive"
+
+
 class TestResponseFormatBranching:
     """Tests for the report-vs-ticket_ids response format branching."""
 
