@@ -4,10 +4,19 @@ Parses and validates YAML query structures for the multi-stage pipeline system.
 """
 
 import re
+from dataclasses import dataclass
 
 import yaml
 
-__all__ = ["QueryParser", "QueryValidationError"]
+__all__ = ["ParsedQuery", "QueryParser", "QueryValidationError"]
+
+
+@dataclass
+class ParsedQuery:
+    """Result of parsing and validating a query."""
+
+    stages: list[list[str]]
+    report: list[str] | None
 
 
 class QueryValidationError(Exception):
@@ -270,18 +279,18 @@ class QueryParser:
                 f"Stage {stage_idx}: Invalid graph term '{term}'. Valid graph terms: {', '.join(self.GRAPH_TERMS)}"
             )
 
-    def parse_and_validate(self, query_yaml: str | list) -> list[list[str]]:
+    def parse_and_validate(self, query_yaml: str | list) -> ParsedQuery:
         """Parse and validate query in one step.
 
         Args:
             query_yaml: YAML string or already parsed list structure
 
         Returns:
-            List of validated stages
+            ParsedQuery with validated stages
 
         Raises:
             QueryValidationError: If query is invalid
         """
-        stages = self.parse(query_yaml)
-        self.validate(stages)
-        return stages
+        validated_stages = self.parse(query_yaml)
+        self.validate(validated_stages)
+        return ParsedQuery(stages=validated_stages, report=None)

@@ -29,7 +29,7 @@ RELATED FILES:
 
 import pytest
 
-from src.query_parser import QueryParser, QueryValidationError
+from src.query_parser import ParsedQuery, QueryParser, QueryValidationError
 from tests.test_constants import TICKET_ID_TEST_BEE
 
 
@@ -225,8 +225,9 @@ class TestPRDExampleQueries:
     def test_prd_queries(self, query, expected_len):
         """Should validate PRD example queries."""
         parser = QueryParser()
-        stages = parser.parse_and_validate(query)
-        assert len(stages) == expected_len
+        result = parser.parse_and_validate(query)
+        assert isinstance(result, ParsedQuery)
+        assert len(result.stages) == expected_len
 
 
 class TestParseAndValidate:
@@ -235,8 +236,9 @@ class TestParseAndValidate:
     def test_parse_and_validate_valid_query(self):
         """Should parse and validate in one step."""
         parser = QueryParser()
-        stages = parser.parse_and_validate([["type=bee", "tag~beta"]])
-        assert len(stages) == 1
+        result = parser.parse_and_validate([["type=bee", "tag~beta"]])
+        assert isinstance(result, ParsedQuery)
+        assert len(result.stages) == 1
 
     def test_parse_and_validate_invalid_query(self):
         """Should raise error on invalid query."""
@@ -247,8 +249,9 @@ class TestParseAndValidate:
     def test_parse_and_validate_yaml_string(self):
         """Should parse and validate YAML string."""
         parser = QueryParser()
-        stages = parser.parse_and_validate("- ['type=t1', 'tag~open']\n- ['parent']")
-        assert len(stages) == 2
+        result = parser.parse_and_validate("- ['type=t1', 'tag~open']\n- ['parent']")
+        assert isinstance(result, ParsedQuery)
+        assert len(result.stages) == 2
 
 
 class TestRegexPatterns:
@@ -267,8 +270,8 @@ class TestRegexPatterns:
     def test_regex_patterns(self, query, expected_term):
         """Should accept various regex patterns."""
         parser = QueryParser()
-        stages = parser.parse_and_validate(query)
-        assert stages[0] == expected_term
+        result = parser.parse_and_validate(query)
+        assert result.stages[0] == expected_term
 
 
 class TestErrorMessages:

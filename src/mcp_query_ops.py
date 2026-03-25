@@ -92,7 +92,7 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
     # Parse and validate query structure
     try:
         parser = QueryParser()
-        stages = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_yaml)
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
         logger.error(error_msg)
@@ -102,12 +102,12 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
     if scope == "global":
         if "queries" not in global_config:
             global_config["queries"] = {}
-        global_config["queries"][name] = stages
+        global_config["queries"][name] = parsed.stages
     else:  # scope == "repo"
         scope_data = global_config["scopes"][matched_pattern]
         if "queries" not in scope_data:
             scope_data["queries"] = {}
-        scope_data["queries"][name] = stages
+        scope_data["queries"][name] = parsed.stages
 
     save_global_config(global_config)
 
@@ -351,7 +351,8 @@ async def _execute_freeform_query(
     # Parse and validate query structure
     try:
         parser = QueryParser()
-        stages = parser.parse_and_validate(query_yaml)
+        parsed = parser.parse_and_validate(query_yaml)
+        stages = parsed.stages
         logger.info(f"Parsed and validated freeform query with {len(stages)} stages")
     except QueryValidationError as e:
         error_msg = f"Invalid query structure: {e}"
