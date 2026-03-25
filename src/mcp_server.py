@@ -636,7 +636,8 @@ async def add_named_query(
 
     Args:
         name: Name for the query (used to execute it later).
-        query_yaml: YAML string representing the query pipeline.
+        query_yaml: YAML dict with a "stages" key containing a list of stages.
+                    Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"
         scope: Where to store the query — "global" (all repos) or "repo" (current repo only).
                Defaults to "global".
     """
@@ -656,7 +657,10 @@ async def execute_named_query(
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a registered named query.
+    """Execute a registered named query by name.
+
+    Queries are registered with add_named_query and stored as a dict with a
+    "stages" key. See execute_freeform_query for the full query syntax reference.
 
     Args:
         query_name: Name of the query to execute.
@@ -678,10 +682,16 @@ async def execute_freeform_query(
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a YAML query pipeline.
+    """Execute a YAML query pipeline without saving it.
 
-    Each stage is a list of terms. Stages execute sequentially — results from
-    stage N are passed into stage N+1 as the working set to filter or traverse.
+    The query must be a YAML dict with a "stages" key. Each stage is a list of
+    terms. Stages execute sequentially — results from stage N are passed into
+    stage N+1 as the working set to filter or traverse.
+
+    Example:
+        stages:
+          - [type=bee, status=pupa]
+          - [children]
 
     Search stages — filter tickets (AND logic within stage):
         type=bee | type=t1 | type=t2 ...   exact match on ticket type
@@ -701,8 +711,8 @@ async def execute_freeform_query(
         down_dependencies   get downstream dependents of each ticket
 
     Args:
-        query_yaml: YAML string — a list of stages, each stage a list of terms.
-                    Example: "- [type=bee, status=open]\\n- [children]"
+        query_yaml: YAML dict with a "stages" key containing a list of stages.
+                    Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"
     """
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
@@ -796,7 +806,7 @@ async def undertaker(
                 "example_hive": {
                     "undertaker_schedule": {
                         "interval_seconds": 60,
-                        "query_yaml": "- ['status=finished']"
+                        "query_yaml": "stages:\\n  - ['status=finished']"
                     }
                 }
             }

@@ -801,10 +801,10 @@ def build_parser():
     p_anq = subparsers.add_parser(
         "add-named-query",
         help="Register a named query",
-        description="Save a query for reuse. Run bees execute-freeform-query -h to learn query syntax.",
+        description="Save a query for reuse. Accepts a YAML dict with a 'stages' key — run bees execute-freeform-query -h to learn query syntax.",
     )
     p_anq.add_argument("--query-name", required=True, metavar="NAME", help="Name for the query (used to execute it later)")  # noqa: E501
-    p_anq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help="YAML query pipeline string")  # noqa: E501
+    p_anq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML dict with a "stages" key. Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"')  # noqa: E501
     p_anq.add_argument("--scope", choices=["global", "repo"], default="global", help='Where to store the query: "global" (all repos) or "repo" (repo scope). Default: global')  # noqa: E501
     p_anq.set_defaults(func=handle_add_named_query)
 
@@ -823,8 +823,13 @@ def build_parser():
         help="Execute an ad-hoc YAML query",
         description=(
             "Execute a YAML query pipeline against tickets.\n\n"
-            "Each stage is a list of terms. Stages execute sequentially — results from\n"
-            "stage N are passed into stage N+1 as the working set to filter or traverse.\n\n"
+            "The query must be a YAML dict with a 'stages' key. Each stage is a list of\n"
+            "terms. Stages execute sequentially — results from stage N are passed into\n"
+            "stage N+1 as the working set to filter or traverse.\n\n"
+            "Example:\n"
+            "  stages:\n"
+            "    - [type=bee, status=pupa]\n"
+            "    - [children]\n\n"
             "Search stages — filter tickets (AND logic within stage):\n"
             "  type=bee | type=t1 | type=t2 ...   exact match on ticket type\n"
             "  status=<value>                      exact match on status\n"
@@ -843,7 +848,7 @@ def build_parser():
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_efq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML string — a list of stages, each stage a list of terms. Example: "- [type=bee, status=pupa]\\n- [children]"')  # noqa: E501
+    p_efq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML dict with a "stages" key. Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"')  # noqa: E501
     p_efq.set_defaults(func=handle_execute_freeform_query)
 
     # --- delete-named-query ---
