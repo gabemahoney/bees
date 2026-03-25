@@ -170,8 +170,9 @@ Repo scope queries shadow global queries of the same name. Validated queries are
 - Returns on error: `{status: "error", error_type, message}` (see Error Types below)
 
 **execute_named_query** — Execute a previously registered named query.
-- Parameters: `query_name` (str, required), `hive_names` (list[str] | None, optional)
-- Returns on success: `{status: "success", query_name, result_count, ticket_ids}`
+- Parameters: `query_name` (str, required), `hive_names` (list[str] | None, optional), `report` (list[str] | None, optional)
+- Returns on success (no report): `{status: "success", query_name, result_count, ticket_ids}`
+- Returns on success (with report): `{status: "success", query_name, result_count, tickets}` where `tickets` is a list of field dicts
 - Returns on error: `{status: "error", error_type, message}` with optional `available_queries` list for `query_not_found`
 - Performs pre-flight hive integrity check before execution
 
@@ -188,9 +189,44 @@ Repo scope queries shadow global queries of the same name. Validated queries are
 - Returns: `{status: "success", queries: [{name, definition, scope, repo_root}, ...], count}`
 
 **execute_freeform_query** — One-step ad-hoc query execution without persistence.
-- Parameters: `query_yaml` (str, required — YAML dict with a `stages` key, e.g. `"stages:\n  - [type=bee, status=pupa]"`), `hive_names` (list[str] | None, optional)
-- Returns on success: `{status: "success", result_count, ticket_ids, stages_executed}`
+- Parameters: `query_yaml` (str, required — YAML dict with a `stages` key, e.g. `"stages:\n  - [type=bee, status=pupa]"`), `hive_names` (list[str] | None, optional), `report` (list[str] | None, optional)
+- Returns on success (no report): `{status: "success", result_count, ticket_ids, stages_executed}`
+- Returns on success (with report): `{status: "success", result_count, tickets, stages_executed}` where `tickets` is a list of field dicts
 - Performs pre-flight hive integrity check before execution
+
+### Report Field Projection
+
+The `report` parameter enables field projection on query results. When omitted, queries return a flat list of ticket IDs. When provided, queries return a list of ticket dicts containing only the requested fields.
+
+**The `report` key**:
+- Accepted by `execute_named_query` and `execute_freeform_query`
+- Value is a list of field name strings, e.g. `["title", "ticket_status"]`
+- An empty list is treated the same as omitting the parameter (returns `ticket_ids`)
+
+**Response format**:
+- Without `report`: response contains `ticket_ids` (list of ID strings)
+- With `report`: response contains `tickets` (list of dicts, one per result ticket)
+
+**Output field names**: The response always uses the external/output names, not internal model field names.
+
+| Output name | Notes |
+|---|---|
+| `ticket_id` | Always included automatically. Silently stripped if caller supplies it in the list. |
+| `ticket_type` | The ticket type (bee, t1, t2, etc.) |
+| `ticket_status` | The ticket's current status |
+| `title` | Ticket title |
+| `tags` | List of tag strings |
+| `parent` | Parent ticket ID, or null |
+| `children` | List of child ticket IDs |
+| `up_dependencies` | List of blocking dependency IDs |
+| `down_dependencies` | List of blocked dependent IDs |
+| `created_at` | ISO 8601 creation timestamp |
+| `schema_version` | Internal schema version string |
+| `guid` | Globally unique ticket identifier |
+
+**Excluded fields**:
+- `body` / `egg` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
+- `hive` — Not stored in ticket data; cannot be projected.
 
 ### CLI Commands
 
