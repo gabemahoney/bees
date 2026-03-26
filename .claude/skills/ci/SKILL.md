@@ -128,10 +128,16 @@ Once Phase 1 passes, launch the remaining phases simultaneously:
 
 ### Monitor signals
 
-Look for in each session:
+**CRITICAL: Do NOT use `docker inspect` to detect test completion.** Containers stay running
+after tests finish because the entrypoint keeps `auto_approve.sh` alive in the background.
+The only reliable way to detect completion is by reading the tmux pane content.
+
+Poll using `tmux capture-pane -t bees-ci-<N> -p -S -50` and grep for these signals:
 - **`RELEASE TEST PHASE N PASSED`** — phase passed
 - **`BUG FILED:`** — a test failed and a bug was filed
-- **Container exited** — something crashed
+
+Only use `docker inspect` to detect container **crashes** (status=exited with non-zero exit code).
+A running container does NOT mean tests are still in progress.
 
 ### Handle Result (applies to any phase)
 
