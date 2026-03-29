@@ -2269,6 +2269,61 @@ run_test test_sanitizer_dangling_parent
 run_test test_sanitizer_auto_fix_dangling_dep
 run_test test_sanitizer_auto_fix_dangling_parent
 
+# Nested hive sanitizer regression test (b.9ia)
+NESTED_SAN_BEE=""
+
+test_sanitizer_nested_hive_setup() {
+    # Create a child hive nested inside sanitizer_hive
+    capture_cmd bees colonize-hive \
+        --name "Nested San Hive" \
+        --path "$REPO/tickets/sanitizer_hive/nested"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Nested sanitizer setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Nested San Bee" --hive nested_san_hive
+    NESTED_SAN_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Nested sanitizer setup"
+}
+
+test_sanitizer_nested_hive_no_move() {
+    # Verify sanitize does NOT move nested hive bees to parent hive root
+    local bee_file_before
+    bee_file_before=$(find "$REPO/tickets/sanitizer_hive/nested" -name "${NESTED_SAN_BEE}.md" -type f 2>/dev/null | head -1)
+    if [ -z "$bee_file_before" ]; then
+        fail_test "Nested hive no move" "Could not find bee file before sanitize"
+    fi
+
+    capture_cmd bees sanitize-hive --hive "Nested San Hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Nested hive no move" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+
+    # Bee should still be in the nested hive, not moved to parent
+    local bee_file_after
+    bee_file_after=$(find "$REPO/tickets/sanitizer_hive/nested" -name "${NESTED_SAN_BEE}.md" -type f 2>/dev/null | head -1)
+    if [ -z "$bee_file_after" ]; then
+        fail_test "Nested hive no move" "Bee was moved out of nested hive by sanitizer (b.9ia regression)"
+    fi
+
+    # Should NOT be in parent hive root
+    local bee_in_parent
+    bee_in_parent=$(find "$REPO/tickets/sanitizer_hive" -maxdepth 2 -name "${NESTED_SAN_BEE}.md" -not -path "*/nested/*" -type f 2>/dev/null | head -1)
+    if [ -n "$bee_in_parent" ]; then
+        fail_test "Nested hive no move" "Bee found in parent hive root: $bee_in_parent (b.9ia regression)"
+    fi
+
+    local fix_count
+    fix_count=$(check_json "$CMD_OUT" "len([f for f in d.get('fixes_applied',[]) if f.get('fix_type')=='move_directory'])")
+    if [ "$fix_count" != "0" ]; then
+        fail_test "Nested hive no move" "Expected 0 move_directory fixes, got $fix_count (b.9ia regression)"
+    fi
+
+    pass_test "Nested hive no move"
+}
+
+run_test test_sanitizer_nested_hive_setup
+run_test test_sanitizer_nested_hive_no_move
+
 # === FORMER PHASE 5 GROUP A: ERROR HANDLING ===
 
 ERR_BEE=""
