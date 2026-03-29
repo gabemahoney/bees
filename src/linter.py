@@ -19,7 +19,7 @@ from src.constants import GUID_LENGTH, ID_CHARSET
 from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
 from src.linter_report import LinterReport, ValidationError
 from src.models import Ticket
-from src.paths import iter_ticket_files_deep
+from src.paths import find_ticket_file, iter_ticket_files_deep
 from src.reader import read_ticket
 from src.writer import write_ticket_file
 
@@ -1235,35 +1235,19 @@ class Linter:
             report: LinterReport to collect fixes and errors into
         """
         import shutil
-        from pathlib import Path
-
-        from .config import load_bees_config
-        from .paths import find_ticket_file
 
         # Create a lookup map for quick ticket access by ID
         ticket_map = {ticket.id: ticket for ticket in tickets}
 
-        # Load config to get hive paths
-        config = load_bees_config()
-        if not config or not config.hives:
-            logger.warning("No hives configured, skipping directory structure enforcement")
-            return
+        hive_path = Path(self.tickets_dir)
 
         for ticket in tickets:
             try:
-                # Find which hive this ticket belongs to by looking for its file
+                # Find this ticket's file within the linter's own hive
                 # Use deep=True to find misplaced tickets in non-standard directories
-                ticket_hive = None
-                ticket_path = None
-                for hive_name, _hive_config in config.hives.items():
-                    hive_path = Path(_hive_config.path)
-                    found = find_ticket_file(hive_path, ticket.id, deep=True)
-                    if found:
-                        ticket_path = found
-                        ticket_hive = hive_name
-                        break
+                ticket_path = find_ticket_file(hive_path, ticket.id, deep=True)
 
-                if not ticket_path or not ticket_hive:
+                if not ticket_path:
                     logger.warning(f"Could not find file for ticket {ticket.id}, skipping directory enforcement")
                     continue
 
@@ -1271,7 +1255,6 @@ class Linter:
                 logger.debug(f"Ticket {ticket.id}: ticket_path={ticket_path}")
                 current_dir = ticket_path.parent
                 logger.debug(f"Ticket {ticket.id}: current_dir (ticket_path.parent)={current_dir}")
-                hive_path = Path(config.hives[ticket_hive].path)
 
                 # Determine expected directory location
                 if ticket.parent:

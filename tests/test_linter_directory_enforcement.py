@@ -355,3 +355,73 @@ class TestEnforceDirectoryStructureEdgeCases:
 
         # Should not crash, should skip enforcement
         assert report is not None
+
+
+class TestEnforceDirectoryStructureNestedHive:
+    """Regression tests for nested hive sanitize bug (b.9ia).
+
+    Bug: enforce_directory_structure() searched ALL hives to find tickets,
+    causing nested hive bees (e.g. Plans at ideas/Plans/) to be found by
+    the parent hive linter (Ideas at ideas/) and moved to the parent root.
+
+    Fix: linter now uses self.hive_name and self.tickets_dir directly,
+    so it only sees tickets in its own hive.
+    """
+
+    def test_nested_hive_bees_not_moved_to_parent_root(self, tmp_path, mock_global_bees_dir, monkeypatch):
+        """Bees in a nested child hive must not be moved to the parent hive root.
+
+        Regression test for b.9ia: when enforce_directory_structure() ran on
+        the Plans hive linter, it previously searched all hives and found the
+        Plans bee under ideas/Plans/b.xxx/. Because that path is under the
+        Ideas hive root (ideas/), the old code treated it as misplaced and
+        moved it to ideas/b.xxx/. The fix scopes the search to self.tickets_dir,
+        so the Plans linter only sees ideas/Plans/ and leaves the bee alone.
+        """
+        monkeypatch.chdir(tmp_path)
+        repo_root = tmp_path
+
+        # Set up nested hive structure:
+        #   ideas/         <- Ideas hive root
+        #   ideas/Plans/   <- Plans hive root (nested inside Ideas)
+        ideas_path = tmp_path / "ideas"
+        ideas_path.mkdir()
+        plans_path = ideas_path / "Plans"
+        plans_path.mkdir()
+
+        # Register both hives in config
+        write_scoped_config(
+            mock_global_bees_dir,
+            repo_root,
+            {
+                "hives": {
+                    "ideas": {"path": str(ideas_path), "display_name": "Ideas"},
+                    "plans": {"path": str(plans_path), "display_name": "Plans"},
+                },
+                "child_tiers": {"t1": ["Task", "Tasks"]},
+            },
+        )
+
+        # Create a bee in the Plans hive at the correct location: ideas/Plans/b.Amx/
+        write_ticket_file(plans_path, "b.Amx", title="Plans Bee", type="bee")
+
+        # Run enforce_directory_structure() on the Plans hive linter only
+        linter = Linter(str(plans_path), hive_name="plans")
+        with repo_root_context(repo_root):
+            report = linter.run()
+
+        # The bee must NOT have been moved — no move_directory fixes expected
+        move_fixes = [f for f in report.fixes if f.fix_type == "move_directory"]
+        assert len(move_fixes) == 0, (
+            f"Nested hive bee was incorrectly moved: {[f.description for f in move_fixes]}"
+        )
+
+        # Bee must still be at ideas/Plans/b.Amx/b.Amx.md (its correct location)
+        assert (plans_path / "b.Amx" / "b.Amx.md").exists(), (
+            "Bee should remain at ideas/Plans/b.Amx/ but was moved or deleted"
+        )
+
+        # Bee must NOT have been moved up to the Ideas hive root
+        assert not (ideas_path / "b.Amx" / "b.Amx.md").exists(), (
+            "Bee was incorrectly moved to parent hive root ideas/b.Amx/"
+        )
