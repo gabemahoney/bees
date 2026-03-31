@@ -31,7 +31,7 @@ You are now ready to start using bees. See the [Advanced Usage](#advanced-usage)
 
 🐝 **Attach references to tickets in any format** 
 - Store paths to source documents you want to make available to LLMs reading the ticket
-- Support for optional custom resolvers to pre-transform egg values to resources for calling LLMs 
+- Support for optional custom resolvers to transform references to actual content for calling LLMs
 
 🐝 **Archives tickets based on a query you define**
 - Archived tickets move to a `/cemetery` directory, excluded from all queries and operations
