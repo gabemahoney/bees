@@ -43,7 +43,10 @@ def get_hive_config(hive_name: str) -> dict[str, Any] | None:
 
     # Return hive config as dict
     hive_config = config.hives[normalized]
-    return {"path": hive_config.path, "display_name": hive_config.display_name, "created_at": hive_config.created_at}
+    result = {"path": hive_config.path, "display_name": hive_config.display_name, "created_at": hive_config.created_at}
+    if hive_config.description is not None:
+        result["description"] = hive_config.description
+    return result
 
 
 def load_hives_config() -> BeesConfig | None:

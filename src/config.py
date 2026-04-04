@@ -74,6 +74,7 @@ class HiveConfig:
     path: str
     display_name: str
     created_at: str
+    description: str | None = None
     egg_resolver: str | None = None
     egg_resolver_timeout: int | float | None = None
     child_tiers: dict[str, ChildTierConfig] | None = None
@@ -877,10 +878,16 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
                     f"got {type(ut_sched_log_path)}"
                 )
 
+        # Parse optional description
+        description = hive_data.get("description")
+        if description is not None and not isinstance(description, str):
+            raise ValueError(f"Hive '{name}' description must be a string or null, got {type(description)}")
+
         hives[name] = HiveConfig(
             path=hive_data.get("path", ""),
             display_name=hive_data.get("display_name", ""),
             created_at=hive_data.get("created_at", ""),
+            description=description,
             egg_resolver=egg_resolver,
             egg_resolver_timeout=egg_resolver_timeout,
             child_tiers=child_tiers,
@@ -966,6 +973,9 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
             "display_name": hive_config.display_name,
             "created_at": hive_config.created_at,
         }
+        # Only include description if not None
+        if hive_config.description is not None:
+            hive_entry["description"] = hive_config.description
         # Only include egg_resolver fields if they are not None
         if hive_config.egg_resolver is not None:
             hive_entry["egg_resolver"] = hive_config.egg_resolver

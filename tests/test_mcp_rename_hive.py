@@ -430,3 +430,60 @@ class TestRenameHiveMultiScope:
 
         assert result["status"] == "error"
         assert result["error_type"] == "hive_not_found"
+
+
+class TestRenameHiveDescription:
+    """Tests for the description parameter on rename_hive."""
+
+    async def test_rename_with_description_update(self, tmp_path, mock_global_bees_dir):
+        """Renaming a hive with description updates it in config."""
+        hive_dir = tmp_path / HIVE_BACKEND
+        hive_dir.mkdir()
+        (hive_dir / ".hive").mkdir()
+        (hive_dir / ".hive" / "identity.json").write_text(
+            json.dumps({"normalized_name": HIVE_BACKEND, "display_name": "Backend"})
+        )
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            str(tmp_path): {
+                "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend", "created_at": "2026-01-01T00:00:00"}},
+            },
+        })
+
+        with repo_root_context(tmp_path):
+            result = await _rename_hive(
+                HIVE_BACKEND, "API Layer", resolved_root=tmp_path,
+                description="Hive for backend API tickets",
+            )
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        hive_data = config["scopes"][str(tmp_path)]["hives"]["api_layer"]
+        assert hive_data["description"] == "Hive for backend API tickets"
+
+    async def test_rename_without_description_preserves_existing(self, tmp_path, mock_global_bees_dir):
+        """Renaming without description= keeps any existing description."""
+        hive_dir = tmp_path / HIVE_BACKEND
+        hive_dir.mkdir()
+        (hive_dir / ".hive").mkdir()
+        (hive_dir / ".hive" / "identity.json").write_text(
+            json.dumps({"normalized_name": HIVE_BACKEND, "display_name": "Backend"})
+        )
+
+        write_multi_scope_config(mock_global_bees_dir, {
+            str(tmp_path): {
+                "hives": {HIVE_BACKEND: {
+                    "path": str(hive_dir), "display_name": "Backend",
+                    "created_at": "2026-01-01T00:00:00",
+                    "description": "Original description",
+                }},
+            },
+        })
+
+        with repo_root_context(tmp_path):
+            result = await _rename_hive(HIVE_BACKEND, "API Layer", resolved_root=tmp_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        config = load_global_config()
+        hive_data = config["scopes"][str(tmp_path)]["hives"]["api_layer"]
+        assert hive_data["description"] == "Original description"

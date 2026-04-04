@@ -465,6 +465,7 @@ async def colonize_hive(
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
+    description: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -482,6 +483,7 @@ async def colonize_hive(
         scope: Optional scope pattern to register the hive under (e.g. /projects/**).
                When provided, the hive is placed under this explicit scope instead of
                the auto-detected scope for the repo root.
+        description: Optional short description of the hive's purpose.
     """
     # Special colonize_hive fallback logic:
     # 1. Try MCP Roots protocol via get_repo_root(ctx)
@@ -528,6 +530,7 @@ async def colonize_hive(
         egg_resolver=egg_resolver,
         egg_resolver_timeout=egg_resolver_timeout,
         scope=scope,
+        description=description,
     )
 
 
@@ -578,6 +581,7 @@ async def rename_hive(
     old_name: str,
     new_name: str,
     rename_folder: bool = True,
+    description: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -587,6 +591,7 @@ async def rename_hive(
         old_name: Current hive name.
         new_name: New hive name.
         rename_folder: If True (default), also renames the folder on disk to match the new normalized hive name.
+        description: Optional new description for the hive.
     """
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
@@ -596,7 +601,8 @@ async def rename_hive(
         return err
     with repo_root_context(resolved_root):
         return await _rename_hive(
-            old_name=old_name, new_name=new_name, resolved_root=resolved_root, rename_folder=rename_folder
+            old_name=old_name, new_name=new_name, resolved_root=resolved_root, rename_folder=rename_folder,
+            description=description,
         )
 
 

@@ -69,6 +69,7 @@ async def colonize_hive_core(
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
+    description: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
@@ -303,6 +304,7 @@ async def colonize_hive_core(
                     path=str(validated_path),
                     display_name=name,
                     created_at=creation_timestamp.isoformat(),
+                    description=description,
                     child_tiers=parsed_child_tiers,
                     egg_resolver=egg_resolver,
                     egg_resolver_timeout=egg_resolver_timeout,
@@ -375,6 +377,8 @@ async def colonize_hive_core(
             }
             if egg_resolver_timeout is not None:
                 result["egg_resolver_timeout"] = egg_resolver_timeout
+            if description is not None:
+                result["description"] = description
             return result
 
     except ValueError as e:
@@ -399,6 +403,7 @@ async def _colonize_hive(
     egg_resolver: str | None = None,
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
+    description: str | None = None,
 ) -> dict[str, Any]:
     """
     Create and register a new hive at the specified path.
@@ -474,7 +479,7 @@ async def _colonize_hive(
         result = await colonize_hive_core(
             name=name, path=path, child_tiers=child_tiers, repo_root=repo_root,
             egg_resolver=egg_resolver, egg_resolver_timeout=egg_resolver_timeout,
-            scope=scope,
+            scope=scope, description=description,
         )
 
         if result.get("status") == "error":
@@ -568,12 +573,15 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
             hives_list: list[dict[str, str]] = []
             for pattern, config in all_scopes.items():
                 for normalized_name, hive_config in config.hives.items():
-                    hives_list.append({
+                    entry = {
                         "display_name": hive_config.display_name,
                         "normalized_name": normalized_name,
                         "path": hive_config.path,
                         "scope": pattern,
-                    })
+                    }
+                    if hive_config.description is not None:
+                        entry["description"] = hive_config.description
+                    hives_list.append(entry)
             if not hives_list:
                 logger.info("No hives configured")
                 return {"status": "success", "hives": [], "message": "No hives configured"}
@@ -590,12 +598,15 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         hives_by_name: dict[str, dict[str, str]] = {}
         for pattern, config in scope_configs:
             for normalized_name, hive_config in config.hives.items():
-                hives_by_name[normalized_name] = {
+                entry = {
                     "display_name": hive_config.display_name,
                     "normalized_name": normalized_name,
                     "path": hive_config.path,
                     "scope": pattern,
                 }
+                if hive_config.description is not None:
+                    entry["description"] = hive_config.description
+                hives_by_name[normalized_name] = entry
 
         if not hives_by_name:
             logger.info("No hives configured")
@@ -690,7 +701,8 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
 
 
 async def _rename_hive(
-    old_name: str, new_name: str, resolved_root: Path | None = None, rename_folder: bool = True
+    old_name: str, new_name: str, resolved_root: Path | None = None, rename_folder: bool = True,
+    description: str | None = None,
 ) -> dict[str, Any]:
     """
     Rename a hive by updating its name in config and .hive marker, and optionally
@@ -829,6 +841,9 @@ async def _rename_hive(
     hive_config = config.hives[normalized_old]
     # Update display name to the new name
     hive_config.display_name = new_name
+    # Update description if provided
+    if description is not None:
+        hive_config.description = description
 
     # Remove old hive entry and add new one
     del config.hives[normalized_old]

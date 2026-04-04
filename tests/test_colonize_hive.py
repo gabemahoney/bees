@@ -1160,3 +1160,69 @@ class TestColonizeHiveScopeSelection:
         assert "new_tickets" in config["scopes"][exact_scope]["hives"]
         # Wildcard scope must be untouched
         assert "new_tickets" not in config["scopes"].get(wildcard_pattern, {}).get("hives", {})
+
+
+class TestColonizeHiveDescription:
+    """Tests for the optional description field on hives."""
+
+    @pytest.fixture
+    def git_repo_tmp_path(self, tmp_path, monkeypatch):
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        monkeypatch.chdir(tmp_path)
+        with repo_root_context(tmp_path):
+            yield tmp_path
+
+    async def test_colonize_with_description(self, git_repo_tmp_path):
+        """Colonizing a hive with description stores it in config."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+
+        result = await colonize_hive("Tickets", str(hive_path), description="Bug tracking hive")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["description"] == "Bug tracking hive"
+
+        config = load_global_config()
+        scope_key = str(git_repo_tmp_path)
+        hive_data = config["scopes"][scope_key]["hives"]["tickets"]
+        assert hive_data["description"] == "Bug tracking hive"
+
+    async def test_colonize_without_description(self, git_repo_tmp_path):
+        """Colonizing a hive without description omits it from config."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+
+        result = await colonize_hive("Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert "description" not in result
+
+        config = load_global_config()
+        scope_key = str(git_repo_tmp_path)
+        hive_data = config["scopes"][scope_key]["hives"]["tickets"]
+        assert "description" not in hive_data
+
+    async def test_list_hives_includes_description(self, git_repo_tmp_path):
+        """list_hives returns description when set."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+
+        await colonize_hive("Tickets", str(hive_path), description="Bug tracking")
+
+        result = await _list_hives(resolved_root=git_repo_tmp_path)
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["hives"]) == 1
+        assert result["hives"][0]["description"] == "Bug tracking"
+
+    async def test_list_hives_omits_description_when_none(self, git_repo_tmp_path):
+        """list_hives omits description field when not set."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+
+        await colonize_hive("Tickets", str(hive_path))
+
+        result = await _list_hives(resolved_root=git_repo_tmp_path)
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert len(result["hives"]) == 1
+        assert "description" not in result["hives"][0]

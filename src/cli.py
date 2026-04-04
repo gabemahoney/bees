@@ -312,6 +312,7 @@ def handle_colonize_hive(args):
             egg_resolver=args.egg_resolver,
             egg_resolver_timeout=args.egg_resolver_timeout,
             scope=args.scope,
+            description=args.description,
         ),
         root=root,
     )
@@ -336,7 +337,8 @@ def handle_rename_hive(args):
     if _guard_queen_write_cli(root):
         return
     result = _run_in_repo(
-        _rename_hive(old_name=args.old_name, new_name=args.new_name, rename_folder=args.rename_folder),
+        _rename_hive(old_name=args.old_name, new_name=args.new_name, rename_folder=args.rename_folder,
+                     description=args.description),
         root=root,
     )
     _output_result(result)
@@ -880,6 +882,7 @@ def build_parser():
     p_colonize.add_argument("--egg-resolver", default=None, dest="egg_resolver", metavar="PATH", help="Optional path to an egg resolver script for this hive.")  # noqa: E501
     p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
     p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
+    p_colonize.add_argument("--description", default=None, metavar="TEXT", help="Optional short description of the hive's purpose.")  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 
     # --- list-hives ---
@@ -920,6 +923,7 @@ def build_parser():
         default=True,
         help="Skip renaming the folder on disk (only update config and .hive marker)",
     )
+    p_rename.add_argument("--description", default=None, metavar="TEXT", help="Optional new description for the hive.")
     p_rename.set_defaults(func=handle_rename_hive)
 
     # --- sanitize-hive ---
