@@ -34,21 +34,32 @@ if [[ -z "${TESTPLANS_PATH}" ]]; then
   exit 1
 fi
 
-# Pull Claude API key from macOS Keychain
-CLAUDE_API_KEY=$(security find-generic-password -s "Claude Code" -w 2>/dev/null || true)
+# Pull Claude API key — try secrets file, env var, macOS Keychain, Linux keyring
+CLAUDE_API_KEY=""
+if [[ -r ~/.secrets/anthropic_api_key ]]; then
+  CLAUDE_API_KEY=$(cat ~/.secrets/anthropic_api_key)
+fi
 if [[ -z "${CLAUDE_API_KEY}" ]]; then
-  # Newer Claude Code versions store OAuth credentials as JSON under a different service name
-  CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)
-  if [[ -n "${CREDS_JSON}" ]]; then
-    CLAUDE_API_KEY=$(python3 -c "
+  CLAUDE_API_KEY="${ANTHROPIC_API_KEY:-}"
+fi
+if [[ -z "${CLAUDE_API_KEY}" ]] && command -v security &>/dev/null; then
+  CLAUDE_API_KEY=$(security find-generic-password -s "Claude Code" -w 2>/dev/null || true)
+  if [[ -z "${CLAUDE_API_KEY}" ]]; then
+    CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)
+    if [[ -n "${CREDS_JSON}" ]]; then
+      CLAUDE_API_KEY=$(python3 -c "
 import json, sys
 d = json.loads(sys.argv[1])
 print(d.get('claudeAiOauth', {}).get('accessToken', ''))
 " "${CREDS_JSON}" 2>/dev/null || true)
+    fi
   fi
 fi
+if [[ -z "${CLAUDE_API_KEY}" ]] && command -v secret-tool &>/dev/null; then
+  CLAUDE_API_KEY=$(secret-tool lookup service "Claude Code" 2>/dev/null || true)
+fi
 if [[ -z "${CLAUDE_API_KEY}" ]]; then
-  echo "ERROR: No Claude Code credentials in Keychain. Run 'claude /login' first."
+  echo "ERROR: No Claude API key found. Set ANTHROPIC_API_KEY env var, or run 'claude /login'."
   exit 1
 fi
 

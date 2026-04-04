@@ -6,10 +6,17 @@ description: Publish bees-md to PyPI. Bumps version, builds, checks, uploads, co
 # One-Time Setup
 
 1. **Install publish deps**: `pipx install twine` (poetry is already available)
-2. **Store PyPI token in Keychain**:
-   ```bash
-   security add-generic-password -s "PyPI Token" -a pypi -w "<your-pypi-token>"
-   ```
+2. **Configure PyPI credentials** — either:
+   - **~/.pypirc** (works everywhere):
+     ```ini
+     [pypi]
+     username = __token__
+     password = pypi-<your-pypi-token>
+     ```
+   - **macOS Keychain**:
+     ```bash
+     security add-generic-password -s "PyPI Token" -a pypi -w "<your-pypi-token>"
+     ```
    Get a token at: pypi.org → Account Settings → API tokens
 
 # Overview
@@ -79,11 +86,14 @@ Stop after reporting. Do not proceed to preflight.
    ```
    If not: "twine not found. Run: `pipx install twine`"
 
-5. **PyPI token available?**
+5. **PyPI credentials available?**
    ```bash
-   PYPI_TOKEN=$(security find-generic-password -s "PyPI Token" -w 2>/dev/null || true)
+   # macOS Keychain
+   security find-generic-password -s "PyPI Token" -w 2>/dev/null
+   # or ~/.pypirc
+   grep -q '\[pypi\]' ~/.pypirc 2>/dev/null
    ```
-   If empty, stop: "No PyPI token found in Keychain. See One-Time Setup above."
+   If neither found, stop: "No PyPI credentials found. See One-Time Setup above."
 
 Read the current version from pyproject.toml:
 ```bash
@@ -165,10 +175,19 @@ Wait for the user to confirm. If they say anything other than yes/y, stop: "Publ
 
 ## Step 6 — Upload to PyPI
 
+If using macOS Keychain:
 ```bash
 twine upload \
   --username __token__ \
   --password "${PYPI_TOKEN}" \
+  --non-interactive \
+  dist/bees_md-<version>*
+```
+
+If using ~/.pypirc:
+```bash
+twine upload \
+  --repository pypi \
   --non-interactive \
   dist/bees_md-<version>*
 ```

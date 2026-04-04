@@ -5,17 +5,25 @@
 #   ./docker/publish_test_pypi.sh
 #
 # Outputs the published version string on the last line of stdout.
-# Requires: poetry, twine, TestPyPI token in macOS Keychain.
+# Requires: poetry, twine, TestPyPI credentials in ~/.pypirc or macOS Keychain.
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="${PROJECT_ROOT}/pyproject.toml"
 
-# Read TestPyPI token from Keychain
-TEST_PYPI_TOKEN=$(security find-generic-password -s "TestPyPI Token" -w 2>/dev/null || true)
-if [[ -z "${TEST_PYPI_TOKEN}" ]]; then
-  echo "ERROR: No TestPyPI token in Keychain."
-  echo "Add one with: security add-generic-password -s 'TestPyPI Token' -a testpypi -w '<token>'"
+# Resolve TestPyPI token: macOS Keychain first, then fall back to ~/.pypirc
+TWINE_UPLOAD_ARGS=()
+if command -v security &>/dev/null; then
+  TEST_PYPI_TOKEN=$(security find-generic-password -s "TestPyPI Token" -w 2>/dev/null || true)
+fi
+if [[ -n "${TEST_PYPI_TOKEN:-}" ]]; then
+  TWINE_UPLOAD_ARGS=(--repository-url https://test.pypi.org/legacy/ --username __token__ --password "${TEST_PYPI_TOKEN}")
+elif grep -q '\[testpypi\]' ~/.pypirc 2>/dev/null; then
+  TWINE_UPLOAD_ARGS=(--repository testpypi)
+else
+  echo "ERROR: No TestPyPI credentials found."
+  echo "Either add a [testpypi] section to ~/.pypirc or (macOS) store in Keychain:"
+  echo "  security add-generic-password -s 'TestPyPI Token' -a testpypi -w '<token>'"
   exit 1
 fi
 
@@ -38,9 +46,7 @@ mv "${PYPROJECT}.bak" "${PYPROJECT}"
 
 # Upload to test.pypi
 twine upload \
-  --repository-url https://test.pypi.org/legacy/ \
-  --username __token__ \
-  --password "${TEST_PYPI_TOKEN}" \
+  "${TWINE_UPLOAD_ARGS[@]}" \
   --non-interactive \
   dist/*
 

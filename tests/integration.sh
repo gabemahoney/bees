@@ -512,7 +512,7 @@ test_crud_show_bulk() {
 }
 
 test_crud_update_title() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --title "Renamed Bee"
+    capture_cmd bees update-ticket --ids "$BEE1" --title "Renamed Bee"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Update title" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -527,7 +527,7 @@ test_crud_update_title() {
 }
 
 test_crud_update_status() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --status worker
+    capture_cmd bees update-ticket --ids "$BEE1" --status worker
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Update status" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -542,7 +542,7 @@ test_crud_update_status() {
 }
 
 test_crud_update_tags() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --tags '["urgent","backend"]'
+    capture_cmd bees update-ticket --ids "$BEE1" --tags '["urgent","backend"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Update tags" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -558,7 +558,7 @@ test_crud_update_tags() {
 }
 
 test_crud_update_egg() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --egg '{"priority":1,"estimate":"2h"}'
+    capture_cmd bees update-ticket --ids "$BEE1" --egg '{"priority":1,"estimate":"2h"}'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Update egg" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -573,7 +573,7 @@ test_crud_update_egg() {
 }
 
 test_crud_clear_tags() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --tags null
+    capture_cmd bees update-ticket --ids "$BEE1" --tags null
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Clear tags" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -656,7 +656,7 @@ test_crud_parent_child_sync() {
 }
 
 test_crud_reject_parent_change() {
-    capture_cmd bees update-ticket --ticket-id "$TASK1" --parent "$BEE2"
+    capture_cmd bees update-ticket --ids "$TASK1" --parent "$BEE2"
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Reject parent change" "Expected failure but got success"
     fi
@@ -697,19 +697,19 @@ test_crud_reject_parent_children_update() {
     local rj_bee
     rj_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
     # --parent on update should fail
-    capture_cmd bees update-ticket --ticket-id "$rj_bee" --parent "$BEE1"
+    capture_cmd bees update-ticket --ids "$rj_bee" --parent "$BEE1"
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Reject parent/children on update" "update --parent should fail"
     fi
     assert_no_traceback "$CMD_OUT" "Reject parent/children on update"
     # --children on update should fail (unrecognized arg)
-    capture_cmd bees update-ticket --ticket-id "$rj_bee" --children '["x"]'
+    capture_cmd bees update-ticket --ids "$rj_bee" --children '["x"]'
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Reject parent/children on update" "update --children should fail"
     fi
     assert_no_traceback "$CMD_OUT" "Reject parent/children on update"
     # Valid update should succeed
-    capture_cmd bees update-ticket --ticket-id "$rj_bee" --title "Updated Reject Bee"
+    capture_cmd bees update-ticket --ids "$rj_bee" --title "Updated Reject Bee"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Reject parent/children on update" "Valid update failed: $CMD_OUT"
     fi
@@ -717,7 +717,7 @@ test_crud_reject_parent_children_update() {
 }
 
 test_crud_add_remove_tags() {
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --add-tags '["alpha","beta","gamma"]'
+    capture_cmd bees update-ticket --ids "$BEE1" --add-tags '["alpha","beta","gamma"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add/remove tags" "add-tags failed: $CMD_OUT"
     fi
@@ -729,7 +729,7 @@ test_crud_add_remove_tags() {
     if [ "$has_a" != "True" ] || [ "$has_b" != "True" ] || [ "$has_g" != "True" ]; then
         fail_test "Add/remove tags" "Expected alpha,beta,gamma after add-tags"
     fi
-    capture_cmd bees update-ticket --ticket-id "$BEE1" --remove-tags '["beta"]'
+    capture_cmd bees update-ticket --ids "$BEE1" --remove-tags '["beta"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add/remove tags" "remove-tags failed: $CMD_OUT"
     fi
@@ -816,7 +816,7 @@ test_dep_bidirectional_sync() {
 test_dep_update() {
     capture_cmd bees create-ticket --ticket-type bee --title "Dep C" --hive dep_hive
     DEP_C=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees update-ticket --ticket-id "$DEP_B" --up-deps "[\"$DEP_A\",\"$DEP_C\"]"
+    capture_cmd bees update-ticket --ids "$DEP_B" --up-deps "[\"$DEP_A\",\"$DEP_C\"]"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Update deps" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1096,7 +1096,7 @@ test_status_setup() {
 test_status_freeform() {
     capture_cmd bees create-ticket --ticket-type bee --title "Status Test Bee" --hive status_hive
     STATUS_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees update-ticket --ticket-id "$STATUS_BEE" --status "any_custom_status"
+    capture_cmd bees update-ticket --ids "$STATUS_BEE" --status "any_custom_status"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Freeform status accepted" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -2373,7 +2373,7 @@ test_error_missing_on_show() {
 }
 
 test_error_missing_on_update() {
-    capture_cmd bees update-ticket --ticket-id "b.zzz" --title "Ghost"
+    capture_cmd bees update-ticket --ids "b.zzz" --title "Ghost"
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Missing ticket on update" "Expected failure but got success"
     fi

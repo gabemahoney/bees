@@ -5,13 +5,26 @@ description: Run Docker-based end-to-end CI test against a bees worktree. Spawns
 
 # One-Time Setup
 
-1. **Install Docker Desktop**: `brew install --cask docker`
-2. **Start Docker Desktop**: `open -a Docker && until docker info > /dev/null 2>&1; do sleep 1; done && echo "Docker ready"`
-3. **Verify**: `docker info`
-4. **Store TestPyPI token in Keychain**:
+1. **Install Docker**: Install Docker Engine for your platform
+2. **Start Docker**: Ensure the Docker daemon is running (`docker info` to verify)
+3. **Store Anthropic API key** for Docker CI containers (they can't use OAuth):
    ```bash
-   security add-generic-password -s "TestPyPI Token" -a testpypi -w "<your-test-pypi-token>"
+   mkdir -p ~/.secrets && chmod 700 ~/.secrets
+   echo -n "sk-ant-..." > ~/.secrets/anthropic_api_key
+   chmod 600 ~/.secrets/anthropic_api_key
    ```
+4. **Configure TestPyPI credentials** — either:
+   - **~/.pypirc** (works everywhere):
+     ```ini
+     [testpypi]
+     repository = https://test.pypi.org/legacy/
+     username = __token__
+     password = pypi-<your-test-pypi-token>
+     ```
+   - **macOS Keychain**:
+     ```bash
+     security add-generic-password -s "TestPyPI Token" -a testpypi -w "<your-test-pypi-token>"
+     ```
 5. **Install publish deps** (host-side): `pip install twine` (poetry is already available)
 
 # Overview
