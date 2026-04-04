@@ -582,6 +582,77 @@ class TestRequiresParent:
             assert _requires_parent(ticket_type) is expected
 
 
+class TestCrossHiveDependencies:
+    """Tests for cross-hive dependency lookups (b.2ro fix)."""
+
+    @pytest.fixture
+    def setup_two_hives(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Create two hives for cross-hive dependency testing."""
+        monkeypatch.chdir(tmp_path)
+
+        hive_a_dir = tmp_path / "hive_a"
+        hive_b_dir = tmp_path / "hive_b"
+        hive_a_dir.mkdir()
+        hive_b_dir.mkdir()
+
+        write_scoped_config(mock_global_bees_dir, tmp_path, {
+            "hives": {
+                "hive_a": {"path": str(hive_a_dir), "display_name": "Hive A", "created_at": datetime.now().isoformat()},
+                "hive_b": {"path": str(hive_b_dir), "display_name": "Hive B", "created_at": datetime.now().isoformat()},
+            },
+            "child_tiers": {
+                "t1": ["Task", "Tasks"],
+            },
+        })
+
+        with repo_root_context(tmp_path):
+            yield tmp_path
+
+    def _create_bee_in_hive(self, ticket_id: str, hive_name: str):
+        """Helper to create a bee in a specific hive."""
+        short_id = ticket_id.split(".", 1)[1] if "." in ticket_id else ticket_id
+        frontmatter = {
+            "id": ticket_id,
+            "type": "bee",
+            "title": f"Test Bee {ticket_id}",
+            "children": [],
+            "up_dependencies": [],
+            "down_dependencies": [],
+            "created_at": datetime.now().isoformat(),
+            "status": "open",
+            "schema_version": "0.1",
+            "egg": None,
+            "guid": generate_guid(short_id),
+        }
+        write_ticket_file(ticket_id, "bee", frontmatter, f"Description for {ticket_id}", hive_name)
+
+    def test_up_dependency_cross_hive(self, setup_two_hives):
+        """Setting up_deps from hive_a ticket to hive_b ticket updates both sides."""
+        self._create_bee_in_hive(TICKET_ID_EP1, "hive_a")
+        self._create_bee_in_hive(TICKET_ID_EP2, "hive_b")
+
+        _update_bidirectional_relationships(
+            new_ticket_id=TICKET_ID_EP2, up_dependencies=[TICKET_ID_EP1], hive_name="hive_b"
+        )
+
+        blocking_path = get_ticket_path(TICKET_ID_EP1, "bee", "hive_a")
+        blocking_ticket = read_ticket(TICKET_ID_EP1, file_path=blocking_path)
+        assert TICKET_ID_EP2 in blocking_ticket.down_dependencies
+
+    def test_down_dependency_cross_hive(self, setup_two_hives):
+        """Setting down_deps from hive_a ticket to hive_b ticket updates both sides."""
+        self._create_bee_in_hive(TICKET_ID_EP1, "hive_a")
+        self._create_bee_in_hive(TICKET_ID_EP2, "hive_b")
+
+        _update_bidirectional_relationships(
+            new_ticket_id=TICKET_ID_EP1, down_dependencies=[TICKET_ID_EP2], hive_name="hive_a"
+        )
+
+        blocked_path = get_ticket_path(TICKET_ID_EP2, "bee", "hive_b")
+        blocked_ticket = read_ticket(TICKET_ID_EP2, file_path=blocked_path)
+        assert TICKET_ID_EP1 in blocked_ticket.up_dependencies
+
+
 class TestHiveNameSkipsScan:
     """_find_hive_for_ticket is never called when hive_name is provided to any relationship helper."""
 

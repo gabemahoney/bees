@@ -218,9 +218,16 @@ def _update_bidirectional_relationships(
                 ticket_type = ticket_type_from_prefix(blocking_ticket_id)
                 try:
                     ticket_path = get_ticket_path(blocking_ticket_id, ticket_type, hive_name)
+                    blocking_hive = hive_name
                 except FileNotFoundError:
-                    raise ValueError(f"Dependency ticket not found: {blocking_ticket_id}") from None
-                blocking_hive = hive_name
+                    # Fall back to slow path for cross-hive dependencies
+                    ticket_type = infer_ticket_type_from_id(blocking_ticket_id)
+                    if not ticket_type:
+                        raise ValueError(f"Dependency ticket not found: {blocking_ticket_id}") from None
+                    blocking_hive = _find_hive_for_ticket(blocking_ticket_id)
+                    if not blocking_hive:
+                        raise ValueError(f"Dependency ticket hive not found: {blocking_ticket_id}") from None
+                    ticket_path = get_ticket_path(blocking_ticket_id, ticket_type, blocking_hive)
             else:
                 # Slow path: scan all hives
                 ticket_type = infer_ticket_type_from_id(blocking_ticket_id)
@@ -259,9 +266,16 @@ def _update_bidirectional_relationships(
                 ticket_type = ticket_type_from_prefix(blocked_ticket_id)
                 try:
                     ticket_path = get_ticket_path(blocked_ticket_id, ticket_type, hive_name)
+                    blocked_hive = hive_name
                 except FileNotFoundError:
-                    raise ValueError(f"Dependency ticket not found: {blocked_ticket_id}") from None
-                blocked_hive = hive_name
+                    # Fall back to slow path for cross-hive dependencies
+                    ticket_type = infer_ticket_type_from_id(blocked_ticket_id)
+                    if not ticket_type:
+                        raise ValueError(f"Dependency ticket not found: {blocked_ticket_id}") from None
+                    blocked_hive = _find_hive_for_ticket(blocked_ticket_id)
+                    if not blocked_hive:
+                        raise ValueError(f"Dependency ticket hive not found: {blocked_ticket_id}") from None
+                    ticket_path = get_ticket_path(blocked_ticket_id, ticket_type, blocked_hive)
             else:
                 # Slow path: scan all hives
                 ticket_type = infer_ticket_type_from_id(blocked_ticket_id)
