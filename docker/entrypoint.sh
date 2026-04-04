@@ -17,30 +17,24 @@ if [[ -f /host-claude-settings.json ]]; then
   cp /host-claude-settings.json "${TESTUSER_HOME}/.claude/settings.json"
 fi
 
-# Copy .claude.json — rewrite MCP server paths for container, skip onboarding
-if [[ -f /host-claude.json ]]; then
-  python3 -c "
-import json
-d = json.load(open('/host-claude.json'))
-servers = d.get('mcpServers', {})
-if 'waggle' in servers:
-    servers['waggle'] = {'type': 'stdio', 'command': 'waggle', 'args': []}
-servers.pop('bees', None)
-servers.pop('bees-stdio', None)
-servers.pop('bees-http', None)
-# Add prod bees server for bug filing (waggle-spawned agents will inherit this)
-import os
+# Build minimal .claude.json — API key auth only, no host OAuth tokens
+python3 -c "
+import json, os
 bug_url = os.environ.get('BEES_MCP_URL', 'http://host.docker.internal:8000')
-servers['bees-prod'] = {'type': 'http', 'url': bug_url + '/mcp'}
-d['mcpServers'] = servers
-d['hasCompletedOnboarding'] = True
-d.setdefault('projects', {})
-d['projects']['/test-repo'] = {'hasTrustDialogAccepted': True}
+api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+d = {
+    'numStartups': 100,
+    'hasCompletedOnboarding': True,
+    'projects': {'/test-repo': {'hasTrustDialogAccepted': True}},
+    'mcpServers': {
+        'bees-prod': {'type': 'http', 'url': bug_url + '/mcp'}
+    }
+}
+if api_key:
+    d['apiKey'] = api_key
 json.dump(d, open('${TESTUSER_HOME}/.claude.json', 'w'), indent=2)
+print('Created minimal .claude.json (API key auth)')
 "
-else
-  echo '{"numStartups":100,"hasCompletedOnboarding":true,"mcpServers":{},"projects":{"/test-repo":{"hasTrustDialogAccepted":true}}}' > "${TESTUSER_HOME}/.claude.json"
-fi
 
 chown -R testuser:testuser "${TESTUSER_HOME}/.claude" "${TESTUSER_HOME}/.claude.json" "${TESTUSER_HOME}/.waggle" /test-repo/.claude 2>/dev/null || true
 

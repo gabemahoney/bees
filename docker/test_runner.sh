@@ -10,6 +10,19 @@ PHASE="${PHASE:-1}"
 
 echo "=== Phase ${PHASE} setup ==="
 
+# Configure Claude Code API key if available (env var alone doesn't auto-authenticate)
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Configuring Claude API key..."
+  python3 -c "
+import json, pathlib, os
+p = pathlib.Path.home() / '.claude.json'
+d = json.loads(p.read_text()) if p.exists() else {}
+d['apiKey'] = os.environ['ANTHROPIC_API_KEY']
+p.write_text(json.dumps(d, indent=2))
+print('API key written to .claude.json')
+"
+fi
+
 # Phase 3: register bees-stdio MCP server
 if [[ "$PHASE" == "3" ]]; then
   echo "Registering bees-stdio MCP server..."
