@@ -2831,6 +2831,89 @@ run_test test_sv_create_required_but_missing
 run_test test_sv_create_no_config_no_status
 run_test test_sv_create_invalid_status
 
+# === GLOB-SCOPE STATUS VALUES (bug b.7qj) ===
+
+test_sv_glob_scope_setup() {
+    # The default exact scope for $REPO already exists from earlier test setup.
+    # Create a glob scope matching $REPO via its parent directory.
+    local parent_dir
+    parent_dir=$(dirname "$REPO")
+    mkdir -p "$REPO/tickets/glob_hive"
+    capture_cmd bees colonize-hive \
+        --name "Glob Hive" \
+        --path "$REPO/tickets/glob_hive" \
+        --scope "${parent_dir}/**"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "SV glob scope setup" "Colonize glob hive failed: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "SV glob scope setup"
+    pass_test "SV glob scope setup"
+}
+
+test_sv_glob_get_finds_glob_hive() {
+    # get-status-values from $REPO should include the glob-scope hive
+    cd "$REPO"
+    capture_cmd bees get-status-values
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Get status_values finds glob hive" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Get status_values finds glob hive"
+    local has_glob_hive
+    has_glob_hive=$(check_json "$CMD_OUT" "'glob_hive' in d.get('hives',{})")
+    if [ "$has_glob_hive" != "True" ]; then
+        fail_test "Get status_values finds glob hive" "glob_hive not in hives dict: $CMD_OUT"
+    fi
+    pass_test "Get status_values finds glob hive"
+}
+
+test_sv_glob_set_succeeds() {
+    # set-status-values on the glob-scope hive should succeed
+    cd "$REPO"
+    capture_cmd bees set-status-values --scope hive --hive "Glob Hive" \
+        --status-values '["open","closed"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Set status_values glob hive" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Set status_values glob hive"
+    pass_test "Set status_values glob hive"
+}
+
+test_sv_glob_verify_write() {
+    # Verify the write landed: get-status-values should show ["open","closed"] for glob_hive
+    cd "$REPO"
+    capture_cmd bees get-status-values
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Verify glob hive status_values" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Verify glob hive status_values"
+    local glob_vals
+    glob_vals=$(check_json "$CMD_OUT" "d.get('hives',{}).get('glob_hive')")
+    if ! echo "$glob_vals" | grep -qF "open"; then
+        fail_test "Verify glob hive status_values" "Expected 'open' in glob_hive values, got: $glob_vals"
+    fi
+    if ! echo "$glob_vals" | grep -qF "closed"; then
+        fail_test "Verify glob hive status_values" "Expected 'closed' in glob_hive values, got: $glob_vals"
+    fi
+    pass_test "Verify glob hive status_values"
+}
+
+test_sv_glob_cleanup() {
+    # Unset status_values and abandon the glob hive so subsequent tests are unaffected
+    cd "$REPO"
+    capture_cmd bees set-status-values --scope hive --hive "Glob Hive" --unset
+    capture_cmd bees abandon-hive --hive "Glob Hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Cleanup glob hive" "abandon-hive failed: $CMD_OUT"
+    fi
+    pass_test "Cleanup glob hive"
+}
+
+run_test test_sv_glob_scope_setup
+run_test test_sv_glob_get_finds_glob_hive
+run_test test_sv_glob_set_succeeds
+run_test test_sv_glob_verify_write
+run_test test_sv_glob_cleanup
+
 # === FORMER PHASE 5 GROUP B: UNINSTALL SEQUENCE ===
 
 test_uninstall_remove_hooks() {

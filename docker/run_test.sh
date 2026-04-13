@@ -91,6 +91,7 @@ echo ""
 echo "--- Starting container (Phase ${PHASE}) ---"
 docker run -d \
   --name "${CONTAINER_NAME}" \
+  --add-host host.docker.internal:host-gateway \
   -e "ANTHROPIC_API_KEY=${CLAUDE_API_KEY}" \
   -e "BEES_MCP_URL=${BEES_MCP_URL}" \
   -e "BEES_VERSION=${BEES_VERSION}" \

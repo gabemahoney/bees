@@ -8,15 +8,17 @@ injecting it into the pure core functions.
 
 import logging
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
+from pydantic import Field
 
 from .config import (  # noqa: F401 - re-exported for test mocking
     check_queen_write_access,
     load_bees_config,
     load_global_config,
 )
+from .constants import BODY_MAX_LENGTH
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import (
     _abandon_hive,
@@ -38,6 +40,7 @@ from .mcp_query_ops import (
 )
 from .mcp_roots import get_client_repo_root, get_repo_root, resolve_repo_root  # noqa: F401 - re-exported
 from .mcp_ticket_ops import (
+    _append_ticket_body,
     _create_ticket,
     _delete_ticket,
     _get_status_values,
@@ -160,7 +163,7 @@ async def create_ticket(
     ticket_type: str,
     title: str,
     hive: str,
-    body: str = "",
+    body: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] = "",
     parent: str | None = None,
     children: list[str] | None = None,
     up_deps: list[str] | None = None,
@@ -173,12 +176,18 @@ async def create_ticket(
 ) -> dict[str, Any]:
     """Create a new ticket in a hive.
 
+    For bodies longer than 10000 characters, create the ticket with a short
+    stub body and then loop `append_ticket_body` to add the rest in chunks
+    each no larger than 10000 characters. Oversized inline bodies will be
+    refused by the input schema (`maxLength=10000` on `body`).
+
     Args:
         ticket_type: Tier type — "bee" (top-level) or a child tier by ID ("t1", "t2")
                      or friendly name ("Task", "Epic"). Use get_types to see configured tiers.
         title: Short title for the ticket.
         hive: Hive to create the ticket in. Use list_hives to see available hives.
-        body: Optional markdown body.
+        body: Optional markdown body. Must be at most 10000 characters; for
+              longer bodies use a short stub here and loop `append_ticket_body`.
         parent: Parent ticket ID. Required for child-tier tickets; omit for bees.
                 The parent ticket's children field is updated automatically.
         children: Child ticket IDs to link at creation time. Bidirectional relationship
@@ -219,7 +228,7 @@ async def create_ticket(
 async def update_ticket(
     ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
-    body: str | None | Literal["__UNSET__"] = _UNSET,
+    body: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] | None | Literal["__UNSET__"] = _UNSET,
     up_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     down_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     tags: list[str] | None = _UNSET,  # type: ignore[assignment]
@@ -236,10 +245,17 @@ async def update_ticket(
     Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]).
     Batch mode only allows status, add_tags, and remove_tags — other fields raise ValueError.
 
+    For bodies longer than 10000 characters, update the ticket with a short
+    stub body and then loop `append_ticket_body` to add the rest in chunks
+    each no larger than 10000 characters. Oversized inline bodies will be
+    refused by the input schema (`maxLength=10000` on `body`).
+
     Args:
         ticket_ids: Ticket ID to update, or list of IDs for batch update.
         title: New title (single mode only).
-        body: New markdown body (single mode only).
+        body: New markdown body (single mode only). Must be at most 10000
+              characters when provided as a string; for longer bodies use a
+              short stub here and loop `append_ticket_body`.
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
         down_deps: Full replacement list of dependent ticket IDs (single mode only).
         tags: Full replacement list of tags (single mode only).
@@ -268,6 +284,56 @@ async def update_ticket(
             remove_tags=remove_tags,
             status=status,
             egg=egg,
+            hive_name=hive,
+            resolved_root=resolved_root,
+        )
+
+
+@mcp.tool()
+async def append_ticket_body(
+    ticket_id: str,
+    chunk: Annotated[str, Field(max_length=BODY_MAX_LENGTH)],
+    hive: str | None = None,
+    ctx: Context | None = None,
+    repo_root: str | None = None,
+) -> dict[str, Any]:
+    """Append a chunk of text to the end of an existing ticket's body.
+
+    Bodies larger than 10000 characters (Unicode codepoints, not bytes,
+    not lines) must be split across calls: first create or update the
+    ticket with a short stub body, then loop `append_ticket_body` with
+    chunks each no larger than 10000 characters.
+
+    Use this tool to build up a ticket body in multiple calls. Call order
+    is preserved exactly as submitted from a single caller: chunks are
+    concatenated to the end of the current body in the order you invoke
+    this tool, with no separator, no newline, and no framing injected by
+    the server. Empty `chunk` is a valid no-op success and is therefore
+    safe inside idempotent retry loops. The cap is measured in characters
+    (Unicode codepoints), not bytes and not lines.
+
+    Workflow: call `create_ticket` (or `update_ticket`) with a short stub
+    body first, then loop `append_ticket_body` with chunks each no larger
+    than 10000 characters. Only the `body` field is touched; every other
+    frontmatter field (tags, status, guid, created_at, parent, children,
+    up_dependencies, down_dependencies, egg) is preserved unchanged.
+
+    Args:
+        ticket_id: The ticket whose body is being appended to.
+        chunk: The text to append. May be the empty string. Must be at
+               most 10000 characters.
+        hive: Optional hive name for faster O(1) lookup.
+    """
+    if ctx:
+        resolved_root = await resolve_repo_root(ctx, repo_root)
+    else:
+        resolved_root = get_repo_root_from_path(Path.cwd())
+    if err := _guard_queen_write(resolved_root):
+        return err
+    with repo_root_context(resolved_root):
+        return await _append_ticket_body(
+            ticket_id=ticket_id,
+            chunk=chunk,
             hive_name=hive,
             resolved_root=resolved_root,
         )

@@ -12,11 +12,59 @@ Usage:
 from pathlib import Path
 
 from src.config import ChildTierConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
+from src.constants import BODY_MAX_LENGTH
 from src.repo_context import get_repo_root
 from src.id_utils import generate_guid
 from tests.test_constants import (
     TICKET_ID_TEST_BEE,
 )
+
+
+def make_body_at_cap(fill_char: str = "a") -> str:
+    """Return a body string of exactly ``BODY_MAX_LENGTH`` characters.
+
+    Derives its length from the production constant so the "at the cap"
+    case is expressed uniformly across tests (SR-10.4).
+    """
+    if len(fill_char) != 1:
+        raise ValueError("fill_char must be a single character")
+    return fill_char * BODY_MAX_LENGTH
+
+
+def make_body_over_cap(fill_char: str = "a") -> str:
+    """Return a body string of exactly ``BODY_MAX_LENGTH + 1`` characters.
+
+    Derives its length from the production constant so the "over the cap"
+    case is expressed uniformly across tests (SR-10.4).
+    """
+    if len(fill_char) != 1:
+        raise ValueError("fill_char must be a single character")
+    return fill_char * (BODY_MAX_LENGTH + 1)
+
+
+def run_cli_capture_both(argv, capsys):
+    """Invoke ``src.cli.main()`` with the given argv and capture both streams.
+
+    Returns ``(stdout, stderr, exit_code)``. Mirrors the behavior of the
+    shared ``cli_runner`` conftest fixture but additionally returns stderr,
+    which the shared fixture discards. Required by tests that assert on
+    rejection messages written to stderr (Epic 4 / Epic 5 of the
+    chunked-ticket-body-API plan).
+    """
+    import sys
+    from unittest.mock import patch
+
+    from src.cli import main
+
+    with patch.object(sys, "argv", ["bees", *argv]):
+        try:
+            main()
+            exit_code = 0
+        except SystemExit as exc:
+            exit_code = exc.code if exc.code is not None else 0
+
+    captured = capsys.readouterr()
+    return captured.out.strip(), captured.err, exit_code
 
 
 def write_corrupt_ticket(hive_dir: Path, ticket_id: str) -> None:

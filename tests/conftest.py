@@ -284,6 +284,7 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
             title: str,
             status: str = "open",
             guid: str | None = None,
+            body: str | None = None,
             **extra_fields,
         ):
             """Create a ticket file with proper YAML frontmatter structure.
@@ -291,6 +292,9 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
             Args:
                 guid: Explicit GUID string. When None, auto-generates a valid GUID
                       from the ticket's short_id.
+                body: Explicit body string. When None, defaults to the legacy
+                      ``"{title} body content."`` string so existing callers are
+                      unaffected (SR-10.3).
             """
             # Auto-generate GUID if not provided
             if guid is None:
@@ -326,7 +330,10 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
                     yaml_lines.append(f"{key}: {value}")
             yaml_lines.append("---")
             yaml_lines.append("")
-            yaml_lines.append(f"{title} body content.")
+            if body is None:
+                yaml_lines.append(f"{title} body content.")
+            else:
+                yaml_lines.append(body)
 
             # Use hierarchical structure: {hive_dir}/{ticket_id}/{ticket_id}.md
             ticket_dir = hive_dir / ticket_id

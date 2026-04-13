@@ -219,8 +219,9 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 ### Ticket Operations
 
-- **create_ticket**: Create new ticket (bee or tier types) with automatic relationship synchronization. Requires `hive_name` parameter.
-- **update_ticket**: Update existing ticket fields with bidirectional relationship updates
+- **create_ticket**: Create new ticket (bee or tier types) with automatic relationship synchronization. Requires `hive_name` parameter. The `body` parameter is constrained by the input schema to `maxLength: 10000` characters; for bodies longer than that, create the ticket with a short stub body and use `append_ticket_body` to write the rest in chunks. See "Chunked body workflow" below.
+- **update_ticket**: Update existing ticket fields with bidirectional relationship updates. The `body` parameter is constrained by the input schema to `maxLength: 10000` characters; for longer bodies, set the body to a short stub here and use `append_ticket_body` to write the rest in chunks.
+- **append_ticket_body**: Append a chunk of text to the end of an existing ticket's body. Parameters: `ticket_id` (required), `chunk` (required, `maxLength: 10000` characters), `hive` (optional name hint for faster lookup). Only the `body` field is touched; every other frontmatter field is preserved unchanged. Chunks are concatenated to the end of the current body in call order with no separator, no newline, and no framing injected by the server. An empty `chunk` is a success no-op (safe inside idempotent retry loops) — the file on disk is byte-identical before and after the call. Success return shape: `{"status": "success", "appended": [ticket_id], "not_found": [], "failed": []}`. On a write failure the tool returns a structured error rather than raising: `{"status": "error", "error_type": "write_error", "message": ...}`. Other error types: `ticket_not_found`, `hive_not_found`, `read_error`. See "Chunked body workflow" below.
 - **delete_ticket**: Delete one or more tickets with cascade deletion of all children and automatic relationship cleanup. Accepts a single ID string or a list of IDs.
 - **show_ticket**: Retrieve complete ticket data for a list of ticket IDs. Returns `{"status": "success", "tickets": [...], "not_found": [...], "errors": [...]}` — `tickets` contains full ticket data for each resolved ID, `not_found` lists IDs that could not be located, `errors` lists IDs that exist but failed egg resolution (with reason).
 - **get_types**: Read raw child_tiers from global, scope, and hive configuration levels without inheritance resolution
@@ -247,11 +248,22 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **generate_index**: Generate markdown index of all tickets with optional filters. When `hive_name` is provided, generates index for that hive only. When `hive_name` is omitted (global mode), iterates all registered hives and generates index for each. The response always includes `status`, `markdown`, and `skipped_hives` keys (`skipped_hives` is always an empty list).
 - **health_check**: Check server health status and readiness
 
+## Chunked body workflow
+
+`create_ticket` and `update_ticket` cap the inline `body` parameter at 10000 characters. To write a longer body, use the stub-plus-append pattern:
+
+1. Call `create_ticket` (or `update_ticket`) with a short stub `body` — anything from an empty string up to the first 10000-character chunk.
+2. Loop `append_ticket_body` with successive chunks of at most 10000 characters each. Chunks are concatenated to the end of the body in call order with no server-injected separator.
+
+The cap exists because the Claude Code `/v1/messages` streaming-stall watchdog will sever the connection when a single tool call takes too long to flush bytes; capping each write at 10000 characters keeps every call comfortably under that ceiling. The cap is symmetric across `create_ticket`, `update_ticket`, and `append_ticket_body` so callers can plan chunking once. The same cap is enforced on the `bees create-ticket`, `bees update-ticket`, and `bees append-ticket-body` CLI subcommands.
+
 ## CLI Entry Point
 
 The `bees` command is registered as a Poetry script pointing to `src/cli.py`. This file is the sole entry point for all CLI operations and has no MCP dependencies.
 
-argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `delete-ticket`, `get-types`, `set-types`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
+argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
+
+`create-ticket --body`, `update-ticket --body`, and `append-ticket-body --chunk` enforce the same 10000-character cap as their MCP counterparts; oversized values are rejected at the handler entry with a non-zero exit and a message on stderr pointing the caller at `bees append-ticket-body` for chunked writes. See "Chunked body workflow" above.
 
 Output is always written as JSON to stdout. Errors are also written to stdout as a JSON error dict — nothing goes to stderr. This keeps CLI output pipeable and machine-readable with no mixed-stream surprises.
 

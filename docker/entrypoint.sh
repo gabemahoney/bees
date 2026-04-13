@@ -17,6 +17,23 @@ if [[ -f /host-claude-settings.json ]]; then
   cp /host-claude-settings.json "${TESTUSER_HOME}/.claude/settings.json"
 fi
 
+# Inject MCP tool allow rules for container-local server names.
+# The host settings only allow 'mcp__bees__*'; inside the container
+# MCP servers are registered as bees-stdio, bees-http, bees-prod, and bees.
+python3 -c "
+import json, pathlib
+p = pathlib.Path('${TESTUSER_HOME}/.claude/settings.json')
+d = json.loads(p.read_text()) if p.exists() else {}
+perms = d.setdefault('permissions', {})
+allow = perms.setdefault('allow', [])
+for name in ['bees-stdio', 'bees-http', 'bees-prod', 'bees']:
+    rule = f'mcp__{name}__*'
+    if rule not in allow:
+        allow.append(rule)
+p.write_text(json.dumps(d, indent=2))
+print('Injected MCP allow rules for container server names')
+"
+
 # Build minimal .claude.json — API key auth only, no host OAuth tokens
 python3 -c "
 import json, os

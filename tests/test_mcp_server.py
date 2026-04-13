@@ -113,6 +113,241 @@ class TestUpdateTicketSchema:
             assert result is None, f"{param_name}: None validation failed"
 
 
+def _find_max_length(schema: dict) -> int | None:
+    """Walk a JSON schema dict (including anyOf branches) and return the first
+    maxLength found on a string-typed branch. Returns None if not present.
+    """
+    if not isinstance(schema, dict):
+        return None
+    if "maxLength" in schema:
+        return schema["maxLength"]
+    for branch in schema.get("anyOf", []):
+        found = _find_max_length(branch)
+        if found is not None:
+            return found
+    return None
+
+
+def _has_any_max_length(schema: dict) -> bool:
+    """True if any branch of `schema` carries a maxLength constraint."""
+    return _find_max_length(schema) is not None
+
+
+class TestAppendTicketBodyToolRegistration:
+    """Schema + docstring assertions for the `append_ticket_body` MCP tool.
+
+    Covers SR-10.6 #6 (partial — only this tool) and #7 (partial — only this
+    tool) for Epic 1. The analogous assertions for `create_ticket` and
+    `update_ticket` are added in Epic 3 (see TestBodyMaxLengthOnAllWriteTools).
+    """
+
+    async def test_chunk_schema_has_body_max_length(self):
+        """`append_ticket_body.chunk` schema must carry `maxLength=BODY_MAX_LENGTH`."""
+        from src.constants import BODY_MAX_LENGTH
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool("append_ticket_body")
+        params = tool.parameters
+
+        assert "chunk" in params["properties"]
+        chunk_schema = params["properties"]["chunk"]
+        assert chunk_schema.get("maxLength") == BODY_MAX_LENGTH, (
+            f"Expected maxLength={BODY_MAX_LENGTH} on append_ticket_body.chunk, "
+            f"got {chunk_schema.get('maxLength')!r}"
+        )
+
+    async def test_required_fields_ticket_id_and_chunk(self):
+        """`ticket_id` and `chunk` must both be in the required array."""
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool("append_ticket_body")
+        required = set(tool.parameters.get("required", []))
+        assert "ticket_id" in required
+        assert "chunk" in required
+
+    async def test_docstring_mentions_tool_and_cap(self):
+        """Docstring must contain `append_ticket_body` and derive the cap from BODY_MAX_LENGTH."""
+        from src.constants import BODY_MAX_LENGTH
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool("append_ticket_body")
+        description = tool.description or ""
+
+        # Self-reference so Claude can re-route on oversized-body error retries.
+        assert "append_ticket_body" in description, (
+            "append_ticket_body docstring must mention the tool name for retry routing"
+        )
+
+        # Cap number must appear, derived from BODY_MAX_LENGTH via formatting
+        # (no hardcoded literal in the assertion itself).
+        assert f"{BODY_MAX_LENGTH}" in description, (
+            f"append_ticket_body docstring must reference the cap ({BODY_MAX_LENGTH})"
+        )
+
+
+class TestBodyMaxLengthOnAllWriteTools:
+    """SR-10.6 #6 + #7 — body cap + nudge applied symmetrically across all
+    three MCP write tools (`create_ticket`, `update_ticket`,
+    `append_ticket_body`).
+
+    Per SR-4 / Epic 3: the body field on `create_ticket` and `update_ticket`
+    must carry `maxLength=BODY_MAX_LENGTH` in the JSON schema, and no other
+    field on those tools may carry a `maxLength` constraint. Each tool's
+    docstring must reference `append_ticket_body` and the cap so a Claude
+    client receiving the cap as a hardcoded prose number can still find the
+    chunked-append escape hatch.
+    """
+
+    @pytest.mark.parametrize(
+        "tool_name,body_field",
+        [
+            ("create_ticket", "body"),
+            ("update_ticket", "body"),
+            ("append_ticket_body", "chunk"),
+        ],
+    )
+    async def test_body_field_has_max_length(self, tool_name, body_field):
+        """The body/chunk field on each write tool must carry maxLength=BODY_MAX_LENGTH."""
+        from src.constants import BODY_MAX_LENGTH
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool(tool_name)
+        props = tool.parameters["properties"]
+        assert body_field in props, f"{tool_name} missing {body_field} property"
+
+        max_len = _find_max_length(props[body_field])
+        assert max_len == BODY_MAX_LENGTH, (
+            f"Expected maxLength={BODY_MAX_LENGTH} on {tool_name}.{body_field}, "
+            f"got {max_len!r}"
+        )
+
+    @pytest.mark.parametrize(
+        "tool_name,body_field",
+        [
+            ("create_ticket", "body"),
+            ("update_ticket", "body"),
+            ("append_ticket_body", "chunk"),
+        ],
+    )
+    async def test_no_other_field_has_max_length(self, tool_name, body_field):
+        """No field other than body/chunk may carry a maxLength constraint.
+
+        SR-10.6 #6 — keeps the cap surgical to body content and prevents
+        accidental constraints from leaking onto unrelated fields like title
+        or ticket_id.
+        """
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool(tool_name)
+        props = tool.parameters["properties"]
+
+        offenders = [
+            name
+            for name, schema in props.items()
+            if name != body_field and _has_any_max_length(schema)
+        ]
+        assert offenders == [], (
+            f"{tool_name} has unexpected maxLength on non-body fields: {offenders}"
+        )
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        ["create_ticket", "update_ticket", "append_ticket_body"],
+    )
+    async def test_docstring_mentions_append_tool_and_cap(self, tool_name):
+        """Each write tool's docstring must mention `append_ticket_body` and the cap.
+
+        SR-10.6 #7 — the prose nudges Claude toward chunked append on
+        oversized-body errors. Cap number is derived from BODY_MAX_LENGTH for
+        the assertion (the prose itself hardcodes 10000, by convention).
+        """
+        from src.constants import BODY_MAX_LENGTH
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool(tool_name)
+        description = tool.description or ""
+
+        assert "append_ticket_body" in description, (
+            f"{tool_name} docstring must mention `append_ticket_body` "
+            f"to route Claude to the chunked-append escape hatch"
+        )
+        assert f"{BODY_MAX_LENGTH}" in description, (
+            f"{tool_name} docstring must reference the body cap ({BODY_MAX_LENGTH})"
+        )
+
+    async def test_update_ticket_body_preserves_unset_sentinel(self):
+        """`update_ticket.body` must still accept the `__UNSET__` sentinel default.
+
+        The maxLength constraint on the str branch must NOT break the
+        sentinel-default semantics that distinguish "field omitted" from
+        "field set to None" for partial updates.
+        """
+        import inspect
+        from typing import Literal, get_args
+
+        sig = inspect.signature(_update_ticket)
+        body_param = sig.parameters["body"]
+        # Default value should still be the sentinel
+        assert body_param.default == "__UNSET__", (
+            f"update_ticket.body default must remain `__UNSET__` sentinel, "
+            f"got {body_param.default!r}"
+        )
+
+        # The annotation union should still contain Literal['__UNSET__'] and None
+        # alongside the constrained string branch
+        annotation = body_param.annotation
+        union_args = get_args(annotation)
+        # Look for the Literal['__UNSET__'] member of the union
+        has_unset_literal = any(
+            get_args(a) == ("__UNSET__",) and a.__class__.__name__ in ("_LiteralGenericAlias", "_GenericAlias")
+            or (hasattr(a, "__origin__") and a.__origin__ is Literal and "__UNSET__" in get_args(a))
+            for a in union_args
+        )
+        assert has_unset_literal, (
+            f"update_ticket.body annotation must still include Literal['__UNSET__']; "
+            f"union members were {union_args!r}"
+        )
+        # And None should still be a valid branch
+        assert type(None) in union_args, (
+            f"update_ticket.body annotation must still include None; "
+            f"union members were {union_args!r}"
+        )
+
+    async def test_update_ticket_body_schema_anyof_keeps_unset_branch(self):
+        """JSON schema for update_ticket.body must still expose the `__UNSET__` const branch.
+
+        Sanity check that wrapping the `str` branch in `Annotated[str, Field(...)]`
+        didn't collapse the union and lose the sentinel branch in the published
+        MCP schema.
+        """
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool("update_ticket")
+        body_schema = tool.parameters["properties"]["body"]
+        assert "anyOf" in body_schema, (
+            f"update_ticket.body must still serialize as anyOf to preserve "
+            f"sentinel + null + str branches, got {body_schema!r}"
+        )
+        branches = body_schema["anyOf"]
+        # Find the const __UNSET__ branch
+        has_unset_const = any(
+            b.get("const") == "__UNSET__" for b in branches
+        )
+        assert has_unset_const, (
+            f"update_ticket.body must keep a const='__UNSET__' branch; "
+            f"got branches {branches!r}"
+        )
+        # Find the null branch
+        has_null = any(b.get("type") == "null" for b in branches)
+        assert has_null, (
+            f"update_ticket.body must keep a null branch; got branches {branches!r}"
+        )
+        # Default still the sentinel
+        assert body_schema.get("default") == "__UNSET__", (
+            f"update_ticket.body default in schema must remain `__UNSET__`, "
+            f"got {body_schema.get('default')!r}"
+        )
+
 
 class TestUpdateTicket:
     """Tests for update_ticket MCP tool functionality."""

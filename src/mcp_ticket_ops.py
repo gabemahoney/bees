@@ -28,6 +28,7 @@ from .config import (
     _serialize_child_tiers,
     _validate_status_values,
     check_for_config_conflicts,
+    find_all_matching_scopes,
     find_matching_scope,
     load_bees_config,
     load_global_config,
@@ -860,6 +861,137 @@ async def _update_ticket_single(
     logger.info(f"Successfully updated ticket: {ticket_id}")
 
     return {"status": "success", "updated": [ticket_id], "not_found": [], "failed": []}
+
+
+async def _append_ticket_body(
+    ticket_id: str,
+    chunk: str,
+    hive_name: str | None = None,
+    resolved_root: Path | None = None,  # noqa: ARG001 - accepted for adapter symmetry with _update_ticket_single
+) -> dict[str, Any]:
+    """Append a chunk to an existing ticket's body.
+
+    Hand-rolled append core: resolves the ticket via ``hive_name`` hint (or
+    ``find_hive_for_ticket`` fallback), reads the existing ticket, concatenates
+    ``existing_body + sanitized_chunk`` exactly (no separator, no newline, no
+    framing), persists via ``write_ticket_file`` (atomic temp + rename),
+    and evicts the cache. Every frontmatter field is preserved unchanged.
+
+    Never creates a new ticket, never modifies any field other than ``body``,
+    and never touches bidirectional relationships.
+
+    Return shape:
+      - Success: ``{"status": "success", "appended": [ticket_id],
+        "not_found": [], "failed": []}``
+      - Ticket not found: ``{"status": "error",
+        "error_type": "ticket_not_found", "message": ...}``
+      - Hive hint unknown: ``{"status": "error",
+        "error_type": "hive_not_found", "message": ...}``
+      - Read failure: ``{"status": "error", "error_type": "read_error",
+        "message": ...}``
+      - Write failure: ``{"status": "error", "error_type": "write_error",
+        "message": ...}``. Note: this diverges from
+        ``_update_ticket_single``, which lets write exceptions propagate.
+        See SR-7.5: a single failing chunk in a long append loop must
+        return a structured error rather than crash the caller.
+    """
+    ticket_type = ticket_type_from_prefix(ticket_id)
+
+    # Resolve hive + validate ticket existence (mirrors _update_ticket_single).
+    if hive_name:
+        _app_config = load_bees_config()
+        if not _app_config or hive_name not in _app_config.hives:
+            return {
+                "status": "error",
+                "error_type": "hive_not_found",
+                "message": f"Hive '{hive_name}' not found in configuration",
+            }
+        resolved_hive = hive_name
+        _app_hp = Path(_app_config.hives[resolved_hive].path)
+        if not compute_ticket_path(ticket_id, _app_hp).exists():
+            error_msg = f"Ticket does not exist: {ticket_id}"
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "error_type": "ticket_not_found",
+                "message": error_msg,
+            }
+    else:
+        resolved_hive = find_hive_for_ticket(ticket_id)
+        if not resolved_hive:
+            return {
+                "status": "error",
+                "error_type": "ticket_not_found",
+                "message": f"Ticket not found in any configured hive: {ticket_id}",
+            }
+
+    # SR-2.5: Empty-chunk is a success no-op. Skip the read, the write, and
+    # the cache eviction entirely so the file on disk (including its mtime)
+    # is byte-identical before and after the call. Existence checks above
+    # already ran, so a not-found ticket with an empty chunk still returns
+    # the ticket_not_found error per SR-7.3.
+    sanitized_chunk = _sanitize_escape_sequences(chunk)
+    if sanitized_chunk == "":
+        logger.info(f"Empty-chunk no-op append: {ticket_id}")
+        return {
+            "status": "success",
+            "appended": [ticket_id],
+            "not_found": [],
+            "failed": [],
+        }
+
+    # Read existing ticket.
+    ticket_path = get_ticket_path(ticket_id, ticket_type, resolved_hive)
+    try:
+        ticket = read_ticket(ticket_id, file_path=ticket_path)
+    except FileNotFoundError:
+        error_msg = f"Ticket file not found: {ticket_id}"
+        logger.error(error_msg)
+        return {"status": "error", "error_type": "ticket_not_found", "message": error_msg}
+    except Exception as e:
+        error_msg = f"Failed to read ticket {ticket_id}: {e}"
+        logger.error(error_msg)
+        return {"status": "error", "error_type": "read_error", "message": error_msg}
+
+    # Exact concatenation — no separator, no newline, no framing.
+    new_body = (ticket.body or "") + sanitized_chunk
+    ticket.body = new_body
+
+    # Preserve frontmatter exactly by serializing the same ticket dataclass.
+    frontmatter_data = asdict(ticket)
+    frontmatter_data.pop("body", None)
+
+    # SR-7.5: catch write failures and return a structured `write_error`
+    # rather than letting the exception propagate. This is a DELIBERATE
+    # divergence from `_update_ticket_single`, which still propagates write
+    # exceptions. Do NOT "fix" this divergence — it exists so a single
+    # failing chunk in a long append loop returns a structured error
+    # instead of killing the caller. The atomic temp-file-plus-rename path
+    # in `write_ticket_file` guarantees the on-disk file is unchanged on
+    # failure.
+    try:
+        write_ticket_file(
+            ticket_id=ticket_id,
+            ticket_type=ticket_type,
+            frontmatter_data=frontmatter_data,
+            body=new_body,
+            hive_name=resolved_hive,
+        )
+    except Exception as e:
+        error_msg = f"Failed to write ticket {ticket_id}: {e}"
+        logger.error(error_msg)
+        return {"status": "error", "error_type": "write_error", "message": error_msg}
+
+    cache.evict(ticket_id)
+
+    logger.info(f"Successfully appended to ticket body: {ticket_id}")
+
+    return {
+        "status": "success",
+        "appended": [ticket_id],
+        "not_found": [],
+        "failed": [],
+    }
 
 
 async def _update_ticket(
@@ -1717,26 +1849,29 @@ async def _get_status_values(
     # Read global-level status_values (raw)
     global_status_values = global_config.get("status_values", None)
 
-    # Find matching scope
-    pattern_key = find_matching_scope(resolved_root, global_config)
-    if pattern_key is None:
+    # Find all matching scopes (ascending specificity)
+    all_scopes = find_all_matching_scopes(resolved_root, global_config)
+    if not all_scopes:
         return {
             "status": "error",
             "error_type": "no_matching_scope",
             "message": f"No scope pattern matches repo root '{resolved_root}'",
         }
 
-    scope_block = global_config["scopes"][pattern_key]
-
-    # Read scope-level status_values (raw)
+    # Scope-level status_values come from the most-specific matching scope
+    most_specific_pattern = all_scopes[-1][0]
+    scope_block = global_config["scopes"][most_specific_pattern]
     scope_status_values = scope_block.get("status_values", None)
 
-    # Read hive-level status_values for every hive (raw)
+    # Aggregate hive-level status_values across all matching scopes.
+    # Ascending specificity order means last-write-wins for duplicate hives
+    # (same merge strategy as _list_hives).
     hives_status: dict[str, list[str] | None] = {}
-    hives_data = scope_block.get("hives", {})
-    for hive_key in hives_data:
-        normalized = normalize_hive_name(hive_key)
-        hives_status[normalized] = hives_data[hive_key].get("status_values", None)
+    for pattern_key, _ in all_scopes:
+        hives_data = global_config["scopes"][pattern_key].get("hives", {})
+        for hive_key in hives_data:
+            normalized = normalize_hive_name(hive_key)
+            hives_status[normalized] = hives_data[hive_key].get("status_values", None)
 
     return {
         "status": "success",
@@ -1848,21 +1983,28 @@ async def _set_status_values(
 
     else:  # scope == "hive"
         normalized = normalize_hive_name(hive_name)
-        pattern_key = find_matching_scope(resolved_root, global_config)
-        if pattern_key is None:
+        all_scopes = find_all_matching_scopes(resolved_root, global_config)
+        if not all_scopes:
             return {
                 "status": "error",
                 "error_type": "no_matching_scope",
                 "message": f"No scope pattern matches repo root '{resolved_root}'",
             }
-        hives = global_config["scopes"][pattern_key].get("hives", {})
-        if normalized not in hives:
+        # Find the owning scope for this hive. Iterate ascending specificity
+        # so the most-specific scope with the hive wins (last-write-wins).
+        owning_pattern = None
+        for pattern_key, _ in all_scopes:
+            scope_hives = global_config["scopes"][pattern_key].get("hives", {})
+            if normalized in scope_hives:
+                owning_pattern = pattern_key
+
+        if owning_pattern is None:
             return {
                 "status": "error",
                 "error_type": "hive_not_found",
                 "message": f"Hive '{normalized}' not found in configuration",
             }
-        hive_entry = hives[normalized]
+        hive_entry = global_config["scopes"][owning_pattern]["hives"][normalized]
         if unset:
             # Store null explicitly so hive overrides scope/global inheritance
             hive_entry["status_values"] = None

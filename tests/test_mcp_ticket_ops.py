@@ -3,7 +3,10 @@
 import pytest
 
 from src.mcp_ticket_ops import (
+    _append_ticket_body,
     _create_ticket,
+    _get_status_values,
+    _set_status_values,
     _show_ticket,
     _update_ticket,
     find_hive_for_ticket,
@@ -14,10 +17,13 @@ from src.validator import ValidationError
 from src.paths import get_ticket_path
 from src.reader import read_ticket
 from src.repo_context import repo_root_context
-from tests.conftest import write_scoped_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
+from tests.helpers import make_body_at_cap
 from tests.test_constants import (
+    BODY_MAX_LENGTH,
     HIVE_BACKEND,
     HIVE_FRONTEND,
+    HIVE_TEST,
     TAG_BATCH_BAR,
     TAG_BATCH_BAZ,
     TAG_BATCH_FOO,
@@ -1678,3 +1684,639 @@ class TestSanitizeEscapeSequencesViaUpdate:
 
         ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
         assert ticket.body == expected_body
+
+
+class TestAppendTicketBody:
+    """Tests for `_append_ticket_body` core function (Epics 1 and 2).
+
+    Covers SR-10.6 cases: #1 happy path, #2 empty-chunk no-op skip-write,
+    #3 empty-chunk against missing ticket, #4 ordering, #5 large-body,
+    #10 not-found, #11 hive hint routes correctly, #12 unknown hive hint,
+    #13 frontmatter preservation, #14 tier-agnostic. Also covers the
+    Epic 2 forced-write-failure structured `write_error` return (SR-7.5).
+    """
+
+    async def _read_frontmatter_dict(self, ticket_id: str, ticket_type: str, hive: str) -> dict:
+        """Return the ticket's frontmatter as a dict (excluding body) for comparison."""
+        from dataclasses import asdict
+
+        ticket = read_ticket(
+            ticket_id, file_path=get_ticket_path(ticket_id, ticket_type, hive)
+        )
+        data = asdict(ticket)
+        data.pop("body", None)
+        return data
+
+    async def test_happy_path_small_append(self, isolated_bees_env):
+        """SR-10.6 #1 — small append returns success shape and body is exact concat."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Append Target",
+            body="Hello",
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        frontmatter_before = await self._read_frontmatter_dict(tid, "bee", HIVE_BACKEND)
+
+        result = await _append_ticket_body(
+            ticket_id=tid,
+            chunk=" World",
+            hive_name=HIVE_BACKEND,
+        )
+
+        assert result["status"] == "success"
+        assert result["appended"] == [tid]
+        assert result["not_found"] == []
+        assert result["failed"] == []
+
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert ticket.body == "Hello World"
+
+        frontmatter_after = await self._read_frontmatter_dict(tid, "bee", HIVE_BACKEND)
+        assert frontmatter_before == frontmatter_after
+
+    async def test_ordering_across_sequential_appends(self, isolated_bees_env):
+        """SR-10.6 #4 — five sequential appends produce the exact concatenation in order."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Ordering Bee",
+            body="A",
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        for ch in ["B", "C", "D", "E", "F"]:
+            result = await _append_ticket_body(
+                ticket_id=tid, chunk=ch, hive_name=HIVE_BACKEND
+            )
+            assert result["status"] == "success"
+
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert ticket.body == "ABCDEF"
+
+    async def test_large_body_workflow(self, isolated_bees_env):
+        """SR-10.6 #5 — loop appends of BODY_MAX_LENGTH until >= 1M chars accumulated."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        stub = "STUB-"
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Large Body Bee",
+            body=stub,
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        chunk = make_body_at_cap("x")
+        assert len(chunk) == BODY_MAX_LENGTH
+
+        # N such that N * BODY_MAX_LENGTH >= 1_000_000
+        n = (1_000_000 + BODY_MAX_LENGTH - 1) // BODY_MAX_LENGTH
+        assert n * BODY_MAX_LENGTH >= 1_000_000
+
+        for _ in range(n):
+            result = await _append_ticket_body(
+                ticket_id=tid, chunk=chunk, hive_name=HIVE_BACKEND
+            )
+            assert result["status"] == "success"
+
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert len(ticket.body) == len(stub) + n * BODY_MAX_LENGTH
+        assert ticket.body == stub + chunk * n
+
+    async def test_not_found_append(self, isolated_bees_env):
+        """SR-10.6 #10 — unknown ticket id returns ticket_not_found and does not create files."""
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        files_before = sorted(p for p in hive_dir.rglob("*") if p.is_file())
+
+        result = await _append_ticket_body(
+            ticket_id=TICKET_ID_NONEXISTENT,
+            chunk="nope",
+        )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "ticket_not_found"
+        assert "message" in result
+
+        files_after = sorted(p for p in hive_dir.rglob("*") if p.is_file())
+        assert files_before == files_after
+
+    async def test_hive_hint_routes_correctly(self, isolated_bees_env):
+        """SR-10.6 #11 — hive hint selects the right hive when same ticket exists in both."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.create_hive(HIVE_FRONTEND)
+        isolated_bees_env.write_config()
+
+        backend_result = await _create_ticket(
+            ticket_type="bee",
+            title="Shared Title",
+            body="backend-",
+            hive_name=HIVE_BACKEND,
+        )
+        frontend_result = await _create_ticket(
+            ticket_type="bee",
+            title="Shared Title",
+            body="frontend-",
+            hive_name=HIVE_FRONTEND,
+        )
+
+        backend_tid = backend_result["ticket_id"]
+        frontend_tid = frontend_result["ticket_id"]
+
+        backend_ticket = read_ticket(
+            backend_tid, file_path=get_ticket_path(backend_tid, "bee", HIVE_BACKEND)
+        )
+        frontend_ticket = read_ticket(
+            frontend_tid, file_path=get_ticket_path(frontend_tid, "bee", HIVE_FRONTEND)
+        )
+        # Capture body strings eagerly: read_ticket may return a cached ticket
+        # object whose .body mutates when _append_ticket_body rewrites it.
+        backend_body_before = backend_ticket.body
+        frontend_body_before = frontend_ticket.body
+
+        result = await _append_ticket_body(
+            ticket_id=backend_tid,
+            chunk="APPENDED",
+            hive_name=HIVE_BACKEND,
+        )
+        assert result["status"] == "success"
+        assert result["appended"] == [backend_tid]
+
+        backend_ticket_after = read_ticket(
+            backend_tid, file_path=get_ticket_path(backend_tid, "bee", HIVE_BACKEND)
+        )
+        frontend_ticket_after = read_ticket(
+            frontend_tid, file_path=get_ticket_path(frontend_tid, "bee", HIVE_FRONTEND)
+        )
+
+        assert backend_ticket_after.body == backend_body_before + "APPENDED"
+        assert frontend_ticket_after.body == frontend_body_before
+
+    async def test_unknown_hive_hint(self, isolated_bees_env):
+        """SR-10.6 #12 — hive hint pointing at unknown hive returns hive_not_found."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Known Hive Bee",
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        result = await _append_ticket_body(
+            ticket_id=tid,
+            chunk="data",
+            hive_name="no_such_hive",
+        )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "hive_not_found"
+
+    async def test_frontmatter_preservation(self, isolated_bees_env):
+        """SR-10.6 #13 — frontmatter (tags, status, children, egg) unchanged after append."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        # Seed a bee with tags + status + egg.
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Frontmatter Bee",
+            body="initial-",
+            hive_name=HIVE_BACKEND,
+            tags=["alpha", "beta"],
+            status="in_progress",
+            egg={"src": "https://example.com/issue/1"},
+        )
+        assert create_result["status"] == "success"
+        tid = create_result["ticket_id"]
+
+        frontmatter_before = await self._read_frontmatter_dict(tid, "bee", HIVE_BACKEND)
+
+        result = await _append_ticket_body(
+            ticket_id=tid,
+            chunk="APPENDED-CHUNK",
+            hive_name=HIVE_BACKEND,
+        )
+        assert result["status"] == "success"
+
+        frontmatter_after = await self._read_frontmatter_dict(tid, "bee", HIVE_BACKEND)
+        assert frontmatter_before == frontmatter_after
+
+        ticket = read_ticket(tid, file_path=get_ticket_path(tid, "bee", HIVE_BACKEND))
+        assert ticket.body == "initial-APPENDED-CHUNK"
+        assert ticket.tags == ["alpha", "beta"]
+        assert ticket.status == "in_progress"
+        assert ticket.egg == {"src": "https://example.com/issue/1"}
+
+    async def test_tier_agnostic_append(self, isolated_bees_env):
+        """SR-10.6 #14 — append path works for both bee and t1 tiers."""
+        backend_path = isolated_bees_env.base_path / HIVE_BACKEND
+        if not backend_path.exists():
+            isolated_bees_env.create_hive(HIVE_BACKEND)
+
+        scope_data = {
+            "hives": {
+                HIVE_BACKEND: {
+                    "path": str(backend_path),
+                    "display_name": "Backend",
+                    "created_at": "2026-02-01T12:00:00",
+                    "child_tiers": {
+                        "t1": ["Epic", "Epics"],
+                        "t2": ["Task", "Tasks"],
+                    },
+                },
+            },
+            "child_tiers": {},
+        }
+        write_scoped_config(
+            isolated_bees_env.global_bees_dir,
+            isolated_bees_env.base_path,
+            scope_data,
+        )
+
+        # Bee-tier append.
+        bee_create = await _create_ticket(
+            ticket_type="bee",
+            title="Tier Bee",
+            body="bee-",
+            hive_name=HIVE_BACKEND,
+        )
+        assert bee_create["status"] == "success"
+        bee_id = bee_create["ticket_id"]
+
+        bee_append = await _append_ticket_body(
+            ticket_id=bee_id, chunk="append", hive_name=HIVE_BACKEND
+        )
+        assert bee_append["status"] == "success"
+        bee_ticket = read_ticket(bee_id, file_path=get_ticket_path(bee_id, "bee", HIVE_BACKEND))
+        assert bee_ticket.body == "bee-append"
+
+        # t1-tier append.
+        t1_create = await _create_ticket(
+            ticket_type="t1",
+            title="Tier Task",
+            body="task-",
+            parent=bee_id,
+            hive_name=HIVE_BACKEND,
+        )
+        assert t1_create["status"] == "success"
+        t1_id = t1_create["ticket_id"]
+        assert t1_id.startswith("t1.")
+
+        t1_append = await _append_ticket_body(
+            ticket_id=t1_id, chunk="append", hive_name=HIVE_BACKEND
+        )
+        assert t1_append["status"] == "success"
+        t1_ticket = read_ticket(t1_id, file_path=get_ticket_path(t1_id, "t1", HIVE_BACKEND))
+        assert t1_ticket.body == "task-append"
+
+    async def test_empty_chunk_noop_skip_write(self, isolated_bees_env):
+        """SR-10.6 #2 — empty chunk is a success no-op that does NOT touch the file on disk.
+
+        Asserts the success return shape AND that the file's mtime, size,
+        and content hash are byte-identical before and after the call.
+        Mtime is the strongest signal that the write path was truly skipped:
+        if `_append_ticket_body` had called `write_ticket_file`, the atomic
+        rename would have updated the inode's mtime even though the bytes
+        themselves are unchanged.
+        """
+        import hashlib
+
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Empty Chunk No-Op Bee",
+            body="seed-body-content",
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        ticket_path = get_ticket_path(tid, "bee", HIVE_BACKEND)
+        before_bytes = ticket_path.read_bytes()
+        before_stat = ticket_path.stat()
+        before_hash = hashlib.sha256(before_bytes).hexdigest()
+
+        result = await _append_ticket_body(
+            ticket_id=tid,
+            chunk="",
+            hive_name=HIVE_BACKEND,
+        )
+
+        assert result == {
+            "status": "success",
+            "appended": [tid],
+            "not_found": [],
+            "failed": [],
+        }
+
+        after_stat = ticket_path.stat()
+        after_bytes = ticket_path.read_bytes()
+        after_hash = hashlib.sha256(after_bytes).hexdigest()
+
+        assert after_bytes == before_bytes
+        assert after_hash == before_hash
+        assert after_stat.st_size == before_stat.st_size
+        # Strongest signal: mtime unchanged proves no atomic-rename occurred.
+        assert after_stat.st_mtime_ns == before_stat.st_mtime_ns
+
+    async def test_empty_chunk_against_missing_ticket(self, isolated_bees_env):
+        """SR-10.6 #3 — empty chunk on an unknown ticket id still returns ticket_not_found.
+
+        Empty-chunk no-op must not bypass the existence check. Also asserts
+        no new files were created in the hive directory as a side effect.
+        """
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        files_before = sorted(p for p in hive_dir.rglob("*") if p.is_file())
+
+        result = await _append_ticket_body(
+            ticket_id=TICKET_ID_NONEXISTENT,
+            chunk="",
+        )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "ticket_not_found"
+        assert "message" in result
+
+        files_after = sorted(p for p in hive_dir.rglob("*") if p.is_file())
+        assert files_before == files_after
+
+    async def test_write_error_structured_return(self, isolated_bees_env, monkeypatch):
+        """SR-7.5 — `write_ticket_file` exceptions are caught and converted to write_error.
+
+        Forces the writer to raise `OSError("disk full")` and asserts the
+        exception does NOT propagate out of `_append_ticket_body`. Instead
+        the function must return the structured `write_error` shape and
+        leave the on-disk file byte-identical (the patched writer never
+        runs, so this is trivially true; the assertion documents the
+        contract).
+        """
+        import hashlib
+
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+
+        create_result = await _create_ticket(
+            ticket_type="bee",
+            title="Write Error Bee",
+            body="initial-",
+            hive_name=HIVE_BACKEND,
+        )
+        tid = create_result["ticket_id"]
+
+        ticket_path = get_ticket_path(tid, "bee", HIVE_BACKEND)
+        before_bytes = ticket_path.read_bytes()
+        before_hash = hashlib.sha256(before_bytes).hexdigest()
+
+        def _boom(*args, **kwargs):
+            raise OSError("disk full")
+
+        monkeypatch.setattr("src.mcp_ticket_ops.write_ticket_file", _boom)
+
+        # Must NOT raise — wrap in try to make a propagated exception a
+        # test failure with a useful message rather than an error.
+        try:
+            result = await _append_ticket_body(
+                ticket_id=tid,
+                chunk="APPEND-PAYLOAD",
+                hive_name=HIVE_BACKEND,
+            )
+        except Exception as exc:  # pragma: no cover - failure path
+            pytest.fail(
+                f"_append_ticket_body must not propagate write exceptions, "
+                f"but raised: {type(exc).__name__}: {exc}"
+            )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "write_error"
+        assert "message" in result
+        assert "disk full" in result["message"]
+        assert tid in result["message"]
+
+        after_bytes = ticket_path.read_bytes()
+        after_hash = hashlib.sha256(after_bytes).hexdigest()
+        assert after_bytes == before_bytes
+        assert after_hash == before_hash
+
+
+# ---------------------------------------------------------------------------
+# Tests for _get_status_values / _set_status_values glob-scope hive resolution
+# (regression tests for bug b.7qj)
+# ---------------------------------------------------------------------------
+
+def _make_glob_and_exact_scopes():
+    """Return a scopes dict with a glob scope owning 'shared_hive' and an exact scope owning 'local_hive'."""
+    return {
+        "/test/project/**": {
+            "hives": {
+                "shared_hive": {
+                    "path": "tickets/shared/",
+                    "display_name": "Shared",
+                    "created_at": "2026-01-01T00:00:00",
+                    "status_values": ["open", "in-progress", "done"],
+                },
+            },
+        },
+        "/test/project/main": {
+            "hives": {
+                "local_hive": {
+                    "path": "tickets/local/",
+                    "display_name": "Local",
+                    "created_at": "2026-01-01T00:00:00",
+                },
+            },
+            "status_values": ["alpha", "beta"],
+        },
+    }
+
+
+class TestGetStatusValuesGlobScope:
+    """_get_status_values must aggregate hives across all matching scopes."""
+
+    @pytest.mark.asyncio
+    async def test_glob_scope_hive_visible(self, mock_global_bees_dir):
+        """Hive registered under glob scope appears in hives dict when queried from a more-specific path."""
+        from pathlib import Path
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _get_status_values(resolved_root=Path("/test/project/main"))
+
+        assert result["status"] == "success"
+        # Both hives should be present
+        assert "shared_hive" in result["hives"]
+        assert "local_hive" in result["hives"]
+        # Glob-scope hive should carry its status_values
+        assert result["hives"]["shared_hive"] == ["open", "in-progress", "done"]
+        # Local hive has no explicit status_values
+        assert result["hives"]["local_hive"] is None
+
+    @pytest.mark.asyncio
+    async def test_scope_status_values_from_most_specific(self, mock_global_bees_dir):
+        """The scope-level status_values should come from the most-specific matching scope."""
+        from pathlib import Path
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _get_status_values(resolved_root=Path("/test/project/main"))
+
+        assert result["status"] == "success"
+        # Most-specific scope (/test/project/main) has status_values ["alpha", "beta"]
+        assert result["scope"] == ["alpha", "beta"]
+
+    @pytest.mark.asyncio
+    async def test_most_specific_hive_wins_on_overlap(self, mock_global_bees_dir):
+        """When the same hive appears in both glob and exact scopes, most-specific wins."""
+        from pathlib import Path
+
+        scopes = {
+            "/test/project/**": {
+                "hives": {
+                    "overlap_hive": {
+                        "path": "tickets/overlap-glob/",
+                        "display_name": "Overlap Glob",
+                        "created_at": "2026-01-01T00:00:00",
+                        "status_values": ["glob-val"],
+                    },
+                },
+            },
+            "/test/project/main": {
+                "hives": {
+                    "overlap_hive": {
+                        "path": "tickets/overlap-exact/",
+                        "display_name": "Overlap Exact",
+                        "created_at": "2026-01-01T00:00:00",
+                        "status_values": ["exact-val"],
+                    },
+                },
+            },
+        }
+        write_multi_scope_config(mock_global_bees_dir, scopes)
+
+        result = await _get_status_values(resolved_root=Path("/test/project/main"))
+
+        assert result["status"] == "success"
+        # Most-specific scope wins
+        assert result["hives"]["overlap_hive"] == ["exact-val"]
+
+
+class TestSetStatusValuesGlobScope:
+    """_set_status_values with scope='hive' must find hives across all matching scopes."""
+
+    @pytest.mark.asyncio
+    async def test_set_on_glob_scope_hive_succeeds(self, mock_global_bees_dir):
+        """Setting status_values on a hive registered under a glob scope should succeed."""
+        from pathlib import Path
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _set_status_values(
+            scope="hive",
+            hive_name="shared_hive",
+            status_values=["open", "closed"],
+            resolved_root=Path("/test/project/main"),
+        )
+
+        assert result["status"] == "success"
+        assert result["hive_name"] == "shared_hive"
+        assert result["status_values"] == ["open", "closed"]
+
+    @pytest.mark.asyncio
+    async def test_set_on_glob_scope_hive_writes_to_correct_scope(self, mock_global_bees_dir):
+        """Status values should be written to the glob scope entry, not the exact scope."""
+        from pathlib import Path
+        from src.config import load_global_config
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        await _set_status_values(
+            scope="hive",
+            hive_name="shared_hive",
+            status_values=["open", "closed"],
+            resolved_root=Path("/test/project/main"),
+        )
+
+        # Reload config and verify the write landed in the glob scope
+        config = load_global_config()
+        glob_hive = config["scopes"]["/test/project/**"]["hives"]["shared_hive"]
+        assert glob_hive["status_values"] == ["open", "closed"]
+
+        # The exact scope should NOT have gained the hive
+        exact_hives = config["scopes"]["/test/project/main"].get("hives", {})
+        assert "shared_hive" not in exact_hives
+
+    @pytest.mark.asyncio
+    async def test_set_on_nonexistent_hive_fails(self, mock_global_bees_dir):
+        """Setting status_values on a hive that doesn't exist in any scope should fail."""
+        from pathlib import Path
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _set_status_values(
+            scope="hive",
+            hive_name="ghost_hive",
+            status_values=["open"],
+            resolved_root=Path("/test/project/main"),
+        )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "hive_not_found"
+
+    @pytest.mark.asyncio
+    async def test_repo_scope_still_works(self, mock_global_bees_dir):
+        """Regression: scope='repo_scope' case must still work correctly (uses find_matching_scope)."""
+        from pathlib import Path
+        from src.config import load_global_config
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _set_status_values(
+            scope="repo_scope",
+            status_values=["new-a", "new-b"],
+            resolved_root=Path("/test/project/main"),
+        )
+
+        assert result["status"] == "success"
+        assert result["scope"] == "repo_scope"
+        assert result["status_values"] == ["new-a", "new-b"]
+
+        # Verify it wrote to the most-specific scope
+        config = load_global_config()
+        assert config["scopes"]["/test/project/main"]["status_values"] == ["new-a", "new-b"]
+
+    @pytest.mark.asyncio
+    async def test_unset_on_glob_scope_hive_succeeds(self, mock_global_bees_dir):
+        """Unsetting status_values on a glob-scope hive should succeed and write null."""
+        from pathlib import Path
+        from src.config import load_global_config
+
+        write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
+
+        result = await _set_status_values(
+            scope="hive",
+            hive_name="shared_hive",
+            unset=True,
+            resolved_root=Path("/test/project/main"),
+        )
+
+        assert result["status"] == "success"
+        assert result["hive_name"] == "shared_hive"
+
+        # Verify null was written to the glob scope
+        config = load_global_config()
+        glob_hive = config["scopes"]["/test/project/**"]["hives"]["shared_hive"]
+        assert glob_hive["status_values"] is None

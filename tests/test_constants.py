@@ -16,7 +16,12 @@ Organization:
     - Ticket Type Constants: Valid ticket type identifiers
     - Owner Constants: User email addresses for ownership tests
     - Result Status Constants: API/function result status values
+    - Per-Call Body Size Cap: BODY_MAX_LENGTH re-exported from src.constants
 """
+
+# Re-export the production character cap so tests reference the single source
+# of truth (SR-9.3 / SR-10.4). Tests must never hardcode the literal number.
+from src.constants import BODY_MAX_LENGTH  # noqa: E402, F401
 
 
 # ============================================================================

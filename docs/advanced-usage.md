@@ -367,10 +367,12 @@ Child IDs embed the parent's short ID as a prefix (hierarchical): bee `b.amx` â†
 
 ```bash
 bees create-ticket --type bee --title "Bug fix" --hive backend
+bees create-ticket --type bee --title "Long writeup" --hive backend --body "stub - see appended chunks"
 bees show-ticket b.amx t1.amx.12
 bees update-ticket --ids b.amx --status worker --tags '["urgent"]'
 bees update-ticket --ids b.amx --add-tags '["reviewed"]' --remove-tags '["urgent"]'
 bees update-ticket --ids b.amx b.x4f --status worker
+bees append-ticket-body --ticket-id b.amx --chunk "more body text up to 10000 characters"
 bees delete-ticket b.amx
 bees get-types
 bees set-types --scope global --tiers '{"t1":["Epic","Epics"]}'
@@ -384,6 +386,8 @@ bees set-status-values --scope=global --unset
 ```
 
 `show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--egg`).
+
+`create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
 
 ## Query Operations
 

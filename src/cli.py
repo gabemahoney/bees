@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .config import check_queen_write_access, load_global_config, set_config_path, set_test_config_override
+from .constants import BODY_MAX_LENGTH
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import _abandon_hive, _list_hives, _rename_hive, _sanitize_hive, colonize_hive_core
 from .mcp_index_ops import _generate_index
@@ -26,6 +27,7 @@ from .mcp_query_ops import (
     _list_named_queries,
 )
 from .mcp_ticket_ops import (
+    _append_ticket_body,
     _create_ticket,
     _delete_ticket,
     _get_status_values,
@@ -92,6 +94,32 @@ def _guard_queen_write_cli(root: Path) -> bool:
     return False
 
 
+def _reject_oversized_body_cli(arg_name: str, value: str) -> None:
+    """Reject body/chunk values that exceed the BODY_MAX_LENGTH cap.
+
+    Shared by ``handle_append_ticket_body`` (for ``--chunk``) and, in Epic 5,
+    by ``handle_create_ticket`` / ``handle_update_ticket`` (for ``--body``).
+    Mirrors the MCP-side ``maxLength=BODY_MAX_LENGTH`` schema enforcement so
+    the CLI surface returns the same kind of structured rejection without
+    invoking the core ticket I/O path.
+
+    On oversized input: write a single-line error to stderr that names the
+    offending flag, the cap (10000), the actual size, and points the caller
+    at ``bees append-ticket-body`` as the chunked alternative. Then exit
+    non-zero. On in-bounds input: return without side effects.
+    """
+    if len(value) <= BODY_MAX_LENGTH:
+        return
+    print(
+        f"Error: {arg_name} is {len(value)} characters, which exceeds the "
+        f"10000 character cap. Use 'bees append-ticket-body --ticket-id <id> "
+        f"--chunk <text>' to write large bodies in chunks of up to 10000 "
+        f"characters each.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 def _configure_file_logging() -> Path:
     """Redirect root logger to ~/.bees/mcp.log (file-only). Returns log path."""
     log_path = Path.home() / ".bees" / "mcp.log"
@@ -116,6 +144,8 @@ def handle_create_ticket(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
+    if args.body is not None:
+        _reject_oversized_body_cli("--body", args.body)
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -150,6 +180,9 @@ def handle_update_ticket(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
+
+    if args.body is not _UNSET and args.body is not None:
+        _reject_oversized_body_cli("--body", args.body)
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
@@ -192,6 +225,22 @@ def handle_delete_ticket(args):
         _delete_ticket(
             ticket_ids=ticket_ids,
             hive_name=args.hive if args.hive is not None else None,
+        ),
+        root=root,
+    )
+    _output_result(result)
+
+
+def handle_append_ticket_body(args):
+    root = get_repo_root_from_path(Path.cwd())
+    if _guard_queen_write_cli(root):
+        return
+    _reject_oversized_body_cli("--chunk", args.chunk)
+    result = _run_in_repo(
+        _append_ticket_body(
+            ticket_id=args.ticket_id,
+            chunk=args.chunk,
+            hive_name=args.hive,
         ),
         root=root,
     )
@@ -681,7 +730,7 @@ def build_parser():
     p_create.add_argument("--ticket-type", required=True, dest="ticket_type", help='Ticket type: "bee" for top-level, or child tier by ID ("t1", "t2") or friendly name. Run get-types to see configured tiers.')  # noqa: E501
     p_create.add_argument("--title", required=True, help="Ticket title")
     p_create.add_argument("--hive", required=True, help="Hive to create the ticket in. Run list-hives to see available hives.")  # noqa: E501
-    p_create.add_argument("--body", default=None, help="Ticket body (markdown)")
+    p_create.add_argument("--body", default=None, help="Ticket body (markdown). Capped at 10000 characters; for larger bodies, create the ticket with the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each.")  # noqa: E501
     p_create.add_argument("--parent", default=None, help="Parent ticket ID. Required for child-tier tickets; omit for bees. Parent's children field is updated automatically.")  # noqa: E501
     p_create.add_argument("--children", default=None, metavar="JSON", help="JSON array of child IDs to link. Bidirectional — child tickets' parent field is set automatically.")  # noqa: E501
     p_create.add_argument("--up-deps", default=None, dest="up_deps", metavar="JSON", help="JSON array of ticket IDs that must be resolved BEFORE this one.")  # noqa: E501
@@ -708,7 +757,7 @@ def build_parser():
     )
     p_update.add_argument("--ids", required=True, nargs="+", metavar="ID", help="One or more ticket IDs to update")
     p_update.add_argument("--title", default=_UNSET, help="New title")
-    p_update.add_argument("--body", default=_UNSET, help="New body (markdown)")
+    p_update.add_argument("--body", default=_UNSET, help="New body (markdown). Capped at 10000 characters; for larger bodies, set the body to the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each.")  # noqa: E501
     p_update.add_argument("--status", default=_UNSET, help="New status")
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
@@ -729,6 +778,41 @@ def build_parser():
     p_delete.add_argument("--ids", required=True, nargs="+", metavar="ID", help="One or more ticket IDs (e.g. b.amx t1.nha)")  # noqa: E501
     p_delete.add_argument("--hive", default=None, help="Hive name for faster lookup (optional)")
     p_delete.set_defaults(func=handle_delete_ticket)
+
+    # --- append-ticket-body ---
+    p_append_body = subparsers.add_parser(
+        "append-ticket-body",
+        help="Append a chunk to an existing ticket body. Use this when --body would exceed the 10000 character cap on create-ticket / update-ticket: split the body into chunks of up to 10000 characters each and call this subcommand once per chunk.",  # noqa: E501
+        description=(
+            "Append a chunk to an existing ticket's body. Each call concatenates --chunk\n"
+            "onto the end of the existing body with no separator. Use this whenever the\n"
+            "full body would exceed 10000 characters on create-ticket / update-ticket:\n"
+            "create the ticket with the first 10000-character chunk, then call\n"
+            "append-ticket-body repeatedly with subsequent chunks of up to 10000 characters\n"
+            "each. Empty chunks are accepted as no-ops."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_append_body.add_argument(
+        "--ticket-id",
+        required=True,
+        dest="ticket_id",
+        metavar="ID",
+        help="ID of the existing ticket whose body will be appended to (e.g. b.amx, t1.nha).",
+    )
+    p_append_body.add_argument(
+        "--chunk",
+        required=True,
+        metavar="TEXT",
+        help="Text to append to the ticket body. Must be 10000 characters or fewer; pass an empty string for a no-op. To write bodies larger than 10000 characters, call this subcommand repeatedly with successive chunks.",  # noqa: E501
+    )
+    p_append_body.add_argument(
+        "--hive",
+        default=None,
+        metavar="NAME",
+        help="Hive name for O(1) ticket lookup (optional).",
+    )
+    p_append_body.set_defaults(func=handle_append_ticket_body)
 
     # --- get-types ---
     p_types = subparsers.add_parser(
@@ -1051,7 +1135,8 @@ def build_parser():
     # Register --test-config and --config on every non-serve subparser so that
     # main() can enforce mutual exclusion and activate the override before dispatch.
     _non_serve_parsers = [
-        p_create, p_show, p_update, p_delete, p_types, p_set_types, p_set_status_values, p_get_status_values,
+        p_create, p_show, p_update, p_delete, p_append_body,
+        p_types, p_set_types, p_set_status_values, p_get_status_values,
         p_anq, p_enq, p_efq, p_dnq, p_lnq,
         p_colonize, p_list_hives, p_abandon, p_rename, p_sanitize,
         p_index, p_move, p_clone, p_undertaker, p_sting, p_cli_mode,
