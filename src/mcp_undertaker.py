@@ -81,7 +81,7 @@ def _undertaker_core(
         query_name: Name of a registered query (mutually exclusive with query_yaml)
 
     Returns:
-        dict with status, archived_count, archived_guids, skipped
+        dict with status, archived_count, archived_guids, skipped, cascaded
     """
     # ── Step 1: Validate params ──────────────────────────────────────────
     if query_yaml and query_name:
@@ -152,23 +152,28 @@ def _undertaker_core(
             "archived_count": 0,
             "archived_guids": [],
             "skipped": [],
+            "cascaded": [],
         }
 
     # ── Step 3: Filter to bees only ──────────────────────────────────────
     bee_ids = sorted(tid for tid in result_ids if tid.startswith("b."))
-    skipped = sorted(tid for tid in result_ids if not tid.startswith("b."))
+    non_bee_ids = sorted(tid for tid in result_ids if not tid.startswith("b."))
 
     if not bee_ids:
         return {
             "status": "success",
             "archived_count": 0,
             "archived_guids": [],
-            "skipped": skipped,
+            "skipped": non_bee_ids,
+            "cascaded": [],
         }
 
     # ── Step 4: Phase 1 — atomic mv ─────────────────────────────────────
     cemetery_dir = hive_path / "cemetery"
     cemetery_dir.mkdir(exist_ok=True)
+
+    # Record bee directory paths before moving so we can detect cascade-moved children
+    bee_dir_paths: list[Path] = []  # absolute paths of moved bee directories
 
     moved_bees: list[tuple[str, Path]] = []  # (bee_id, cemetery_dest)
     for bee_id in bee_ids:
@@ -180,6 +185,7 @@ def _undertaker_core(
             }
 
         bee_dir = ticket_file.parent
+        bee_dir_paths.append(bee_dir.resolve())
         dest = cemetery_dir / bee_dir.name
         try:
             shutil.move(str(bee_dir), str(dest))
@@ -189,6 +195,24 @@ def _undertaker_core(
                 "status": "error",
                 "message": f"Phase 1 failed: could not move '{bee_id}': {e}",
             }
+
+    # ── Step 4b: Separate cascaded children from truly skipped ──────────
+    # Non-bee IDs that lived inside a moved bee directory were cascade-moved,
+    # not skipped. Check by seeing if the non-bee ticket's file was under
+    # one of the moved bee directories.
+    cascaded: list[str] = []
+    skipped: list[str] = []
+    for tid in non_bee_ids:
+        ticket_file = find_ticket_file(hive_path, tid)
+        if ticket_file is None:
+            # Ticket no longer exists in the live hive — it was cascade-moved
+            # with its parent bee directory.
+            cascaded.append(tid)
+        else:
+            # Ticket still exists — it wasn't inside any moved bee directory.
+            skipped.append(tid)
+    cascaded.sort()
+    skipped.sort()
 
     # ── Step 5: Phase 2 — best-effort rename ────────────────────────────
     archived_count = 0
@@ -244,6 +268,7 @@ def _undertaker_core(
         "archived_count": archived_count,
         "archived_guids": sorted(archived_guids),
         "skipped": skipped,
+        "cascaded": cascaded,
     }
 
 
@@ -265,7 +290,7 @@ async def _undertaker(
         resolved_root: Pre-resolved repo root path (injected by adapter)
 
     Returns:
-        dict with status, archived_count, archived_guids, skipped
+        dict with status, archived_count, archived_guids, skipped, cascaded
     """
     if resolved_root is not None:
         with repo_root_context(resolved_root):
@@ -366,7 +391,8 @@ class UndertakerScheduler:
                 f"status={result.get('status')} "
                 f"archived={result.get('archived_count', 0)} "
                 f"guids={result.get('archived_guids', [])} "
-                f"skipped={result.get('skipped', [])}"
+                f"skipped={result.get('skipped', [])} "
+                f"cascaded={result.get('cascaded', [])}"
             )
             if result.get("status") == "error":
                 entry += f" error={result.get('message', '')}"

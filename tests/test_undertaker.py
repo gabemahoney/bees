@@ -207,6 +207,101 @@ class TestUndertaker:
         assert bee_guid in result["archived_guids"]
 
 
+    async def test_cascaded_children_not_in_skipped(self, isolated_bees_env):
+        """Bug b.pv5: children cascade-moved with parent should appear in 'cascaded', not 'skipped'."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config(
+            child_tiers={"t1": ["Task", "Tasks"]},
+            status_values=["pupa", "larva", "finished"],
+        )
+
+        bee_guid = _make_guid("par")
+        t1a_guid = _make_guid("ch1aa")
+        t1b_guid = _make_guid("ch2aa")
+
+        helper.create_ticket(
+            hive_dir, "b.par", "bee", "Parent Bee",
+            guid=bee_guid, status="finished",
+        )
+        helper.create_ticket(
+            hive_dir / "b.par", "t1.ch1.aa", "t1", "Child A",
+            parent="b.par", guid=t1a_guid, status="finished",
+        )
+        helper.create_ticket(
+            hive_dir / "b.par", "t1.ch2.aa", "t1", "Child B",
+            parent="b.par", guid=t1b_guid, status="pupa",
+        )
+
+        # Query matches parent and child A (both finished), but NOT child B (pupa).
+        # However child B lives inside b.par/ and will be cascade-moved.
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['status=finished']",
+        )
+
+        assert result["status"] == "success"
+        # Parent bee was directly archived
+        assert bee_guid in result["archived_guids"]
+        # Child A (t1.ch1.aa) was in query results as non-bee, but was cascade-moved
+        assert "t1.ch1.aa" not in result["skipped"], (
+            "Cascade-moved children must not appear in 'skipped'"
+        )
+        assert "t1.ch1.aa" in result["cascaded"]
+        # Child B was NOT in query results at all — it was cascade-moved silently
+        # (it doesn't appear in skipped, cascaded, or anywhere — that's expected)
+        assert "t1.ch2.aa" not in result["skipped"]
+        # The children no longer exist in the live hive
+        assert not (hive_dir / "b.par" / "t1.ch1.aa").exists()
+        assert not (hive_dir / "b.par" / "t1.ch2.aa").exists()
+        assert not (hive_dir / "b.par").exists()
+
+    async def test_cascaded_key_always_present(self, isolated_bees_env):
+        """The 'cascaded' key should be present in all success responses."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        bee_guid = _make_guid("solo")
+        helper.create_ticket(hive_dir, "b.sol", "bee", "Solo Bee", guid=bee_guid)
+
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['type=bee']",
+        )
+
+        assert result["status"] == "success"
+        assert "cascaded" in result
+        assert result["cascaded"] == []
+
+    async def test_orphan_non_bee_still_skipped(self, isolated_bees_env):
+        """Non-bee tickets NOT inside a moved bee dir remain in 'skipped' (not cascaded)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config(
+            child_tiers={"t1": ["Task", "Tasks"]},
+            status_values=["finished"],
+        )
+
+        bee_guid = _make_guid("abc")
+        t1_guid = _make_guid("orpha")
+
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Some Bee", guid=bee_guid, status="finished")
+        # Orphan t1 at hive root — not inside b.abc/
+        helper.create_ticket(hive_dir, "t1.orp.ha", "t1", "Orphan Task", guid=t1_guid, status="finished")
+
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['status=finished']",
+        )
+
+        assert result["status"] == "success"
+        # Orphan t1 should be in skipped (it still exists, wasn't cascade-moved)
+        assert "t1.orp.ha" in result["skipped"]
+        assert "t1.orp.ha" not in result["cascaded"]
+        # Orphan ticket should still exist
+        assert (hive_dir / "t1.orp.ha" / "t1.orp.ha.md").exists()
+
     async def test_phase2_uses_read_ticket_not_direct_parse(self, isolated_bees_env):
         """Phase 2 calls read_ticket() with file_path into cemetery; _read_guid is gone."""
         helper = isolated_bees_env
