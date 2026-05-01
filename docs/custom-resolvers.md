@@ -97,6 +97,16 @@ if __name__ == "__main__":
 
 Save this as `file_resolver.py`, make it executable (`chmod +x file_resolver.py`), and configure it in your bees config.
 
+## Real-World Example: GitHub Issues Resolver
+
+The repository includes a GitHub Issues resolver at `resolvers/github_resolver.py`. It demonstrates a pattern where the resolver delegates all external data fetching to a CLI tool rather than making API calls directly.
+
+The egg field stores a GitHub issue or pull request URL. When resolved, the resolver invokes `gh api` to fetch the issue or PR data from the GitHub API and returns the raw JSON response.
+
+This pattern — delegating to an external CLI tool — is useful when the tool handles authentication, host configuration, and API details on your behalf.
+
+**PATH requirement and fail-fast behavior**: The resolver checks for `gh` on PATH before making any network calls and exits immediately with a clear error if it is not found. If you adopt this pattern, perform the tool availability check early so failures are obvious and actionable.
+
 ## Testing Your Resolver
 
 Test your resolver directly from the command line before configuring it:
