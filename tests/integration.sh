@@ -1193,7 +1193,7 @@ test_query_setup() {
 }
 
 test_query_type_bee() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [type=bee, hive=query_hive_a]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [type=bee, hive=query_hive_a]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query by type=bee" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1206,7 +1206,7 @@ test_query_type_bee() {
 }
 
 test_query_type_t1() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [type=t1, hive=query_hive_a]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [type=t1, hive=query_hive_a]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query by type=t1" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1219,7 +1219,7 @@ test_query_type_t1() {
 }
 
 test_query_by_status() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [status=worker]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [status=worker]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query by status" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1232,7 +1232,7 @@ test_query_by_status() {
 }
 
 test_query_by_title() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [title~Worker]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [title~Worker]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query by title" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1245,7 +1245,7 @@ test_query_by_title() {
 }
 
 test_query_by_tag() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [tag~searchable]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [tag~searchable]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query by tag" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1286,7 +1286,7 @@ test_query_graph_parent() {
 }
 
 test_query_hive_filter() {
-    capture_cmd bees execute-freeform-query --query-yaml "- [hive=query_hive_a, type=bee]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [hive=query_hive_a, type=bee]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query hive filter" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -3172,7 +3172,7 @@ test_fast_parser_pipeline() {
     fi
 
     # Test 1: Filter by type=bee
-    capture_cmd bees execute-freeform-query --query-yaml "- [type=bee, hive=fp_hive]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [type=bee, hive=fp_hive]'
     local bee_count
     bee_count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
     if [ "$bee_count" != "3" ]; then
@@ -3180,7 +3180,7 @@ test_fast_parser_pipeline() {
     fi
 
     # Test 2: Filter by status=pupa
-    capture_cmd bees execute-freeform-query --query-yaml "- [status=pupa, hive=fp_hive]"
+    capture_cmd bees execute-freeform-query --query-yaml $'stages:\n  - [status=pupa, hive=fp_hive]'
     local pupa_count
     pupa_count=$(check_json "$CMD_OUT" "d.get('result_count',0)")
     if [ "$pupa_count" != "1" ]; then
