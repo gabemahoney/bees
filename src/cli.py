@@ -291,7 +291,9 @@ def handle_append_ticket_body(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
-    _reject_oversized_body_cli("--chunk", args.chunk)
+    if args.chunk_file is not None:
+        args.chunk = _read_body_file_arg("--chunk-file", args.chunk_file)
+    _reject_oversized_body_cli("--chunk-file" if args.chunk_file else "--chunk", args.chunk)
     result = _run_in_repo(
         _append_ticket_body(
             ticket_id=args.ticket_id,
@@ -860,11 +862,18 @@ def build_parser():
         metavar="ID",
         help="ID of the existing ticket whose body will be appended to (e.g. b.amx, t1.nha).",
     )
-    p_append_body.add_argument(
+    p_append_chunk = p_append_body.add_mutually_exclusive_group(required=True)
+    p_append_chunk.add_argument(
         "--chunk",
-        required=True,
         metavar="TEXT",
-        help="Text to append to the ticket body. Must be 10000 characters or fewer; pass an empty string for a no-op. To write bodies larger than 10000 characters, call this subcommand repeatedly with successive chunks.",  # noqa: E501
+        help="Text to append to the ticket body (required: one of --chunk or --chunk-file). Must be 10000 characters or fewer; pass an empty string for a no-op. To write bodies larger than 10000 characters, call this subcommand repeatedly with successive chunks. Alternative: pass --chunk-file PATH when shell substitution is awkward.",  # noqa: E501
+    )
+    p_append_chunk.add_argument(
+        "--chunk-file",
+        dest="chunk_file",
+        default=None,
+        metavar="PATH",
+        help="Read the chunk text from a UTF-8 file (use '-' for stdin); same 10000-character per-chunk cap as --chunk. Alternative to --chunk for harnesses where shell substitution / quoting is awkward.",  # noqa: E501
     )
     p_append_body.add_argument(
         "--hive",
