@@ -3,7 +3,6 @@
 import json
 import os
 import stat
-import tempfile
 
 import pytest
 
@@ -380,7 +379,9 @@ class TestShowTicketReturnsRawEgg:
 class TestGitHubResolverIntegration:
     """Integration tests for the GitHub Issues egg resolver via mock gh binary."""
 
-    async def test_github_resolver_returns_api_response(self, hive_tier_config, mock_global_bees_dir, monkeypatch, tmp_path):
+    async def test_github_resolver_returns_api_response(
+        self, hive_tier_config, mock_global_bees_dir, monkeypatch, tmp_path
+    ):
         """GitHub resolver invokes gh and returns the API response dict verbatim."""
         repo_root, hive_path, tier_config = hive_tier_config
 

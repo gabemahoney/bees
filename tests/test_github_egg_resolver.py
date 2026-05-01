@@ -110,7 +110,7 @@ def test_malformed_url_error():
 # ---------------------------------------------------------------------------
 
 def _invoke_main(egg_value):
-    """Invoke main() with sys.argv patched; return (stdout_lines, stderr_lines, exit_code)."""
+    """Invoke main() with sys.argv patched; return exit code."""
     with patch("sys.argv", ["github_resolver.py", "--repo-root", "/tmp", "--egg-value", egg_value]):
         with pytest.raises(SystemExit) as exc_info:
             main()
@@ -164,12 +164,14 @@ def test_api_errors(capsys, status_code, stderr_snippet, check_owner_repo_num):
 
 
 def test_network_failure(capsys):
-    """subprocess.run raises OSError (network failure) → non-zero exit, error on stderr."""
+    """subprocess.run raises OSError (network failure) → non-zero exit, error on stderr (no traceback)."""
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
-        with patch("github_resolver.subprocess.run", side_effect=OSError("network unreachable")):
-            with patch("sys.argv", ["github_resolver.py", "--repo-root", "/tmp", "--egg-value", GITHUB_ISSUE_URL]):
-                with pytest.raises((SystemExit, OSError)):
-                    main()
+        with patch("github_resolver.subprocess.run", side_effect=OSError("Network unreachable")):
+            code = _invoke_main(GITHUB_ISSUE_URL)
+    assert code != 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() != ""
+    assert "Traceback" not in captured.err
 
 
 def test_happy_path(capsys):

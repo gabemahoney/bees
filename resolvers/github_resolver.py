@@ -15,7 +15,6 @@ to stdout as raw JSON.
 """
 
 import argparse
-import json
 import re
 import shutil
 import subprocess
@@ -76,7 +75,11 @@ def main():
         cmd += ["--hostname", hostname]
 
     # Subtask 4: gh error surfacing
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except OSError as exc:
+        print(f"Failed to execute gh: {exc}", file=sys.stderr)
+        sys.exit(1)
     if result.returncode != 0:
         stderr_output = result.stderr.strip()
         if "404" in stderr_output or "Not Found" in stderr_output:
