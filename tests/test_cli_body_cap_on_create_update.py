@@ -11,19 +11,28 @@ Covers Epic 5 of the chunked-ticket-body-API plan (Bee b.87r):
 - ``--body`` help text on both subcommands names ``append-ticket-body`` and
   ``10000`` so Claude can pick the right tool from the help signal.
 
+Also covers Epic 1 / Task 2 of the ``--body-file`` / ``--chunk-file`` feature
+(Bee ``b.jsz``, plan ``t1.jsz.de``):
+- ``create-ticket --body-file PATH`` reads UTF-8 file contents (or stdin when
+  ``PATH == "-"``), routes them through ``_read_body_file_arg`` and the same
+  ``_reject_oversized_body_cli`` cap check as ``--body`` (parameterized to
+  name ``--body-file`` in the rejection message).
+- ``--body`` and ``--body-file`` are mutually exclusive (argparse mutex group).
+- File-surface error paths (missing file, UTF-8 decode error, oversized file)
+  exit non-zero, write a stderr diagnostic, and write no ticket files.
+
 This file lives in its own module (rather than being added to ``tests/test_cli.py``
 which has unrelated pre-existing collection errors, or to Epic 4's
 ``tests/test_cli_append_ticket_body.py`` which is scoped to its own subcommand) so
 each Epic of the plan owns a self-contained test surface.
 """
 
+import io
 import json
-
-import pytest
 
 from src.constants import BODY_MAX_LENGTH
 from src.paths import compute_ticket_path
-from tests.helpers import run_cli_capture_both
+from tests.helpers import make_body_at_cap, make_body_over_cap, run_cli_capture_both
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -155,9 +164,7 @@ def test_update_ticket_body_at_cap_succeeds(cli_runner, isolated_bees_env):
     ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
     new_body = "u" * BODY_MAX_LENGTH
 
-    stdout, exit_code = cli_runner(
-        ["update-ticket", "--ids", ticket_id, "--body", new_body]
-    )
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body", new_body])
     assert exit_code == 0, f"update at cap failed: {stdout}"
     assert _read_body_via_show(cli_runner, ticket_id) == new_body
 
@@ -170,9 +177,7 @@ def test_update_ticket_without_body_does_not_fire_helper(cli_runner, isolated_be
     """
     ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
 
-    stdout, exit_code = cli_runner(
-        ["update-ticket", "--ids", ticket_id, "--add-tags", '["x"]']
-    )
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--add-tags", '["x"]'])
     assert exit_code == 0, f"update without --body failed: {stdout}"
 
     # Body is unchanged.
@@ -216,3 +221,230 @@ def test_update_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
     flat = _normalize_help(stdout)
     assert "append-ticket-body" in flat
     assert "10000" in flat
+
+
+# ---------------------------------------------------------------------------
+# create-ticket --body-file happy paths (Epic 1 / t1.jsz.de)
+# ---------------------------------------------------------------------------
+
+
+def _create_bee_with_body_file(cli_runner, isolated_bees_env, body_file_arg: str) -> str:
+    """Run ``create-ticket --body-file <body_file_arg>`` and return the ticket id."""
+    _setup_test_hive(isolated_bees_env)
+    stdout, exit_code = cli_runner(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Cap Target",
+            "--hive",
+            "test",
+            "--body-file",
+            body_file_arg,
+        ]
+    )
+    assert exit_code == 0, f"create-ticket --body-file failed: {stdout}"
+    return json.loads(stdout)["ticket_id"]
+
+
+def test_create_ticket_body_file_happy_path_file(cli_runner, isolated_bees_env, tmp_path):
+    """A UTF-8 file with non-ASCII content round-trips through --body-file."""
+    body = "hello ☃ world"  # snowman exercises non-ASCII UTF-8 decoding.
+    path = tmp_path / "input.md"
+    path.write_text(body, encoding="utf-8")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_stdin_happy_path(cli_runner, isolated_bees_env, monkeypatch):
+    """``--body-file -`` reads from sys.stdin via in-process patching.
+
+    ``cli_runner`` invokes ``src.cli.main()`` IN-PROCESS (see
+    ``tests/conftest.py:618-637``); it does NOT spawn a subprocess. Stdin
+    must be patched on the live ``sys`` module — ``subprocess.run(input=...)``
+    would never reach the in-process call.
+    """
+    body = "from-stdin\nbody é"
+    monkeypatch.setattr("sys.stdin", io.StringIO(body))
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, "-")
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_at_cap_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A file with exactly BODY_MAX_LENGTH characters is accepted via --body-file."""
+    body = make_body_at_cap()
+    path = tmp_path / "atcap.md"
+    path.write_text(body, encoding="utf-8")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_empty_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """An empty --body-file produces a ticket with an empty body.
+
+    Verifies the helper's empty-string return propagates through the cap
+    check (which permits empty bodies) and the ticket persists.
+    """
+    path = tmp_path / "empty.md"
+    path.write_bytes(b"")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == ""
+
+
+# ---------------------------------------------------------------------------
+# create-ticket --body-file error paths (Epic 1 / t1.jsz.de)
+# ---------------------------------------------------------------------------
+
+
+def test_create_ticket_body_file_mutex_with_body_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """``--body`` and ``--body-file`` are mutually exclusive (argparse default)."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    # File must exist so the failure is unambiguously the mutex, not a
+    # missing-file error from ``_read_body_file_arg``.
+    path = tmp_path / "input.md"
+    path.write_text("file content", encoding="utf-8")
+
+    _stdout, _stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body",
+            "inline content",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    # argparse mutex violations exit with code 2.
+    assert exit_code == 2
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_missing_file_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """A missing --body-file path names both the path and the flag in stderr."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    missing = tmp_path / "does_not_exist.md"
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(missing),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert str(missing) in stderr
+    assert "--body-file" in stderr
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_decode_error_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """Invalid UTF-8 in --body-file exits non-zero with a UTF-8/decoding diagnostic."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    path = tmp_path / "bad_utf8.bin"
+    # 0xff is never a valid UTF-8 start byte.
+    path.write_bytes(b"\xff\xfe")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "UTF-8" in stderr
+    assert "decode" in stderr.lower()
+    assert "--body-file" in stderr
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """An oversized file rejection names ``--body-file`` (not just ``--body``).
+
+    The cap-check ``arg_name`` parameterization is what surfaces ``--body-file``
+    in the error. Since ``--body-file`` contains the substring ``--body``, a
+    loose ``"--body" in stderr`` would also pass even on the un-parameterized
+    code path. We therefore pin specifically on ``--body-file`` as a
+    whitespace-bounded token to verify the parameterization fired.
+    """
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    path = tmp_path / "oversized.md"
+    path.write_text(make_body_over_cap(), encoding="utf-8")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "10000" in stderr
+    assert str(BODY_MAX_LENGTH + 1) in stderr
+    assert "append-ticket-body" in stderr
+
+    # ``--body-file`` as a standalone whitespace-bounded token. Splitting
+    # on any whitespace is robust to argparse's wrapping/normalization.
+    tokens = stderr.split()
+    assert "--body-file" in tokens, f"expected '--body-file' as a standalone token in stderr; got tokens={tokens!r}"
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"

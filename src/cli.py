@@ -195,8 +195,10 @@ def handle_create_ticket(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
+    if args.body_file is not None:
+        args.body = _read_body_file_arg("--body-file", args.body_file)
     if args.body is not None:
-        _reject_oversized_body_cli("--body", args.body)
+        _reject_oversized_body_cli("--body-file" if args.body_file else "--body", args.body)
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -781,7 +783,9 @@ def build_parser():
     p_create.add_argument("--ticket-type", required=True, dest="ticket_type", help='Ticket type: "bee" for top-level, or child tier by ID ("t1", "t2") or friendly name. Run get-types to see configured tiers.')  # noqa: E501
     p_create.add_argument("--title", required=True, help="Ticket title")
     p_create.add_argument("--hive", required=True, help="Hive to create the ticket in. Run list-hives to see available hives.")  # noqa: E501
-    p_create.add_argument("--body", default=None, help="Ticket body (markdown). Capped at 10000 characters; for larger bodies, create the ticket with the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each.")  # noqa: E501
+    p_create_body = p_create.add_mutually_exclusive_group()
+    p_create_body.add_argument("--body", default=None, help="Ticket body (markdown). Capped at 10000 characters; for larger bodies, create the ticket with the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each. Alternative: pass --body-file PATH when shell substitution is awkward.")  # noqa: E501
+    p_create_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read body from a UTF-8 file (use '-' for stdin); same 10000 character cap as --body, with oversized input pointed at 'bees append-ticket-body'.")  # noqa: E501
     p_create.add_argument("--parent", default=None, help="Parent ticket ID. Required for child-tier tickets; omit for bees. Parent's children field is updated automatically.")  # noqa: E501
     p_create.add_argument("--children", default=None, metavar="JSON", help="JSON array of child IDs to link. Bidirectional — child tickets' parent field is set automatically.")  # noqa: E501
     p_create.add_argument("--up-deps", default=None, dest="up_deps", metavar="JSON", help="JSON array of ticket IDs that must be resolved BEFORE this one.")  # noqa: E501
