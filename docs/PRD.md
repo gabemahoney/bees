@@ -1227,9 +1227,10 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 
 | Command | Key Arguments |
 |---------|--------------|
-| `create-ticket` | `--ticket-type --title --hive [--description --parent --children --up-deps --down-deps --tags --status --egg]` |
+| `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --egg]` |
 | `show-ticket` | `ID [ID ...]` |
-| `update-ticket` | `ID [--title --description --status --tags --up-deps --down-deps --egg --add-tags --remove-tags --hive]` |
+| `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --tags --up-deps --down-deps --egg --add-tags --remove-tags --hive]` |
+| `append-ticket-body` | `--ticket-id (--chunk \| --chunk-file) [--hive]` |
 | `delete-ticket` | `ID [ID ...] [--hive]` |
 | `get-types` | (none) |
 | `set-types` | `--scope [--hive] [--child-tiers JSON] [--unset]` |
@@ -1793,11 +1794,36 @@ commands:
     serve               Start the MCP server
 ```
 
+### `bees append-ticket-body`
+
+```
+usage: bees append-ticket-body --ticket-id ID (--chunk TEXT | --chunk-file PATH)
+                               [--hive NAME]
+
+Append a chunk to an existing ticket's body. Each call concatenates --chunk onto
+the end of the existing body with no separator. Use this whenever the full body
+would exceed 10000 characters on create-ticket / update-ticket: create the ticket
+with the first 10000-character chunk, then call append-ticket-body repeatedly
+with subsequent chunks of up to 10000 characters each. Empty chunks are accepted
+as no-ops.
+
+  --ticket-id ID        ID of the existing ticket whose body will be appended to
+                        (e.g. b.amx, t1.nha).
+  --chunk TEXT          Text to append to the ticket body (required: one of
+                        --chunk or --chunk-file). Must be 10000 characters or
+                        fewer; pass an empty string for a no-op.
+  --chunk-file PATH     Read the chunk text from a UTF-8 file (use '-' for
+                        stdin); same 10000-character per-chunk cap as --chunk.
+  --hive NAME           Hive name for O(1) ticket lookup (optional).
+```
+
+Note: `--chunk` and `--chunk-file` are mutually exclusive (exactly one is required); pass `--chunk-file -` to read the chunk from stdin.
+
 ### `bees create-ticket`
 
 ```
 usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
-                          [--description TEXT] [--parent ID]
+                          [--body BODY | --body-file PATH] [--parent ID]
                           [--children JSON] [--up-deps JSON] [--down-deps JSON]
                           [--tags JSON] [--status STATUS] [--egg JSON]
 
@@ -1805,7 +1831,14 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
                         or friendly name. Run get-types to see configured tiers.
   --title TITLE         Ticket title
   --hive HIVE           Hive to create the ticket in
-  --description TEXT    Ticket description (markdown)
+  --body BODY           Ticket body (markdown). Capped at 10000 characters; for
+                        larger bodies, create the ticket with the first
+                        10000-character chunk and use 'bees append-ticket-body'
+                        to write the rest in chunks of up to 10000 characters
+                        each.
+  --body-file PATH      Read body from a UTF-8 file (use '-' for stdin); same
+                        10000 character cap as --body, with oversized input
+                        pointed at 'bees append-ticket-body'.
   --parent ID           Parent ticket ID. Required for child-tier tickets.
   --children JSON       JSON array of child IDs to link
   --up-deps JSON        JSON array of ticket IDs that must be resolved BEFORE this one
@@ -1814,6 +1847,8 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
   --status STATUS       Ticket status
   --egg JSON            Any JSON value. Only supported on bee tickets.
 ```
+
+Note: `--body` and `--body-file` are mutually exclusive; pass `--body-file -` to read the body from stdin.
 
 ### `bees show-ticket`
 
@@ -1826,8 +1861,8 @@ usage: bees show-ticket --ids ID [ID ...]
 ### `bees update-ticket`
 
 ```
-usage: bees update-ticket --ticket-id ID [--title TITLE]
-                          [--description TEXT] [--status STATUS]
+usage: bees update-ticket --ids ID [ID ...] [--title TITLE]
+                          [--body BODY | --body-file PATH] [--status STATUS]
                           [--tags JSON] [--up-deps JSON] [--down-deps JSON]
                           [--egg JSON] [--add-tags JSON] [--remove-tags JSON]
                           [--hive HIVE]
@@ -1835,9 +1870,15 @@ usage: bees update-ticket --ticket-id ID [--title TITLE]
 Update an existing ticket's fields. Only provided flags are changed; omitted
 flags are left as-is. Pass null to JSON fields to clear them (e.g. --tags null).
 
-  --ticket-id ID        Ticket ID to update
+  --ids ID [ID ...]     One or more ticket IDs to update
   --title TITLE         New title
-  --description TEXT    New description (markdown)
+  --body BODY           New body (markdown). Capped at 10000 characters; for
+                        larger bodies, set the body to the first 10000-character
+                        chunk and use 'bees append-ticket-body' to write the
+                        rest in chunks of up to 10000 characters each.
+  --body-file PATH      Read new body from a UTF-8 file (use '-' for stdin);
+                        same 10000 character cap as --body, with oversized input
+                        pointed at 'bees append-ticket-body'.
   --status STATUS       New status
   --tags JSON           Full replacement tag list as JSON array (null to clear)
   --up-deps JSON        Full replacement list of blocking ticket IDs (null to clear)
@@ -1847,6 +1888,8 @@ flags are left as-is. Pass null to JSON fields to clear them (e.g. --tags null).
   --remove-tags JSON    JSON array of tags to remove
   --hive HIVE           Hive name for faster lookup (optional)
 ```
+
+Note: `--body` and `--body-file` are mutually exclusive; pass `--body-file -` to read the body from stdin.
 
 ### `bees delete-ticket`
 
