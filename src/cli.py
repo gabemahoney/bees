@@ -120,6 +120,57 @@ def _reject_oversized_body_cli(arg_name: str, value: str) -> None:
     sys.exit(1)
 
 
+def _read_body_file_arg(arg_name: str, path: str) -> str:
+    """Read body text for a ``--body-file`` / ``--chunk-file`` CLI flag.
+
+    The flag eliminates ``$(cat ...)`` shell substitution, which agentic
+    harnesses (Claude Code) otherwise prompt on. Future call sites:
+    ``handle_create_ticket`` (Task 2 of Epic 1), ``handle_update_ticket``
+    (Epic 2), and ``handle_append_ticket_body`` (Epic 3).
+
+    Behavior:
+      - ``path == "-"``: read all of ``sys.stdin`` as UTF-8 and return it.
+      - File-not-found, OS/permission error, and UTF-8 decode error each
+        write a single-line ``Error:`` message to stderr that names
+        ``arg_name`` and ``path``, then exit with status 1.
+      - Otherwise return the decoded UTF-8 contents verbatim. No length
+        check, trimming, or normalization is performed; callers continue
+        to invoke ``_reject_oversized_body_cli`` on the return value.
+    """
+    if path == "-":
+        try:
+            return sys.stdin.read()
+        except UnicodeDecodeError as exc:
+            print(
+                f"Error: {arg_name} could not decode stdin as UTF-8 ({path}): {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except FileNotFoundError:
+        print(
+            f"Error: {arg_name} file not found: {path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except OSError as exc:
+        print(
+            f"Error: {arg_name} could not read {path}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        print(
+            f"Error: {arg_name} could not decode {path} as UTF-8: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def _configure_file_logging() -> Path:
     """Redirect root logger to ~/.bees/mcp.log (file-only). Returns log path."""
     log_path = Path.home() / ".bees" / "mcp.log"
