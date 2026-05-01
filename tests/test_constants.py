@@ -283,6 +283,19 @@ EGG_NULL = None
 EGG_OBJECT = {"type": "spec", "url": "https://example.com/spec.md", "version": "1.0"}
 EGG_ARRAY = ["https://example.com/spec1.md", "https://example.com/spec2.md"]
 
+# GitHub egg resolver test constants
+GITHUB_ISSUE_URL = "https://github.com/cli/cli/issues/1"           # Standard github.com issue URL
+GITHUB_ENTERPRISE_URL = "https://github.example.com/org/repo/issues/42"  # GitHub Enterprise issue URL
+GITHUB_PR_URL = "https://github.com/cli/cli/pull/1"                # GitHub PR URL
+GITHUB_API_RESPONSE = {                                             # Sample GitHub API response
+    "id": 1,
+    "number": 1,
+    "title": "Test Issue",
+    "state": "open",
+    "html_url": "https://github.com/cli/cli/issues/1",
+    "body": "This is a test issue body.",
+}
+
 # ============================================================================
 # Per-Hive Child Tier Config Constants
 # ============================================================================

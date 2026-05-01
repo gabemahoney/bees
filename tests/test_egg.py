@@ -1,5 +1,10 @@
 """Tests for bee egg field creation, resolution, and update."""
 
+import json
+import os
+import stat
+import tempfile
+
 import pytest
 
 from src.mcp_server import _create_ticket
@@ -7,12 +12,14 @@ from src.mcp_ticket_ops import _show_ticket, _update_ticket
 from src.paths import get_ticket_path
 from src.reader import read_ticket
 from tests.conftest import write_scoped_config
-from tests.helpers import setup_child_tiers
+from tests.helpers import setup_child_tiers, write_ticket_file
 from tests.test_constants import (
     EGG_ARRAY,
     EGG_NULL,
     EGG_OBJECT,
     EGG_URL,
+    GITHUB_API_RESPONSE,
+    GITHUB_ISSUE_URL,
     HIVE_BACKEND,
 )
 
@@ -368,3 +375,44 @@ class TestShowTicketReturnsRawEgg:
         # Must be the original dict, not a list wrapping a JSON string
         assert returned_egg == {"priority": 1, "estimate": "2h"}
         assert not isinstance(returned_egg, list)
+
+
+class TestGitHubResolverIntegration:
+    """Integration tests for the GitHub Issues egg resolver via mock gh binary."""
+
+    async def test_github_resolver_returns_api_response(self, hive_tier_config, mock_global_bees_dir, monkeypatch, tmp_path):
+        """GitHub resolver invokes gh and returns the API response dict verbatim."""
+        repo_root, hive_path, tier_config = hive_tier_config
+
+        # Write a minimal mock gh script that echoes GITHUB_API_RESPONSE as JSON
+        gh_script = tmp_path / "gh"
+        gh_script.write_text(
+            "#!/bin/sh\n"
+            f"echo '{json.dumps(GITHUB_API_RESPONSE)}'\n"
+        )
+        gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+        # Prepend gh script directory to PATH so resolver finds it
+        monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ.get("PATH", ""))
+
+        # Register the GitHub resolver in config (path relative to project root)
+        from pathlib import Path as _Path
+        resolver_path = str(_Path(__file__).parent.parent / "resolvers" / "github_resolver.py")
+        scope_data = {
+            "hives": {HIVE_BACKEND: {"path": str(hive_path), "display_name": "Backend"}},
+            "child_tiers": tier_config,
+            "egg_resolver": resolver_path,
+        }
+        write_scoped_config(mock_global_bees_dir, repo_root, scope_data)
+
+        # Create a bee ticket with a GitHub issue URL as its egg value
+        ticket_id_prefix = "b.gh1"
+        write_ticket_file(hive_path, ticket_id_prefix, title="GitHub Issue Bee", egg=GITHUB_ISSUE_URL)
+
+        # Call _show_ticket with resolved_root set
+        show_result = await _show_ticket(ticket_ids=[ticket_id_prefix], resolved_root=repo_root)
+
+        # Assert the returned egg equals the GITHUB_API_RESPONSE dict verbatim
+        assert show_result["status"] == "success"
+        assert len(show_result["tickets"]) == 1
+        assert show_result["tickets"][0]["egg"] == GITHUB_API_RESPONSE
