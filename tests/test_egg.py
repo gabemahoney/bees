@@ -17,6 +17,8 @@ from tests.test_constants import (
     EGG_NULL,
     EGG_OBJECT,
     EGG_URL,
+    GITHUB_API_COMMENTS,
+    GITHUB_API_ISSUE,
     GITHUB_API_RESPONSE,
     GITHUB_ISSUE_URL,
     HIVE_BACKEND,
@@ -385,11 +387,18 @@ class TestGitHubResolverIntegration:
         """GitHub resolver invokes gh and returns the API response dict verbatim."""
         repo_root, hive_path, tier_config = hive_tier_config
 
-        # Write a minimal mock gh script that echoes GITHUB_API_RESPONSE as JSON
+        # Write a mock gh script that returns issue or comments based on the API path
         gh_script = tmp_path / "gh"
+        issue_json = json.dumps(GITHUB_API_ISSUE).replace("'", "'\\''")
+        comments_json = json.dumps(GITHUB_API_COMMENTS).replace("'", "'\\''")
         gh_script.write_text(
             "#!/bin/sh\n"
-            f"echo '{json.dumps(GITHUB_API_RESPONSE)}'\n"
+            'for arg in "$@"; do\n'
+            '  case "$arg" in\n'
+            "    */comments) echo '" + comments_json + "'; exit 0;;\n"
+            "  esac\n"
+            "done\n"
+            "echo '" + issue_json + "'\n"
         )
         gh_script.chmod(gh_script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 

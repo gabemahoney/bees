@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from tests.test_constants import (
+    GITHUB_API_COMMENTS,
+    GITHUB_API_ISSUE,
     GITHUB_API_RESPONSE,
     GITHUB_ENTERPRISE_URL,
     GITHUB_ISSUE_URL,
@@ -126,12 +128,27 @@ def test_gh_not_found(capsys):
     assert "gh" in captured.err.lower() or "not" in captured.err.lower()
 
 
+def _make_gh_mock(returncode=0, stdout="", stderr=""):
+    """Create a mock subprocess result."""
+    mock = MagicMock()
+    mock.returncode = returncode
+    mock.stdout = stdout
+    mock.stderr = stderr
+    return mock
+
+
+def _success_side_effect(*args, **kwargs):
+    """Mock subprocess.run for two calls: issue then comments, both succeed."""
+    cmd = args[0]
+    api_path = cmd[cmd.index("api") + 1]
+    if "/comments" in api_path:
+        return _make_gh_mock(stdout=json.dumps(GITHUB_API_COMMENTS))
+    return _make_gh_mock(stdout=json.dumps(GITHUB_API_ISSUE))
+
+
 def test_gh_auth_failure(capsys):
     """gh returns non-zero (auth failure) → non-zero exit, error on stderr."""
-    mock_result = MagicMock()
-    mock_result.returncode = 1
-    mock_result.stderr = "error connecting to github.com: authentication required"
-    mock_result.stdout = ""
+    mock_result = _make_gh_mock(returncode=1, stderr="error connecting to github.com: authentication required")
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
         with patch("github_resolver.subprocess.run", return_value=mock_result):
             code = _invoke_main(GITHUB_ISSUE_URL)
@@ -146,11 +163,8 @@ def test_gh_auth_failure(capsys):
     pytest.param(1, "HTTP 429: Too Many Requests", False, id="429_rate_limit"),
 ])
 def test_api_errors(capsys, status_code, stderr_snippet, check_owner_repo_num):
-    """API errors → non-zero exit, appropriate error on stderr."""
-    mock_result = MagicMock()
-    mock_result.returncode = status_code
-    mock_result.stderr = stderr_snippet
-    mock_result.stdout = ""
+    """API errors on issue fetch → non-zero exit, appropriate error on stderr."""
+    mock_result = _make_gh_mock(returncode=status_code, stderr=stderr_snippet)
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
         with patch("github_resolver.subprocess.run", return_value=mock_result):
             code = _invoke_main(GITHUB_ISSUE_URL)
@@ -158,9 +172,25 @@ def test_api_errors(capsys, status_code, stderr_snippet, check_owner_repo_num):
     captured = capsys.readouterr()
     assert captured.err.strip() != ""
     if check_owner_repo_num:
-        # 404: message must contain owner, repo, number
         assert "cli" in captured.err
         assert "1" in captured.err
+
+
+def test_comments_fetch_failure(capsys):
+    """Issue succeeds but comments fetch fails → non-zero exit, error on stderr."""
+    def side_effect(*args, **kwargs):
+        cmd = args[0]
+        api_path = cmd[cmd.index("api") + 1]
+        if "/comments" in api_path:
+            return _make_gh_mock(returncode=1, stderr="HTTP 500: Internal Server Error")
+        return _make_gh_mock(stdout=json.dumps(GITHUB_API_ISSUE))
+
+    with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
+        with patch("github_resolver.subprocess.run", side_effect=side_effect):
+            code = _invoke_main(GITHUB_ISSUE_URL)
+    assert code != 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() != ""
 
 
 def test_network_failure(capsys):
@@ -175,14 +205,60 @@ def test_network_failure(capsys):
 
 
 def test_happy_path(capsys):
-    """Valid URL → verbatim GitHub API JSON matching GITHUB_API_RESPONSE."""
-    mock_result = MagicMock()
-    mock_result.returncode = 0
-    mock_result.stdout = json.dumps(GITHUB_API_RESPONSE)
-    mock_result.stderr = ""
+    """Valid URL → combined JSON with issue and comments keys."""
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
-        with patch("github_resolver.subprocess.run", return_value=mock_result):
+        with patch("github_resolver.subprocess.run", side_effect=_success_side_effect):
             code = _invoke_main(GITHUB_ISSUE_URL)
     assert code == 0
     captured = capsys.readouterr()
-    assert json.loads(captured.out) == GITHUB_API_RESPONSE
+    result = json.loads(captured.out)
+    assert result == GITHUB_API_RESPONSE
+    assert "issue" in result
+    assert "comments" in result
+    assert result["issue"] == GITHUB_API_ISSUE
+    assert result["comments"] == GITHUB_API_COMMENTS
+
+
+def test_multi_url_happy_path(capsys):
+    """JSON array of URLs → array of {issue, comments} objects."""
+    egg = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
+    with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
+        with patch("github_resolver.subprocess.run", side_effect=_success_side_effect):
+            code = _invoke_main(egg)
+    assert code == 0
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert isinstance(result, list)
+    assert len(result) == 2
+    for entry in result:
+        assert "issue" in entry
+        assert "comments" in entry
+
+
+def test_multi_url_one_fails(capsys):
+    """If any URL in a list fails, the whole resolution fails."""
+    call_count = [0]
+
+    def fail_second(*args, **kwargs):
+        cmd = args[0]
+        api_path = cmd[cmd.index("api") + 1]
+        if "/comments" in api_path:
+            return _make_gh_mock(stdout=json.dumps(GITHUB_API_COMMENTS))
+        call_count[0] += 1
+        if call_count[0] == 2:
+            return _make_gh_mock(returncode=1, stderr="HTTP 404: Not Found")
+        return _make_gh_mock(stdout=json.dumps(GITHUB_API_ISSUE))
+
+    egg = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
+    with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
+        with patch("github_resolver.subprocess.run", side_effect=fail_second):
+            code = _invoke_main(egg)
+    assert code != 0
+
+
+def test_multi_url_empty_list(capsys):
+    """Empty URL list → non-zero exit."""
+    code = _invoke_main("[]")
+    assert code != 0
+    captured = capsys.readouterr()
+    assert captured.err.strip() != ""

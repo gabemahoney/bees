@@ -287,13 +287,24 @@ EGG_ARRAY = ["https://example.com/spec1.md", "https://example.com/spec2.md"]
 GITHUB_ISSUE_URL = "https://github.com/cli/cli/issues/1"           # Standard github.com issue URL
 GITHUB_ENTERPRISE_URL = "https://github.example.com/org/repo/issues/42"  # GitHub Enterprise issue URL
 GITHUB_PR_URL = "https://github.com/cli/cli/pull/1"                # GitHub PR URL
-GITHUB_API_RESPONSE = {                                             # Sample GitHub API response
+GITHUB_API_ISSUE = {                                                # Sample GitHub API issue response
     "id": 1,
     "number": 1,
     "title": "Test Issue",
     "state": "open",
     "html_url": "https://github.com/cli/cli/issues/1",
     "body": "This is a test issue body.",
+}
+GITHUB_API_COMMENTS = [                                             # Sample GitHub API comments response
+    {
+        "id": 100,
+        "body": "This is a test comment.",
+        "user": {"login": "testuser"},
+    },
+]
+GITHUB_API_RESPONSE = {                                             # Combined resolver output
+    "issue": GITHUB_API_ISSUE,
+    "comments": GITHUB_API_COMMENTS,
 }
 
 # ============================================================================
