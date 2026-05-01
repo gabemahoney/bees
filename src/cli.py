@@ -198,7 +198,7 @@ def handle_create_ticket(args):
     if args.body_file is not None:
         args.body = _read_body_file_arg("--body-file", args.body_file)
     if args.body is not None:
-        _reject_oversized_body_cli("--body-file" if args.body_file else "--body", args.body)
+        _reject_oversized_body_cli("--body-file" if args.body_file is not None else "--body", args.body)
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -238,7 +238,7 @@ def handle_update_ticket(args):
         args.body = _read_body_file_arg("--body-file", args.body_file)
 
     if args.body is not _UNSET and args.body is not None:
-        _reject_oversized_body_cli("--body-file" if args.body_file else "--body", args.body)
+        _reject_oversized_body_cli("--body-file" if args.body_file is not None else "--body", args.body)
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
@@ -293,7 +293,7 @@ def handle_append_ticket_body(args):
         return
     if args.chunk_file is not None:
         args.chunk = _read_body_file_arg("--chunk-file", args.chunk_file)
-    _reject_oversized_body_cli("--chunk-file" if args.chunk_file else "--chunk", args.chunk)
+    _reject_oversized_body_cli("--chunk-file" if args.chunk_file is not None else "--chunk", args.chunk)
     result = _run_in_repo(
         _append_ticket_body(
             ticket_id=args.ticket_id,

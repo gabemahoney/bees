@@ -239,6 +239,26 @@ def test_update_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
     assert "10000" in flat
 
 
+def test_create_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
+    """`bees create-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+    stdout, exit_code = cli_runner(["create-ticket", "--help"])
+    assert exit_code == 0
+    flat = _normalize_help(stdout)
+    assert "--body-file" in flat
+    assert "'-'" in flat
+    assert "10000" in flat
+
+
+def test_update_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
+    """`bees update-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+    stdout, exit_code = cli_runner(["update-ticket", "--help"])
+    assert exit_code == 0
+    flat = _normalize_help(stdout)
+    assert "--body-file" in flat
+    assert "'-'" in flat
+    assert "10000" in flat
+
+
 # ---------------------------------------------------------------------------
 # create-ticket --body-file happy paths (Epic 1 / t1.jsz.de)
 # ---------------------------------------------------------------------------

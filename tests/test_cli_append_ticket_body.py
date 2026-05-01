@@ -347,6 +347,19 @@ def test_append_ticket_body_missing_required_chunk_or_chunk_file(cli_runner):
     assert result["status"] == "error"
 
 
+def test_append_ticket_body_help_text_mentions_chunk_file_stdin_and_cap(cli_runner):
+    """`bees append-ticket-body --help` advertises --chunk-file with stdin and the cap (AC #8)."""
+    import re
+
+    stdout, exit_code = cli_runner(["append-ticket-body", "--help"])
+    assert exit_code == 0
+    rejoined = re.sub(r"-\s*\n\s*", "-", stdout)
+    flat = " ".join(rejoined.split())
+    assert "--chunk-file" in flat
+    assert "'-'" in flat
+    assert "10000" in flat
+
+
 # ---------------------------------------------------------------------------
 # Rejection / error paths — Epic 3 / t1.jsz.nb (--chunk-file)
 # ---------------------------------------------------------------------------
