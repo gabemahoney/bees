@@ -234,8 +234,11 @@ def handle_update_ticket(args):
     if _guard_queen_write_cli(root):
         return
 
+    if args.body_file is not None:
+        args.body = _read_body_file_arg("--body-file", args.body_file)
+
     if args.body is not _UNSET and args.body is not None:
-        _reject_oversized_body_cli("--body", args.body)
+        _reject_oversized_body_cli("--body-file" if args.body_file else "--body", args.body)
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
@@ -812,7 +815,9 @@ def build_parser():
     )
     p_update.add_argument("--ids", required=True, nargs="+", metavar="ID", help="One or more ticket IDs to update")
     p_update.add_argument("--title", default=_UNSET, help="New title")
-    p_update.add_argument("--body", default=_UNSET, help="New body (markdown). Capped at 10000 characters; for larger bodies, set the body to the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each.")  # noqa: E501
+    p_update_body = p_update.add_mutually_exclusive_group()
+    p_update_body.add_argument("--body", default=_UNSET, help="New body (markdown). Capped at 10000 characters; for larger bodies, set the body to the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each. Alternative: pass --body-file PATH when shell substitution is awkward.")  # noqa: E501
+    p_update_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read new body from a UTF-8 file (use '-' for stdin); same 10000 character cap as --body, with oversized input pointed at 'bees append-ticket-body'.")  # noqa: E501
     p_update.add_argument("--status", default=_UNSET, help="New status")
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
