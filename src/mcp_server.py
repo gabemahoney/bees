@@ -50,6 +50,7 @@ from .mcp_ticket_ops import (
     _show_ticket,
     _update_ticket,
 )
+from .mcp_resolver_ops import _set_resolver
 from .mcp_undertaker import _undertaker
 from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
@@ -1063,6 +1064,33 @@ async def clone_bee(
             force=force,
             resolved_root=resolved_root,
         )
+
+
+@mcp.tool()
+def set_resolver(
+    name: str,
+    path: str | None = None,
+    timeout: float | None = None,
+    unset: bool = False,
+) -> dict[str, Any]:
+    """Register, update, or remove a named resolver in the global registry.
+
+    In register/update mode (unset=False): registers the script at *path* under
+    *name*, extracting the RESOLVER CONVENTION section from its module docstring
+    automatically. The *path* must exist on disk.
+
+    In unset mode (unset=True): removes *name* from the registry. Fails if the
+    resolver is still referenced by any hive's allowed_resolvers.
+
+    The name "default" is reserved and cannot be used.
+
+    Args:
+        name: Resolver name. Cannot be "default".
+        path: Absolute path to the resolver script. Required unless unset=True.
+        timeout: Optional timeout in seconds for this resolver.
+        unset: If True, remove the resolver instead of registering/updating it.
+    """
+    return _set_resolver(name=name, path=path, timeout=timeout, unset=unset)
 
 
 @mcp.tool()

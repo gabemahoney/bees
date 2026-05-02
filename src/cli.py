@@ -37,6 +37,7 @@ from .mcp_ticket_ops import (
     _show_ticket,
     _update_ticket,
 )
+from .mcp_resolver_ops import _set_resolver
 from .mcp_undertaker import _undertaker
 from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
@@ -490,6 +491,16 @@ def handle_clone_bee(args):
 
 def handle_update_config(args):
     result = run_pending_migrations()
+    _output_result(result)
+
+
+def handle_set_resolver(args):
+    result = _set_resolver(
+        name=args.name,
+        path=args.path,
+        timeout=args.timeout,
+        unset=args.unset,
+    )
     _output_result(result)
 
 
@@ -1150,6 +1161,22 @@ def build_parser():
         description="Apply all pending schema migrations to the global bees configuration. No arguments required.",
     )
     p_update_config.set_defaults(func=handle_update_config)
+
+    # --- set-resolver ---
+    p_set_resolver = subparsers.add_parser(
+        "set-resolver",
+        help="Register, update, or remove a named resolver in the global registry",
+        description=(
+            "Register or update a resolver script under a name in the global registry, "
+            "or remove it with --unset. The convention section is extracted automatically "
+            "from the script's module docstring."
+        ),
+    )
+    p_set_resolver.add_argument("--name", required=True, help="Resolver name (cannot be 'default')")
+    p_set_resolver.add_argument("--path", default=None, metavar="PATH", help="Absolute path to the resolver script (required unless --unset)")  # noqa: E501
+    p_set_resolver.add_argument("--timeout", default=None, type=float, metavar="SECONDS", help="Optional timeout in seconds for the resolver")  # noqa: E501
+    p_set_resolver.add_argument("--unset", action="store_true", default=False, help="Remove the resolver from the registry")  # noqa: E501
+    p_set_resolver.set_defaults(func=handle_set_resolver)
 
     # --- sting ---
     p_sting = subparsers.add_parser("sting", help="Output bees context for Claude Code sessions")
