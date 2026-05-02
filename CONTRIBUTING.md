@@ -25,6 +25,10 @@ poetry run bees --help          # CLI
 poetry run bees serve --http    # MCP server (requires -E serve)
 ```
 
+## CLI/MCP Parity
+
+Any capability added via CLI flags must have a corresponding MCP tool parameter, and vice versa. When adding a new CLI flag that accepts a file path (e.g. `--body-file`), add the equivalent `_file` parameter to the corresponding MCP tool (e.g. `body_file`). The one permitted asymmetry is stdin (`"-"`): CLI file flags may accept `-` as a path to read from stdin; MCP tool file parameters must not (stdin is not available in the MCP context — raise `ValueError` when the path is `"-"`).
+
 ## Testing and Publishing
 
 Package name: `bees-md`

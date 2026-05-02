@@ -142,7 +142,11 @@ class TestAppendTicketBodyToolRegistration:
     """
 
     async def test_chunk_schema_has_body_max_length(self):
-        """`append_ticket_body.chunk` schema must carry `maxLength=BODY_MAX_LENGTH`."""
+        """`append_ticket_body.chunk` schema must carry `maxLength=BODY_MAX_LENGTH`.
+
+        chunk is optional (mutually exclusive with chunk_file), so the schema
+        uses anyOf with maxLength on the string branch.
+        """
         from src.constants import BODY_MAX_LENGTH
         from src.mcp_server import mcp
 
@@ -151,19 +155,23 @@ class TestAppendTicketBodyToolRegistration:
 
         assert "chunk" in params["properties"]
         chunk_schema = params["properties"]["chunk"]
-        assert chunk_schema.get("maxLength") == BODY_MAX_LENGTH, (
-            f"Expected maxLength={BODY_MAX_LENGTH} on append_ticket_body.chunk, "
-            f"got {chunk_schema.get('maxLength')!r}"
+        assert _has_any_max_length(chunk_schema), (
+            f"Expected maxLength={BODY_MAX_LENGTH} somewhere in "
+            f"append_ticket_body.chunk schema, got {chunk_schema!r}"
         )
 
-    async def test_required_fields_ticket_id_and_chunk(self):
-        """`ticket_id` and `chunk` must both be in the required array."""
+    async def test_required_fields_ticket_id(self):
+        """`ticket_id` must be in the required array.
+
+        `chunk` is no longer required at schema level — it is mutually
+        exclusive with `chunk_file`, and the tool validates at runtime that
+        exactly one of the two is provided.
+        """
         from src.mcp_server import mcp
 
         tool = await mcp.get_tool("append_ticket_body")
         required = set(tool.parameters.get("required", []))
         assert "ticket_id" in required
-        assert "chunk" in required
 
     async def test_docstring_mentions_tool_and_cap(self):
         """Docstring must contain `append_ticket_body` and derive the cap from BODY_MAX_LENGTH."""
