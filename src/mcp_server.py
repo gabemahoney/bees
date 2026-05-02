@@ -51,6 +51,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
+from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - re-exported
 
@@ -1062,6 +1063,34 @@ async def clone_bee(
             force=force,
             resolved_root=resolved_root,
         )
+
+
+@mcp.tool()
+def update_config() -> dict[str, Any]:
+    """Apply pending schema migrations to the global bees configuration.
+
+    IMPORTANT: Before calling this tool, you MUST ask the user for explicit
+    confirmation. This tool modifies the global bees configuration. It is safe
+    to run when migrations are already up to date (it will be a no-op), but
+    it writes to disk and should not be called without user awareness.
+
+    Applies all pending migration hops from the migration manifest to the
+    global config file (~/.bees/config.json), persisting schema_version after
+    each successful hop so that partial failures leave the config at the last
+    successfully applied version.
+
+    No repo_root or hive context is required — this operates on the global
+    bees config only.
+
+    Returns:
+        On success with no pending migrations:
+            {"status": "success", "message": "Already up to date", "version": "<current>"}
+        On success with applied migrations:
+            {"status": "success", "message": "Applied N migration(s)",
+             "applied_hops": [{"from_version": "...", "to_version": "..."}],
+             "final_version": "<new_version>"}
+    """
+    return run_pending_migrations()
 
 
 if __name__ == "__main__":

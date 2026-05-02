@@ -50,7 +50,8 @@ Run bees <command> -h for full usage on any command.
   set-status-values       Configure allowed statuses at global, repo, or hive scope
   generate-index          Generate index.md files for hives
   undertaker              Archive bee tickets to /cemetery
-  move-bee                Move bee tickets to a different hive"""
+  move-bee                Move bee tickets to a different hive
+  update-config           Apply pending schema migrations to global config"""
 
 
 def _key_matches_bees(key: str) -> bool:

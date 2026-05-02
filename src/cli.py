@@ -38,6 +38,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
+from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
@@ -484,6 +485,11 @@ def handle_clone_bee(args):
     if _guard_queen_write_cli(root):
         return
     result = _run_in_repo(_clone_bee(bee_id=args.bee_id, destination_hive=args.hive, force=args.force), root=root)
+    _output_result(result)
+
+
+def handle_update_config(args):
+    result = run_pending_migrations()
     _output_result(result)
 
 
@@ -1137,6 +1143,14 @@ def build_parser():
     undertaker_group.add_argument("--query-name", default=None, dest="query_name", metavar="NAME", help="Name of a saved named query (run list-named-queries to see available) — mutually exclusive with --query-yaml")  # noqa: E501
     p_undertaker.set_defaults(func=handle_undertaker)
 
+    # --- update-config ---
+    p_update_config = subparsers.add_parser(
+        "update-config",
+        help="Apply pending schema migrations to the global bees config",
+        description="Apply all pending schema migrations to the global bees configuration. No arguments required.",
+    )
+    p_update_config.set_defaults(func=handle_update_config)
+
     # --- sting ---
     p_sting = subparsers.add_parser("sting", help="Output bees context for Claude Code sessions")
     p_sting.set_defaults(func=handle_sting)
@@ -1208,7 +1222,7 @@ def build_parser():
         p_types, p_set_types, p_set_status_values, p_get_status_values,
         p_anq, p_enq, p_efq, p_dnq, p_lnq,
         p_colonize, p_list_hives, p_abandon, p_rename, p_sanitize,
-        p_index, p_move, p_clone, p_undertaker, p_sting, p_cli_mode,
+        p_index, p_move, p_clone, p_undertaker, p_update_config, p_sting, p_cli_mode,
     ]
     for _p in _non_serve_parsers:
         _p.add_argument("--test-config", nargs="?", const="", default=None, dest="test_config")
