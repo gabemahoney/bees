@@ -68,6 +68,13 @@ class ChildTierConfig:
 
 
 @dataclass
+class ResolverEntry:
+    path: str
+    timeout: int | float | None = None
+    convention: str | None = None
+
+
+@dataclass
 class HiveConfig:
     """Configuration for a single hive."""
 
@@ -821,6 +828,43 @@ def _parse_child_tiers_data(child_tiers_data: dict) -> dict[str, ChildTierConfig
     return child_tiers
 
 
+def _parse_resolvers_data(resolvers_data: dict) -> dict[str, ResolverEntry]:
+    """Parse resolvers from raw dict into ResolverEntry objects."""
+    if not isinstance(resolvers_data, dict):
+        raise ValueError(f"resolvers must be a dict, got {type(resolvers_data)}")
+
+    resolvers = {}
+    for name, entry_data in resolvers_data.items():
+        if not isinstance(entry_data, dict):
+            raise ValueError(f"Resolver '{name}' data must be a dict, got {type(entry_data)}")
+
+        if "path" not in entry_data:
+            raise ValueError(f"Resolver '{name}' missing required 'path' field")
+
+        path = entry_data["path"]
+        if not isinstance(path, str):
+            raise ValueError(f"Resolver '{name}' path must be a string, got {type(path)}")
+
+        timeout = entry_data.get("timeout")
+        if timeout is not None:
+            if not isinstance(timeout, (int, float)):
+                raise ValueError(
+                    f"Resolver '{name}' timeout must be a number or null, got {type(timeout)}"
+                )
+            if timeout <= 0:
+                raise ValueError(f"Resolver '{name}' timeout must be positive, got {timeout}")
+
+        convention = entry_data.get("convention")
+        if convention is not None and not isinstance(convention, str):
+            raise ValueError(
+                f"Resolver '{name}' convention must be a string or null, got {type(convention)}"
+            )
+
+        resolvers[name] = ResolverEntry(path=path, timeout=timeout, convention=convention)
+
+    return resolvers
+
+
 def _validate_status_values(values: Any, context_label: str) -> None:
     """Validate that status_values is a list of non-empty strings."""
     if not isinstance(values, list):
@@ -1130,6 +1174,43 @@ def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
         )
 
     global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(config)
+    save_global_config(global_config)
+
+
+def load_resolver_registry() -> dict[str, ResolverEntry]:
+    """Load the resolver registry from the global config.
+
+    Returns:
+        Dict mapping resolver names to ResolverEntry objects.
+        Empty dict if 'resolvers' key is absent.
+    """
+    global_config = load_global_config()
+    resolvers_data = global_config.get("resolvers")
+    if resolvers_data is None:
+        return {}
+    return _parse_resolvers_data(resolvers_data)
+
+
+def save_resolver_registry(registry: dict[str, ResolverEntry]) -> None:
+    """Save the resolver registry to the global config.
+
+    Serializes each ResolverEntry to a dict (omitting None optional fields),
+    loads the current global config, sets the 'resolvers' key, and saves.
+
+    Args:
+        registry: Dict mapping resolver names to ResolverEntry objects.
+    """
+    resolvers_dict = {}
+    for name, entry in registry.items():
+        entry_dict: dict = {"path": entry.path}
+        if entry.timeout is not None:
+            entry_dict["timeout"] = entry.timeout
+        if entry.convention is not None:
+            entry_dict["convention"] = entry.convention
+        resolvers_dict[name] = entry_dict
+
+    global_config = load_global_config()
+    global_config["resolvers"] = resolvers_dict
     save_global_config(global_config)
 
 
