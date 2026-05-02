@@ -213,7 +213,7 @@ def handle_create_ticket(args):
             down_dependencies=parse_json_arg(args.down_deps, "--down-deps") if args.down_deps is not None else None,
             tags=parse_json_arg(args.tags, "--tags") if args.tags is not None else None,
             status=args.status,
-            egg=parse_json_arg(args.egg, "--egg") if args.egg is not None else None,
+            reference_materials=parse_json_arg(args.reference_materials, "--reference-materials") if args.reference_materials is not None else None,
         ),
         root=root,
     )
@@ -260,8 +260,8 @@ def handle_update_ticket(args):
         kwargs["up_dependencies"] = parse_json_arg(args.up_deps, "--up-deps")
     if args.down_deps is not _UNSET:
         kwargs["down_dependencies"] = parse_json_arg(args.down_deps, "--down-deps")
-    if args.egg is not _UNSET:
-        kwargs["egg"] = parse_json_arg(args.egg, "--egg")
+    if args.reference_materials is not _UNSET:
+        kwargs["reference_materials"] = parse_json_arg(args.reference_materials, "--reference-materials")
     if args.add_tags is not _UNSET:
         kwargs["add_tags"] = parse_json_arg(args.add_tags, "--add-tags")
     if args.remove_tags is not _UNSET:
@@ -819,7 +819,7 @@ def build_parser():
     p_create.add_argument("--down-deps", default=None, dest="down_deps", metavar="JSON", help="JSON array of ticket IDs this ticket must be resolved BEFORE.")  # noqa: E501
     p_create.add_argument("--tags", default=None, metavar="JSON", help='JSON array of tag strings e.g. \'["bug","urgent"]\'')  # noqa: E501
     p_create.add_argument("--status", default=None, help="Ticket status. Freeform unless the hive has status_values configured, in which case must be one of the allowed values.")  # noqa: E501
-    p_create.add_argument("--egg", default=None, metavar="JSON", help="Any JSON value. Tracks external resources related to the ticket. Only supported on bee (top-level) tickets.")  # noqa: E501
+    p_create.add_argument("--reference-materials", default=None, dest="reference_materials", metavar="JSON", help="JSON list of reference material dicts. Tracks external resources related to the ticket. Only supported on bee (top-level) tickets.")  # noqa: E501
     p_create.set_defaults(func=handle_create_ticket)
 
     # --- show-ticket ---
@@ -846,7 +846,7 @@ def build_parser():
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
     p_update.add_argument("--down-deps", default=_UNSET, dest="down_deps", metavar="JSON", help="Full replacement list of ticket IDs this ticket must be resolved BEFORE (null to clear)")  # noqa: E501
-    p_update.add_argument("--egg", default=_UNSET, metavar="JSON", help="Any JSON value tracking external resources. Bee tickets only. (null to clear)")  # noqa: E501
+    p_update.add_argument("--reference-materials", default=_UNSET, dest="reference_materials", metavar="JSON", help="JSON list of reference material dicts tracking external resources. Bee tickets only. (null to clear)")  # noqa: E501
     p_update.add_argument("--add-tags", default=_UNSET, dest="add_tags", metavar="JSON", help="JSON array of tags to add")  # noqa: E501
     p_update.add_argument("--remove-tags", default=_UNSET, dest="remove_tags", metavar="JSON", help="JSON array of tags to remove")  # noqa: E501
     p_update.add_argument("--hive", default=_UNSET, help="Hive name for faster lookup (optional)")

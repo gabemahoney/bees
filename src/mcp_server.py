@@ -210,7 +210,7 @@ async def create_ticket(
     status: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None,
+    reference_materials: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Create a new ticket in a hive.
 
@@ -238,8 +238,8 @@ async def create_ticket(
         tags: List of string tags.
         status: Freeform if no status_values are configured for the hive; otherwise must be
                 one of the hive's configured values. Required when status_values are configured.
-        egg: Tracks external resources related to the ticket (any JSON-compatible value).
-             Only supported on bee (t0) tickets.
+        reference_materials: Tracks external resources related to the ticket.
+                             Only supported on bee (t0) tickets.
 
     """
     if body_file is not None and body != "":
@@ -264,7 +264,7 @@ async def create_ticket(
             down_dependencies=down_deps,
             tags=tags,
             status=status,
-            egg=egg,
+            reference_materials=reference_materials,
             resolved_root=resolved_root,
         )
 
@@ -281,7 +281,7 @@ async def update_ticket(
     add_tags: list[str] | None = None,
     remove_tags: list[str] | None = None,
     status: str | None | Literal["__UNSET__"] = _UNSET,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = _UNSET,  # type: ignore[assignment]
+    reference_materials: list[dict] | None = _UNSET,  # type: ignore[assignment]
     ctx: Context | None = None,
     repo_root: str | None = None,
     hive: str | None = None,
@@ -312,7 +312,7 @@ async def update_ticket(
         add_tags: Tags to add (single and batch).
         remove_tags: Tags to remove (single and batch).
         status: New status value (single and batch).
-        egg: New egg data (single mode only). Only supported on bee tickets.
+        reference_materials: New reference_materials data (single mode only). Only supported on bee tickets.
         hive: Optional hive name for faster lookup.
 
     """
@@ -337,7 +337,7 @@ async def update_ticket(
             add_tags=add_tags,
             remove_tags=remove_tags,
             status=status,
-            egg=egg,
+            reference_materials=reference_materials,
             hive_name=hive,
             resolved_root=resolved_root,
         )
@@ -371,7 +371,7 @@ async def append_ticket_body(
     body first, then loop `append_ticket_body` with chunks each no larger
     than 10000 characters. Only the `body` field is touched; every other
     frontmatter field (tags, status, guid, created_at, parent, children,
-    up_dependencies, down_dependencies, egg) is preserved unchanged.
+    up_dependencies, down_dependencies, reference_materials) is preserved unchanged.
 
     Args:
         ticket_id: The ticket whose body is being appended to.
@@ -865,7 +865,7 @@ async def execute_freeform_query(
             schema_version, guid, hive
 
         Excluded fields:
-            body, egg    — not available in query results; use show_ticket
+            body, reference_materials    — not available in query results; use show_ticket
 
         Example:
             stages:
