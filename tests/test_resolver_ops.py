@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from src.mcp_egg_ops import DEFAULT_RESOLVER_CONVENTION
+from src.mcp_reference_ops import DEFAULT_RESOLVER_CONVENTION
 from src.mcp_resolver_ops import _extract_convention, _get_resolvers, _set_resolver
 
 

@@ -369,7 +369,7 @@ class TestAllPipelineFields:
             "id: b.abc\n"
             "schema_version: '0.1'\n"
             "created_at: 2026-01-01T00:00:00\n"
-            "egg: null\n"
+            "reference_materials: null\n"
             "custom_field: whatever\n"
             "---\nBody.\n"
         )
@@ -378,8 +378,8 @@ class TestAllPipelineFields:
         assert result is not None
         # created_at is a known pipeline field — it IS extracted
         assert result["created_at"] == "2026-01-01T00:00:00"
-        # egg and custom_field are not pipeline fields — they are ignored
-        assert "egg" not in result
+        # reference_materials and custom_field are not pipeline fields — they are ignored
+        assert "reference_materials" not in result
         assert "custom_field" not in result
         assert result["id"] == "b.abc"
 
@@ -397,7 +397,7 @@ class TestAllPipelineFields:
             "title: Test\n"
             "status: open\n"
             "schema_version: '0.1'\n"
-            "egg: null\n"
+            "reference_materials: null\n"
             "extra: value\n"
             "---\nBody.\n"
         )

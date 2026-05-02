@@ -312,9 +312,9 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
                 **extra_fields,
             }
 
-            # Include egg: null for bee tickets so they pass linter integrity checks
-            if ticket_type == "bee" and "egg" not in extra_fields:
-                frontmatter["egg"] = None
+            # Include reference_materials: null for bee tickets so they pass linter integrity checks
+            if ticket_type == "bee" and "reference_materials" not in extra_fields:
+                frontmatter["reference_materials"] = None
 
             yaml_lines = ["---"]
             for key, value in frontmatter.items():

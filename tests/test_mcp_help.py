@@ -42,14 +42,14 @@ def test_no_deprecated_params(command_name: str, deprecated_param: str):
     )
 
 
-def test_egg_param_in_create_ticket():
-    """Verify egg parameter is present in create_ticket."""
+def test_reference_materials_param_in_create_ticket():
+    """Verify reference_materials parameter is present in create_ticket."""
     result = _help()
     cmd = get_command_by_name(result, "create_ticket")
     assert cmd is not None, "create_ticket command not found"
 
     param_names = get_param_names(cmd)
-    assert "egg" in param_names, "egg parameter should be in create_ticket"
+    assert "reference_materials" in param_names, "reference_materials parameter should be in create_ticket"
 
 
 def test_bees_version_not_in_concepts():
@@ -118,7 +118,7 @@ def test_create_ticket_has_expected_params():
         "down_dependencies",
         "tags",
         "status",
-        "egg",
+        "reference_materials",
     }
 
     result = _help()

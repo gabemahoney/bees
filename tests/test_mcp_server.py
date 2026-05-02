@@ -460,42 +460,43 @@ class TestUpdateTicket:
         assert bee.tags == ["label1", "label2"]
 
     @pytest.mark.parametrize(
-        "initial_egg,updated_egg",
+        "initial_rm,updated_rm",
         [
-            pytest.param(None, "b.Xyz", id="none_to_value"),
-            pytest.param("b.Abc", "b.Xyz", id="value_to_different_value"),
-            pytest.param("b.Abc", None, id="value_to_none"),
+            pytest.param(None, [{"value": "docs/spec.md"}], id="none_to_value"),
+            pytest.param([{"value": "docs/a.md"}], [{"value": "docs/b.md"}], id="value_to_different_value"),
+            pytest.param([{"value": "docs/a.md"}], None, id="value_to_none"),
         ],
     )
-    async def test_update_ticket_egg_field(self, hive_tier_config, initial_egg, updated_egg):
-        """Test updating egg field across various transitions."""
+    async def test_update_ticket_reference_materials_field(self, hive_tier_config, initial_rm, updated_rm):
+        """Test updating reference_materials field across various transitions."""
         from src.paths import get_ticket_path
         from src.reader import read_ticket
 
         epic_id, _ = create_bee(
-            hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, egg=initial_egg,
+            hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, reference_materials=initial_rm,
         )
-        result = await _update_ticket(ticket_ids=epic_id, egg=updated_egg)
+        result = await _update_ticket(ticket_ids=epic_id, reference_materials=updated_rm)
 
         assert result["status"] == "success"
         assert result["updated"] == [epic_id]
         assert result["not_found"] == []
         assert result["failed"] == []
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
-        assert bee.egg == updated_egg
+        assert bee.reference_materials == updated_rm
 
-    async def test_update_ticket_egg_unchanged_when_not_provided(self, hive_tier_config):
-        """Test that egg field is not modified when egg parameter is not passed."""
+    async def test_update_ticket_reference_materials_unchanged_when_not_provided(self, hive_tier_config):
+        """Test that reference_materials field is not modified when not passed."""
         from src.paths import get_ticket_path
         from src.reader import read_ticket
 
+        original_rm = [{"value": "docs/spec.md"}]
         epic_id, _ = create_bee(
-            hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, egg="b.Original",
+            hive_name=HIVE_BACKEND, title=TITLE_TEST_BEE, reference_materials=original_rm,
         )
         await _update_ticket(ticket_ids=epic_id, title="New Title")
 
         bee = read_ticket(epic_id, file_path=get_ticket_path(epic_id, "bee", HIVE_BACKEND))
-        assert bee.egg == "b.Original"
+        assert bee.reference_materials == original_rm
         assert bee.title == "New Title"
 
     async def test_update_ticket_preserves_created_at(self, hive_tier_config):
@@ -1092,52 +1093,30 @@ class TestShowTicket:
         result = await _show_ticket(ticket_ids=[ticket_id])
         assert result["tickets"][0]["up_dependencies"] == [blocking_id]
 
-    @pytest.mark.parametrize(
-        "ticket_id,title,egg_input,expected_egg",
-        [
-            pytest.param(
-                "b.eg1",
-                "Egg String Bee",
-                "https://example.com/spec.md",
-                "https://example.com/spec.md",
-                id="string_default_resolver",
-            ),
-            pytest.param(
-                "b.eg2",
-                "Null Egg Bee",
-                None,
-                None,
-                id="null_egg",
-            ),
-        ],
-    )
-    async def test_show_ticket_egg_variants(self, hive_env, ticket_id, title, egg_input, expected_egg):
-        """show_ticket returns egg as-is (default resolver) or null."""
+    async def test_show_ticket_null_reference_materials(self, hive_env):
+        """show_ticket returns null reference_materials when stored as null."""
         repo_root, hive_path, hive_name = hive_env
-        write_ticket_file(hive_path, ticket_id, title=title, egg=egg_input)
-        result = await _show_ticket(ticket_ids=[ticket_id])
+        write_ticket_file(hive_path, "b.eg2", title="Null Reference Bee", reference_materials=None)
+        result = await _show_ticket(ticket_ids=["b.eg2"])
         assert result["status"] == "success"
-        assert result["tickets"][0]["egg"] == expected_egg
+        assert result["tickets"][0]["reference_materials"] is None
 
-    async def test_show_ticket_egg_custom_resolver(self, hive_env, tmp_path):
-        """show_ticket uses custom egg_resolver subprocess when configured."""
+    async def test_show_ticket_reference_materials_with_resolved_field(self, hive_env):
+        """show_ticket returns reference_materials with 'resolved' key added per entry."""
         repo_root, hive_path, hive_name = hive_env
-
-        resolver_script = tmp_path / "egg_resolver.sh"
-        resolver_script.write_text('#!/bin/bash\necho \'["resolved_resource.txt"]\'\n')
-        resolver_script.chmod(0o755)
-
-        config = load_bees_config()
-        config.egg_resolver = str(resolver_script)
-        from src.config import find_matching_scope, load_global_config
-        global_config = load_global_config()
-        scope_pattern = find_matching_scope(repo_root, global_config)
-        save_bees_config(config, scope_pattern)
-
-        write_ticket_file(hive_path, "b.eg3", title="Custom Resolver Bee", egg="input-spec")
-        result = await _show_ticket(ticket_ids=["b.eg3"], resolved_root=repo_root)
+        # Create an actual file so the default resolver can find it
+        (hive_path / "spec.md").write_text("# Spec")
+        write_ticket_file(
+            hive_path, "b.eg1", title="Reference Bee",
+            reference_materials=[{"value": str(hive_path / "spec.md")}],
+        )
+        result = await _show_ticket(ticket_ids=["b.eg1"], resolved_root=repo_root)
         assert result["status"] == "success"
-        assert result["tickets"][0]["egg"] == ["resolved_resource.txt"]
+        rm = result["tickets"][0]["reference_materials"]
+        assert rm is not None
+        assert len(rm) == 1
+        assert "resolved" in rm[0]
+        assert rm[0]["resolved"]["status"] == "success"
 
 
 @pytest.mark.integration
@@ -1275,11 +1254,12 @@ class TestAddRemoveTags:
         assert TAG_DELTA not in bee.tags
 
 
-class TestResolveEggsTool:
-    """Tests that resolve_eggs is NOT exposed as an MCP tool."""
+class TestResolveReferencesTool:
+    """Tests that resolve_references is NOT exposed as a standalone MCP tool."""
 
-    def test_resolve_eggs_not_registered_as_mcp_tool(self):
-        """resolve_eggs must not be registered as an MCP tool on the server."""
+    def test_resolve_references_not_registered_as_mcp_tool(self):
+        """_resolve_references must not be registered as a top-level MCP tool on the server."""
         import src.mcp_server
 
+        assert not hasattr(src.mcp_server, "resolve_references")
         assert not hasattr(src.mcp_server, "resolve_eggs")

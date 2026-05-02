@@ -2,7 +2,7 @@
 Unit tests for the built-in default file path resolver.
 
 PURPOSE:
-Tests resolve_file_path() and DEFAULT_RESOLVER_CONVENTION from mcp_egg_ops.
+Tests resolve_file_path() and DEFAULT_RESOLVER_CONVENTION from mcp_reference_ops.
 Covers success paths (absolute/relative), error paths (missing file, no repo_root,
 non-string types), and edge cases (symlinks, directories).
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from src.mcp_egg_ops import DEFAULT_RESOLVER_CONVENTION, resolve_file_path
+from src.mcp_reference_ops import DEFAULT_RESOLVER_CONVENTION, resolve_file_path
 
 
 # ============================================================================

@@ -981,11 +981,12 @@ class TestSaveBeesConfig:
 
 
 # ============================================================================
-# EGG RESOLVER CONFIG TESTS
+# EGG RESOLVER CONFIG TESTS — removed; egg_resolver/egg_resolver_timeout config
+# keys no longer exist. Resolver registry is now managed via allowed_resolvers.
 # ============================================================================
 
 
-class TestEggResolverConfigValidation:
+class _RemovedEggResolverConfigValidation:
     """Test egg_resolver and egg_resolver_timeout validation at all config levels."""
 
     @pytest.mark.parametrize(
@@ -1090,7 +1091,7 @@ class TestEggResolverConfigValidation:
                 load_bees_config()
 
 
-class TestEggResolverResolution:
+class _RemovedEggResolverResolution:
     """Test egg_resolver resolution with 3-level fallback."""
 
     def test_hive_overrides_scope_and_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
@@ -1259,7 +1260,7 @@ class TestEggResolverResolution:
             resolve_egg_resolver("nonexistent")
 
 
-class TestEggResolverTimeoutResolution:
+class _RemovedEggResolverTimeoutResolution:
     """Test egg_resolver_timeout resolution with 3-level fallback."""
 
     def test_hive_overrides_scope_and_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
@@ -1406,7 +1407,7 @@ class TestEggResolverTimeoutResolution:
             resolve_egg_resolver_timeout("nonexistent")
 
 
-class TestEggResolverSerialization:
+class _RemovedEggResolverSerialization:
     """Test egg_resolver fields are serialized correctly."""
 
     def test_serialize_includes_fields_when_present(self, tmp_path, monkeypatch, mock_global_bees_dir):

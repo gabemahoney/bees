@@ -1,4 +1,4 @@
-"""Unit tests for the GitHub Issues/PR egg resolver."""
+"""Unit tests for the GitHub Issues/PR reference_materials resolver."""
 
 import json
 import subprocess
@@ -68,7 +68,7 @@ def test_parse_github_url_zero_number():
 # main() integration via subprocess (drives the full argparse + logic path)
 # ---------------------------------------------------------------------------
 
-def _run_main(egg_value, extra_env=None):
+def _run_main(value, extra_env=None):
     """Helper: run github_resolver.py as a subprocess and return CompletedProcess."""
     resolver_path = str(
         __import__("pathlib").Path(__file__).parent.parent / "resolvers" / "github_resolver.py"
@@ -78,7 +78,7 @@ def _run_main(egg_value, extra_env=None):
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
-        [sys.executable, resolver_path, "--repo-root", "/tmp", "--egg-value", egg_value],
+        [sys.executable, resolver_path, "--repo-root", "/tmp", "--value", value],
         capture_output=True,
         text=True,
         env=env,
@@ -111,9 +111,9 @@ def test_malformed_url_error():
 # Tests using mocks (import main directly)
 # ---------------------------------------------------------------------------
 
-def _invoke_main(egg_value):
+def _invoke_main(value):
     """Invoke main() with sys.argv patched; return exit code."""
-    with patch("sys.argv", ["github_resolver.py", "--repo-root", "/tmp", "--egg-value", egg_value]):
+    with patch("sys.argv", ["github_resolver.py", "--repo-root", "/tmp", "--value", value]):
         with pytest.raises(SystemExit) as exc_info:
             main()
     return exc_info.value.code
@@ -219,20 +219,16 @@ def test_happy_path(capsys):
     assert result["comments"] == GITHUB_API_COMMENTS
 
 
-def test_multi_url_happy_path(capsys):
-    """JSON array of URLs → array of {issue, comments} objects."""
-    egg = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
+def test_multi_url_array_rejected(capsys):
+    """JSON arrays are not supported — resolver exits non-zero with error on stderr."""
+    value = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
         with patch("github_resolver.subprocess.run", side_effect=_success_side_effect):
-            code = _invoke_main(egg)
-    assert code == 0
+            code = _invoke_main(value)
+    assert code != 0
     captured = capsys.readouterr()
-    result = json.loads(captured.out)
-    assert isinstance(result, list)
-    assert len(result) == 2
-    for entry in result:
-        assert "issue" in entry
-        assert "comments" in entry
+    assert captured.err.strip() != ""
+    assert "array" in captured.err.lower() or "not supported" in captured.err.lower()
 
 
 def test_multi_url_one_fails(capsys):

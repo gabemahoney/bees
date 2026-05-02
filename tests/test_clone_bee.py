@@ -23,7 +23,7 @@ from tests.test_constants import (
 
 
 def test_clone_flat_bee(isolated_bees_env):
-    """Clone a bee with no children: new ID, new GUID, new created_at; title/status/tags/description/egg identical."""
+    """Clone a bee with no children: new ID, new GUID, new created_at; title/status/tags/description/reference_materials identical."""
     env = isolated_bees_env
     hive_dir = env.create_hive(HIVE_TEST)
     env.write_config()
@@ -33,7 +33,7 @@ def test_clone_flat_bee(isolated_bees_env):
         TICKET_ID_CLONE_BEE_ROOT,
         title="Clone Source",
         status="open",
-        egg="https://example.com/spec.md",
+        reference_materials=[{"value": "docs/spec.md"}],
         body="Source body content.",
         tags=["alpha", "beta"],
     )
@@ -55,7 +55,7 @@ def test_clone_flat_bee(isolated_bees_env):
     assert cloned.title == source.title
     assert cloned.status == source.status
     assert cloned.tags == source.tags
-    assert cloned.egg == source.egg
+    assert cloned.reference_materials == source.reference_materials
     assert cloned.body == source.body
 
     # New values: id, guid, created_at must differ

@@ -1884,11 +1884,11 @@ class TestAppendTicketBody:
         assert result["error_type"] == "hive_not_found"
 
     async def test_frontmatter_preservation(self, isolated_bees_env):
-        """SR-10.6 #13 — frontmatter (tags, status, children, egg) unchanged after append."""
+        """SR-10.6 #13 — frontmatter (tags, status, children, reference_materials) unchanged after append."""
         isolated_bees_env.create_hive(HIVE_BACKEND)
         isolated_bees_env.write_config()
 
-        # Seed a bee with tags + status + egg.
+        # Seed a bee with tags + status + reference_materials.
         create_result = await _create_ticket(
             ticket_type="bee",
             title="Frontmatter Bee",
@@ -1896,7 +1896,7 @@ class TestAppendTicketBody:
             hive_name=HIVE_BACKEND,
             tags=["alpha", "beta"],
             status="in_progress",
-            egg={"src": "https://example.com/issue/1"},
+            reference_materials=[{"value": "docs/spec.md"}],
         )
         assert create_result["status"] == "success"
         tid = create_result["ticket_id"]
@@ -1917,7 +1917,7 @@ class TestAppendTicketBody:
         assert ticket.body == "initial-APPENDED-CHUNK"
         assert ticket.tags == ["alpha", "beta"]
         assert ticket.status == "in_progress"
-        assert ticket.egg == {"src": "https://example.com/issue/1"}
+        assert ticket.reference_materials == [{"value": "docs/spec.md"}]
 
     async def test_tier_agnostic_append(self, isolated_bees_env):
         """SR-10.6 #14 — append path works for both bee and t1 tiers."""

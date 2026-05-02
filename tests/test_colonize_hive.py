@@ -626,7 +626,7 @@ class TestColonizeHiveChildTiers:
         assert result["error_type"] == "child_tiers_validation_error"
 
 
-class TestColonizeHiveEggResolver:
+class _RemovedColonizeHiveEggResolver:
     """Integration tests for colonize_hive() with egg_resolver parameter."""
 
     @pytest.fixture

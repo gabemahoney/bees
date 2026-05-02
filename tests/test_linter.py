@@ -252,7 +252,7 @@ Body.""")
             "up_dependencies": [],
             "down_dependencies": [],
             "created_at": "2024-01-01T00:00:00+00:00",
-            "egg": None,
+            "reference_materials": None,
         }
         yaml_content = yaml.dump(frontmatter, default_flow_style=False, allow_unicode=True)
         ticket_file.write_text(f"---\n{yaml_content}---\n\nTest body.")
@@ -350,7 +350,7 @@ schema_version: '0.1'
 title: Test
 type: bee
 status: open
-egg: null
+reference_materials: null
 ---
 
 Test body."""
@@ -363,7 +363,7 @@ title: Test
 type: bee
 status: open
 created_at: '{created_at}'
-egg: null
+reference_materials: null
 ---
 
 Test body."""
@@ -1506,62 +1506,63 @@ class TestBidirectionalRepairHierarchical:
 # ============================================================================
 
 
-class TestEggFieldValidation:
-    """Tests for validate_egg_field_presence() functionality."""
+class TestReferenceMaterialsFieldValidation:
+    """Tests for validate_reference_materials_field_presence() functionality."""
 
-    def test_bee_without_egg_field_validation_error(self, hive_env):
-        """Bee without egg field in frontmatter triggers validation error and marks corrupt."""
+    def test_bee_without_reference_materials_field_validation_error(self, hive_env):
+        """Bee without reference_materials field in frontmatter triggers validation error and marks corrupt."""
         repo_root, tickets_dir, hive_name = hive_env
 
-        # Create bee ticket file WITHOUT egg field using omit_egg=True
-        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee Without Egg", omit_egg=True)
+        # Create bee ticket file WITHOUT reference_materials field using omit_reference_materials=True
+        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee Without Reference Materials", omit_reference_materials=True)
 
         report = Linter(str(tickets_dir), hive_name=hive_name).run()
-        egg_errors = report.get_errors(error_type="missing_egg_field")
-        assert len(egg_errors) == 1
-        assert egg_errors[0].ticket_id == TICKET_ID_ABC
-        assert "must have 'egg' field" in egg_errors[0].message
+        errors = report.get_errors(error_type="missing_reference_materials_field")
+        assert len(errors) == 1
+        assert errors[0].ticket_id == TICKET_ID_ABC
+        assert "must have 'reference_materials' field" in errors[0].message
         assert report.is_corrupt()
 
-    def test_bee_with_egg_null_passes(self, hive_env):
-        """Bee with egg: null in frontmatter passes validation."""
+    def test_bee_with_reference_materials_null_passes(self, hive_env):
+        """Bee with reference_materials: null in frontmatter passes validation."""
         repo_root, tickets_dir, hive_name = hive_env
 
-        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee With Null Egg", egg=None)
+        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee With Null Reference Materials", reference_materials=None)
 
         report = Linter(str(tickets_dir), hive_name=hive_name).run()
-        egg_errors = report.get_errors(error_type="missing_egg_field")
-        assert len(egg_errors) == 0
+        errors = report.get_errors(error_type="missing_reference_materials_field")
+        assert len(errors) == 0
 
-    def test_bee_with_egg_string_passes(self, hive_env):
-        """Bee with egg: "string" in frontmatter passes validation."""
+    def test_bee_with_reference_materials_list_passes(self, hive_env):
+        """Bee with reference_materials as list in frontmatter passes validation."""
         repo_root, tickets_dir, hive_name = hive_env
 
-        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee With String Egg", egg="https://example.com/spec.md")
+        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee With Reference Materials List",
+                          reference_materials=[{"value": "docs/spec.md"}])
 
         report = Linter(str(tickets_dir), hive_name=hive_name).run()
-        egg_errors = report.get_errors(error_type="missing_egg_field")
-        assert len(egg_errors) == 0
+        errors = report.get_errors(error_type="missing_reference_materials_field")
+        assert len(errors) == 0
 
-    def test_t1_ticket_without_egg_no_error(self, hive_env):
-        """t1 ticket without egg field has no validation error (only bees require egg)."""
+    def test_t1_ticket_without_reference_materials_no_error(self, hive_env):
+        """t1 ticket without reference_materials field has no validation error (only bees require it)."""
         repo_root, tickets_dir, hive_name = hive_env
 
-        write_ticket_file(tickets_dir, TICKET_ID_LINTER_TASK_MAIN, title="Task Without Egg", type="t1")
+        write_ticket_file(tickets_dir, TICKET_ID_LINTER_TASK_MAIN, title="Task Without Reference Materials", type="t1")
 
         report = Linter(str(tickets_dir), hive_name=hive_name).run()
-        egg_errors = report.get_errors(error_type="missing_egg_field")
-        assert len(egg_errors) == 0
+        errors = report.get_errors(error_type="missing_reference_materials_field")
+        assert len(errors) == 0
 
     @pytest.mark.asyncio
-    async def test_sanitize_hive_with_bee_missing_egg_reports_error(self, hive_env):
-        """sanitize_hive detects bee missing egg field and reports error."""
+    async def test_sanitize_hive_with_bee_missing_reference_materials_reports_error(self, hive_env):
+        """sanitize_hive detects bee missing reference_materials field and reports error."""
         from src.mcp_hive_ops import _sanitize_hive
 
         repo_root, tickets_dir, hive_name = hive_env
 
-        # Create bee without egg field using omit_egg=True
-        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee Missing Egg", omit_egg=True)
+        # Create bee without reference_materials field using omit_reference_materials=True
+        write_ticket_file(tickets_dir, TICKET_ID_ABC, title="Bee Missing Reference Materials", omit_reference_materials=True)
 
         # Run sanitize_hive
         result = await _sanitize_hive(hive_name)
@@ -1571,9 +1572,9 @@ class TestEggFieldValidation:
         assert result["is_corrupt"] is True
         assert len(result["errors_remaining"]) > 0
 
-        # Verify missing_egg_field error is in the report
+        # Verify missing_reference_materials_field error is in the report
         error_types = [err["error_type"] for err in result["errors_remaining"]]
-        assert "missing_egg_field" in error_types
+        assert "missing_reference_materials_field" in error_types
 
 
 class TestSanitizeHiveIntegration:
@@ -1896,7 +1897,7 @@ schema_version: '0.1'
 title: Test
 type: bee
 status: 123
-egg: null
+reference_materials: null
 ---
 
 Test body."""
@@ -1986,143 +1987,90 @@ Test body."""
         assert len(status_related) == 0
 
 
-class TestEggJsonSerializableValidation:
-    """Tests for validate_egg_json_serializable() functionality."""
+class TestReferenceMaterialsJsonSerializableValidation:
+    """Tests for validate_reference_materials_json_serializable() functionality."""
 
-    def test_egg_null_passes(self, tmp_path):
-        """Bee ticket with egg=None passes validation."""
+    def test_reference_materials_null_passes(self, tmp_path):
+        """Bee ticket with reference_materials=None passes validation."""
         bees_dir = tmp_path / "bees"
         bees_dir.mkdir()
-        write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", egg=None)
+        write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", reference_materials=None)
 
         report = Linter(str(tmp_path)).run()
         errors = report.get_errors(error_type="invalid_field_type", ticket_id=TICKET_ID_ABC)
-        egg_errors = [e for e in errors if "egg" in e.message.lower()]
-        assert len(egg_errors) == 0
+        rm_errors = [e for e in errors if "reference_materials" in e.message.lower()]
+        assert len(rm_errors) == 0
 
-    def test_egg_string_passes(self, tmp_path):
-        """Bee ticket with string egg passes validation."""
+    def test_reference_materials_empty_list_passes(self, tmp_path):
+        """Bee ticket with reference_materials=[] passes validation."""
         bees_dir = tmp_path / "bees"
         bees_dir.mkdir()
-        write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", egg="https://example.com/spec.md")
+        write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", reference_materials=[])
 
         report = Linter(str(tmp_path)).run()
         errors = report.get_errors(error_type="invalid_field_type", ticket_id=TICKET_ID_ABC)
-        egg_errors = [e for e in errors if "egg" in e.message.lower()]
-        assert len(egg_errors) == 0
+        rm_errors = [e for e in errors if "reference_materials" in e.message.lower()]
+        assert len(rm_errors) == 0
 
-    def test_egg_integer_passes(self, tmp_path):
-        """Bee ticket with integer egg passes validation."""
+    def test_reference_materials_valid_list_passes(self, tmp_path):
+        """Bee ticket with valid reference_materials list passes validation."""
         bees_dir = tmp_path / "bees"
         bees_dir.mkdir()
-        ticket_dir = bees_dir / TICKET_ID_ABC
-        ticket_dir.mkdir()
-        ticket_file = ticket_dir / f"{TICKET_ID_ABC}.md"
-
-        # Write ticket with integer egg
-        content = """---
-id: b.abc
-schema_version: '0.1'
-title: Test
-type: bee
-egg: 42
----
-
-Test body."""
-        ticket_file.write_text(content)
+        write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test",
+                          reference_materials=[{"value": "docs/spec.md"}])
 
         report = Linter(str(tmp_path)).run()
         errors = report.get_errors(error_type="invalid_field_type", ticket_id=TICKET_ID_ABC)
-        egg_errors = [e for e in errors if "egg" in e.message.lower()]
-        assert len(egg_errors) == 0
+        rm_errors = [e for e in errors if "reference_materials" in e.message.lower()]
+        assert len(rm_errors) == 0
 
-    def test_egg_dict_passes(self, tmp_path):
-        """Bee ticket with dict egg passes validation."""
+    def test_reference_materials_string_fails(self, tmp_path):
+        """Bee ticket with reference_materials as a string fails validation."""
         bees_dir = tmp_path / "bees"
         bees_dir.mkdir()
         ticket_dir = bees_dir / TICKET_ID_ABC
         ticket_dir.mkdir()
         ticket_file = ticket_dir / f"{TICKET_ID_ABC}.md"
 
-        # Write ticket with dict egg
         content = """---
 id: b.abc
 schema_version: '0.1'
 title: Test
 type: bee
-egg:
-  key: value
-  nested:
-    data: test
+reference_materials: "not a list"
 ---
 
 Test body."""
         ticket_file.write_text(content)
 
         report = Linter(str(tmp_path)).run()
-        errors = report.get_errors(error_type="invalid_field_type", ticket_id=TICKET_ID_ABC)
-        egg_errors = [e for e in errors if "egg" in e.message.lower()]
-        assert len(egg_errors) == 0
+        errors = [e for e in report.errors if "reference_materials" in e.message.lower()]
+        assert len(errors) >= 1
 
-    def test_egg_list_passes(self, tmp_path):
-        """Bee ticket with list egg passes validation."""
-        bees_dir = tmp_path / "bees"
-        bees_dir.mkdir()
-        ticket_dir = bees_dir / TICKET_ID_ABC
-        ticket_dir.mkdir()
-        ticket_file = ticket_dir / f"{TICKET_ID_ABC}.md"
-
-        # Write ticket with list egg
-        content = """---
-id: b.abc
-schema_version: '0.1'
-title: Test
-type: bee
-egg:
-  - 1
-  - 2
-  - 3
----
-
-Test body."""
-        ticket_file.write_text(content)
-
-        report = Linter(str(tmp_path)).run()
-        errors = report.get_errors(error_type="invalid_field_type", ticket_id=TICKET_ID_ABC)
-        egg_errors = [e for e in errors if "egg" in e.message.lower()]
-        assert len(egg_errors) == 0
-
-    def test_egg_non_serializable_direct_call(self, tmp_path):
-        """Non-serializable egg triggers error when tested directly."""
+    def test_reference_materials_non_serializable_direct_call(self, tmp_path):
+        """Non-list reference_materials triggers error when tested directly."""
         from src.models import Ticket
 
-        # Create a non-serializable object (e.g., a set or custom class)
-        class NonSerializable:
-            pass
-
-        ticket = Ticket(id=TICKET_ID_ABC, type="bee", title="Test", egg=NonSerializable())
+        # A non-list value passed as reference_materials should trigger a validation error
+        ticket = Ticket(id=TICKET_ID_ABC, type="bee", title="Test", reference_materials="invalid")
         linter = Linter(str(tmp_path))
         report = LinterReport()
 
-        linter.validate_egg_json_serializable(ticket, report)
+        linter.validate_reference_materials_json_serializable(ticket, report)
 
         errors = report.get_errors(error_type="invalid_field_type")
-        assert len(errors) == 1
-        assert "egg field must be JSON-serializable" in errors[0].message
+        assert len(errors) >= 1
 
-    def test_egg_validation_only_for_bee_tickets(self, tmp_path):
-        """Egg validation only applies to bee tickets, not t1/t2 tickets."""
+    def test_reference_materials_validation_only_for_bee_tickets(self, tmp_path):
+        """Reference materials validation only applies to bee tickets, not t1/t2 tickets."""
         from src.models import Ticket
 
-        # Create a t1 ticket with non-serializable egg (should be ignored)
-        class NonSerializable:
-            pass
-
-        ticket = Ticket(id=TICKET_ID_LINTER_TASK_MAIN, type="t1", title="Test", egg=NonSerializable())
+        # A t1 ticket with invalid reference_materials should be ignored
+        ticket = Ticket(id=TICKET_ID_LINTER_TASK_MAIN, type="t1", title="Test", reference_materials="invalid")
         linter = Linter(str(tmp_path))
         report = LinterReport()
 
-        linter.validate_egg_json_serializable(ticket, report)
+        linter.validate_reference_materials_json_serializable(ticket, report)
 
         # No errors should be added for non-bee tickets
         errors = report.get_errors(error_type="invalid_field_type")
@@ -2210,7 +2158,7 @@ schema_version: '0.1'
 title: Test
 type: bee
 status: open
-egg: null
+reference_materials: null
 priority: 5
 ---
 
@@ -2276,57 +2224,57 @@ class TestDisallowedFieldsUnit:
         assert len(report.get_errors(error_type="disallowed_field")) == 0
 
 
-class TestEggFieldPresenceUnit:
-    """Unit tests for validate_egg_field_presence using constructed Ticket objects (no disk)."""
+class TestReferenceMaterialsFieldPresenceUnit:
+    """Unit tests for validate_reference_materials_field_presence using constructed Ticket objects (no disk)."""
 
-    def _run_egg_check(self, ticket):
-        """Create linter/report, run validate_egg_field_presence, return report."""
+    def _run_check(self, ticket):
+        """Create linter/report, run validate_reference_materials_field_presence, return report."""
         linter = Linter("/nonexistent")
         report = LinterReport()
-        linter.validate_egg_field_presence(ticket, report)
+        linter.validate_reference_materials_field_presence(ticket, report)
         return report
 
-    def test_bee_missing_egg_in_raw_keys_reports_error(self):
-        """Bee with _raw_keys not containing 'egg' triggers missing_egg_field error."""
+    def test_bee_missing_reference_materials_in_raw_keys_reports_error(self):
+        """Bee with _raw_keys not containing 'reference_materials' triggers missing_reference_materials_field error."""
         ticket = make_ticket(id=TICKET_ID_ABC, type="bee")
         ticket._raw_keys = frozenset({"id", "type", "title", "status"})
 
-        report = self._run_egg_check(ticket)
+        report = self._run_check(ticket)
 
-        errors = report.get_errors(error_type="missing_egg_field")
+        errors = report.get_errors(error_type="missing_reference_materials_field")
         assert len(errors) == 1
         assert TICKET_ID_ABC in errors[0].message
 
-    @pytest.mark.parametrize("egg_value", [None, "https://example.com"], ids=["null_value", "with_value"])
-    def test_bee_egg_present_no_error(self, egg_value):
-        """Bee with 'egg' in _raw_keys (null or valued) passes validation."""
-        ticket = make_ticket(id=TICKET_ID_ABC, type="bee", egg=egg_value)
-        ticket._raw_keys = frozenset({"id", "type", "title", "status", "egg"})
+    @pytest.mark.parametrize("rm_value", [None, [{"value": "docs/spec.md"}]], ids=["null_value", "with_value"])
+    def test_bee_reference_materials_present_no_error(self, rm_value):
+        """Bee with 'reference_materials' in _raw_keys (null or valued) passes validation."""
+        ticket = make_ticket(id=TICKET_ID_ABC, type="bee", reference_materials=rm_value)
+        ticket._raw_keys = frozenset({"id", "type", "title", "status", "reference_materials"})
 
-        report = self._run_egg_check(ticket)
+        report = self._run_check(ticket)
 
-        assert len(report.get_errors(error_type="missing_egg_field")) == 0
+        assert len(report.get_errors(error_type="missing_reference_materials_field")) == 0
 
     @pytest.mark.parametrize("ticket_type", ["t1", "t2"], ids=["t1_skipped", "t2_skipped"])
     def test_non_bee_skipped_regardless_of_raw_keys(self, ticket_type):
-        """Non-bee tickets are skipped entirely, even without 'egg' in _raw_keys."""
+        """Non-bee tickets are skipped entirely, even without 'reference_materials' in _raw_keys."""
         ticket = make_ticket(id=TICKET_ID_XYZ, type=ticket_type, parent=TICKET_ID_ABC)
         ticket._raw_keys = frozenset({"id", "type", "title", "status"})
 
-        report = self._run_egg_check(ticket)
+        report = self._run_check(ticket)
 
-        assert len(report.get_errors(error_type="missing_egg_field")) == 0
+        assert len(report.get_errors(error_type="missing_reference_materials_field")) == 0
 
     def test_no_raw_keys_attr_reports_error(self):
-        """Ticket without _raw_keys attr falls back to empty frozenset → missing_egg_field."""
+        """Ticket without _raw_keys attr falls back to empty frozenset → missing_reference_materials_field."""
         ticket = make_ticket(id=TICKET_ID_ABC, type="bee")
         # Explicitly remove _raw_keys if make_ticket sets one
         if hasattr(ticket, "_raw_keys"):
             delattr(ticket, "_raw_keys")
 
-        report = self._run_egg_check(ticket)
+        report = self._run_check(ticket)
 
-        errors = report.get_errors(error_type="missing_egg_field")
+        errors = report.get_errors(error_type="missing_reference_materials_field")
         assert len(errors) == 1
 
 
@@ -2435,14 +2383,15 @@ class TestGuidValidation:
         assert persisted.guid == ticket.guid
 
     def test_missing_guid_autofix_preserves_all_fields(self, hive_env):
-        """auto_fix=True preserves created_at and egg when writing guid fix."""
+        """auto_fix=True preserves created_at and reference_materials when writing guid fix."""
         from src.reader import read_ticket
 
         repo_root, hive_dir, hive_name = hive_env
 
         ticket_file = write_ticket_file(
             hive_dir, TICKET_ID_ABC, title="Preserve Fields Bee", guid=None,
-            created_at="2025-06-01T12:00:00+00:00", egg="b.XYZ",
+            created_at="2025-06-01T12:00:00+00:00",
+            reference_materials=[{"value": "docs/spec.md"}],
         )
 
         ticket = read_ticket(TICKET_ID_ABC, file_path=ticket_file)
@@ -2454,7 +2403,7 @@ class TestGuidValidation:
 
         persisted = read_ticket(TICKET_ID_ABC, file_path=ticket_file)
         assert persisted.created_at == ticket.created_at
-        assert persisted.egg == "b.XYZ"
+        assert persisted.reference_materials == [{"value": "docs/spec.md"}]
 
 
 # ============================================================================
@@ -2495,8 +2444,8 @@ class TestSanitizeHiveCrossScopeMap:
         helper.hives["ghost"] = {"path": str(helper.base_path / "ghost"), "display_name": "Ghost"}
         helper.write_config(child_tiers={})
 
-        # Bee missing egg field → unfixable missing_egg_field error from backend
-        write_ticket_file(backend_dir, TICKET_ID_ABC, title="Missing Egg Bee", omit_egg=True)
+        # Bee missing reference_materials field → unfixable missing_reference_materials_field error from backend
+        write_ticket_file(backend_dir, TICKET_ID_ABC, title="Missing Reference Bee", omit_reference_materials=True)
 
         result = await _sanitize_hive("backend")
 

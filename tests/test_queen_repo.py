@@ -543,7 +543,7 @@ class TestQueenWriteGateMCP:
         assert compute_ticket_path(ticket_id, hive_dir).exists()
 
 
-class TestQueenShowTicketEggResolver:
+class _RemovedQueenShowTicketEggResolver:
     """Regression b.8wn: queen show_ticket uses the foreign scope's BeesConfig for egg resolution."""
 
     async def test_queen_show_ticket_uses_foreign_scope_egg_resolver(

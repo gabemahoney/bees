@@ -14,7 +14,7 @@ SCOPE - Tests that belong here:
 - Exit codes (0 success, 1 known error, 2 usage error)
 - JSON output structure and field values
 - UNSET sentinel behaviour for update-ticket
-- JSON flag parsing: --egg null, --tags '["a","b"]'
+- JSON flag parsing: --reference-materials null, --tags '["a","b"]'
 - No-subcommand invocation
 
 SCOPE - Tests that DON'T belong here:
@@ -74,7 +74,7 @@ def test_create_ticket_happy_path(cli_runner, isolated_bees_env):
     assert "ticket_id" in result
 
 
-def test_create_ticket_null_egg(cli_runner, isolated_bees_env):
+def test_create_ticket_null_reference_materials(cli_runner, isolated_bees_env):
     isolated_bees_env.create_hive("test", "Test")
     isolated_bees_env.write_config()
 
@@ -84,10 +84,10 @@ def test_create_ticket_null_egg(cli_runner, isolated_bees_env):
             "--ticket-type",
             "bee",
             "--title",
-            "Egg Test",
+            "Reference Materials Test",
             "--hive",
             "test",
-            "--egg",
+            "--reference-materials",
             "null",
         ]
     )
@@ -95,7 +95,7 @@ def test_create_ticket_null_egg(cli_runner, isolated_bees_env):
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["status"] == "success"
-    assert result.get("egg") is None
+    assert result.get("reference_materials") is None
 
 
 def test_create_ticket_json_tags(cli_runner, isolated_bees_env):
@@ -240,7 +240,7 @@ def test_update_ticket_parent_is_immutable(cli_runner, isolated_bees_env):
 def test_update_ticket_single_id_with_title(cli_runner, isolated_bees_env):
     """Regression: single-ID update with non-batchable field (title) must succeed (b.p1a).
 
-    _update_ticket rejects title/body/egg on batch (multi-ID) calls. The CLI
+    _update_ticket rejects title/body/reference_materials on batch (multi-ID) calls. The CLI
     must unwrap a single-element --ids list so the backend treats it as a
     single-ticket update and allows the non-batchable field through.
     """
