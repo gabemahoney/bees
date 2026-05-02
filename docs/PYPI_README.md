@@ -15,3 +15,7 @@ pipx install 'bees-md[serve]'
 ## Documentation
 
 Full docs at [github.com/gabemahoney/bees](https://github.com/gabemahoney/bees)
+
+## Changelog
+
+See [Releases](https://github.com/gabemahoney/bees/releases) for version history and release notes.
