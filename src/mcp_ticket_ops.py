@@ -1504,7 +1504,7 @@ async def _show_ticket(
                         "ticket_status": str,
                         "created_at": str,
                         "schema_version": str,
-                        "egg": any,
+                        "reference_materials": list | None,
                         "guid": str
                     },
                     ...
@@ -1514,14 +1514,14 @@ async def _show_ticket(
             }
 
         `not_found` contains IDs of tickets that could not be located or read.
-        `errors` contains IDs of tickets that were found but failed during egg resolution.
+        `errors` contains IDs of tickets that were found but failed during reference resolution.
 
     Example:
         >>> _show_ticket(['b.Amx', 'b.Xyz'])
         {'status': 'success', 'tickets': [{...}, {...}], 'not_found': [], 'errors': []}
     """
-    # Local import to avoid circular dependency (mcp_egg_ops imports find_hive_for_ticket from here)
-    from .mcp_egg_ops import _default_resolver, _invoke_custom_resolver  # noqa: PLC0415
+    # Local import to avoid circular dependency (mcp_reference_ops imports find_hive_for_ticket from here)
+    from .mcp_reference_ops import _resolve_references  # noqa: PLC0415
 
     if not ticket_ids:
         return {"status": "success", "tickets": [], "not_found": [], "errors": []}
@@ -1571,16 +1571,18 @@ async def _show_ticket(
             resolved_hive, ticket_path = path_map[ticket_id]
             ticket = read_ticket(ticket_id, file_path=ticket_path)
 
-            # Resolve egg for bee tickets via resolver pipeline
+            # Resolve reference_materials for bee tickets via resolver pipeline
             if ticket.type == "bee":
                 try:
-                    resolved_egg = _default_resolver(ticket.egg)
+                    resolved_reference_materials = await _resolve_references(
+                        ticket.reference_materials, repo_root=resolved_root
+                    )
                 except Exception as e:
-                    logger.error(f"Egg resolver failed for {ticket_id}: {e}")
+                    logger.error(f"Reference resolver failed for {ticket_id}: {e}")
                     errors.append({"id": ticket_id, "reason": str(e)})
-                    resolved_egg = ticket.egg
+                    resolved_reference_materials = ticket.reference_materials
             else:
-                resolved_egg = ticket.egg
+                resolved_reference_materials = ticket.reference_materials
 
             ticket_data = {
                 "ticket_id": ticket.id,
@@ -1595,7 +1597,7 @@ async def _show_ticket(
                 "ticket_status": ticket.status,
                 "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
                 "schema_version": ticket.schema_version,
-                "egg": resolved_egg,
+                "reference_materials": resolved_reference_materials,
                 "guid": ticket.guid,
             }
             tickets.append(ticket_data)

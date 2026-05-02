@@ -57,7 +57,7 @@ def _get_resolvers() -> dict:
         dict with "status": "success" and "resolvers": list of resolver dicts.
         Each entry has: name, path, timeout, convention, built_in.
     """
-    from .mcp_egg_ops import DEFAULT_RESOLVER_CONVENTION  # avoid circular at module level
+    from .mcp_reference_ops import DEFAULT_RESOLVER_CONVENTION  # avoid circular at module level
 
     registry = load_resolver_registry()
     resolvers = [
