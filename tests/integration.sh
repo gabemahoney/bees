@@ -3654,6 +3654,106 @@ run_test test_list_named_queries_works
 run_test test_t9_cap
 run_test test_http_port_config
 
+# === BODY FILE / CHUNK FILE ===
+
+BODY_FILE_BEE=""
+CHUNK_FILE_BEE=""
+
+test_body_file_create() {
+    echo "hello from file" > /tmp/test_body.txt
+    capture_cmd bees create-ticket --ticket-type bee --title "Body File Bee" \
+        --hive crud_hive --body-file /tmp/test_body.txt
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "create-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "create-ticket --body-file"
+    BODY_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "hello from file" ]; then
+        fail_test "create-ticket --body-file" "Expected body='hello from file', got '$body'"
+    fi
+    pass_test "create-ticket --body-file"
+}
+
+test_body_file_mutual_exclusion() {
+    capture_cmd bees create-ticket --ticket-type bee --title "X" \
+        --hive crud_hive --body "inline" --body-file /tmp/test_body.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--body/--body-file mutual exclusion" "Expected non-zero exit but got 0"
+    fi
+    assert_no_traceback "$CMD_OUT" "--body/--body-file mutual exclusion"
+    pass_test "--body/--body-file mutual exclusion"
+}
+
+test_body_file_update() {
+    echo "updated body" > /tmp/test_body2.txt
+    capture_cmd bees update-ticket --ids "$BODY_FILE_BEE" --body-file /tmp/test_body2.txt
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-ticket --body-file"
+    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "updated body" ]; then
+        fail_test "update-ticket --body-file" "Expected body='updated body', got '$body'"
+    fi
+    pass_test "update-ticket --body-file"
+}
+
+test_chunk_file_append() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Append Bee" \
+        --hive crud_hive --body "start"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "append-ticket-body --chunk-file" "Create failed: $CMD_OUT"
+    fi
+    CHUNK_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    printf " appended" > /tmp/test_chunk.txt
+    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
+        --chunk-file /tmp/test_chunk.txt
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "append-ticket-body --chunk-file" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "append-ticket-body --chunk-file"
+    capture_cmd bees show-ticket --ids "$CHUNK_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "start appended" ]; then
+        fail_test "append-ticket-body --chunk-file" "Expected body='start appended', got '$body'"
+    fi
+    pass_test "append-ticket-body --chunk-file"
+}
+
+test_chunk_file_mutual_exclusion() {
+    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
+        --chunk "inline" --chunk-file /tmp/test_chunk.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--chunk/--chunk-file mutual exclusion" "Expected non-zero exit but got 0"
+    fi
+    assert_no_traceback "$CMD_OUT" "--chunk/--chunk-file mutual exclusion"
+    pass_test "--chunk/--chunk-file mutual exclusion"
+}
+
+test_body_file_not_found() {
+    capture_cmd bees create-ticket --ticket-type bee --title "X" \
+        --hive crud_hive --body-file /tmp/no_such_file.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--body-file nonexistent" "Expected non-zero exit but got 0"
+    fi
+    assert_no_traceback "$CMD_OUT" "--body-file nonexistent"
+    rm -f /tmp/test_body.txt /tmp/test_body2.txt /tmp/test_chunk.txt
+    pass_test "--body-file nonexistent"
+}
+
+run_test test_body_file_create
+run_test test_body_file_mutual_exclusion
+run_test test_body_file_update
+run_test test_chunk_file_append
+run_test test_chunk_file_mutual_exclusion
+run_test test_body_file_not_found
+
 # === SUCCESS SIGNAL ===
 echo ""
 echo "=========================================="
