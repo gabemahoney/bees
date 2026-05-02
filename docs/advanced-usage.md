@@ -394,6 +394,8 @@ bees set-status-values --scope=global --unset
 
 `--body`/`--body-file` and `--chunk`/`--chunk-file` are mutually exclusive; the file flags read content from the named path (or stdin when the path is `-`), and the same 10000-character cap applies regardless of input source.
 
+The MCP tools expose equivalent `body_file` and `chunk_file` parameters with the same semantics: `create_ticket` and `update_ticket` accept `body_file` as an alternative to `body`, and `append_ticket_body` accepts `chunk_file` as an alternative to `chunk`. In both cases the parameters are mutually exclusive and the 10000-character cap applies to file-sourced content as well. The one difference from the CLI is that stdin (`"-"`) is not supported in the MCP context — content that would otherwise come from stdin must be passed inline.
+
 ## Query Operations
 
 ```bash

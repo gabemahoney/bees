@@ -54,7 +54,11 @@ Bees is a **file-based ticket management system** designed for LLM-assisted deve
 - Max bees per scope: 39,304 (34³)
 - Max children per parent: 1,156 (34²)
 
-### 1.2 Distribution
+### 1.2 Design Principles
+
+- **CLI/MCP parity**: Any capability exposed via CLI flags must have a corresponding MCP tool parameter, and vice versa. This ensures agents using MCP tools have the same capabilities as CLI users. The one permitted exception is stdin (`"-"`) support: CLI file flags accept `-` as a path to read from stdin, while MCP tool file parameters do not (stdin is not available in the MCP context).
+
+### 1.3 Distribution
 
 - Package name: `bees-md`
 - CLI entry point: `bees`

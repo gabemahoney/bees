@@ -91,6 +91,41 @@ def _guard_queen_write(resolved_root: Path) -> dict | None:
     return check_queen_write_access(resolved_root, load_global_config())
 
 
+def _read_file_content(param_name: str, path: str) -> str:
+    """Read a file and return its UTF-8 decoded content.
+
+    Args:
+        param_name: Name of the parameter (used in error messages, e.g. "body_file").
+        path: Absolute or relative path to the file to read.
+
+    Raises:
+        ValueError: If path is "-", the file is not found, cannot be read, or
+                    is not valid UTF-8, or if the content exceeds BODY_MAX_LENGTH.
+    """
+    if path == "-":
+        raise ValueError(
+            f"{param_name} does not support stdin ('-') in MCP context; pass the content inline instead"
+        )
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except FileNotFoundError:
+        raise ValueError(f"{param_name} file not found: {path}") from None
+    except OSError as exc:
+        raise ValueError(f"{param_name} could not read {path}: {exc}") from exc
+    try:
+        content = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{param_name} could not decode {path} as UTF-8: {exc}") from exc
+    if len(content) > BODY_MAX_LENGTH:
+        raise ValueError(
+            f"{param_name} is {len(content)} characters, which exceeds the "
+            f"{BODY_MAX_LENGTH} character cap. Use append_ticket_body to write "
+            f"large bodies in chunks of up to {BODY_MAX_LENGTH} characters each."
+        )
+    return content
+
+
 # ── Server lifecycle ──────────────────────────────────────────────────────────
 
 def start_server() -> dict[str, Any]:
@@ -164,6 +199,7 @@ async def create_ticket(
     title: str,
     hive: str,
     body: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] = "",
+    body_file: str | None = None,
     parent: str | None = None,
     children: list[str] | None = None,
     up_deps: list[str] | None = None,
@@ -188,6 +224,9 @@ async def create_ticket(
         hive: Hive to create the ticket in. Use list_hives to see available hives.
         body: Optional markdown body. Must be at most 10000 characters; for
               longer bodies use a short stub here and loop `append_ticket_body`.
+              Mutually exclusive with body_file.
+        body_file: Path to a file whose UTF-8 contents are used as the body.
+                   Mutually exclusive with body. File must be at most 10000 characters.
         parent: Parent ticket ID. Required for child-tier tickets; omit for bees.
                 The parent ticket's children field is updated automatically.
         children: Child ticket IDs to link at creation time. Bidirectional relationship
@@ -201,6 +240,10 @@ async def create_ticket(
              Only supported on bee (t0) tickets.
 
     """
+    if body_file is not None and body != "":
+        raise ValueError("body and body_file are mutually exclusive")
+    if body_file is not None:
+        body = _read_file_content("body_file", body_file)
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
@@ -229,6 +272,7 @@ async def update_ticket(
     ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
     body: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] | None | Literal["__UNSET__"] = _UNSET,
+    body_file: str | None = None,
     up_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     down_deps: list[str] | None = _UNSET,  # type: ignore[assignment]
     tags: list[str] | None = _UNSET,  # type: ignore[assignment]
@@ -256,6 +300,10 @@ async def update_ticket(
         body: New markdown body (single mode only). Must be at most 10000
               characters when provided as a string; for longer bodies use a
               short stub here and loop `append_ticket_body`.
+              Mutually exclusive with body_file.
+        body_file: Path to a file whose UTF-8 contents are used as the body
+                   (single mode only). Mutually exclusive with body.
+                   File must be at most 10000 characters.
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
         down_deps: Full replacement list of dependent ticket IDs (single mode only).
         tags: Full replacement list of tags (single mode only).
@@ -266,6 +314,10 @@ async def update_ticket(
         hive: Optional hive name for faster lookup.
 
     """
+    if body_file is not None and body != _UNSET:
+        raise ValueError("body and body_file are mutually exclusive")
+    if body_file is not None:
+        body = _read_file_content("body_file", body_file)
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:
@@ -292,7 +344,8 @@ async def update_ticket(
 @mcp.tool()
 async def append_ticket_body(
     ticket_id: str,
-    chunk: Annotated[str, Field(max_length=BODY_MAX_LENGTH)],
+    chunk: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] | None = None,
+    chunk_file: str | None = None,
     hive: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
@@ -321,9 +374,18 @@ async def append_ticket_body(
     Args:
         ticket_id: The ticket whose body is being appended to.
         chunk: The text to append. May be the empty string. Must be at
-               most 10000 characters.
+               most 10000 characters. Mutually exclusive with chunk_file.
+        chunk_file: Path to a file whose UTF-8 contents are appended.
+                    Mutually exclusive with chunk. File must be at most
+                    10000 characters.
         hive: Optional hive name for faster O(1) lookup.
     """
+    if chunk is not None and chunk_file is not None:
+        raise ValueError("chunk and chunk_file are mutually exclusive")
+    if chunk is None and chunk_file is None:
+        raise ValueError("Either chunk or chunk_file must be provided")
+    if chunk_file is not None:
+        chunk = _read_file_content("chunk_file", chunk_file)
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
     else:

@@ -19,7 +19,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 
-async def file_bug(url: str, title: str, description: str) -> str:
+async def file_bug(url: str, title: str, description: str, repo_root: str) -> str:
     async with streamablehttp_client(url) as (read_stream, write_stream, _):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
@@ -28,15 +28,23 @@ async def file_bug(url: str, title: str, description: str) -> str:
                 {
                     "ticket_type": "bee",
                     "title": title,
-                    "hive": "bugs",
+                    "hive": "bees_bugs",
                     "status": "open",
-                    "description": description,
+                    "body": description,
+                    "repo_root": repo_root,
                 },
             )
             # result.content is a list of TextContent objects
             for block in result.content:
                 if hasattr(block, "text"):
-                    data = json.loads(block.text)
+                    if not block.text.strip():
+                        print(f"ERROR: Empty text block", file=sys.stderr)
+                        sys.exit(1)
+                    try:
+                        data = json.loads(block.text)
+                    except json.JSONDecodeError:
+                        print(f"ERROR: Non-JSON response: {block.text!r}", file=sys.stderr)
+                        sys.exit(1)
                     if data.get("status") == "success":
                         return data["ticket_id"]
                     else:
@@ -51,11 +59,13 @@ def main():
     parser.add_argument("--url", default=None, help="MCP server URL (default: $BUG_SERVER_URL/mcp)")
     parser.add_argument("--title", required=True, help="Bug title")
     parser.add_argument("--description", required=True, help="Bug description")
+    parser.add_argument("--repo-root", default=None, help="Repo root for the bees server (default: $BEES_REPO_ROOT)")
     args = parser.parse_args()
 
     url = args.url or os.environ.get("BUG_SERVER_URL", "http://host.docker.internal:8000") + "/mcp"
+    repo_root = args.repo_root or os.environ.get("BEES_REPO_ROOT", "/home/gmahoney/projects/bees_project")
 
-    ticket_id = asyncio.run(file_bug(url, args.title, args.description))
+    ticket_id = asyncio.run(file_bug(url, args.title, args.description, repo_root))
     print(f"BUG FILED: {ticket_id}")
 
 
