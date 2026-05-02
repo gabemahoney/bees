@@ -22,7 +22,7 @@ description: Publish bees-md to PyPI. Bumps version, builds, checks, uploads, co
 # Overview
 
 Publishes `bees-md` to the real PyPI. Handles the full release lifecycle:
-bump version → build → check → upload → commit → tag.
+bump version → build → check → upload → commit → tag → GitHub release.
 
 **Run `/ci` first.** This skill does not run tests — it assumes CI has already passed.
 
@@ -217,7 +217,17 @@ git push && git push --tags
 
 On failure, stop: "Push failed. Output above."
 
-## Step 9 — Install locally
+## Step 9 — Create GitHub release
+
+Create a GitHub release with auto-generated notes from merged PRs:
+
+```bash
+gh release create "v<version>" --title "v<version>" --generate-notes
+```
+
+On failure, warn but do not stop — the package is already published. Report: "Warning: GitHub release creation failed. Create manually at https://github.com/gabemahoney/bees/releases"
+
+## Step 10 — Install locally
 
 Reinstall the newly published version via pipx:
 
@@ -230,7 +240,7 @@ On failure, stop: "Local install failed. Output above."
 Report:
 ```
 Published bees-md <version> to PyPI.
-  https://pypi.org/project/bees-md/<version>/
-  https://github.com/gabemahoney/bees/releases/tag/v<version>
+  PyPI    : https://pypi.org/project/bees-md/<version>/
+  Release : https://github.com/gabemahoney/bees/releases/tag/v<version>
   Installed locally via pipx.
 ```
