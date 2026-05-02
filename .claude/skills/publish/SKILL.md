@@ -68,11 +68,11 @@ Stop after reporting. Do not proceed to preflight.
 
 1. **Bump type provided?** Must be one of: `major`, `minor`, `patch`. If not, stop: "Usage: `/publish major|minor|patch`"
 
-2. **On master branch?**
+2. **On main branch?**
    ```bash
    git rev-parse --abbrev-ref HEAD
    ```
-   If not `master`, stop: "Must be on master to publish. Currently on <branch>."
+   If not `main`, stop: "Must be on main to publish. Currently on <branch>."
 
 3. **Working tree clean?**
    ```bash
