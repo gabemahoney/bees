@@ -129,10 +129,10 @@ def _help() -> dict[str, Any]:
                 {"name": "tags", "type": "list[str]", "required": False, "description": "Tag strings"},
                 {"name": "status", "type": "str", "required": False, "description": "Status"},
                 {
-                    "name": "egg",
-                    "type": "any (JSON-serializable)",
+                    "name": "reference_materials",
+                    "type": "list[dict] | null",
                     "required": False,
-                    "description": "Egg field for resource association",
+                    "description": "Reference materials for the bee; null or list of dicts with required 'value' key and optional 'resolver' string key",
                 },
             ],
         },
