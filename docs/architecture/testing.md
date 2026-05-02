@@ -146,7 +146,7 @@ If you must write tests that depend on previous tests, ensure the ticket depende
 
 ## Bash Integration Test Script
 
-Phases 1 and 2 of the integration test suite run as a standalone bash script (`tests/integration.sh`). These phases exercise the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, egg resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
+Phases 1 and 2 of the integration test suite run as a standalone bash script (`tests/integration.sh`). These phases exercise the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
 
 Phases 3 and 4 remain Claude-run. They validate the full LLM-agent interaction loop against a live MCP server, catching interaction-level bugs that bash cannot. The split gives developers rapid feedback locally while reserving token spend for the tests that genuinely need it.
 

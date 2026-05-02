@@ -22,7 +22,7 @@
 11. [Status Values System](#11-status-values-system)
 12. [Query System](#12-query-system)
 13. [Named Queries](#13-named-queries)
-14. [Egg System](#14-egg-system)
+14. [Reference Materials System](#14-reference-materials-system)
 15. [Index Generation](#15-index-generation)
 16. [Undertaker (Archival)](#16-undertaker-archival)
 17. [Move Bee](#17-move-bee)
@@ -70,7 +70,7 @@ Bees is a **file-based ticket management system** designed for LLM-assisted deve
 
 ### 2.1 Hive
 
-A hive is a registered directory that stores a group of related tickets. Hives are registered in a global config file (`~/.bees/config.json`) and belong to "scopes" (repo-path-keyed configuration groups). Each hive can have its own tier hierarchy, status constraints, and egg resolver.
+A hive is a registered directory that stores a group of related tickets. Hives are registered in a global config file (`~/.bees/config.json`) and belong to "scopes" (repo-path-keyed configuration groups). Each hive can have its own tier hierarchy, status constraints, and allowed resolvers.
 
 ### 2.2 Ticket
 
@@ -78,7 +78,7 @@ A ticket is a Markdown file with YAML frontmatter. The filename and containing d
 
 ### 2.3 Scope
 
-A scope is a path pattern in the config that maps a repository root (or set of repositories) to a configuration block containing hives, tier config, status values, queries, and egg resolvers.
+A scope is a path pattern in the config that maps a repository root (or set of repositories) to a configuration block containing hives, tier config, status values, and queries.
 
 ### 2.4 Cemetery
 
@@ -101,7 +101,7 @@ A special directory within each hive (`{hive_root}/cemetery/`) where archived ti
 | `children` | list[string] | No | [] | Auto-maintained bidirectionally; empty list omitted from file |
 | `up_dependencies` | list[string] | No | [] | Tickets that block this one; same-type constraint |
 | `down_dependencies` | list[string] | No | [] | Tickets this one blocks; auto-synced bidirectionally |
-| `egg` | any JSON | No | null | **Bee tickets only**; any JSON-serializable value |
+| `reference_materials` | list[dict] \| null | No | null | **Bee tickets only**; list of `{value, resolver?}` entries |
 | `guid` | string | No | generated | 32-char; auto-generated at creation; **immutable** |
 | `created_at` | string (ISO 8601) | No | generated | Set at creation time; **never modified on update** |
 | `schema_version` | string | Yes | `"0.1"` | Auto-injected on write; presence validates file as a bees ticket |
@@ -109,7 +109,7 @@ A special directory within each hive (`{hive_root}/cemetery/`) where archived ti
 
 ### 3.2 Allowed Frontmatter Fields
 
-Only the fields listed in section 3.1 are permitted in ticket frontmatter: `id`, `type`, `title`, `status`, `tags`, `parent`, `children`, `up_dependencies`, `down_dependencies`, `egg`, `guid`, `created_at`, `schema_version`. The `description` field is stored in the Markdown body (after the closing `---`), not in frontmatter. Any other field present in frontmatter is flagged as a linter error.
+Only the fields listed in section 3.1 are permitted in ticket frontmatter: `id`, `type`, `title`, `status`, `tags`, `parent`, `children`, `up_dependencies`, `down_dependencies`, `reference_materials`, `guid`, `created_at`, `schema_version`. The `description` field is stored in the Markdown body (after the closing `---`), not in frontmatter. Any other field present in frontmatter is flagged as a linter error.
 
 ---
 
@@ -206,7 +206,7 @@ tags:
 up_dependencies:
 - b.xyz
 down_dependencies: []
-egg: null
+reference_materials: null
 guid: amx9f7k2r8p3m1n4q6t5v8wx2y3zab1c
 created_at: '2026-01-15T10:30:00'
 schema_version: '0.1'
@@ -283,8 +283,7 @@ On failure, the temp file must be cleaned up. The config file (`~/.bees/config.j
           "created_at": "2026-01-01T00:00:00",
           "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
           "status_values": ["larva", "pupa", "worker", "finished"],
-          "egg_resolver": "/path/to/resolver.sh",
-          "egg_resolver_timeout": 30,
+          "allowed_resolvers": ["guid_resolver", "default"],
           "undertaker_schedule": {
             "interval_seconds": 3600,
             "query_yaml": "- ['status=finished']",
@@ -294,15 +293,11 @@ On failure, the temp file must be cleaned up. The config file (`~/.bees/config.j
       },
       "child_tiers": null,
       "status_values": null,
-      "egg_resolver": null,
-      "egg_resolver_timeout": null,
       "queries": {}
     }
   },
   "child_tiers": null,
   "status_values": null,
-  "egg_resolver": null,
-  "egg_resolver_timeout": null,
   "queries": {},
   "delete_with_dependencies": false,
   "auto_fix_dangling_refs": false,
@@ -322,7 +317,7 @@ First matching scope wins (declaration order).
 
 ### 6.4 Three-Level Fallback Pattern
 
-Used by `child_tiers`, `status_values`, `egg_resolver`, `egg_resolver_timeout`:
+Used by `child_tiers`, `status_values`:
 
 ```
 hive level → scope level → global level → hardcoded default
@@ -332,7 +327,6 @@ hive level → scope level → global level → hardcoded default
 |---------|--------------|-----------------|-----------------|----------------|
 | `child_tiers` | Fall through | **Stop chain** (bees-only) | N/A | Stop chain, use value |
 | `status_values` | Fall through | N/A | **Fall through** (treated as unset) | Stop chain, use value |
-| `egg_resolver` | Fall through | N/A | N/A | Stop chain; `"default"` = built-in |
 
 ### 6.5 Global-Only Config Flags
 
@@ -425,7 +419,7 @@ Creates a new hive:
 6. Register in `~/.bees/config.json` under the matching scope
 7. If no matching scope exists, create exact-path scope entry
 
-Parameters: `name` (display name), `path` (absolute), optional `child_tiers`, `egg_resolver`, `egg_resolver_timeout`
+Parameters: `name` (display name), `path` (absolute), optional `child_tiers`, `allowed_resolvers`
 
 Returns: `{status: "success", normalized_name, display_name, path}`
 
@@ -499,7 +493,7 @@ Parameters:
 - `down_dependencies`: optional list of dependent ticket IDs
 - `tags`: optional list of strings
 - `status`: optional; validated against `status_values` if configured
-- `egg`: optional; bee tickets only; any JSON value
+- `reference_materials`: optional; bee tickets only; list of `{value, resolver?}` dicts
 
 Process:
 1. Resolve `hive_name` (accepts display name or normalized name)
@@ -535,7 +529,7 @@ Returns:
 - Invalid ID format → goes to `errors` with `error_type: invalid_ticket_id`
 - Valid ID but no ticket → goes to `not_found`
 - Found ticket → fully populated in `tickets` array
-- Egg resolver is invoked if configured (adds `resources` field)
+- Reference materials are resolved per-entry using named resolvers (each entry augmented with a `resolved` key)
 
 ### 8.3 Update Ticket
 
@@ -549,7 +543,7 @@ Parameters:
 - `remove_tags`: tags to remove incrementally (single and batch)
 - `up_dependencies`: full replacement list (single mode only)
 - `down_dependencies`: full replacement list (single mode only)
-- `egg`: new egg value (single mode only, bee tickets only)
+- `reference_materials`: new reference_materials value (single mode only, bee tickets only)
 - `hive_name`: optional, speeds up ticket lookup by narrowing the search to one hive
 
 **Batch mode**: when `ticket_id` is a list, only `status`, `add_tags`, `remove_tags` are allowed.
@@ -558,7 +552,7 @@ Parameters:
 
 **Partial updates**: only specified fields change; unspecified fields preserved. `created_at` is never modified.
 
-**Egg behavior**: unchanged when `egg` parameter not passed; set to new value (including null) when passed.
+**Reference materials behavior**: unchanged when `reference_materials` parameter not passed; set to new value (including null) when passed.
 
 Returns (single): `{status: "success", ticket_id}`
 Returns (batch): `{status: "success", updated: [...]}`
@@ -840,47 +834,46 @@ Errors: `query_not_found` (includes `available_queries` list), `query_out_of_sco
 
 ---
 
-## 14. Egg System
+## 14. Reference Materials System
 
-### 14.1 Egg Field
+### 14.1 Reference Materials Field
 
-- Only on **bee tickets** (child tiers must NOT have egg)
-- Any JSON-serializable value: dict, list, string, int, float, bool, null
+- Only on **bee tickets** (child tiers must NOT have `reference_materials`)
+- Type: list of dicts or null — each dict has a required `value` key and an optional `resolver` key
 - Default: null
+- Example: `[{"value": "src/main.py"}, {"value": "abc-guid", "resolver": "guid_resolver"}]`
 
-### 14.2 Egg Resolver
+### 14.2 Resolution
 
-An external script that transforms an egg value into a "resources" structure at read time (`show_ticket`).
-
-**Resolution chain**: hive → scope → global → built-in default
+Resolution happens per-entry when `show_ticket` is called. Each entry's `resolver` key (defaulting to `"default"`) selects a resolver from the global named resolver registry.
 
 **Default resolver** (built-in, no subprocess):
-- `null` → `null`
-- String → `["string"]`
-- Other types → `[JSON-encoded value]`
+- Accepts a string file path (absolute or relative)
+- Resolves relative paths against `repo_root`
+- Returns `{"status": "success", "resolved_path": str}` on success
+- Returns `{"status": "error", "raw_value": value, "error": str}` on failure
 
 **Custom resolver invocation**:
 ```bash
-/path/to/resolver.sh --repo-root /path/to/repo --egg-value <value>
+/path/to/resolver.sh --repo-root /path/to/repo --value <value>
 ```
 
-- String egg: passed as raw text
-- Non-string egg: JSON-encoded before passing
-- `null` egg: short-circuits, returns null without subprocess call
-- Output: valid JSON to stdout (array of strings or null)
+- String values: passed as raw text
+- Non-string values: JSON-encoded before passing
+- `null` values: short-circuit, returned as-is without subprocess call
+- Output: valid JSON to stdout (any JSON value)
 - Errors: to stderr
 - Exit code 0 = success, non-zero = failure
-- Special value `"default"` for `egg_resolver` stops fallback chain and uses built-in
 
-**Timeout**: `egg_resolver_timeout` — positive number (seconds) or null (no timeout). Three-level fallback: hive → scope → global.
+**Timeout**: configured per resolver in the global `resolvers` registry via the `timeout` field.
 
-### 14.3 resolve_eggs MCP Tool
+**Response**: `show_ticket` returns each entry with an added `resolved` key containing the resolution result. Entries that fail resolution appear in the `errors` list in the response.
 
-Parameters: `ticket_id`, optional `repo_root`
+### 14.3 Named Resolver Registry
 
-Returns: `{status, ticket_id, resources}`
+Resolvers are registered globally under the top-level `resolvers` key in `~/.bees/config.json`. See Named Resolver Registry in `docs/architecture/configuration.md` for full details.
 
-Errors: `ticket_not_found`, `invalid_ticket_type`, `invalid_ticket_id`, `missing_config`
+Each hive may optionally restrict which resolvers are valid via the `allowed_resolvers` config key. Resolution fails with an error if the entry's resolver name is not in the hive's `allowed_resolvers` list.
 
 ---
 
@@ -1072,7 +1065,7 @@ Process:
 4. Build ID remapping table (old → new)
 5. For each ticket: remap `parent`, `children`, `up_dependencies`, `down_dependencies` to new IDs
 6. Preserve external references (to tickets outside the subtree) unchanged
-7. Copy: `title`, `status`, `tags`, `egg` (root only), `description`
+7. Copy: `title`, `status`, `tags`, `reference_materials` (root only), `description`
 8. Generate new: `id`, `guid`, `created_at`, `schema_version`
 9. Write each ticket file
 
@@ -1130,7 +1123,7 @@ Returns:
 | `invalid_guid_charset` | warning | Yes (regenerates) | Invalid chars |
 | `invalid_guid_prefix` | warning | Yes (regenerates) | Doesn't start with short_id |
 | `disallowed_field` | error | No | `owner`, `priority`, etc. in frontmatter |
-| `invalid_field_type` | error | No | Status not string; egg not JSON-serializable |
+| `invalid_field_type` | error | No | Status not string; `reference_materials` invalid format |
 | `invalid_status` | error | No | Status not in configured `status_values` |
 | `unknown_tier` | error | No | Undefined tier type for hive |
 | `invalid_tier_parent` | error | No | Parent is wrong tier for child |
@@ -1231,9 +1224,9 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 
 | Command | Key Arguments |
 |---------|--------------|
-| `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --egg]` |
+| `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --reference-materials]` |
 | `show-ticket` | `ID [ID ...]` |
-| `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --tags --up-deps --down-deps --egg --add-tags --remove-tags --hive]` |
+| `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --tags --up-deps --down-deps --reference-materials --add-tags --remove-tags --hive]` |
 | `append-ticket-body` | `--ticket-id (--chunk \| --chunk-file) [--hive]` |
 | `delete-ticket` | `ID [ID ...] [--hive]` |
 | `get-types` | (none) |
@@ -1245,7 +1238,7 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 | `execute-freeform-query` | `--query-yaml` |
 | `list-named-queries` | (none) |
 | `delete-named-query` | `--query-name` |
-| `colonize-hive` | `--name --path [--child-tiers JSON] [--egg-resolver] [--egg-resolver-timeout]` |
+| `colonize-hive` | `--name --path [--child-tiers JSON] [--allowed-resolvers JSON]` |
 | `list-hives` | (none) |
 | `abandon-hive` | `--hive` |
 | `rename-hive` | `--old-name --new-name [--no-rename-folder]` |
@@ -1263,7 +1256,7 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 List and dict arguments are passed as JSON strings on the command line:
 ```bash
 bees create-ticket --ticket-type bee --title "My Bee" --hive "Test Hive" \
-  --tags '["urgent","backend"]' --egg '{"priority":1}'
+  --tags '["urgent","backend"]' --reference-materials '[{"value":"src/main.py"}]'
 ```
 
 ---
@@ -1313,7 +1306,6 @@ The MCP server needs to know which repository the caller is working in, so it ca
 | `undertaker` | `undertaker` | |
 | `move_bee` | `move-bee` | `force: bool = False` |
 | `clone_bee` | `clone-bee` | `hive: str|None`, `force: bool = False` |
-| `resolve_eggs` | — | MCP-only |
 
 ### 23.4 HTTP-Specific Features
 
@@ -1429,7 +1421,7 @@ Installs hook entries:
 | `invalid_child_tiers` | Invalid format |
 | `no_matching_scope` | No scope matches repo |
 
-### 25.5 Egg Operations
+### 25.5 Reference Materials Operations
 
 | Error Type | When |
 |------------|------|
@@ -1463,7 +1455,7 @@ The integration test suite lives at `b.qi9` in the testplans hive. It consists o
 | 6 | Status Behavior | freeform default, sanitizer linting invalid status |
 | 7 | Freeform Queries | filter by type/status/title/tag/hive, graph traversal |
 | 8 | Named Queries | add (global/repo), execute, list, conflict rejection, delete |
-| 9 | Egg Resolver | string/null/object eggs, custom resolver, timeout |
+| 9 | Reference Materials | reference_materials entries, custom resolver, per-entry resolution |
 | 10 | Index Generation | all hives and specific hive |
 | 11 | Undertaker | archive via YAML/named query, cemetery naming, exclusion |
 | 12 | Move Bee | cross-hive, ID preserved, reject non-bee, skip-at-dest, compatibility, --force |
@@ -1523,7 +1515,6 @@ GLOBAL_SCHEMA_VERSION = "2.0"
 
 The ticket filesystem scanner only enters directories matching ticket ID patterns. This implicitly excludes:
 - `cemetery/`
-- `eggs/`
 - `.hive/`
 - `evicted/`
 - Any other non-ticket-ID directory
@@ -1557,7 +1548,7 @@ Args:
 - `down_dependencies`: Ticket IDs that this one must be resolved before.
 - `tags`: List of string tags.
 - `status`: Freeform if no status_values are configured for the hive; otherwise must be one of the hive's configured values. Required when status_values are configured.
-- `egg`: Tracks external resources related to the ticket (any JSON-compatible value). Only supported on bee (t0) tickets.
+- `reference_materials`: Tracks external resources related to the ticket. A list of `{value, resolver?}` dicts. Only supported on bee (t0) tickets.
 
 ### `update_ticket`
 Update one or more existing tickets.
@@ -1574,7 +1565,7 @@ Args:
 - `add_tags`: Tags to add (single and batch).
 - `remove_tags`: Tags to remove (single and batch).
 - `status`: New status value (single and batch).
-- `egg`: New egg data (single mode only). Only supported on bee tickets.
+- `reference_materials`: New reference materials data (single mode only). Only supported on bee tickets.
 - `hive_name`: Optional hive name for faster lookup.
 
 ### `delete_ticket`
@@ -1633,8 +1624,7 @@ Args:
 - `name`: Display name for the hive (e.g., "Back End"). Normalized internally.
 - `path`: Absolute path where the hive will be created. Does not need to exist.
 - `child_tiers`: Optional per-hive tier config. Inherits from scope/global if omitted. Pass {} for bees-only.
-- `egg_resolver`: Optional path to an egg resolver script for this hive.
-- `egg_resolver_timeout`: Optional timeout in seconds for the egg resolver script.
+- `allowed_resolvers`: Optional list of resolver names permitted for this hive (e.g., `["guid_resolver", "default"]`).
 
 ### `list_hives`
 List all available hives.
@@ -1829,7 +1819,7 @@ Note: `--chunk` and `--chunk-file` are mutually exclusive (exactly one is requir
 usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
                           [--body BODY | --body-file PATH] [--parent ID]
                           [--children JSON] [--up-deps JSON] [--down-deps JSON]
-                          [--tags JSON] [--status STATUS] [--egg JSON]
+                          [--tags JSON] [--status STATUS] [--reference-materials JSON]
 
   --ticket-type TYPE    "bee" for top-level, or child tier by ID ("t1", "t2")
                         or friendly name. Run get-types to see configured tiers.
@@ -1849,7 +1839,7 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
   --down-deps JSON      JSON array of ticket IDs this ticket must be resolved BEFORE
   --tags JSON           JSON array of tag strings e.g. '["bug","urgent"]'
   --status STATUS       Ticket status
-  --egg JSON            Any JSON value. Only supported on bee tickets.
+  --reference-materials JSON  JSON list of reference material dicts. Only supported on bee tickets.
 ```
 
 Note: `--body` and `--body-file` are mutually exclusive; pass `--body-file -` to read the body from stdin.
@@ -1868,7 +1858,7 @@ usage: bees show-ticket --ids ID [ID ...]
 usage: bees update-ticket --ids ID [ID ...] [--title TITLE]
                           [--body BODY | --body-file PATH] [--status STATUS]
                           [--tags JSON] [--up-deps JSON] [--down-deps JSON]
-                          [--egg JSON] [--add-tags JSON] [--remove-tags JSON]
+                          [--reference-materials JSON] [--add-tags JSON] [--remove-tags JSON]
                           [--hive HIVE]
 
 Update an existing ticket's fields. Only provided flags are changed; omitted
@@ -1887,7 +1877,7 @@ flags are left as-is. Pass null to JSON fields to clear them (e.g. --tags null).
   --tags JSON           Full replacement tag list as JSON array (null to clear)
   --up-deps JSON        Full replacement list of blocking ticket IDs (null to clear)
   --down-deps JSON      Full replacement list of dependent ticket IDs (null to clear)
-  --egg JSON            Any JSON value. Bee tickets only. (null to clear)
+  --reference-materials JSON  JSON list of reference material dicts. Bee tickets only. (null to clear)
   --add-tags JSON       JSON array of tags to add
   --remove-tags JSON    JSON array of tags to remove
   --hive HIVE           Hive name for faster lookup (optional)
@@ -1996,14 +1986,13 @@ List all saved named queries accessible from this repo. No arguments required.
 
 ```
 usage: bees colonize-hive --name NAME --path PATH [--child-tiers JSON]
-                          [--egg-resolver PATH] [--egg-resolver-timeout SECONDS]
+                          [--allowed-resolvers JSON]
 
   --name NAME           Display name for the hive (e.g. "Back End")
   --path PATH           Absolute path where the hive will be created
   --child-tiers JSON    Optional per-hive tier config as JSON dict
-  --egg-resolver PATH   Optional path to an egg resolver script
-  --egg-resolver-timeout SECONDS
-                        Optional timeout in seconds for the egg resolver
+  --allowed-resolvers JSON
+                        Optional JSON array of resolver names permitted for this hive
 ```
 
 ### `bees list-hives`

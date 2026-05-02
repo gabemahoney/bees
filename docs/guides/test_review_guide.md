@@ -156,7 +156,7 @@ def hive_env(tmp_path):
     - A .git directory for repository validation
     - A .bees directory for configuration
     - A hive directory with .hive marker file
-    - An eggs subdirectory for active tickets
+    - Ticket directories for active tickets
 
     The fixture also sets up proper permissions and...
     [20 more lines]

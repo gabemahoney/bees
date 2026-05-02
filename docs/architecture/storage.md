@@ -13,7 +13,6 @@ hive_root/
 ├── .hive/
 │   └── identity.json       # Hive metadata and identity marker
 ├── cemetery/               # Archive for retired tickets (undertaker)
-├── eggs/                   # Optional: created by egg resolver when configured
 ├── b.amx/                      # Bee directory
 │   ├── b.amx.md                # Bee ticket file
 │   ├── t1.amx.1j/              # Child task directory
@@ -37,8 +36,6 @@ hive_root/
 **`/cemetery`**: Archive directory for retired tickets managed by the undertaker. Files use the naming convention `{tier}.{guid}.md`. Excluded from all active operations (queries, linting, indexing, path resolution). Not auto-created during colonization.
 
 **`evicted/`**: Reserved directory for completed/archived tickets (not auto-created during colonization)
-
-**`eggs/`**: Optional directory for egg resolver data (not auto-created, only used when resolver is configured)
 
 **Ticket directories**: Each ticket is a directory named with its ticket ID, containing the ticket markdown file
 - Directory name matches ticket ID exactly (e.g., `b.amx/` contains `b.amx.md`)
@@ -147,7 +144,7 @@ Single source of truth: `SCHEMA_VERSION = "1.0.0"` in `src/constants.py`
 id: b.amx
 type: bee
 title: Example Bee
-egg: null
+reference_materials: null
 schema_version: "1.0.0"
 status: open
 created_at: 2026-02-01T12:00:00
@@ -319,7 +316,7 @@ frontend/b.r8p/b.r8p.md
 
 **Two traversal modes**:
 
-- **Strict** (`iter_ticket_files`): Only enters ticket-ID directories. Used for all normal operations — queries, indexing, path resolution. Naturally excludes `/cemetery`, `eggs/`, `.hive/`, `evicted/`, and any other non-ticket directory.
+- **Strict** (`iter_ticket_files`): Only enters ticket-ID directories. Used for all normal operations — queries, indexing, path resolution. Naturally excludes `/cemetery`, `.hive/`, `evicted/`, and any other non-ticket directory.
 - **Deep** (`iter_ticket_files_deep`): Enters all non-hidden directories (skips `.hive/` and `evicted/`). Used by the linter to find misplaced tickets that may have ended up in unexpected locations. This broader scan is necessary because a misplaced ticket's parent directory won't match the ticket ID pattern, so strict traversal would miss it.
 
 ### Integration with Schema Versioning
@@ -393,7 +390,7 @@ When creating a new hive via `colonize_hive(name, path, child_tiers=None)`:
 6. **Identity Marker**: Writes `.hive/identity.json` with hive metadata (no child_tiers field)
 7. **Config Registration**: Registers hive in `~/.bees/config.json` with optional child_tiers field
 
-**Note**: The `/eggs` directory is not auto-created during colonization. It is optional and only created by an egg resolver when resolver functionality is configured and used.
+**Note**: Only the `.hive/` directory is created during colonization. Ticket directories are created when tickets are written.
 
 ### child_tiers Parameter
 
