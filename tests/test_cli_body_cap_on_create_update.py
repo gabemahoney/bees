@@ -11,19 +11,44 @@ Covers Epic 5 of the chunked-ticket-body-API plan (Bee b.87r):
 - ``--body`` help text on both subcommands names ``append-ticket-body`` and
   ``10000`` so Claude can pick the right tool from the help signal.
 
+Also covers Epic 1 / Task 2 of the ``--body-file`` / ``--chunk-file`` feature
+(Bee ``b.jsz``, plan ``t1.jsz.de``):
+- ``create-ticket --body-file PATH`` reads UTF-8 file contents (or stdin when
+  ``PATH == "-"``), routes them through ``_read_body_file_arg`` and the same
+  ``_reject_oversized_body_cli`` cap check as ``--body`` (parameterized to
+  name ``--body-file`` in the rejection message).
+- ``--body`` and ``--body-file`` are mutually exclusive (argparse mutex group).
+- File-surface error paths (missing file, UTF-8 decode error, oversized file)
+  exit non-zero, write a stderr diagnostic, and write no ticket files.
+
+Also covers Epic 2 of the same feature (Bee ``b.jsz``, plan ``t1.jsz.sh``):
+- ``update-ticket --body-file PATH`` mirrors create-ticket's wiring on the
+  update surface: UTF-8 file contents (or stdin when ``PATH == "-"``) are
+  read by ``_read_body_file_arg`` and routed through the parameterized
+  ``_reject_oversized_body_cli`` cap check (which names ``--body-file`` on
+  this surface).
+- ``--body`` and ``--body-file`` are mutually exclusive on update-ticket
+  (argparse mutex group).
+- Every error path (mutex, missing file, UTF-8 decode error, oversized file)
+  exits non-zero AND leaves the target ticket's on-disk ``.md`` byte-identical
+  to its pre-call snapshot.
+- The ``args.body is _UNSET`` sentinel-skip path (no ``--body`` and no
+  ``--body-file``) survives the parser restructure into a mutex group: see
+  the load-bearing ``test_update_ticket_without_body_does_not_fire_helper``
+  regression guard below.
+
 This file lives in its own module (rather than being added to ``tests/test_cli.py``
 which has unrelated pre-existing collection errors, or to Epic 4's
 ``tests/test_cli_append_ticket_body.py`` which is scoped to its own subcommand) so
 each Epic of the plan owns a self-contained test surface.
 """
 
+import io
 import json
-
-import pytest
 
 from src.constants import BODY_MAX_LENGTH
 from src.paths import compute_ticket_path
-from tests.helpers import run_cli_capture_both
+from tests.helpers import make_body_at_cap, make_body_over_cap, run_cli_capture_both
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -155,9 +180,7 @@ def test_update_ticket_body_at_cap_succeeds(cli_runner, isolated_bees_env):
     ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
     new_body = "u" * BODY_MAX_LENGTH
 
-    stdout, exit_code = cli_runner(
-        ["update-ticket", "--ids", ticket_id, "--body", new_body]
-    )
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body", new_body])
     assert exit_code == 0, f"update at cap failed: {stdout}"
     assert _read_body_via_show(cli_runner, ticket_id) == new_body
 
@@ -170,9 +193,7 @@ def test_update_ticket_without_body_does_not_fire_helper(cli_runner, isolated_be
     """
     ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
 
-    stdout, exit_code = cli_runner(
-        ["update-ticket", "--ids", ticket_id, "--add-tags", '["x"]']
-    )
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--add-tags", '["x"]'])
     assert exit_code == 0, f"update without --body failed: {stdout}"
 
     # Body is unchanged.
@@ -216,3 +237,437 @@ def test_update_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
     flat = _normalize_help(stdout)
     assert "append-ticket-body" in flat
     assert "10000" in flat
+
+
+def test_create_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
+    """`bees create-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+    stdout, exit_code = cli_runner(["create-ticket", "--help"])
+    assert exit_code == 0
+    flat = _normalize_help(stdout)
+    assert "--body-file" in flat
+    assert "'-'" in flat
+    assert "10000" in flat
+
+
+def test_update_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
+    """`bees update-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+    stdout, exit_code = cli_runner(["update-ticket", "--help"])
+    assert exit_code == 0
+    flat = _normalize_help(stdout)
+    assert "--body-file" in flat
+    assert "'-'" in flat
+    assert "10000" in flat
+
+
+# ---------------------------------------------------------------------------
+# create-ticket --body-file happy paths (Epic 1 / t1.jsz.de)
+# ---------------------------------------------------------------------------
+
+
+def _create_bee_with_body_file(cli_runner, isolated_bees_env, body_file_arg: str) -> str:
+    """Run ``create-ticket --body-file <body_file_arg>`` and return the ticket id."""
+    _setup_test_hive(isolated_bees_env)
+    stdout, exit_code = cli_runner(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Cap Target",
+            "--hive",
+            "test",
+            "--body-file",
+            body_file_arg,
+        ]
+    )
+    assert exit_code == 0, f"create-ticket --body-file failed: {stdout}"
+    return json.loads(stdout)["ticket_id"]
+
+
+def test_create_ticket_body_file_happy_path_file(cli_runner, isolated_bees_env, tmp_path):
+    """A UTF-8 file with non-ASCII content round-trips through --body-file."""
+    body = "hello ☃ world"  # snowman exercises non-ASCII UTF-8 decoding.
+    path = tmp_path / "input.md"
+    path.write_text(body, encoding="utf-8")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_stdin_happy_path(cli_runner, isolated_bees_env, monkeypatch):
+    """``--body-file -`` reads from sys.stdin via in-process patching.
+
+    ``cli_runner`` invokes ``src.cli.main()`` IN-PROCESS (see
+    ``tests/conftest.py:618-637``); it does NOT spawn a subprocess. Stdin
+    must be patched on the live ``sys`` module — ``subprocess.run(input=...)``
+    would never reach the in-process call.
+    """
+    body = "from-stdin\nbody é"
+    monkeypatch.setattr("sys.stdin", io.StringIO(body))
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, "-")
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_at_cap_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A file with exactly BODY_MAX_LENGTH characters is accepted via --body-file."""
+    body = make_body_at_cap()
+    path = tmp_path / "atcap.md"
+    path.write_text(body, encoding="utf-8")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == body
+
+
+def test_create_ticket_body_file_empty_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """An empty --body-file produces a ticket with an empty body.
+
+    Verifies the helper's empty-string return propagates through the cap
+    check (which permits empty bodies) and the ticket persists.
+    """
+    path = tmp_path / "empty.md"
+    path.write_bytes(b"")
+
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
+
+    assert _read_body_via_show(cli_runner, ticket_id) == ""
+
+
+# ---------------------------------------------------------------------------
+# create-ticket --body-file error paths (Epic 1 / t1.jsz.de)
+# ---------------------------------------------------------------------------
+
+
+def test_create_ticket_body_file_mutex_with_body_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """``--body`` and ``--body-file`` are mutually exclusive (argparse default)."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    # File must exist so the failure is unambiguously the mutex, not a
+    # missing-file error from ``_read_body_file_arg``.
+    path = tmp_path / "input.md"
+    path.write_text("file content", encoding="utf-8")
+
+    _stdout, _stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body",
+            "inline content",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    # argparse mutex violations exit with code 2.
+    assert exit_code == 2
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_missing_file_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """A missing --body-file path names both the path and the flag in stderr."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    missing = tmp_path / "does_not_exist.md"
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(missing),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert str(missing) in stderr
+    assert "--body-file" in stderr
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_decode_error_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """Invalid UTF-8 in --body-file exits non-zero with a UTF-8/decoding diagnostic."""
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    path = tmp_path / "bad_utf8.bin"
+    # 0xff is never a valid UTF-8 start byte.
+    path.write_bytes(b"\xff\xfe")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "UTF-8" in stderr
+    assert "decode" in stderr.lower()
+    assert "--body-file" in stderr
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+def test_create_ticket_body_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """An oversized file rejection names ``--body-file`` (not just ``--body``).
+
+    The cap-check ``arg_name`` parameterization is what surfaces ``--body-file``
+    in the error. Since ``--body-file`` contains the substring ``--body``, a
+    loose ``"--body" in stderr`` would also pass even on the un-parameterized
+    code path. We therefore pin specifically on ``--body-file`` as a
+    whitespace-bounded token to verify the parameterization fired.
+    """
+    _setup_test_hive(isolated_bees_env)
+    capsys.readouterr()
+
+    path = tmp_path / "oversized.md"
+    path.write_text(make_body_over_cap(), encoding="utf-8")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        [
+            "create-ticket",
+            "--ticket-type",
+            "bee",
+            "--title",
+            "Should Not Exist",
+            "--hive",
+            "test",
+            "--body-file",
+            str(path),
+        ],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "10000" in stderr
+    assert str(BODY_MAX_LENGTH + 1) in stderr
+    assert "append-ticket-body" in stderr
+
+    # ``--body-file`` as a standalone whitespace-bounded token. Splitting
+    # on any whitespace is robust to argparse's wrapping/normalization.
+    tokens = stderr.split()
+    assert "--body-file" in tokens, f"expected '--body-file' as a standalone token in stderr; got tokens={tokens!r}"
+
+    hive_dir = isolated_bees_env.base_path / "test"
+    md_files = list(hive_dir.rglob("*.md"))
+    assert md_files == [], f"unexpected ticket files written: {md_files}"
+
+
+# ---------------------------------------------------------------------------
+# update-ticket --body-file happy paths (Epic 2 / t1.jsz.sh)
+# ---------------------------------------------------------------------------
+
+
+def test_update_ticket_body_file_happy_path_file(cli_runner, isolated_bees_env, tmp_path):
+    """A UTF-8 file with non-ASCII content round-trips through update --body-file."""
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    new_body = "updated ☃ body"  # snowman exercises non-ASCII UTF-8 decoding.
+    path = tmp_path / "input.md"
+    path.write_text(new_body, encoding="utf-8")
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body-file", str(path)])
+    assert exit_code == 0, f"update --body-file failed: {stdout}"
+    assert _read_body_via_show(cli_runner, ticket_id) == new_body
+
+
+def test_update_ticket_body_file_stdin_happy_path(cli_runner, isolated_bees_env, monkeypatch):
+    """``update-ticket --body-file -`` reads from sys.stdin via in-process patching.
+
+    ``cli_runner`` invokes ``src.cli.main()`` IN-PROCESS (see
+    ``tests/conftest.py:618-637``); it does NOT spawn a subprocess. Stdin
+    must be patched on the live ``sys`` module — ``subprocess.run(input=...)``
+    would never reach the in-process call.
+    """
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    new_body = "from-stdin\nupdate é"
+    monkeypatch.setattr("sys.stdin", io.StringIO(new_body))
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body-file", "-"])
+    assert exit_code == 0, f"update --body-file - failed: {stdout}"
+    assert _read_body_via_show(cli_runner, ticket_id) == new_body
+
+
+def test_update_ticket_body_file_at_cap_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A file with exactly BODY_MAX_LENGTH characters is accepted via update --body-file."""
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    new_body = make_body_at_cap()
+    path = tmp_path / "atcap.md"
+    path.write_text(new_body, encoding="utf-8")
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body-file", str(path)])
+    assert exit_code == 0, f"update --body-file at cap failed: {stdout}"
+    assert _read_body_via_show(cli_runner, ticket_id) == new_body
+
+
+def test_update_ticket_body_file_empty_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """An empty --body-file overwrites the target body to the empty string.
+
+    LOCKED SEMANTIC: empty file is an *explicit overwrite to empty*, NOT a
+    no-op. The helper returns ``""``; the handler then sets ``args.body =
+    ""`` and (since ``"" is not _UNSET`` and ``"" is not None``) writes
+    ``body=""`` into the update kwargs. This mirrors ``--body ""`` exactly.
+    """
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    # Sanity: pre-call body is "seed" (so the assertion below is a real change).
+    assert _read_body_via_show(cli_runner, ticket_id) == "seed"
+
+    path = tmp_path / "empty.md"
+    path.write_bytes(b"")
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body-file", str(path)])
+    assert exit_code == 0, f"update --body-file empty failed: {stdout}"
+    assert _read_body_via_show(cli_runner, ticket_id) == ""
+
+
+# ---------------------------------------------------------------------------
+# update-ticket --body-file error paths (Epic 2 / t1.jsz.sh)
+# ---------------------------------------------------------------------------
+
+
+def test_update_ticket_body_file_mutex_with_body_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """``--body`` and ``--body-file`` are mutually exclusive on update-ticket.
+
+    Argparse mutex violations exit with code 2 specifically (distinct from
+    the ``exit_code != 0`` shape of the missing/decode/oversized cases).
+    The on-disk ticket must be byte-identical to its pre-call snapshot.
+    """
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    path_obj = _ticket_path(isolated_bees_env, ticket_id)
+    snapshot = path_obj.read_bytes()
+    capsys.readouterr()
+
+    # File MUST exist so the failure is unambiguously the mutex, not a
+    # missing-file error from ``_read_body_file_arg``.
+    body_file = tmp_path / "input.md"
+    body_file.write_text("file content", encoding="utf-8")
+
+    _stdout, _stderr, exit_code = run_cli_capture_both(
+        [
+            "update-ticket",
+            "--ids",
+            ticket_id,
+            "--body",
+            "inline content",
+            "--body-file",
+            str(body_file),
+        ],
+        capsys,
+    )
+
+    assert exit_code == 2
+    assert path_obj.read_bytes() == snapshot
+
+
+def _seed_and_snapshot(cli_runner, isolated_bees_env, capsys):
+    """Create a seeded ticket, snapshot its on-disk bytes, and drain capsys.
+
+    Shared setup for the three byte-identity error tests (missing / decode /
+    oversized). Returns ``(ticket_id, on_disk_path, snapshot_bytes)``.
+    """
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    on_disk = _ticket_path(isolated_bees_env, ticket_id)
+    snapshot = on_disk.read_bytes()
+    capsys.readouterr()
+    return ticket_id, on_disk, snapshot
+
+
+def test_update_ticket_body_file_missing_file_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """A missing --body-file path names both the path and the flag in stderr."""
+    ticket_id, on_disk, snapshot = _seed_and_snapshot(cli_runner, isolated_bees_env, capsys)
+
+    missing = tmp_path / "does_not_exist.md"
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        ["update-ticket", "--ids", ticket_id, "--body-file", str(missing)],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert str(missing) in stderr
+    assert "--body-file" in stderr
+
+    assert on_disk.read_bytes() == snapshot
+
+
+def test_update_ticket_body_file_decode_error_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """Invalid UTF-8 in update --body-file exits non-zero with a decode diagnostic."""
+    ticket_id, on_disk, snapshot = _seed_and_snapshot(cli_runner, isolated_bees_env, capsys)
+
+    bad = tmp_path / "bad_utf8.bin"
+    # 0xff is never a valid UTF-8 start byte.
+    bad.write_bytes(b"\xff\xfe")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        ["update-ticket", "--ids", ticket_id, "--body-file", str(bad)],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "UTF-8" in stderr
+    assert "decode" in stderr.lower()
+    assert "--body-file" in stderr
+
+    assert on_disk.read_bytes() == snapshot
+
+
+def test_update_ticket_body_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
+    """Oversized update --body-file pins ``--body-file`` as a standalone token in stderr.
+
+    Because ``--body-file`` contains the substring ``--body``, a loose
+    ``"--body" in stderr`` would also pass even on the un-parameterized
+    code path. We pin specifically on ``--body-file`` as a whitespace-bounded
+    token to verify the cap-check arg_name parameterization actually flipped
+    from ``"--body"`` to ``"--body-file"`` on this surface.
+    """
+    ticket_id, on_disk, snapshot = _seed_and_snapshot(cli_runner, isolated_bees_env, capsys)
+
+    big = tmp_path / "oversized.md"
+    big.write_text(make_body_over_cap(), encoding="utf-8")
+
+    _stdout, stderr, exit_code = run_cli_capture_both(
+        ["update-ticket", "--ids", ticket_id, "--body-file", str(big)],
+        capsys,
+    )
+
+    assert exit_code != 0
+    assert "10000" in stderr
+    assert str(BODY_MAX_LENGTH + 1) in stderr
+    assert "append-ticket-body" in stderr
+
+    tokens = stderr.split()
+    assert "--body-file" in tokens, f"expected '--body-file' as a standalone token in stderr; got tokens={tokens!r}"
+
+    assert on_disk.read_bytes() == snapshot
