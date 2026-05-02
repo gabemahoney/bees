@@ -38,6 +38,7 @@ from .mcp_query_ops import (
     _execute_named_query,
     _list_named_queries,
 )
+from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_roots import get_client_repo_root, get_repo_root, resolve_repo_root  # noqa: F401 - re-exported
 from .mcp_ticket_ops import (
     _append_ticket_body,
@@ -50,7 +51,6 @@ from .mcp_ticket_ops import (
     _show_ticket,
     _update_ticket,
 )
-from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_undertaker import _undertaker
 from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context

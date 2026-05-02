@@ -191,6 +191,20 @@ The `mcp_move_bee` module implements bee ticket relocation between hives within 
 
 **File Location**: `src/mcp_move_bee.py`
 
+### mcp_resolver_ops Module
+
+The `mcp_resolver_ops` module implements the named resolver registry operations: registering, updating, removing, and listing resolver scripts.
+
+**Functions**:
+- `_set_resolver(name, path, timeout, unset)`: Register or update a resolver entry in the global `resolvers` config key. Extracts the `## RESOLVER CONVENTION` block from the script's module docstring automatically. Fails with `resolver_in_use` if unset is requested and the name is still referenced in any hive's `allowed_resolvers`.
+- `_get_resolvers()`: Return all registered resolvers plus the built-in `default` entry.
+
+**Module Dependencies**:
+- Used by: `mcp_server.py` (registered as `set_resolver` and `get_resolvers` MCP tools)
+- Imports: `config` (resolver registry load/save), `repo_context`
+
+**File Location**: `src/mcp_resolver_ops.py`
+
 ### mcp_clone_bee Module
 
 The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket subtree within the same hive or into a named destination hive, assigning fresh IDs, GUIDs, and timestamps to every cloned ticket. Cross-hive cloning includes a compatibility check that rejects the clone if source ticket statuses or tier types are incompatible with the destination hive's configuration; the `force` flag bypasses this check.
@@ -242,6 +256,10 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **rename_hive**: Rename hive by updating config and identity markers (ticket IDs remain unchanged). Returns `config_conflict` when the hive exists in multiple overlapping scopes (ambiguous owning scope); resolves the owning scope automatically when only one matching scope contains the hive. Error types: `config_conflict`, `hive_not_found`.
 - **sanitize_hive**: Validate and auto-fix malformed tickets in a hive. Returns `config_conflict` when the hive exists in multiple overlapping scopes (ambiguous owning scope); resolves the owning scope automatically when only one matching scope contains the hive. Error types: `config_conflict`, `hive_not_found`.
 - **move_bee**: Move one or more bee tickets to a different hive within the same scope. Takes `bee_ids` (list of bee IDs), `destination_hive` (normalized hive name), and `force` (optional bool — when true, bypasses cross-hive status-value and tier-type compatibility checks). Before any moves are performed, bees scans the source tree against the destination hive's configuration; if any bee has incompatible status values or tier types, all moves are aborted with a `compatibility_error`. Pass `force=True` to skip that check. Returns counts of moved, skipped, not_found, and failed tickets. Error types: `hive_not_found`, `cemetery_destination`, `compatibility_error`.
+
+### Resolver Registry
+- **set_resolver**: Register or update a named resolver in the global `resolvers` registry. Parameters: `name` (cannot be `"default"`), `path` (absolute path to script), optional `timeout`, optional `--unset` to remove. Fails with `resolver_in_use` if removed name is still referenced by a hive's `allowed_resolvers`.
+- **get_resolvers**: List all registered resolvers plus the built-in `default` entry. Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
 
 ### Utility
 - **generate_index**: Generate markdown index of all tickets with optional filters. When `hive_name` is provided, generates index for that hive only. When `hive_name` is omitted (global mode), iterates all registered hives and generates index for each. The response always includes `status`, `markdown`, and `skipped_hives` keys (`skipped_hives` is always an empty list).

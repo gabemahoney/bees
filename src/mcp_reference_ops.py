@@ -171,7 +171,7 @@ async def _invoke_custom_resolver(
         value_arg = shlex.quote(value)
     else:
         value_arg = shlex.quote(json.dumps(value))
-    full_command = f"{command} --repo-root {shlex.quote(str(repo_root))} --value {value_arg}"
+    full_command = f"{shlex.quote(command)} --repo-root {shlex.quote(str(repo_root))} --value {value_arg}"
 
     logger.info(f"Invoking custom resolver: {full_command}")
 

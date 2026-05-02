@@ -9,7 +9,7 @@ import logging
 import re
 from pathlib import Path
 
-from .config import load_global_config, load_resolver_registry, save_resolver_registry, ResolverEntry
+from .config import ResolverEntry, load_global_config, load_resolver_registry, save_resolver_registry
 
 logger = logging.getLogger(__name__)
 

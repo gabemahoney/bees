@@ -26,12 +26,10 @@ Phase 3 — Ticket migration:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers

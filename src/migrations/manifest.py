@@ -6,8 +6,8 @@ place. Scripts must be idempotent and must NOT bump schema_version — the
 migration runner owns that step.
 """
 
-from dataclasses import dataclass
 from collections.abc import Callable
+from dataclasses import dataclass
 
 
 @dataclass

@@ -410,11 +410,19 @@ bees execute-freeform-query --yaml "- ['type=bee']" [--hives backend]
 ## Hive Management
 
 ```bash
-bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}']
+bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}'] [--allowed-resolvers '["guid_resolver","default"]']
 bees list-hives
 bees abandon-hive backend
 bees rename-hive old_name new_name
 bees sanitize-hive backend
+```
+
+## Resolver Registry
+
+```bash
+bees set-resolver --name my_resolver --path /abs/path/to/script.py [--timeout 10]
+bees set-resolver --name my_resolver --unset
+bees get-resolvers
 ```
 
 ## Utilities

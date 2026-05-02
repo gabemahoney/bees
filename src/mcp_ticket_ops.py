@@ -23,7 +23,6 @@ from typing import Any, Literal
 
 from . import cache
 from .config import (
-    BeesConfig,
     _parse_child_tiers_data,
     _serialize_child_tiers,
     _validate_status_values,
@@ -55,7 +54,6 @@ from .mcp_relationships import (
 )
 from .paths import (
     _build_queen_hive_collection,
-    _build_queen_hive_scope_map,
     build_ticket_path_map,
     compute_ticket_path,
     get_ticket_path,
@@ -1573,8 +1571,6 @@ async def _show_ticket(
     not_found = []
     errors = []
 
-    config = load_bees_config()
-
     # Validate IDs first; separate valid from invalid/empty
     valid_ids = []
     for ticket_id in ticket_ids:
@@ -1592,10 +1588,6 @@ async def _show_ticket(
     # Single walk across all hives to resolve paths for every ticket
     hive_collection = _build_queen_hive_collection(resolved_root)
     path_map = build_ticket_path_map(set(valid_ids), hive_collection=hive_collection)
-
-    # In queen mode, build a hive→BeesConfig map so foreign-scope hives resolve
-    # reference resolvers from their own scope config rather than the queen's local config.
-    queen_hive_scope_map: dict[str, BeesConfig] = _build_queen_hive_scope_map(resolved_root) or {}
 
     for ticket_id in valid_ids:
         try:

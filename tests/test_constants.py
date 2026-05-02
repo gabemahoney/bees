@@ -278,7 +278,6 @@ TICKET_ID_HELPER_BEE_GHI = "b.ghi"  # Helper bee GHI example (from doc examples)
 # Reference Materials Field Test Constants
 # ============================================================================
 REFERENCE_MATERIALS_NULL = None
-REFERENCE_MATERIALS_EMPTY = []
 REFERENCE_MATERIALS_SINGLE = [{"value": "docs/spec.md"}]
 REFERENCE_MATERIALS_WITH_RESOLVER = [{"value": "https://github.com/cli/cli/issues/1", "resolver": "github"}]
 REFERENCE_MATERIALS_MULTI = [{"value": "docs/spec.md"}, {"value": "docs/arch.md"}]

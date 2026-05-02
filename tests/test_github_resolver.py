@@ -85,8 +85,8 @@ def _run_main(value, extra_env=None):
     )
 
 
-def test_null_egg_passthrough():
-    """null egg → 'null' on stdout, exit 0."""
+def test_null_value_passthrough():
+    """null value → 'null' on stdout, exit 0."""
     result = _run_main("null")
     assert result.returncode == 0
     assert result.stdout.strip() == "null"
@@ -245,10 +245,10 @@ def test_multi_url_one_fails(capsys):
             return _make_gh_mock(returncode=1, stderr="HTTP 404: Not Found")
         return _make_gh_mock(stdout=json.dumps(GITHUB_API_ISSUE))
 
-    egg = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
+    value = json.dumps([GITHUB_ISSUE_URL, GITHUB_PR_URL])
     with patch("github_resolver.shutil.which", return_value="/usr/bin/gh"):
         with patch("github_resolver.subprocess.run", side_effect=fail_second):
-            code = _invoke_main(egg)
+            code = _invoke_main(value)
     assert code != 0
 
 
