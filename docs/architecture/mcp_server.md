@@ -11,7 +11,7 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 3. **Atomic Operations**: All relationship updates succeed or fail together
 4. **Tool-Based Interface**: Standard MCP tool schemas for interoperability
 5. **Health Monitoring**: Server lifecycle management and readiness checks
-6. **Consistent Error Handling**: All MCP tools raise `ValueError` for errors (validation failures, missing resources, config errors) rather than returning error dicts
+6. **Consistent Error Handling**: Two-tier error model. The MCP adapter layer in `mcp_server.py` raises `ValueError` for input validation errors (malformed parameters, mutual exclusivity violations, file read failures). Core functions return structured error dicts (`{"status": "error", "error_type": "...", "message": "..."}`) for domain errors (ticket not found, hive not found, invalid status, write failures, etc.)
 
 ## HTTP Transport Architecture
 
