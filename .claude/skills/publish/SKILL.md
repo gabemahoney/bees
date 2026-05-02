@@ -219,13 +219,33 @@ On failure, stop: "Push failed. Output above."
 
 ## Step 9 — Create GitHub release
 
-Create a GitHub release with auto-generated notes from merged PRs:
+1. Create a **draft** release with auto-generated notes:
+   ```bash
+   gh release create "v<version>" --title "v<version>" --generate-notes --draft
+   ```
 
-```bash
-gh release create "v<version>" --title "v<version>" --generate-notes
-```
+2. Fetch the generated notes and show them to the user:
+   ```bash
+   gh release view "v<version>" --json body --jq '.body'
+   ```
+   Display the full release notes and ask: "Release notes above. Publish, edit, or cancel?"
 
-On failure, warn but do not stop — the package is already published. Report: "Warning: GitHub release creation failed. Create manually at https://github.com/gabemahoney/bees/releases"
+3. Handle response:
+   - **publish / yes / y**: Publish the draft:
+     ```bash
+     gh release edit "v<version>" --draft=false
+     ```
+   - **edit**: Ask the user for the updated notes, then:
+     ```bash
+     gh release edit "v<version>" --notes "<updated notes>" --draft=false
+     ```
+   - **cancel**: Delete the draft:
+     ```bash
+     gh release delete "v<version>" --yes
+     ```
+     Report: "GitHub release cancelled. Create manually at https://github.com/gabemahoney/bees/releases"
+
+On failure at any step, warn but do not stop — the package is already published.
 
 ## Step 10 — Install locally
 
