@@ -50,7 +50,7 @@ from .mcp_ticket_ops import (
     _show_ticket,
     _update_ticket,
 )
-from .mcp_resolver_ops import _set_resolver
+from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_undertaker import _undertaker
 from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
@@ -1091,6 +1091,17 @@ def set_resolver(
         unset: If True, remove the resolver instead of registering/updating it.
     """
     return _set_resolver(name=name, path=path, timeout=timeout, unset=unset)
+
+
+@mcp.tool()
+def get_resolvers() -> dict[str, Any]:
+    """Return all registered resolvers plus the built-in default.
+
+    Each entry includes: name, path, timeout, convention, built_in.
+    The "default" entry (built_in=True) is always first and represents the
+    inline resolver used when no custom resolver is configured for a hive.
+    """
+    return _get_resolvers()
 
 
 @mcp.tool()

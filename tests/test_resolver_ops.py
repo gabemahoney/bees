@@ -1,10 +1,11 @@
-"""Tests for mcp_resolver_ops: _extract_convention and _set_resolver."""
+"""Tests for mcp_resolver_ops: _extract_convention, _set_resolver, and _get_resolvers."""
 
 import json
 
 import pytest
 
-from src.mcp_resolver_ops import _extract_convention, _set_resolver
+from src.mcp_egg_ops import DEFAULT_RESOLVER_CONVENTION
+from src.mcp_resolver_ops import _extract_convention, _get_resolvers, _set_resolver
 
 
 # ---------------------------------------------------------------------------
@@ -237,3 +238,78 @@ def test_set_resolver_unset_in_use(tmp_path, mock_global_bees_dir):
     result = _set_resolver("in_use", unset=True)
     assert result["status"] == "error"
     assert result["error_type"] == "resolver_in_use"
+
+
+# ===========================================================================
+# _get_resolvers
+# ===========================================================================
+
+
+def test_get_resolvers_empty_registry(mock_global_bees_dir):
+    """Empty registry: only the built-in default entry is returned."""
+    result = _get_resolvers()
+
+    assert result["status"] == "success"
+    resolvers = result["resolvers"]
+    assert len(resolvers) == 1
+
+    default = resolvers[0]
+    assert default["name"] == "default"
+    assert default["built_in"] is True
+    assert default["path"] is None
+    assert default["timeout"] is None
+    assert isinstance(default["convention"], str) and default["convention"]
+
+
+def test_get_resolvers_default_convention_matches_constant(mock_global_bees_dir):
+    """Default entry convention equals DEFAULT_RESOLVER_CONVENTION."""
+    result = _get_resolvers()
+    default = result["resolvers"][0]
+    assert default["convention"] == DEFAULT_RESOLVER_CONVENTION
+
+
+def test_get_resolvers_single_registered(tmp_path, mock_global_bees_dir):
+    """Single registered resolver: default prepended, registered entry has built_in=False."""
+    script = tmp_path / "custom.py"
+    script.write_text(_SCRIPT_WITH_CONVENTION)
+    _set_resolver("custom", path=str(script))
+
+    result = _get_resolvers()
+
+    assert result["status"] == "success"
+    resolvers = result["resolvers"]
+    assert len(resolvers) == 2
+
+    names = [r["name"] for r in resolvers]
+    assert names[0] == "default"
+    assert "custom" in names
+
+    custom = next(r for r in resolvers if r["name"] == "custom")
+    assert custom["built_in"] is False
+    assert custom["path"] == str(script)
+    assert custom["convention"] == "Resolve by matching ticket prefix to directory name."
+
+
+def test_get_resolvers_multiple_registered(tmp_path, mock_global_bees_dir):
+    """Multiple registered resolvers: all present with correct fields."""
+    scripts = {}
+    for name in ("alpha", "beta", "gamma"):
+        s = tmp_path / f"{name}.py"
+        s.write_text(_SCRIPT_NO_CONVENTION)
+        scripts[name] = s
+        _set_resolver(name, path=str(s), timeout=10)
+
+    result = _get_resolvers()
+
+    assert result["status"] == "success"
+    resolvers = result["resolvers"]
+    assert len(resolvers) == 4  # default + 3 registered
+
+    names = [r["name"] for r in resolvers]
+    assert names[0] == "default"
+    for name in ("alpha", "beta", "gamma"):
+        assert name in names
+        entry = next(r for r in resolvers if r["name"] == name)
+        assert entry["built_in"] is False
+        assert entry["path"] == str(scripts[name])
+        assert entry["timeout"] == 10

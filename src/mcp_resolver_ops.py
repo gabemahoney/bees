@@ -50,6 +50,38 @@ def _extract_convention(script_path: str) -> str | None:
     return convention_match.group(1).strip() or None
 
 
+def _get_resolvers() -> dict:
+    """Return all registered resolvers plus the built-in default.
+
+    Returns:
+        dict with "status": "success" and "resolvers": list of resolver dicts.
+        Each entry has: name, path, timeout, convention, built_in.
+    """
+    from .mcp_egg_ops import DEFAULT_RESOLVER_CONVENTION  # avoid circular at module level
+
+    registry = load_resolver_registry()
+    resolvers = [
+        {
+            "name": "default",
+            "path": None,
+            "timeout": None,
+            "convention": DEFAULT_RESOLVER_CONVENTION,
+            "built_in": True,
+        }
+    ]
+    for name, entry in registry.items():
+        resolvers.append(
+            {
+                "name": name,
+                "path": entry.path,
+                "timeout": entry.timeout,
+                "convention": entry.convention,
+                "built_in": False,
+            }
+        )
+    return {"status": "success", "resolvers": resolvers}
+
+
 def _set_resolver(
     name: str,
     path: str | None = None,

@@ -37,7 +37,7 @@ from .mcp_ticket_ops import (
     _show_ticket,
     _update_ticket,
 )
-from .mcp_resolver_ops import _set_resolver
+from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_undertaker import _undertaker
 from .migrations.runner import run_pending_migrations
 from .repo_context import repo_root_context
@@ -501,6 +501,11 @@ def handle_set_resolver(args):
         timeout=args.timeout,
         unset=args.unset,
     )
+    _output_result(result)
+
+
+def handle_get_resolvers(args):
+    result = _get_resolvers()
     _output_result(result)
 
 
@@ -1178,6 +1183,14 @@ def build_parser():
     p_set_resolver.add_argument("--unset", action="store_true", default=False, help="Remove the resolver from the registry")  # noqa: E501
     p_set_resolver.set_defaults(func=handle_set_resolver)
 
+    # --- get-resolvers ---
+    p_get_resolvers = subparsers.add_parser(
+        "get-resolvers",
+        help="List all registered resolvers plus the built-in default",
+        description="List all registered resolvers plus the built-in default. No arguments required.",
+    )
+    p_get_resolvers.set_defaults(func=handle_get_resolvers)
+
     # --- sting ---
     p_sting = subparsers.add_parser("sting", help="Output bees context for Claude Code sessions")
     p_sting.set_defaults(func=handle_sting)
@@ -1249,7 +1262,7 @@ def build_parser():
         p_types, p_set_types, p_set_status_values, p_get_status_values,
         p_anq, p_enq, p_efq, p_dnq, p_lnq,
         p_colonize, p_list_hives, p_abandon, p_rename, p_sanitize,
-        p_index, p_move, p_clone, p_undertaker, p_update_config, p_sting, p_cli_mode,
+        p_index, p_move, p_clone, p_undertaker, p_update_config, p_set_resolver, p_get_resolvers, p_sting, p_cli_mode,
     ]
     for _p in _non_serve_parsers:
         _p.add_argument("--test-config", nargs="?", const="", default=None, dest="test_config")
