@@ -25,6 +25,7 @@ from .config import (
     canonicalize_scope_pattern,
     check_for_config_conflicts,
     check_queen_elevation,
+    check_schema_version,
     check_scope_conflict,
     compute_scope_specificity,
     find_all_matching_scopes,
@@ -560,6 +561,9 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         logger.info(f"_list_hives: resolved_root={resolved_root}, conflict_error={conflict_error}")
         if conflict_error is not None:
             return conflict_error
+        schema_error = check_schema_version()
+        if schema_error is not None:
+            return schema_error
 
         # Collect hives from all matching scopes (least→most specific)
         global_cfg = load_global_config()
@@ -756,6 +760,9 @@ async def _rename_hive(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Step 1: Normalize both names
     normalized_old = normalize_hive_name(old_name)

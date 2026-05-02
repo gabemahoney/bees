@@ -543,6 +543,40 @@ def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None
     }
 
 
+def check_schema_version() -> dict | None:
+    """Check whether the config schema is current.
+
+    Loads the global config, reads its schema_version, and checks
+    whether any migration hops are pending.  Returns an error dict
+    when the schema is outdated, or None when it is current.
+
+    Does not raise on a missing config file — an absent config has no
+    pending migrations.
+
+    Returns:
+        None if schema is up to date; otherwise a dict with keys
+        ``status``, ``error_type``, and ``message``.
+    """
+    try:
+        global_config = load_global_config()
+    except Exception:
+        logger.warning("Failed to load config for schema check", exc_info=True)
+        return None
+    current_version = global_config.get("schema_version", GLOBAL_SCHEMA_VERSION)
+    from .migrations.manifest import find_pending_hops  # noqa: PLC0415
+    pending = find_pending_hops(current_version)
+    if not pending:
+        return None
+    return {
+        "status": "error",
+        "error_type": "schema_outdated",
+        "message": (
+            f"Config schema is outdated (version {current_version!r}). "
+            "Run `bees update-config` to migrate."
+        ),
+    }
+
+
 def _bare_prefix(canonical: str) -> str:
     """Return the bare prefix of an already-canonicalized scope pattern.
 

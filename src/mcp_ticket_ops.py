@@ -28,6 +28,7 @@ from .config import (
     _serialize_child_tiers,
     _validate_status_values,
     check_for_config_conflicts,
+    check_schema_version,
     find_all_matching_scopes,
     find_matching_scope,
     load_bees_config,
@@ -328,6 +329,9 @@ async def _create_ticket(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Validate hive exists in config
     # Design Decision: create_ticket is STRICT and does not attempt hive recovery via scan_for_hive.
@@ -1051,6 +1055,9 @@ async def _update_ticket(
         then ``remove_tags``. If a tag appears in both ``add_tags`` and
         ``remove_tags``, it ends up removed.
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     if isinstance(ticket_ids, list):
         return await _update_ticket_batch(
             ticket_ids_raw=ticket_ids,
@@ -1343,6 +1350,9 @@ async def _delete_ticket(
         - Hive root directory is never deleted (safety guard)
         - Dependency cleanup is opt-in via global config ``delete_with_dependencies: true``
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     # ── Routing: str → single-delete, list → bulk-delete ────
     if isinstance(ticket_ids, str):
         ticket_id = ticket_ids
@@ -1522,6 +1532,9 @@ async def _show_ticket(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     tickets = []
     not_found = []

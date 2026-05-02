@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
+    check_schema_version,
     load_bees_config,
     load_global_config,
     resolve_owning_scope,
@@ -356,4 +357,7 @@ async def _clone_bee(
           destination hive's configuration (only when force=False)
         - Child write failures are non-fatal: recorded in the 'failed' list, remaining children proceed
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     return _clone_bee_core(bee_id, destination_hive=destination_hive, force=force)

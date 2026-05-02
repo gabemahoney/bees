@@ -17,6 +17,7 @@ import yaml
 from .config import (
     check_for_config_conflicts,
     check_query_name_conflict,
+    check_schema_version,
     find_matching_scope,
     load_global_config,
     resolve_named_query,
@@ -89,6 +90,9 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Validate name is not empty
     if not name or not name.strip():
@@ -187,6 +191,9 @@ def _delete_named_query(name: str, resolved_root: Path) -> dict[str, Any]:
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     global_config = load_global_config()
 
@@ -249,6 +256,9 @@ def _list_named_queries(resolved_root: Path | None = None) -> dict[str, Any]:
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     global_config = load_global_config()
     result_queries: list[dict[str, Any]] = []
@@ -304,6 +314,9 @@ async def _execute_named_query(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Resolve query from config-backed storage
     global_config = load_global_config()
@@ -403,6 +416,9 @@ async def _execute_freeform_query(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Parse and validate query structure
     try:
