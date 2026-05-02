@@ -127,6 +127,53 @@ def _default_resolver(egg_value: Any) -> Any:
     return egg_value
 
 
+DEFAULT_RESOLVER_CONVENTION = (
+    "Accepts a string file path (absolute or relative). "
+    "Absolute paths are normalized with Path.resolve() and checked for existence. "
+    "Relative paths require repo_root and are resolved against it before existence check. "
+    'Returns {"status": "success", "resolved_path": str} on success, '
+    'or {"status": "error", "raw_value": value, "error": str} on failure.'
+)
+
+
+def resolve_file_path(value: Any, repo_root: Path | None = None) -> dict:
+    """
+    Resolve a file path egg value to an absolute, existing path.
+
+    Args:
+        value: The egg field value to resolve (must be a string file path)
+        repo_root: Repository root for resolving relative paths (required for relative paths)
+
+    Returns:
+        dict: Resolution result:
+            On success: {"status": "success", "resolved_path": str}
+            On error: {"status": "error", "raw_value": value, "error": str}
+    """
+    if not isinstance(value, str):
+        return {"status": "error", "raw_value": value, "error": "value must be a string file path"}
+
+    path = Path(value)
+
+    if path.is_absolute():
+        resolved = path.resolve()
+        if resolved.exists():
+            return {"status": "success", "resolved_path": str(resolved)}
+        return {"status": "error", "raw_value": value, "error": f"path does not exist: {value}"}
+
+    # Relative path — repo_root is required
+    if repo_root is None:
+        return {
+            "status": "error",
+            "raw_value": value,
+            "error": "repo_root is required to resolve relative paths",
+        }
+
+    resolved = (repo_root / path).resolve()
+    if resolved.exists():
+        return {"status": "success", "resolved_path": str(resolved)}
+    return {"status": "error", "raw_value": value, "error": f"path does not exist: {value}"}
+
+
 async def _invoke_custom_resolver(
     command: str,
     egg_value: Any,
