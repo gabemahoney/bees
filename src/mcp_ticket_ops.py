@@ -34,8 +34,6 @@ from .config import (
     load_bees_config,
     load_global_config,
     resolve_child_tiers_for_hive,
-    resolve_egg_resolver,
-    resolve_egg_resolver_timeout,
     resolve_status_values_for_hive,
     save_global_config,
 )
@@ -1576,23 +1574,7 @@ async def _show_ticket(
             # Resolve egg for bee tickets via resolver pipeline
             if ticket.type == "bee":
                 try:
-                    effective_config = (
-                        queen_hive_scope_map.get(resolved_hive, config)
-                        if queen_hive_scope_map
-                        else config
-                    )
-                    egg_resolver = resolve_egg_resolver(resolved_hive, effective_config)
-                    if egg_resolver is None:
-                        resolved_egg = _default_resolver(ticket.egg)
-                    else:
-                        if resolved_root is None:
-                            raise ValueError(
-                                "resolved_root is required when a custom egg resolver is configured"
-                            )
-                        timeout = resolve_egg_resolver_timeout(resolved_hive, effective_config)
-                        resolved_egg = await _invoke_custom_resolver(
-                            egg_resolver, ticket.egg, resolved_root, timeout
-                        )
+                    resolved_egg = _default_resolver(ticket.egg)
                 except Exception as e:
                     logger.error(f"Egg resolver failed for {ticket_id}: {e}")
                     errors.append({"id": ticket_id, "reason": str(e)})

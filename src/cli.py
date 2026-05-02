@@ -419,8 +419,6 @@ def handle_colonize_hive(args):
             name=args.name,
             path=args.path,
             child_tiers=parsed_child_tiers,
-            egg_resolver=args.egg_resolver,
-            egg_resolver_timeout=args.egg_resolver_timeout,
             scope=args.scope,
             description=args.description,
             allowed_resolvers=parsed_allowed_resolvers,
@@ -1056,8 +1054,6 @@ def build_parser():
     p_colonize.add_argument("--name", required=True, help='Display name for the hive (e.g. "Back End"). Normalized internally.')  # noqa: E501
     p_colonize.add_argument("--path", required=True, metavar="PATH", help="Absolute path where the hive will be created. Does not need to exist.")  # noqa: E501
     p_colonize.add_argument("--child-tiers", default=None, dest="child_tiers", metavar="JSON", help='Optional per-hive tier config as JSON dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["Epic","Epics"], "t2": ["Task","Tasks"]}. Pass {} for bees-only. Inherits from global config if omitted.')  # noqa: E501
-    p_colonize.add_argument("--egg-resolver", default=None, dest="egg_resolver", metavar="PATH", help="Optional path to an egg resolver script for this hive.")  # noqa: E501
-    p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
     p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.add_argument("--description", default=None, metavar="TEXT", help="Optional short description of the hive's purpose.")  # noqa: E501
     p_colonize.add_argument("--allowed-resolvers", default=None, dest="allowed_resolvers", metavar="JSON", help='Optional JSON list of resolver names permitted for this hive (e.g. ["my_resolver","default"]). Each name must exist in the resolver registry or be "default".')  # noqa: E501

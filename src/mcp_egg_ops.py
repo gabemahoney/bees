@@ -12,7 +12,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from .config import load_bees_config, resolve_egg_resolver, resolve_egg_resolver_timeout
+from .config import load_bees_config
 from .mcp_ticket_ops import find_hive_for_ticket
 from .paths import get_ticket_path, infer_ticket_type_from_id
 from .reader import read_ticket
@@ -94,26 +94,10 @@ async def _resolve_eggs(
 
     egg_value = ticket.egg
 
-    # Determine resolver via config resolution (hive → scope → global → default)
-    config = load_bees_config()
-    egg_resolver = resolve_egg_resolver(resolved_hive, config)
-    timeout = resolve_egg_resolver_timeout(resolved_hive, config)
+    logger.info(f"Resolving eggs for {ticket_id} with default resolver")
 
-    logger.info(f"Resolving eggs for {ticket_id} with resolver: {egg_resolver or 'default'}")
-
-    # Handle default resolver (inline, no subprocess)
-    if egg_resolver is None:
-        resources = _default_resolver(egg_value)
-        logger.info(f"Default resolver returned: {resources}")
-        return {"status": "success", "ticket_id": ticket_id, "resources": resources}
-
-    # Handle custom resolver (subprocess invocation)
-    if resolved_root is None:
-        error_msg = "resolved_root is required when a custom egg resolver is configured"
-        logger.error(error_msg)
-        return {"status": "error", "error_type": "missing_config", "message": error_msg}
-    resources = await _invoke_custom_resolver(egg_resolver, egg_value, resolved_root, timeout)
-    logger.info(f"Custom resolver returned: {resources}")
+    resources = _default_resolver(egg_value)
+    logger.info(f"Default resolver returned: {resources}")
     return {"status": "success", "ticket_id": ticket_id, "resources": resources}
 
 

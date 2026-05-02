@@ -592,8 +592,6 @@ async def colonize_hive(
     name: str,
     path: str,
     child_tiers: dict[str, list] | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
     allowed_resolvers: list[str] | None = None,
@@ -609,8 +607,6 @@ async def colonize_hive(
         path: Absolute path where the hive will be created. Does not need to exist.
         child_tiers: Optional per-hive tier config. Inherits from scope/global if omitted.
                      Pass {} for bees-only.
-        egg_resolver: Optional path to an egg resolver script for this hive.
-        egg_resolver_timeout: Optional timeout in seconds for the egg resolver script.
         scope: Optional scope pattern to register the hive under (e.g. /projects/**).
                When provided, the hive is placed under this explicit scope instead of
                the auto-detected scope for the repo root.
@@ -660,8 +656,6 @@ async def colonize_hive(
         path=path,
         child_tiers=child_tiers,
         repo_root=resolved_root,
-        egg_resolver=egg_resolver,
-        egg_resolver_timeout=egg_resolver_timeout,
         scope=scope,
         description=description,
         allowed_resolvers=allowed_resolvers,

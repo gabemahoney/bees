@@ -68,8 +68,6 @@ async def colonize_hive_core(
     path: str,
     child_tiers: dict[str, list] | None = None,
     repo_root: Path | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
     allowed_resolvers: list[str] | None = None,
@@ -92,9 +90,6 @@ async def colonize_hive_core(
                      If None, hive inherits from scope/global config
                      If {}, hive is bees-only (no child tiers)
         repo_root: Pre-resolved repo root path (injected by adapter)
-        egg_resolver: Optional path to egg resolver script for this hive (e.g., '/repo/resolve_eggs.sh')
-                      Sets egg_resolver at the hive level in config. If None, hive inherits from scope/global.
-
     Returns:
         dict: Success/error status with validation details
             On success: {
@@ -324,8 +319,6 @@ async def colonize_hive_core(
                     created_at=creation_timestamp.isoformat(),
                     description=description,
                     child_tiers=parsed_child_tiers,
-                    egg_resolver=egg_resolver,
-                    egg_resolver_timeout=egg_resolver_timeout,
                     allowed_resolvers=allowed_resolvers,
                 )
 
@@ -392,10 +385,7 @@ async def colonize_hive_core(
                 "display_name": name,
                 "path": str(validated_path),
                 "child_tiers": child_tiers,
-                "egg_resolver": egg_resolver,
             }
-            if egg_resolver_timeout is not None:
-                result["egg_resolver_timeout"] = egg_resolver_timeout
             if description is not None:
                 result["description"] = description
             if allowed_resolvers is not None:
@@ -421,8 +411,6 @@ async def _colonize_hive(
     path: str,
     child_tiers: dict[str, list] | None = None,
     repo_root: Path | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
     allowed_resolvers: list[str] | None = None,
@@ -453,8 +441,6 @@ async def _colonize_hive(
                      If None: hive inherits from scope/global config
                      If {}: hive is bees-only (no child tiers)
         repo_root: Pre-resolved repo root path (injected by adapter)
-        egg_resolver: Optional path to egg resolver script for this hive (e.g., '/repo/resolve_eggs.sh')
-                      If None: hive inherits egg_resolver from scope/global config
         scope: Optional scope pattern to register the hive under (e.g., '/projects/**').
                When provided the hive is placed under this explicit scope rather than the
                auto-detected scope for repo_root.
@@ -500,7 +486,6 @@ async def _colonize_hive(
     try:
         result = await colonize_hive_core(
             name=name, path=path, child_tiers=child_tiers, repo_root=repo_root,
-            egg_resolver=egg_resolver, egg_resolver_timeout=egg_resolver_timeout,
             scope=scope, description=description, allowed_resolvers=allowed_resolvers,
         )
 
