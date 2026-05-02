@@ -26,7 +26,7 @@ def _write_bee(
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
     status: str | None = None,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None,
+    reference_materials: list[dict[str, Any]] | None = None,
     guid: str | None = None,
 ) -> tuple[str, str]:
     """
@@ -45,7 +45,7 @@ def _write_bee(
         "status": status,
         "created_at": datetime.now(),
         "schema_version": SCHEMA_VERSION,
-        "egg": egg,
+        "reference_materials": reference_materials,
     }
     short_id = ticket_id.split(".", 1)[1] if "." in ticket_id else ticket_id
     frontmatter_data["guid"] = guid if guid is not None else generate_guid(short_id)
@@ -123,7 +123,7 @@ def create_bee(
     up_dependencies: list[str] | None = None,
     down_dependencies: list[str] | None = None,
     status: str | None = None,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None,
+    reference_materials: list[dict[str, Any]] | None = None,
     guid: str | None = None,
 ) -> tuple[str, str]:
     """
@@ -173,7 +173,7 @@ def create_bee(
         up_dependencies=up_dependencies,
         down_dependencies=down_dependencies,
         status=status,
-        egg=egg,
+        reference_materials=reference_materials,
         guid=guid,
     )
 
@@ -284,7 +284,7 @@ def _create_bee_with_id(
         up_dependencies=kwargs.pop("up_dependencies", None),
         down_dependencies=kwargs.pop("down_dependencies", None),
         status=kwargs.pop("status", None),
-        egg=kwargs.pop("egg", None),
+        reference_materials=kwargs.pop("reference_materials", None),
         guid=kwargs.pop("guid", None),
     )
 
