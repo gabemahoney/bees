@@ -107,6 +107,68 @@ This pattern — delegating to an external CLI tool — is useful when the tool 
 
 **PATH requirement and fail-fast behavior**: The resolver checks for `gh` on PATH before making any network calls and exits immediately with a clear error if it is not found. If you adopt this pattern, perform the tool availability check early so failures are obvious and actionable.
 
+## Resolver Registry
+
+The resolver registry is a named catalog of resolver scripts stored in `~/.bees/config.json` under the top-level `resolvers` key. Registering resolvers by name lets you reference them by name in hive configurations and restrict which resolvers a hive may use.
+
+### Registering and Updating Resolvers
+
+```
+bees set-resolver --name <name> --path <absolute-path-to-script> [--timeout <seconds>]
+```
+
+- `--name`: Resolver name. Cannot be `default` (reserved).
+- `--path`: Absolute path to the resolver script. Must exist on disk.
+- `--timeout`: Optional execution timeout in seconds.
+
+When registered, bees reads the script's module docstring and extracts the `## RESOLVER CONVENTION` block automatically, storing it alongside the path.
+
+**Example**:
+```
+bees set-resolver --name guid_resolver --path /projects/myrepo/resolvers/guid_resolver.py --timeout 10
+```
+
+### Removing Resolvers
+
+```
+bees set-resolver --name <name> --unset
+```
+
+Fails with `resolver_in_use` if any hive's `allowed_resolvers` still references the name. Remove it from those hives first.
+
+### Listing Resolvers
+
+```
+bees get-resolvers
+```
+
+Returns all registered resolvers plus the built-in `default` entry (always listed first). Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
+
+### Built-in Default Resolver
+
+The `default` resolver is always present in the registry. It cannot be registered or removed via `set-resolver`.
+
+- **`built_in`**: `true`
+- **`path`**: `null` (inline — no subprocess is invoked)
+- **Convention**: Accepts a string file path (absolute or relative). Absolute paths are normalized with `Path.resolve()` and checked for existence. Relative paths are resolved against `repo_root` before the existence check.
+
+When no custom resolver is configured for a hive, bees uses the default resolver: the egg value is returned unchanged (identity function).
+
+## Per-Hive Resolver Restrictions
+
+The `--allowed-resolvers` flag on `colonize-hive` restricts which resolvers may be used with a given hive. Each name must already exist in the resolver registry or be `"default"`.
+
+```
+bees colonize-hive --name "My Hive" --path /path/to/hive \
+  --allowed-resolvers '["guid_resolver", "default"]'
+```
+
+When `allowed_resolvers` is set:
+- Only the listed resolver names are valid for that hive.
+- Attempting to unset a resolver that is still listed in any hive's `allowed_resolvers` returns an error — remove it from the hive first.
+
+Omit `--allowed-resolvers` to leave the hive unrestricted.
+
 ## Testing Your Resolver
 
 Test your resolver directly from the command line before configuring it:
@@ -241,11 +303,7 @@ In this example:
 
 ### Default Resolver Behavior
 
-The built-in default resolver handles egg values inline without invoking a subprocess:
-
-- **`null`** → `null`
-- **String** → `["string"]`
-- **Other types** → `[json.dumps(value)]`
+When no resolver is configured for a hive (or `egg_resolver` is set to `"default"`), bees uses the built-in default resolver inline without invoking a subprocess. It returns the egg value unchanged (identity function).
 
 ## Resolver Convention Comments
 
@@ -271,22 +329,22 @@ When creating a Bee from source documents, set the `egg` field as follows:
 
 When writing a skill that creates Bees (e.g., a `hatch-feature` skill that reads PRD/SRD documents), the skill should:
 
-1. **Check if an `egg_resolver` is configured** for the current scope by reading `~/.bees/config.json` and finding the matching scope's `egg_resolver` value.
+1. **Call `get-resolvers`** (MCP) or `bees get-resolvers` (CLI) to list all registered resolvers and their conventions.
 
-2. **Read the resolver script** at that path and locate the `## RESOLVER CONVENTION` block in its docstring.
+2. **Find the relevant resolver** for the current hive. Check the hive's `egg_resolver` field (or scope/global fallback) to determine which resolver name or command is in use.
 
-3. **Apply the documented convention** when setting the `egg` field on new Bee tickets.
+3. **Read its convention** from the `convention` field returned by `get-resolvers` and apply it when setting the `egg` field on new Bee tickets.
 
-If no resolver is configured, fall back to storing the raw file path.
+If no resolver is configured, the `default` resolver applies — store a file path (absolute or relative) in the `egg` field.
 
 **Example skill instruction:**
 
 ```
 When creating the Bee, determine the egg value:
-1. Read ~/.bees/config.json and find the egg_resolver for this scope.
-2. If configured, read that script file and locate its ## RESOLVER CONVENTION block.
+1. Call get-resolvers to list available resolvers and their conventions.
+2. Find the resolver configured for this hive and read its convention field.
 3. Follow the convention to set the egg field.
-4. If no resolver is configured, set egg to the absolute path of the source docs.
+4. If no resolver is configured (default), set egg to the file path of the source docs.
 ```
 
 ## Best Practices

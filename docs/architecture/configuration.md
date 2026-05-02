@@ -18,6 +18,13 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
   "queries": {
     "global_open_bees": {"stages": [["type=bee", "status=open"]]}
   },
+  "resolvers": {
+    "guid_resolver": {
+      "path": "/projects/myrepo/resolvers/guid_resolver.py",
+      "timeout": 10,
+      "convention": "Store the GUID string from the .guid file in the egg field."
+    }
+  },
   "scopes": {
     "/Users/dev/projects/myrepo": {
       "hives": {
@@ -52,6 +59,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 - `schema_version`: Config format version, currently "2.0"
 - `child_tiers`: (Optional) Global-level child_tiers configuration (dict or null). See Child Tiers Configuration below.
 - `queries`: (Optional) Global-level named queries dictionary. See Named Queries Configuration below.
+- `resolvers`: (Optional) Named resolver registry. Dict mapping resolver names to `{path, timeout?, convention?}` objects. Managed via `set-resolver` / `get-resolvers`. See Named Resolver Registry below.
 - `delete_with_dependencies`: (Optional) Boolean, default `false`. When `true`, deleting a ticket automatically removes its ID from surviving tickets' `up_dependencies` and `down_dependencies` arrays before deletion. **Global-only** — cannot be set at scope or hive level.
 - `auto_fix_dangling_refs`: (Optional) Boolean, default `false`. When `true`, `sanitize_hive` automatically removes dangling dependency and parent references from ticket files instead of reporting them as errors. Each fix is recorded in the response as `remove_dangling_dependency` or `clear_dangling_parent`. **Global-only** — cannot be set at scope or hive level.
 - `queen_repos`: (Optional) List of queen repo entries granting elevated cross-scope access. Absent or empty means no queen repos. Non-existent paths are silently ignored; invalid entries produce an `invalid_config` error at tool call time. See Queen Repos Configuration below.
@@ -71,6 +79,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 - `child_tiers`: (Optional) Hive-level child_tiers configuration (dict or null). See Child Tiers Configuration below.
 - `egg_resolver`: (Optional) Hive-level egg resolver command (string or null). See Egg Resolver Configuration below.
 - `egg_resolver_timeout`: (Optional) Hive-level timeout in seconds for egg resolver execution (number or null). Must be positive if specified.
+- `allowed_resolvers`: (Optional) List of resolver names permitted for this hive (list of strings or null). Each name must exist in the global `resolvers` registry or be `"default"`. When set, only the listed resolvers may be used with this hive. See Named Resolver Registry below.
 
 **Note**: Ticket IDs are globally unique across all hives. Dependencies can reference tickets in any hive, with same-tier restriction (bee→bee, t1→t1, etc.).
 
@@ -730,6 +739,73 @@ Queries are validated at registration time via `QueryParser.parse_and_validate()
 - `_delete_named_query(name, scope, resolved_root) -> dict`: Remove a named query from config-backed storage with empty-dict cleanup. In `src/mcp_query_ops.py`.
 - `_list_named_queries(show_all, resolved_root) -> dict`: List queries accessible from the caller's context, or all queries system-wide. In `src/mcp_query_ops.py`.
 
+## Named Resolver Registry
+
+The named resolver registry stores resolver scripts by name in the top-level `resolvers` key of `~/.bees/config.json`. This is global — resolver names are shared across all scopes.
+
+### Schema
+
+```json
+{
+  "resolvers": {
+    "guid_resolver": {
+      "path": "/projects/myrepo/resolvers/guid_resolver.py",
+      "timeout": 10,
+      "convention": "Store the GUID from the .guid file in the egg field."
+    },
+    "path_resolver": {
+      "path": "/projects/myrepo/resolvers/path_resolver.py"
+    }
+  }
+}
+```
+
+Each resolver entry:
+- `path` (required): Absolute path to the resolver script.
+- `timeout` (optional): Execution timeout in seconds. Must be positive.
+- `convention` (optional): Free-text description of what to store in the `egg` field. Auto-extracted from the script's `## RESOLVER CONVENTION` docstring block when registering.
+
+The name `"default"` is reserved for the built-in resolver and cannot be registered or overwritten.
+
+### Commands
+
+- `bees set-resolver --name <name> --path <path> [--timeout <s>]` — Register or update a resolver.
+- `bees set-resolver --name <name> --unset` — Remove a resolver. Fails if any hive's `allowed_resolvers` still references the name.
+- `bees get-resolvers` — List all registered resolvers plus the built-in `default` entry.
+
+### Built-in Default Resolver
+
+`get-resolvers` always returns a `default` entry with `built_in: true` and `path: null`. It is the resolver used when no `egg_resolver` is configured for a hive. Its convention is file path validation: accepts a string file path (absolute or relative), resolves relative paths against `repo_root`, and checks for existence. At runtime it returns the egg value unchanged (identity function, no subprocess).
+
+### allowed_resolvers on HiveConfig
+
+`allowed_resolvers` on a hive entry restricts which resolver names may be used for that hive. Each name must exist in the registry or be `"default"`. Validated at colonize time — unknown names return `unknown_resolver`.
+
+```json
+{
+  "scopes": {
+    "/path/to/repo": {
+      "hives": {
+        "my_hive": {
+          "path": "/path/to/repo/.bees/hives/my_hive",
+          "display_name": "My Hive",
+          "created_at": "2026-01-01T00:00:00",
+          "allowed_resolvers": ["guid_resolver", "default"]
+        }
+      }
+    }
+  }
+}
+```
+
+Set via `colonize-hive --allowed-resolvers '["guid_resolver","default"]'`.
+
+### Implementation
+
+- `ResolverEntry` dataclass in `src/config.py`
+- `load_resolver_registry()` / `save_resolver_registry()` in `src/config.py`
+- `_set_resolver()` / `_get_resolvers()` in `src/mcp_resolver_ops.py`
+
 ## Hive Colonization
 
 The `colonize_hive` MCP tool creates and registers new hives with optional per-hive child_tiers configuration.
@@ -741,7 +817,8 @@ colonize_hive(
     name: str,
     path: str,
     child_tiers: dict[str, list] | None = None,
-    scope: str | None = None
+    scope: str | None = None,
+    allowed_resolvers: list[str] | None = None,
 )
 ```
 
@@ -752,6 +829,7 @@ colonize_hive(
 **Optional Parameters**:
 - `child_tiers`: Per-hive child tiers configuration (dict or None)
 - `scope`: Scope pattern under which to register the hive (str or None)
+- `allowed_resolvers`: List of resolver names permitted for this hive (list of strings or None). Each name must exist in the global resolver registry or be `"default"`. Returns `unknown_resolver` error if any name is unregistered.
 
 ### scope Parameter Semantics
 
