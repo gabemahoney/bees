@@ -34,6 +34,7 @@ from .config import (
     get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
+    load_resolver_registry,
     match_scope_pattern,
     parse_scope_to_bees_config,
     resolve_owning_scope,
@@ -71,6 +72,7 @@ async def colonize_hive_core(
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
@@ -257,6 +259,21 @@ async def colonize_hive_core(
                         "validation_details": {"field": "child_tiers", "provided_value": child_tiers, "reason": str(e)},
                     }
 
+            # Step 4.6: Validate allowed_resolvers if provided
+            if allowed_resolvers is not None:
+                registry = load_resolver_registry()
+                unknown = [r for r in allowed_resolvers if r != "default" and r not in registry]
+                if unknown:
+                    return {
+                        "status": "error",
+                        "message": f"Unknown resolver name(s): {unknown}. Register them first with set-resolver.",
+                        "error_type": "unknown_resolver",
+                        "validation_details": {
+                            "field": "allowed_resolvers",
+                            "unknown_names": unknown,
+                        },
+                    }
+
             # Step 5: Create hive directory structure
             # Create .hive marker folder with identity data
             hive_marker_path = validated_path / ".hive"
@@ -309,6 +326,7 @@ async def colonize_hive_core(
                     child_tiers=parsed_child_tiers,
                     egg_resolver=egg_resolver,
                     egg_resolver_timeout=egg_resolver_timeout,
+                    allowed_resolvers=allowed_resolvers,
                 )
 
                 if canonical_scope is not None:
@@ -380,6 +398,8 @@ async def colonize_hive_core(
                 result["egg_resolver_timeout"] = egg_resolver_timeout
             if description is not None:
                 result["description"] = description
+            if allowed_resolvers is not None:
+                result["allowed_resolvers"] = allowed_resolvers
             return result
 
     except ValueError as e:
@@ -405,6 +425,7 @@ async def _colonize_hive(
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Create and register a new hive at the specified path.
@@ -480,7 +501,7 @@ async def _colonize_hive(
         result = await colonize_hive_core(
             name=name, path=path, child_tiers=child_tiers, repo_root=repo_root,
             egg_resolver=egg_resolver, egg_resolver_timeout=egg_resolver_timeout,
-            scope=scope, description=description,
+            scope=scope, description=description, allowed_resolvers=allowed_resolvers,
         )
 
         if result.get("status") == "error":

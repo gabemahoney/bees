@@ -596,6 +596,7 @@ async def colonize_hive(
     egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -614,6 +615,8 @@ async def colonize_hive(
                When provided, the hive is placed under this explicit scope instead of
                the auto-detected scope for the repo root.
         description: Optional short description of the hive's purpose.
+        allowed_resolvers: Optional list of resolver names permitted for this hive.
+                           Each name must exist in the resolver registry or be "default".
     """
     # Special colonize_hive fallback logic:
     # 1. Try MCP Roots protocol via get_repo_root(ctx)
@@ -661,6 +664,7 @@ async def colonize_hive(
         egg_resolver_timeout=egg_resolver_timeout,
         scope=scope,
         description=description,
+        allowed_resolvers=allowed_resolvers,
     )
 
 

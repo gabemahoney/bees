@@ -413,6 +413,7 @@ def handle_colonize_hive(args):
     if _guard_queen_write_cli(root):
         return
     parsed_child_tiers = parse_json_arg(args.child_tiers, "--child-tiers") if args.child_tiers is not None else None
+    parsed_allowed_resolvers = parse_json_arg(args.allowed_resolvers, "--allowed-resolvers") if args.allowed_resolvers is not None else None  # noqa: E501
     result = _run_in_repo(
         colonize_hive_core(
             name=args.name,
@@ -422,6 +423,7 @@ def handle_colonize_hive(args):
             egg_resolver_timeout=args.egg_resolver_timeout,
             scope=args.scope,
             description=args.description,
+            allowed_resolvers=parsed_allowed_resolvers,
         ),
         root=root,
     )
@@ -1058,6 +1060,7 @@ def build_parser():
     p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
     p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.add_argument("--description", default=None, metavar="TEXT", help="Optional short description of the hive's purpose.")  # noqa: E501
+    p_colonize.add_argument("--allowed-resolvers", default=None, dest="allowed_resolvers", metavar="JSON", help='Optional JSON list of resolver names permitted for this hive (e.g. ["my_resolver","default"]). Each name must exist in the resolver registry or be "default".')  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 
     # --- list-hives ---

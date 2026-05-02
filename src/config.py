@@ -91,6 +91,7 @@ class HiveConfig:
     undertaker_schedule_query_yaml: str | None = None
     undertaker_schedule_query_name: str | None = None
     undertaker_schedule_log_path: str | None = None
+    allowed_resolvers: list[str] | None = None
 
 
 @dataclass
@@ -961,6 +962,22 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
         if description is not None and not isinstance(description, str):
             raise ValueError(f"Hive '{name}' description must be a string or null, got {type(description)}")
 
+        # Parse optional allowed_resolvers
+        allowed_resolvers = None
+        if "allowed_resolvers" in hive_data:
+            ar = hive_data["allowed_resolvers"]
+            if ar is not None:
+                if not isinstance(ar, list):
+                    raise ValueError(
+                        f"Hive '{name}' allowed_resolvers must be a list or null, got {type(ar)}"
+                    )
+                for i, item in enumerate(ar):
+                    if not isinstance(item, str):
+                        raise ValueError(
+                            f"Hive '{name}' allowed_resolvers[{i}] must be a string, got {type(item)}"
+                        )
+                allowed_resolvers = ar
+
         hives[name] = HiveConfig(
             path=hive_data.get("path", ""),
             display_name=hive_data.get("display_name", ""),
@@ -975,6 +992,7 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
             undertaker_schedule_query_yaml=ut_sched_query_yaml,
             undertaker_schedule_query_name=ut_sched_query_name,
             undertaker_schedule_log_path=ut_sched_log_path,
+            allowed_resolvers=allowed_resolvers,
         )
     return hives
 
@@ -1079,6 +1097,8 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
             ut_sched["log_path"] = hive_config.undertaker_schedule_log_path
         if ut_sched:
             hive_entry["undertaker_schedule"] = ut_sched
+        if hive_config.allowed_resolvers is not None:
+            hive_entry["allowed_resolvers"] = hive_config.allowed_resolvers
         hives_dict[name] = hive_entry
 
     scope_dict = {
