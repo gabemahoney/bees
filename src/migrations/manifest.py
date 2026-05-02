@@ -26,8 +26,12 @@ class ManifestEntry:
     upgrade_script: Callable[[dict], None]
 
 
-# Ordered list of migration hops. Epic 4 will populate this list.
-MANIFEST: list[ManifestEntry] = []
+from src.migrations.upgrade_v2_to_v3 import upgrade as _upgrade_v2_to_v3
+
+# Ordered list of migration hops.
+MANIFEST: list[ManifestEntry] = [
+    ManifestEntry(from_version="2.0", to_version="3.0", upgrade_script=_upgrade_v2_to_v3),
+]
 
 
 def find_pending_hops(current_version: str) -> list[ManifestEntry]:

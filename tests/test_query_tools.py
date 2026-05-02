@@ -32,7 +32,7 @@ from pathlib import Path
 
 import pytest
 
-from src.config import check_query_name_conflict, resolve_named_query
+from src.config import GLOBAL_SCHEMA_VERSION, check_query_name_conflict, resolve_named_query
 from src.mcp_query_ops import (
     _add_named_query,
     _delete_named_query,
@@ -598,7 +598,7 @@ class TestDeleteNamedQueryTool:
         repo_b.mkdir()
 
         config = {
-            "schema_version": "2.0",
+            "schema_version": GLOBAL_SCHEMA_VERSION,
             "scopes": {
                 str(repo_a): {"hives": {}, "child_tiers": {}},
                 str(repo_b): {"hives": {}, "child_tiers": {}, "queries": {"target_q": build_query([["type=bee"]])}},
@@ -658,7 +658,7 @@ class TestListNamedQueryTool:
         config = {
             "scopes": {"/some/other/repo": {"hives": {}, "child_tiers": {}, "queries": {"hidden": build_query([["type=t1"]])}}},
             "queries": {"visible": build_query([["type=bee"]])},
-            "schema_version": "2.0",
+            "schema_version": GLOBAL_SCHEMA_VERSION,
         }
         config_path.write_text(json.dumps(config, indent=2))
 

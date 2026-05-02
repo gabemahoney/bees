@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from src.config import (
+    GLOBAL_SCHEMA_VERSION,
     BeesConfig,
     ChildTierConfig,
     ConflictRecord,
@@ -412,7 +413,7 @@ class TestLoadGlobalConfig:
 
     def test_missing_file_returns_default(self, mock_global_bees_dir):
         config = load_global_config()
-        assert config == {"scopes": {}, "schema_version": "2.0"}
+        assert config == {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
 
     def test_valid_config(self, mock_global_bees_dir):
         data = {"scopes": {"/path": {"hives": {}}}, "schema_version": "2.0"}
@@ -425,7 +426,7 @@ class TestLoadGlobalConfig:
         (mock_global_bees_dir / "config.json").write_text("{invalid json")
         with caplog.at_level(logging.WARNING):
             config = load_global_config()
-        assert config == {"scopes": {}, "schema_version": "2.0"}
+        assert config == {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
         assert "Malformed JSON" in caplog.text
 
     def test_adds_missing_scopes_key(self, mock_global_bees_dir):
