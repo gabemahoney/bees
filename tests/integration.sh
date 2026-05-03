@@ -1678,7 +1678,28 @@ test_update_config() {
     pass_test "update-config"
 }
 
+test_update_config_details() {
+    capture_cmd bees update-config --details
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config --details" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-config --details"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "update-config --details" "Expected status=success, got $status"
+    fi
+    # Must have pending_hops key (list, possibly empty if already up to date)
+    local has_hops_key
+    has_hops_key=$(check_json "$CMD_OUT" "'pending_hops' in d")
+    if [ "$has_hops_key" != "True" ]; then
+        fail_test "update-config --details" "Expected pending_hops key in response"
+    fi
+    pass_test "update-config --details"
+}
+
 run_test test_update_config
+run_test test_update_config_details
 
 # === FORMER PHASE 5 GROUP A: INDEX GENERATION ===
 
@@ -3843,18 +3864,18 @@ PYEOF
     has_resolver=$(check_json "$CMD_OUT" \
         "any(r['name']=='test_resolver_p6' and r['path']=='/tmp/test_resolver_p6.py' and r.get('timeout')==30 and r.get('built_in')==False for r in d.get('resolvers',[]))")
     has_default=$(check_json "$CMD_OUT" \
-        "any(r['name']=='default' and r.get('built_in')==True for r in d.get('resolvers',[]))")
+        "any(r['name']=='file-path' and r.get('built_in')==True for r in d.get('resolvers',[]))")
     if [ "$has_resolver" != "True" ]; then
         fail_test "P6: Register resolver" "test_resolver_p6 not found in get-resolvers output"
     fi
     if [ "$has_default" != "True" ]; then
-        fail_test "P6: Register resolver" "default resolver not found in get-resolvers output"
+        fail_test "P6: Register resolver" "file-path resolver not found in get-resolvers output"
     fi
     pass_test "P6: Register resolver"
 }
 
 test_p6_reject_reserved_name() {
-    capture_cmd bees set-resolver --name default --path /tmp/test_resolver_p6.py
+    capture_cmd bees set-resolver --name file-path --path /tmp/test_resolver_p6.py
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "P6: Reject reserved name" "Expected failure but got success"
     fi
@@ -3864,7 +3885,7 @@ test_p6_reject_reserved_name() {
     if [ "$error_type" != "reserved_name" ]; then
         fail_test "P6: Reject reserved name" "Expected error_type=reserved_name, got $error_type"
     fi
-    capture_cmd bees set-resolver --name default --unset
+    capture_cmd bees set-resolver --name file-path --unset
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "P6: Reject reserved name (unset)" "Expected failure but got success"
     fi
@@ -3908,7 +3929,7 @@ test_p6_colonize_allowed_resolvers() {
     capture_cmd bees colonize-hive \
         --name "P6 Resolver Test" \
         --path "$REPO/tickets/p6_resolver_test" \
-        --allowed-resolvers '["test_resolver_p6","default"]'
+        --allowed-resolvers '["test_resolver_p6","file-path"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "P6: Colonize allowed_resolvers" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -3920,8 +3941,8 @@ test_p6_colonize_allowed_resolvers() {
     fi
     local allowed
     allowed=$(check_json "$CMD_OUT" "sorted(d.get('allowed_resolvers') or [])")
-    if [ "$allowed" != "['default', 'test_resolver_p6']" ]; then
-        fail_test "P6: Colonize allowed_resolvers" "Expected sorted ['default','test_resolver_p6'], got $allowed"
+    if [ "$allowed" != "['file-path', 'test_resolver_p6']" ]; then
+        fail_test "P6: Colonize allowed_resolvers" "Expected sorted ['file-path','test_resolver_p6'], got $allowed"
     fi
     pass_test "P6: Colonize allowed_resolvers"
 }
