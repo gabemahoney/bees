@@ -3415,30 +3415,19 @@ test_scope_shadow_more_specific() {
         fail_test "Scope shadow more specific" "Broad colonize failed: $CMD_OUT"
     fi
 
-    # Narrow Bugs — should succeed (shadowing)
+    # Narrow Bugs — same name in overlapping scope must be rejected (cross_scope_hive_conflict).
+    # Shadowing is not supported; the protection prevents ambiguity across overlapping scopes.
     capture_cmd bees colonize-hive \
         --name "Bugs" \
         --path "$REPO/tickets/bugs_narrow" \
         --scope "/tmp/multi_test/general/team/*"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Scope shadow more specific" "Narrow colonize failed: $CMD_OUT"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Scope shadow more specific" "Expected cross_scope_hive_conflict but got success"
     fi
-
-    # From narrow path — narrow bugs wins
-    cd /tmp/multi_test/general/team/repo
-    capture_cmd bees list-hives
-    local bugs_path
-    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
-    if ! echo "$bugs_path" | grep -q "bugs_narrow"; then
-        fail_test "Scope shadow more specific" "Expected bugs_narrow path from narrow scope, got $bugs_path"
-    fi
-
-    # From broad path — broad bugs wins
-    cd /tmp/multi_test/general/other/repo
-    capture_cmd bees list-hives
-    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
-    if ! echo "$bugs_path" | grep -q "bugs_broad"; then
-        fail_test "Scope shadow more specific" "Expected bugs_broad path from broad scope, got $bugs_path"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "cross_scope_hive_conflict" ]; then
+        fail_test "Scope shadow more specific" "Expected error_type=cross_scope_hive_conflict, got $error_type"
     fi
 
     cd "$REPO"
@@ -3511,7 +3500,7 @@ test_scope_same_name_narrow_wins() {
     mkdir -p /tmp/same_test/work/team/repo
     mkdir -p /tmp/same_test/work/other/repo
 
-    # Both scopes define a hive named "Shared Work" — narrow scope should win
+    # Broad scope hive
     capture_cmd bees colonize-hive \
         --name "Shared Work" \
         --path "$REPO/tickets/shared_broad" \
@@ -3520,29 +3509,20 @@ test_scope_same_name_narrow_wins() {
         fail_test "Scope same name narrow wins" "Broad colonize failed: $CMD_OUT"
     fi
 
+    # Narrow scope — same name in overlapping scope must be rejected (cross_scope_hive_conflict).
+    # Shadowing is not supported; registering the same hive name in an overlapping scope is
+    # always an error regardless of scope specificity.
     capture_cmd bees colonize-hive \
         --name "Shared Work" \
         --path "$REPO/tickets/shared_narrow" \
         --scope "/tmp/same_test/work/team/*"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Scope same name narrow wins" "Narrow colonize failed: $CMD_OUT"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Scope same name narrow wins" "Expected cross_scope_hive_conflict but got success"
     fi
-
-    # From path matching both — narrow scope's path wins
-    cd /tmp/same_test/work/team/repo
-    capture_cmd bees list-hives
-    local shared_path
-    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
-    if ! echo "$shared_path" | grep -q "shared_narrow"; then
-        fail_test "Scope same name narrow wins" "Expected shared_narrow path, got: $shared_path"
-    fi
-
-    # From broad-only path — broad scope's path wins
-    cd /tmp/same_test/work/other/repo
-    capture_cmd bees list-hives
-    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
-    if ! echo "$shared_path" | grep -q "shared_broad"; then
-        fail_test "Scope same name narrow wins" "Expected shared_broad path, got: $shared_path"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "cross_scope_hive_conflict" ]; then
+        fail_test "Scope same name narrow wins" "Expected error_type=cross_scope_hive_conflict, got $error_type"
     fi
 
     cd "$REPO"
