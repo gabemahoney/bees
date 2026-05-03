@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import check_queen_write_access, load_global_config, set_config_path, set_test_config_override
+from .config import GLOBAL_SCHEMA_VERSION, check_queen_write_access, load_global_config, set_config_path, set_test_config_override
 from .constants import BODY_MAX_LENGTH
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import _abandon_hive, _list_hives, _rename_hive, _sanitize_hive, colonize_hive_core
@@ -532,7 +532,7 @@ def handle_undertaker(args):
 def _resolve_test_config(value: str) -> dict:
     """Resolve --test-config value to a config dict. Exits on error."""
     if value == "":
-        return {"schema_version": "2.0", "scopes": {}}
+        return {"schema_version": GLOBAL_SCHEMA_VERSION, "scopes": {}}
     elif value.startswith("{"):
         try:
             resolved = json.loads(value)
