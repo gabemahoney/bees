@@ -9,6 +9,7 @@ Tests the _resolve_references pipeline and helper functions in mcp_reference_ops
 """
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,7 +22,7 @@ from src.mcp_reference_ops import (
 from src.repo_context import repo_root_context
 from tests.conftest import write_scoped_config
 from tests.helpers import write_ticket_file
-from tests.test_constants import HIVE_BACKEND
+from tests.test_constants import GITHUB_API_COMMENTS, GITHUB_API_ISSUE, GITHUB_ISSUE_URL, HIVE_BACKEND
 
 
 @pytest.fixture
@@ -456,3 +457,115 @@ class TestResolveReferencesCustomResolver:
         assert len(result) == 2
         assert result[0]["resolved"]["status"] == "success"
         assert result[1]["resolved"] == "custom-result"
+
+
+# ============================================================================
+# _resolve_references — built-in resolvers (bees, github, file-path)
+# ============================================================================
+
+
+class TestResolveReferencesBuiltinResolvers:
+    """Tests for _resolve_references dispatching to the new built-in resolvers.
+
+    These tests verify the behavior AFTER the bug fix that added 'bees' and 'github'
+    as built-in resolvers. Before the fix, both would return 'unregistered resolver'
+    errors; after the fix they resolve correctly.
+    """
+
+    async def test_bees_resolver_returns_success(self, tmp_path):
+        """resolver: 'bees' dispatches to resolve_bee — returns status=success with value."""
+        reference_materials = [{"value": "b.abc", "resolver": "bees"}]
+        result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        resolved = result[0]["resolved"]
+        assert resolved["status"] == "success"
+        assert resolved["value"] == "b.abc"
+
+    async def test_file_path_resolver_explicit(self, tmp_path):
+        """resolver: 'file-path' resolves existing file."""
+        target = tmp_path / "doc.md"
+        target.write_text("content")
+
+        reference_materials = [{"value": str(target), "resolver": "file-path"}]
+        result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        assert result[0]["resolved"]["status"] == "success"
+        assert result[0]["resolved"]["resolved_path"] == str(target.resolve())
+
+    async def test_no_resolver_key_uses_file_path(self, tmp_path):
+        """Entry with no resolver key defaults to file-path behavior."""
+        target = tmp_path / "readme.md"
+        target.write_text("hello")
+
+        reference_materials = [{"value": str(target)}]
+        result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        assert result[0]["resolved"]["status"] == "success"
+
+    async def test_github_resolver_dispatches(self, tmp_path):
+        """resolver: 'github' dispatches to resolve_github (mocked gh CLI)."""
+        def _gh_side_effect(*args, **kwargs):
+            mock = MagicMock()
+            mock.returncode = 0
+            cmd = args[0]
+            api_path = cmd[cmd.index("api") + 1]
+            if "/comments" in api_path:
+                mock.stdout = json.dumps(GITHUB_API_COMMENTS)
+            else:
+                mock.stdout = json.dumps(GITHUB_API_ISSUE)
+            mock.stderr = ""
+            return mock
+
+        reference_materials = [{"value": GITHUB_ISSUE_URL, "resolver": "github"}]
+
+        with patch("src.builtin_resolvers.shutil.which", return_value="/usr/bin/gh"):
+            with patch("src.builtin_resolvers.subprocess.run", side_effect=_gh_side_effect):
+                result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        resolved = result[0]["resolved"]
+        assert resolved == {"issue": GITHUB_API_ISSUE, "comments": GITHUB_API_COMMENTS}
+
+    async def test_github_resolver_gh_absent_returns_error(self, tmp_path):
+        """resolver: 'github' with gh absent → error dict (not an exception)."""
+        reference_materials = [{"value": GITHUB_ISSUE_URL, "resolver": "github"}]
+
+        with patch("src.builtin_resolvers.shutil.which", return_value=None):
+            result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        resolved = result[0]["resolved"]
+        assert resolved["status"] == "error"
+        assert resolved["raw_value"] == GITHUB_ISSUE_URL
+
+    @pytest.mark.parametrize(
+        "resolver_name",
+        [
+            pytest.param("bees", id="bees"),
+            pytest.param("github", id="github"),
+        ],
+    )
+    async def test_builtin_resolvers_not_treated_as_unregistered(self, tmp_path, resolver_name):
+        """Built-in resolvers must NOT produce 'unregistered resolver' errors.
+
+        This is the key regression test: before the fix, 'bees' and 'github'
+        fell through to the unregistered-resolver branch and returned an error.
+        After the fix they are dispatched to their built-in implementations.
+        """
+        # Use a valid bee ID for bees, a valid URL (but gh absent) for github
+        value = "b.abc" if resolver_name == "bees" else GITHUB_ISSUE_URL
+        reference_materials = [{"value": value, "resolver": resolver_name}]
+
+        with patch("src.builtin_resolvers.shutil.which", return_value=None):
+            result = await _resolve_references(reference_materials, repo_root=tmp_path)
+
+        assert result is not None
+        resolved = result[0]["resolved"]
+        # The error must NOT be "unregistered resolver" — it is now dispatched
+        assert not (
+            resolved.get("status") == "error"
+            and "unregistered resolver" in resolved.get("error", "")
+        )

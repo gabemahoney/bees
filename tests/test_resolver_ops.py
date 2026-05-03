@@ -78,14 +78,17 @@ def test_extract_convention_missing_file(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "kwargs",
+    "name,kwargs",
     [
-        pytest.param({"path": "/some/path.py"}, id="register"),
-        pytest.param({"unset": True}, id="unset"),
+        pytest.param("default", {"path": "/some/path.py"}, id="default_register"),
+        pytest.param("default", {"unset": True}, id="default_unset"),
+        pytest.param("file-path", {"path": "/some/path.py"}, id="file_path_register"),
+        pytest.param("github", {"path": "/some/path.py"}, id="github_register"),
+        pytest.param("bees", {"path": "/some/path.py"}, id="bees_register"),
     ],
 )
-def test_set_resolver_reserved_name(kwargs):
-    result = _set_resolver("default", **kwargs)
+def test_set_resolver_reserved_name(name, kwargs):
+    result = _set_resolver(name, **kwargs)
     assert result["status"] == "error"
     assert result["error_type"] == "reserved_name"
 
@@ -246,30 +249,33 @@ def test_set_resolver_unset_in_use(tmp_path, mock_global_bees_dir):
 
 
 def test_get_resolvers_empty_registry(mock_global_bees_dir):
-    """Empty registry: only the built-in default entry is returned."""
+    """Empty registry: exactly 3 built-ins (file-path, github, bees) are returned."""
     result = _get_resolvers()
 
     assert result["status"] == "success"
     resolvers = result["resolvers"]
-    assert len(resolvers) == 1
+    assert len(resolvers) == 3
 
-    default = resolvers[0]
-    assert default["name"] == "default"
-    assert default["built_in"] is True
-    assert default["path"] is None
-    assert default["timeout"] is None
-    assert isinstance(default["convention"], str) and default["convention"]
+    names = [r["name"] for r in resolvers]
+    assert names == ["file-path", "github", "bees"]
+
+    for entry in resolvers:
+        assert entry["built_in"] is True
+        assert entry["path"] is None
+        assert entry["timeout"] is None
+        assert isinstance(entry["convention"], str) and entry["convention"]
 
 
-def test_get_resolvers_default_convention_matches_constant(mock_global_bees_dir):
-    """Default entry convention equals DEFAULT_RESOLVER_CONVENTION."""
+def test_get_resolvers_file_path_convention_matches_constant(mock_global_bees_dir):
+    """file-path built-in convention equals DEFAULT_RESOLVER_CONVENTION."""
     result = _get_resolvers()
-    default = result["resolvers"][0]
-    assert default["convention"] == DEFAULT_RESOLVER_CONVENTION
+    file_path_entry = result["resolvers"][0]
+    assert file_path_entry["name"] == "file-path"
+    assert file_path_entry["convention"] == DEFAULT_RESOLVER_CONVENTION
 
 
 def test_get_resolvers_single_registered(tmp_path, mock_global_bees_dir):
-    """Single registered resolver: default prepended, registered entry has built_in=False."""
+    """Single registered resolver: 3 built-ins prepended, registered entry has built_in=False."""
     script = tmp_path / "custom.py"
     script.write_text(_SCRIPT_WITH_CONVENTION)
     _set_resolver("custom", path=str(script))
@@ -278,10 +284,10 @@ def test_get_resolvers_single_registered(tmp_path, mock_global_bees_dir):
 
     assert result["status"] == "success"
     resolvers = result["resolvers"]
-    assert len(resolvers) == 2
+    assert len(resolvers) == 4  # 3 built-ins + 1 registered
 
     names = [r["name"] for r in resolvers]
-    assert names[0] == "default"
+    assert names[0] == "file-path"
     assert "custom" in names
 
     custom = next(r for r in resolvers if r["name"] == "custom")
@@ -303,10 +309,10 @@ def test_get_resolvers_multiple_registered(tmp_path, mock_global_bees_dir):
 
     assert result["status"] == "success"
     resolvers = result["resolvers"]
-    assert len(resolvers) == 4  # default + 3 registered
+    assert len(resolvers) == 6  # 3 built-ins + 3 registered
 
     names = [r["name"] for r in resolvers]
-    assert names[0] == "default"
+    assert names[0] == "file-path"
     for name in ("alpha", "beta", "gamma"):
         assert name in names
         entry = next(r for r in resolvers if r["name"] == name)

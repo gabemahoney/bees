@@ -51,23 +51,46 @@ def _extract_convention(script_path: str) -> str | None:
 
 
 def _get_resolvers() -> dict:
-    """Return all registered resolvers plus the built-in default.
+    """Return all registered resolvers plus the built-in resolvers.
+
+    Built-ins listed:
+      - ``file-path``: resolves string file paths (canonical name for ``default``)
+      - ``github``: fetches GitHub issue/PR metadata via gh CLI
+      - ``bees``: identity resolver for Bee ID links
 
     Returns:
         dict with "status": "success" and "resolvers": list of resolver dicts.
         Each entry has: name, path, timeout, convention, built_in.
     """
+    from .builtin_resolvers import (  # avoid circular at module level
+        BEES_RESOLVER_CONVENTION,
+        GITHUB_RESOLVER_CONVENTION,
+    )
     from .mcp_reference_ops import DEFAULT_RESOLVER_CONVENTION  # avoid circular at module level
 
     registry = load_resolver_registry()
     resolvers = [
         {
-            "name": "default",
+            "name": "file-path",
             "path": None,
             "timeout": None,
             "convention": DEFAULT_RESOLVER_CONVENTION,
             "built_in": True,
-        }
+        },
+        {
+            "name": "github",
+            "path": None,
+            "timeout": None,
+            "convention": GITHUB_RESOLVER_CONVENTION,
+            "built_in": True,
+        },
+        {
+            "name": "bees",
+            "path": None,
+            "timeout": None,
+            "convention": BEES_RESOLVER_CONVENTION,
+            "built_in": True,
+        },
     ]
     for name, entry in registry.items():
         resolvers.append(
@@ -99,11 +122,12 @@ def _set_resolver(
     Returns:
         Success or error dict.
     """
-    if name == "default":
+    _RESERVED_NAMES = {"default", "file-path", "github", "bees"}
+    if name in _RESERVED_NAMES:
         return {
             "status": "error",
             "error_type": "reserved_name",
-            "message": "default is a reserved resolver name",
+            "message": f"{name} is a reserved resolver name",
         }
 
     if unset:

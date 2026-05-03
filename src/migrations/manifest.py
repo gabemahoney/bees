@@ -27,10 +27,12 @@ class ManifestEntry:
 
 
 from src.migrations.upgrade_v2_to_v3 import upgrade as _upgrade_v2_to_v3
+from src.migrations.upgrade_v3_to_v4 import upgrade as _upgrade_v3_to_v4
 
 # Ordered list of migration hops.
 MANIFEST: list[ManifestEntry] = [
     ManifestEntry(from_version="2.0", to_version="3.0", upgrade_script=_upgrade_v2_to_v3),
+    ManifestEntry(from_version="3.0", to_version="4.0", upgrade_script=_upgrade_v3_to_v4),
 ]
 
 

@@ -75,7 +75,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 - `display_name`: User-friendly display name
 - `created_at`: ISO 8601 timestamp of hive creation
 - `child_tiers`: (Optional) Hive-level child_tiers configuration (dict or null). See Child Tiers Configuration below.
-- `allowed_resolvers`: (Optional) List of resolver names permitted for this hive (list of strings or null). Each name must exist in the global `resolvers` registry or be `"default"`. When set, only the listed resolvers may be used with this hive. See Named Resolver Registry below.
+- `allowed_resolvers`: (Optional) List of resolver names permitted for this hive (list of strings or null). Each name must exist in the global `resolvers` registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). When set, only the listed resolvers may be used with this hive. See Named Resolver Registry below.
 
 **Note**: Ticket IDs are globally unique across all hives. Dependencies can reference tickets in any hive, with same-tier restriction (bee→bee, t1→t1, etc.).
 
@@ -406,7 +406,7 @@ The reference_materials system enables per-entry resolution of values from bee t
 
 ### Per-Entry Resolution
 
-Resolution is driven by each entry's `resolver` key (defaults to `"default"` when absent):
+Resolution is driven by each entry's `resolver` key (defaults to `"file-path"` when absent):
 
 ```json
 {
@@ -418,7 +418,9 @@ Resolution is driven by each entry's `resolver` key (defaults to `"default"` whe
 ```
 
 **Resolver selection per entry**:
-- No `resolver` key or `"default"`: Use the built-in default resolver (file-path validation)
+- No `resolver` key, `"file-path"`, or `"default"`: Use the built-in `file-path` resolver (file-path validation)
+- `"github"`: Use the built-in GitHub resolver (fetches issue/PR data via `gh api`)
+- `"bees"`: Use the built-in bees resolver (identity — returns value as-is)
 - Named resolver (e.g., `"guid_resolver"`): Look up in the global `resolvers` registry and invoke as subprocess
 
 There is no fallback chain at the scope or hive level for resolver selection. The resolver is chosen per entry, not per hive.
@@ -702,21 +704,25 @@ Each resolver entry:
 - `timeout` (optional): Execution timeout in seconds. Must be positive.
 - `convention` (optional): Free-text description of what to store in the `reference_materials` value field. Auto-extracted from the script's `## RESOLVER CONVENTION` docstring block when registering.
 
-The name `"default"` is reserved for the built-in resolver and cannot be registered or overwritten.
+The names `"file-path"`, `"github"`, `"bees"`, and `"default"` are reserved for built-in resolvers and cannot be registered or overwritten. (`"default"` is a backward-compatible alias for `"file-path"`.)
 
 ### Commands
 
 - `bees set-resolver --name <name> --path <path> [--timeout <s>]` — Register or update a resolver.
 - `bees set-resolver --name <name> --unset` — Remove a resolver. Fails if any hive's `allowed_resolvers` still references the name.
-- `bees get-resolvers` — List all registered resolvers plus the built-in `default` entry.
+- `bees get-resolvers` — List all registered resolvers plus the three built-in entries (`file-path`, `github`, `bees`).
 
-### Built-in Default Resolver
+### Built-in Resolvers
 
-`get-resolvers` always returns a `default` entry with `built_in: true` and `path: null`. It is the resolver used when no `resolver` key is specified in a `reference_materials` entry. Its convention is file path validation: accepts a string file path (absolute or relative), resolves relative paths against `repo_root`, and checks for existence.
+`get-resolvers` always returns the built-in entries with `built_in: true` and `path: null`. They cannot be overwritten via `set-resolver`.
+
+- **`file-path`** (also aliased as `"default"`): Used when no `resolver` key is specified in a `reference_materials` entry. Accepts a string file path (absolute or relative), resolves relative paths against `repo_root`, and checks for existence.
+- **`github`**: Resolves GitHub issue and pull request URLs. Invokes `gh api` to fetch issue/PR data and returns `{"issue": ..., "comments": ...}`. Requires the `gh` CLI on PATH.
+- **`bees`**: Identity resolver for Bee ticket IDs. Returns the value as-is.
 
 ### allowed_resolvers on HiveConfig
 
-`allowed_resolvers` on a hive entry restricts which resolver names may be used for that hive. Each name must exist in the registry or be `"default"`. Validated at colonize time — unknown names return `unknown_resolver`.
+`allowed_resolvers` on a hive entry restricts which resolver names may be used for that hive. Each name must exist in the registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). Validated at colonize time — unknown names return `unknown_resolver`.
 
 ```json
 {
@@ -727,7 +733,7 @@ The name `"default"` is reserved for the built-in resolver and cannot be registe
           "path": "/path/to/repo/.bees/hives/my_hive",
           "display_name": "My Hive",
           "created_at": "2026-01-01T00:00:00",
-          "allowed_resolvers": ["guid_resolver", "default"]
+          "allowed_resolvers": ["guid_resolver", "file-path"]
         }
       }
     }
@@ -735,13 +741,17 @@ The name `"default"` is reserved for the built-in resolver and cannot be registe
 }
 ```
 
-Set via `colonize-hive --allowed-resolvers '["guid_resolver","default"]'`.
+Set via `colonize-hive --allowed-resolvers '["guid_resolver","file-path"]'`.
 
 ### Implementation
 
 - `ResolverEntry` dataclass in `src/config.py`
 - `load_resolver_registry()` / `save_resolver_registry()` in `src/config.py`
 - `_set_resolver()` / `_get_resolvers()` in `src/mcp_resolver_ops.py`
+
+### Config Migration: `default` → `file-path` (v3→v4)
+
+When bees loads a config that was written before the `file-path` rename, it automatically migrates any `"default"` references in `allowed_resolvers` lists to `"file-path"`. This migration runs transparently at load time and is written back to `~/.bees/config.json`. No manual action is required.
 
 ## Hive Colonization
 
@@ -766,7 +776,7 @@ colonize_hive(
 **Optional Parameters**:
 - `child_tiers`: Per-hive child tiers configuration (dict or None)
 - `scope`: Scope pattern under which to register the hive (str or None)
-- `allowed_resolvers`: List of resolver names permitted for this hive (list of strings or None). Each name must exist in the global resolver registry or be `"default"`. Returns `unknown_resolver` error if any name is unregistered.
+- `allowed_resolvers`: List of resolver names permitted for this hive (list of strings or None). Each name must exist in the global resolver registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). Returns `unknown_resolver` error if any name is unregistered.
 
 ### scope Parameter Semantics
 

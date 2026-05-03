@@ -5,11 +5,42 @@
 Resolvers transform `reference_materials` entry values from Bee tickets into resolved resource information. Resolution happens automatically when tickets are read via `show_ticket`. The system:
 
 1. Reads each entry in the Bee's `reference_materials` list
-2. Determines which resolver to use based on the entry's `resolver` key (defaults to `"default"`)
+2. Determines which resolver to use based on the entry's `resolver` key (defaults to `"file-path"`)
 3. Invokes the resolver with the entry's `value`
 4. Returns the original entry augmented with a `resolved` key containing the resolution result
 
-This allows you to implement custom resolution logic for your project's needs — for example, resolving GUIDs to file paths, expanding ticket references, or validating resource existence.
+Three resolvers are built in and available immediately after installation — no setup required. You can also implement custom resolution logic for your project's needs — for example, resolving GUIDs to file paths, expanding ticket references, or validating resource existence.
+
+## Built-in Resolvers
+
+Three resolvers ship with bees and are always available without any configuration:
+
+### `file-path`
+
+The default resolver. Accepts a string file path (absolute or relative). Relative paths are resolved against `repo_root` before the existence check.
+
+- **`built_in`**: `true`
+- **`path`**: `null` (inline — no subprocess is invoked)
+- **Convention**: Store the file path in the `value` field. Absolute paths are normalized with `Path.resolve()` and checked for existence. Relative paths are resolved against `repo_root`.
+
+When no `resolver` key is specified in a `reference_materials` entry, bees uses `file-path`. The name `default` is kept as a backward-compatible alias and resolves identically.
+
+### `github`
+
+Resolves GitHub issue and pull request URLs. Invokes `gh api` to fetch issue/PR data from the GitHub API and returns the raw JSON response as `{"issue": ..., "comments": ...}`.
+
+- **`built_in`**: `true`
+- **`path`**: `null` (inline)
+- **Convention**: Store the full GitHub issue or PR URL in the `value` field (e.g., `https://github.com/owner/repo/issues/42`).
+- **Requirement**: The `gh` CLI must be on PATH and authenticated. The resolver checks for `gh` before making any network calls and exits with a clear error if it is not found.
+
+### `bees`
+
+An identity resolver for Bee ticket IDs. Returns the value as-is, confirming it is a valid ticket reference.
+
+- **`built_in`**: `true`
+- **`path`**: `null` (inline)
+- **Convention**: Store the Bee ticket ID in the `value` field (e.g., `b.abc123`).
 
 ## Resolver Contract
 
@@ -94,7 +125,7 @@ Save this as `file_resolver.py`, make it executable (`chmod +x file_resolver.py`
 
 ## Real-World Example: GitHub Issues Resolver
 
-The repository includes a GitHub Issues resolver at `resolvers/github_resolver.py`. It demonstrates a pattern where the resolver delegates all external data fetching to a CLI tool rather than making API calls directly.
+The built-in `github` resolver (and the reference implementation at `resolvers/github_resolver.py`) demonstrates a pattern where the resolver delegates all external data fetching to a CLI tool rather than making API calls directly.
 
 The `value` field stores a GitHub issue or pull request URL. When resolved, the resolver invokes `gh api` to fetch the issue or PR data from the GitHub API and returns the raw JSON response.
 
@@ -112,7 +143,7 @@ The resolver registry is a named catalog of resolver scripts stored in `~/.bees/
 bees set-resolver --name <name> --path <absolute-path-to-script> [--timeout <seconds>]
 ```
 
-- `--name`: Resolver name. Cannot be `default` (reserved).
+- `--name`: Resolver name. Cannot be `file-path`, `github`, `bees`, or `default` (all reserved for built-ins).
 - `--path`: Absolute path to the resolver script. Must exist on disk.
 - `--timeout`: Optional execution timeout in seconds.
 
@@ -137,25 +168,17 @@ Fails with `resolver_in_use` if any hive's `allowed_resolvers` still references 
 bees get-resolvers
 ```
 
-Returns all registered resolvers plus the built-in `default` entry (always listed first). Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
+Returns all registered resolvers plus the three built-in entries (`file-path`, `github`, `bees`) — always listed first. Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
 
-### Built-in Default Resolver
-
-The `default` resolver is always present in the registry. It cannot be registered or removed via `set-resolver`.
-
-- **`built_in`**: `true`
-- **`path`**: `null` (inline — no subprocess is invoked)
-- **Convention**: Accepts a string file path (absolute or relative). Absolute paths are normalized with `Path.resolve()` and checked for existence. Relative paths are resolved against `repo_root` before the existence check.
-
-When no `resolver` key is specified in a `reference_materials` entry, bees uses the default resolver.
+Built-in resolvers have `built_in: true` and `path: null`. They cannot be registered or removed via `set-resolver`. See [Built-in Resolvers](#built-in-resolvers) above for their full documentation.
 
 ## Per-Hive Resolver Restrictions
 
-The `--allowed-resolvers` flag on `colonize-hive` restricts which resolvers may be used with a given hive. Each name must already exist in the resolver registry or be `"default"`.
+The `--allowed-resolvers` flag on `colonize-hive` restricts which resolvers may be used with a given hive. Each name must already exist in the resolver registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`).
 
 ```
 bees colonize-hive --name "My Hive" --path /path/to/hive \
-  --allowed-resolvers '["guid_resolver", "default"]'
+  --allowed-resolvers '["guid_resolver", "file-path"]'
 ```
 
 When `allowed_resolvers` is set:
@@ -173,12 +196,20 @@ Set the `resolver` key on a `reference_materials` entry when creating or updatin
 bees create-ticket --ticket-type bee --title "My Feature" --hive backend \
   --reference-materials '[{"value": "abc-guid-123", "resolver": "guid_resolver"}]'
 
-# Create a bee with a default (file-path) reference
+# Create a bee with a file-path reference (built-in, used when resolver is omitted)
 bees create-ticket --ticket-type bee --title "My Feature" --hive backend \
   --reference-materials '[{"value": "src/feature.py"}]'
+
+# Create a bee with a GitHub issue reference (built-in)
+bees create-ticket --ticket-type bee --title "My Feature" --hive backend \
+  --reference-materials '[{"value": "https://github.com/owner/repo/issues/42", "resolver": "github"}]'
+
+# Create a bee with a Bee ticket reference (built-in)
+bees create-ticket --ticket-type bee --title "My Feature" --hive backend \
+  --reference-materials '[{"value": "b.abc123", "resolver": "bees"}]'
 ```
 
-When `show-ticket` is called, each entry is resolved using its specified resolver (or `default`) and the result appears in the `resolved` key of each entry in the `reference_materials` field.
+When `show-ticket` is called, each entry is resolved using its specified resolver (or `file-path` when omitted) and the result appears in the `resolved` key of each entry in the `reference_materials` field.
 
 ## Testing Your Resolver
 
@@ -270,7 +301,7 @@ When writing a skill that creates Bees (e.g., a `hatch-feature` skill that reads
 
 3. **Read its convention** from the `convention` field returned by `get-resolvers` and apply it when setting the `value` field in `reference_materials` entries on new Bee tickets.
 
-If no resolver is needed, omit the `resolver` key — the `default` resolver applies, which validates file paths.
+Three built-in resolvers (`file-path`, `github`, `bees`) are always available without any registration. If no resolver is needed, omit the `resolver` key — the `file-path` resolver applies, which validates file paths.
 
 **Example skill instruction:**
 
@@ -278,6 +309,8 @@ If no resolver is needed, omit the `resolver` key — the `default` resolver app
 When creating the Bee, determine the reference_materials value:
 1. Call get-resolvers to list available resolvers and their conventions.
 2. Find the resolver relevant for this hive and read its convention field.
+   Built-in resolvers (file-path, github, bees) are always available.
 3. Follow the convention to set the value field in each reference_materials entry.
-4. If no custom resolver is configured, set value to the file path of the source docs.
+4. If no custom resolver is configured, set value to the file path of the source docs
+   (the built-in file-path resolver will validate it).
 ```

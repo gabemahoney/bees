@@ -66,7 +66,7 @@ Each bee ticket has an optional `reference_materials` field — a list of dicts,
 
 ### Reference Material Resolvers
 
-A custom script can be configured to resolve `reference_materials` values at read time. Each entry specifies its resolver by name; the built-in `default` resolver validates file paths. Tell your LLM to set up a resolver using `bees set-resolver` or by updating the configuration. See [Configuration](#configuration) and [Custom Resolvers](custom-resolvers.md).
+Three built-in resolvers are available immediately after installation: `file-path` (validates file paths, used when no resolver is specified), `github` (fetches GitHub issue/PR data), and `bees` (returns a Bee ticket ID as-is). Custom resolvers can also be configured to resolve `reference_materials` values at read time. Tell your LLM to set up a custom resolver using `bees set-resolver` or by updating the configuration. See [Configuration](#configuration) and [Custom Resolvers](custom-resolvers.md).
 
 ## Undertaker
 

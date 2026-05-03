@@ -12,6 +12,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+from .builtin_resolvers import resolve_bee, resolve_github
 from .config import load_resolver_registry
 
 # Logger
@@ -104,8 +105,12 @@ async def _resolve_references(
         value = entry.get("value")
         resolver_name = entry.get("resolver", "default")
 
-        if resolver_name == "default":
+        if resolver_name in ("default", "file-path"):
             resolved = resolve_file_path(value, repo_root)
+        elif resolver_name == "github":
+            resolved = await asyncio.to_thread(resolve_github, value)
+        elif resolver_name == "bees":
+            resolved = resolve_bee(value)
         elif resolver_name in registry:
             resolver_entry = registry[resolver_name]
             try:
