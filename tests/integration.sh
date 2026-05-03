@@ -2909,13 +2909,15 @@ run_test test_sv_create_invalid_status
 test_sv_glob_scope_setup() {
     # The default exact scope for $REPO already exists from earlier test setup.
     # Create a glob scope matching $REPO via its parent directory.
+    # Strip trailing slash from parent_dir so root "/" becomes "" not "/",
+    # producing "/**" instead of "//**" when REPO is a top-level directory.
     local parent_dir
     parent_dir=$(dirname "$REPO")
     mkdir -p "$REPO/tickets/glob_hive"
     capture_cmd bees colonize-hive \
         --name "Glob Hive" \
         --path "$REPO/tickets/glob_hive" \
-        --scope "${parent_dir}/**"
+        --scope "${parent_dir%/}/**"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "SV glob scope setup" "Colonize glob hive failed: $CMD_OUT"
     fi
