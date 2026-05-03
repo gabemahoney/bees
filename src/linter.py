@@ -1240,8 +1240,10 @@ class Linter:
             if not is_ticket_id(dir_name):
                 continue
 
-            # Check if any .md file exists in the directory
-            if any(dir_path.glob("*.md")):
+            # Check if the expected ticket file exists (not just any .md file)
+            # Using an exact check avoids false positives from macOS resource fork
+            # files like ._b.xxx.md which match glob("*.md") but are not ticket files.
+            if (dir_path / f"{dir_name}.md").exists():
                 continue
 
             # Skip recently created directories (in-flight ticket creation)

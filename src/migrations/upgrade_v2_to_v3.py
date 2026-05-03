@@ -43,6 +43,8 @@ from typing import Any
 
 import yaml
 
+from src.id_utils import is_ticket_id
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -312,4 +314,6 @@ def upgrade(config: dict) -> None:
             resolver_name = hive_to_resolver.get(hive_name)
 
             for md_file in hive_dir.rglob("*.md"):
+                if not is_ticket_id(md_file.stem):
+                    continue
                 _migrate_ticket_file(md_file, resolver_name)

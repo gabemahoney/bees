@@ -2825,6 +2825,23 @@ class TestDetectEmptyTicketDirs:
         errors = report.get_errors(error_type="empty_ticket_dir")
         assert not any(e.ticket_id == dir_name for e in errors)
 
+    def test_resource_fork_file_does_not_suppress_empty_dir_error(self, hive_env):
+        """macOS ._b.abc.md resource fork does not count as a ticket file; dir still flagged."""
+        repo_root, tickets_dir, hive_name = hive_env
+
+        dir_path = tickets_dir / "b.abc"
+        dir_path.mkdir()
+        # Write a binary resource fork file — NOT a valid ticket file
+        (dir_path / "._b.abc.md").write_bytes(b"\xb0binary resource fork data")
+        old_time = time.time() - 1200  # 20 minutes ago
+        os.utime(dir_path, (old_time, old_time))
+
+        linter = Linter(tickets_dir=str(tickets_dir), hive_name=hive_name, auto_fix=False)
+        report = linter.run()
+
+        errors = report.get_errors(error_type="empty_ticket_dir")
+        assert any(e.ticket_id == "b.abc" for e in errors)
+
 
 class TestValidatePathMatchesId:
     """Tests for SR-7.3 path/ID consistency validation (validate_path_matches_id)."""

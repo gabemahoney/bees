@@ -295,6 +295,40 @@ def test_empty_hive_no_error(tmp_path):
     upgrade(_hive_config(hive_dir))  # should not raise
 
 
+def test_macos_resource_fork_files_skipped(tmp_path):
+    """Migration skips macOS ._<name>.md resource fork files without crashing."""
+    hive_dir = tmp_path / "h"
+    hive_dir.mkdir()
+    # Valid ticket
+    md = hive_dir / "b.xx" / "b.xx.md"
+    _write(md, _md("val"))
+    # macOS resource fork: binary data that can't be decoded as UTF-8
+    fork_file = hive_dir / "b.xx" / "._b.xx.md"
+    fork_file.write_bytes(b"\xb0\xb1\xb2binary resource fork data")
+    # Another resource fork at hive root
+    (hive_dir / "._index.md").write_bytes(b"\xb0resource fork")
+
+    upgrade(_hive_config(hive_dir))  # must not raise
+
+    fm = _frontmatter(md)
+    assert "egg" not in fm
+    assert fm["reference_materials"] == [{"value": "val"}]
+
+
+def test_non_ticket_md_files_skipped(tmp_path):
+    """Migration ignores non-ticket .md files like index.md or README.md."""
+    hive_dir = tmp_path / "h"
+    hive_dir.mkdir()
+    # Non-ticket .md files — should be left untouched without error
+    (hive_dir / "index.md").write_text("# index\n")
+    (hive_dir / "README.md").write_text("# readme\n")
+
+    upgrade(_hive_config(hive_dir))  # must not raise
+
+    assert (hive_dir / "index.md").read_text() == "# index\n"
+    assert (hive_dir / "README.md").read_text() == "# readme\n"
+
+
 # ---------------------------------------------------------------------------
 # End-to-end
 # ---------------------------------------------------------------------------
