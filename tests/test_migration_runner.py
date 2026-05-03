@@ -100,6 +100,27 @@ def test_exception_mid_chain_persists_last_good_version(mock_global_bees_dir, mo
 
 
 # ---------------------------------------------------------------------------
+# ValueError mid-chain — returns clean error result, does not raise
+# ---------------------------------------------------------------------------
+
+
+def test_value_error_returns_clean_error_result(mock_global_bees_dir, monkeypatch):
+    _write_config(mock_global_bees_dir, "1.0")
+
+    def _collision(cfg: dict) -> None:
+        raise ValueError("collision detected in migration")
+
+    hops = [_make_entry("1.0", "2.0", script=_collision)]
+    monkeypatch.setattr(runner_mod, "find_pending_hops", lambda v: hops)
+
+    result = run_pending_migrations()
+
+    assert result["status"] == "error"
+    assert "collision" in result["message"]
+    assert _read_version(mock_global_bees_dir) == "1.0"
+
+
+# ---------------------------------------------------------------------------
 # Idempotency — running twice when already up to date is safe
 # ---------------------------------------------------------------------------
 

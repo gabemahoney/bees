@@ -31,7 +31,10 @@ def run_pending_migrations() -> dict:
 
     applied = []
     for hop in hops:
-        hop.upgrade_script(config_data)
+        try:
+            hop.upgrade_script(config_data)
+        except ValueError as e:
+            return {"status": "error", "message": str(e), "version": current_version}
         config_data["schema_version"] = hop.to_version
         save_global_config(config_data)
         applied.append({"from_version": hop.from_version, "to_version": hop.to_version})
