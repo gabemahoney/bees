@@ -23,18 +23,16 @@ from typing import Any, Literal
 
 from . import cache
 from .config import (
-    BeesConfig,
     _parse_child_tiers_data,
     _serialize_child_tiers,
     _validate_status_values,
     check_for_config_conflicts,
+    check_schema_version,
     find_all_matching_scopes,
     find_matching_scope,
     load_bees_config,
     load_global_config,
     resolve_child_tiers_for_hive,
-    resolve_egg_resolver,
-    resolve_egg_resolver_timeout,
     resolve_status_values_for_hive,
     save_global_config,
 )
@@ -56,7 +54,6 @@ from .mcp_relationships import (
 )
 from .paths import (
     _build_queen_hive_collection,
-    _build_queen_hive_scope_map,
     build_ticket_path_map,
     compute_ticket_path,
     get_ticket_path,
@@ -278,7 +275,7 @@ async def _create_ticket(
     down_dependencies: list[str] | None = None,
     tags: list[str] | None = None,
     status: str | None = None,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None,
+    reference_materials: list[dict] | None = None,
     resolved_root: Path | None = None,
 ) -> dict[str, Any]:
     """
@@ -295,7 +292,7 @@ async def _create_ticket(
         down_dependencies: List of ticket IDs that depend on this ticket
         tags: List of tag strings
         status: Status of the ticket (e.g., 'open', 'in_progress', 'completed')
-        egg: Optional egg data
+        reference_materials: Optional reference materials data
         resolved_root: Pre-resolved repo root path (injected by adapter)
 
     Returns:
@@ -328,6 +325,9 @@ async def _create_ticket(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Validate hive exists in config
     # Design Decision: create_ticket is STRICT and does not attempt hive recovery via scan_for_hive.
@@ -462,6 +462,23 @@ async def _create_ticket(
             "message": "status is required when status_values are configured for this hive",
         }
 
+    # Validate allowed_resolvers when reference_materials is provided
+    if reference_materials is not None:
+        hive_allowed = config.hives[normalized_hive].allowed_resolvers
+        if hive_allowed is not None:
+            for entry in reference_materials:
+                if isinstance(entry, dict):
+                    resolver_name = entry.get("resolver", "default")
+                    if resolver_name not in hive_allowed:
+                        return {
+                            "status": "error",
+                            "error_type": "resolver_not_allowed",
+                            "message": (
+                                f"Resolver '{resolver_name}' is not in the allowed list for "
+                                f"hive '{hive_name}': {hive_allowed}"
+                            ),
+                        }
+
     # Call appropriate factory function based on ticket type
     try:
         if ticket_type == "bee":
@@ -473,7 +490,7 @@ async def _create_ticket(
                 down_dependencies=down_dependencies,
                 status=status,
                 hive_name=hive_name,
-                egg=egg,
+                reference_materials=reference_materials,
             )
         else:
             # Handle dynamic tier types (t1, t2, t3, etc.)
@@ -583,7 +600,7 @@ async def _update_ticket_batch(
     remove_tags: list[str] | None,
     title: str | None | Literal["__UNSET__"],
     body: str | None | Literal["__UNSET__"],
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None,
+    reference_materials: list[dict] | None,
     tags: list[str] | None,
     up_dependencies: list[str] | None,
     down_dependencies: list[str] | None,
@@ -599,7 +616,7 @@ async def _update_ticket_batch(
     NON_BATCHABLE = {
         "title": title,
         "body": body,
-        "egg": egg,
+        "reference_materials": reference_materials,
         "tags": tags,
         "up_dependencies": up_dependencies,
         "down_dependencies": down_dependencies,
@@ -701,7 +718,7 @@ async def _update_ticket_single(
     add_tags: list[str] | None,
     remove_tags: list[str] | None,
     status: str | None | Literal["__UNSET__"],
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None,
+    reference_materials: list[dict] | None,
     hive_name: str | None,
     resolved_root: Path | None,
 ) -> dict[str, Any]:
@@ -800,8 +817,26 @@ async def _update_ticket_single(
     if status is not _UNSET:
         ticket.status = status  # type: ignore[assignment]
 
-    if egg is not _UNSET:
-        ticket.egg = egg
+    if reference_materials is not _UNSET and reference_materials is not None:
+        _rm_config = load_bees_config()
+        if _rm_config and resolved_hive in _rm_config.hives:
+            hive_allowed = _rm_config.hives[resolved_hive].allowed_resolvers
+            if hive_allowed is not None:
+                for entry in reference_materials:
+                    if isinstance(entry, dict):
+                        resolver_name = entry.get("resolver", "default")
+                        if resolver_name not in hive_allowed:
+                            return {
+                                "status": "error",
+                                "error_type": "resolver_not_allowed",
+                                "message": (
+                                    f"Resolver '{resolver_name}' is not in the allowed list for "
+                                    f"hive '{resolved_hive}': {hive_allowed}"
+                                ),
+                            }
+
+    if reference_materials is not _UNSET:
+        ticket.reference_materials = reference_materials
 
     # Apply add_tags / remove_tags
     _apply_tag_ops(ticket, add_tags, remove_tags)
@@ -1004,7 +1039,7 @@ async def _update_ticket(
     add_tags: list[str] | None = None,
     remove_tags: list[str] | None = None,
     status: str | None | Literal["__UNSET__"] = _UNSET,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel
+    reference_materials: list[dict] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel
     hive_name: str | None = None,
     resolved_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -1019,7 +1054,7 @@ async def _update_ticket(
 
     **Batch update** (``ticket_ids`` is a ``list[str]``):
         Updates multiple tickets applying status, add_tags, and remove_tags to each.
-        Non-batchable fields (``title``, ``body``, ``egg``, ``tags``,
+        Non-batchable fields (``title``, ``body``, ``reference_materials``, ``tags``,
         ``up_dependencies``, ``down_dependencies``) raise ``ValueError`` if set.
         Returns ``{"status": "success", "updated": [...], "not_found": [...], "failed": [...]}``.
         An empty list returns success immediately with all arrays empty.
@@ -1034,7 +1069,7 @@ async def _update_ticket(
         add_tags: Tags to add to the ticket (additive, deduplicates)
         remove_tags: Tags to remove from the ticket
         status: New status
-        egg: New egg data (arbitrary structured data, single mode only)
+        reference_materials: New reference_materials data (arbitrary structured data, single mode only)
         hive_name: Optional hive name for O(1) lookup. If not provided, scans all hives.
         resolved_root: Pre-resolved repo root path (injected by adapter)
 
@@ -1051,6 +1086,9 @@ async def _update_ticket(
         then ``remove_tags``. If a tag appears in both ``add_tags`` and
         ``remove_tags``, it ends up removed.
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     if isinstance(ticket_ids, list):
         return await _update_ticket_batch(
             ticket_ids_raw=ticket_ids,
@@ -1059,7 +1097,7 @@ async def _update_ticket(
             remove_tags=remove_tags,
             title=title,
             body=body,
-            egg=egg,
+            reference_materials=reference_materials,
             tags=tags,
             up_dependencies=up_dependencies,
             down_dependencies=down_dependencies,
@@ -1075,7 +1113,7 @@ async def _update_ticket(
         add_tags=add_tags,
         remove_tags=remove_tags,
         status=status,
-        egg=egg,
+        reference_materials=reference_materials,
         hive_name=hive_name,
         resolved_root=resolved_root,
     )
@@ -1343,6 +1381,9 @@ async def _delete_ticket(
         - Hive root directory is never deleted (safety guard)
         - Dependency cleanup is opt-in via global config ``delete_with_dependencies: true``
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     # ── Routing: str → single-delete, list → bulk-delete ────
     if isinstance(ticket_ids, str):
         ticket_id = ticket_ids
@@ -1496,24 +1537,24 @@ async def _show_ticket(
                         "ticket_status": str,
                         "created_at": str,
                         "schema_version": str,
-                        "egg": any,
+                        "reference_materials": list | None,
                         "guid": str
                     },
                     ...
                 ],
                 "not_found": ["b.missing"],
-                "errors": [{"id": "b.xxx", "reason": "egg resolver timed out: ..."}]
+                "errors": [{"id": "b.xxx", "reason": "reference resolver timed out: ..."}]
             }
 
         `not_found` contains IDs of tickets that could not be located or read.
-        `errors` contains IDs of tickets that were found but failed during egg resolution.
+        `errors` contains IDs of tickets that were found but failed during reference resolution.
 
     Example:
         >>> _show_ticket(['b.Amx', 'b.Xyz'])
         {'status': 'success', 'tickets': [{...}, {...}], 'not_found': [], 'errors': []}
     """
-    # Local import to avoid circular dependency (mcp_egg_ops imports find_hive_for_ticket from here)
-    from .mcp_egg_ops import _default_resolver, _invoke_custom_resolver  # noqa: PLC0415
+    # Local import to avoid circular dependency (mcp_reference_ops imports find_hive_for_ticket from here)
+    from .mcp_reference_ops import _resolve_references  # noqa: PLC0415
 
     if not ticket_ids:
         return {"status": "success", "tickets": [], "not_found": [], "errors": []}
@@ -1522,12 +1563,13 @@ async def _show_ticket(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     tickets = []
     not_found = []
     errors = []
-
-    config = load_bees_config()
 
     # Validate IDs first; separate valid from invalid/empty
     valid_ids = []
@@ -1547,10 +1589,6 @@ async def _show_ticket(
     hive_collection = _build_queen_hive_collection(resolved_root)
     path_map = build_ticket_path_map(set(valid_ids), hive_collection=hive_collection)
 
-    # In queen mode, build a hive→BeesConfig map so foreign-scope hives resolve
-    # egg resolvers from their own scope config rather than the queen's local config.
-    queen_hive_scope_map: dict[str, BeesConfig] = _build_queen_hive_scope_map(resolved_root) or {}
-
     for ticket_id in valid_ids:
         try:
             if ticket_id not in path_map:
@@ -1560,32 +1598,18 @@ async def _show_ticket(
             resolved_hive, ticket_path = path_map[ticket_id]
             ticket = read_ticket(ticket_id, file_path=ticket_path)
 
-            # Resolve egg for bee tickets via resolver pipeline
+            # Resolve reference_materials for bee tickets via resolver pipeline
             if ticket.type == "bee":
                 try:
-                    effective_config = (
-                        queen_hive_scope_map.get(resolved_hive, config)
-                        if queen_hive_scope_map
-                        else config
+                    resolved_reference_materials = await _resolve_references(
+                        ticket.reference_materials, repo_root=resolved_root
                     )
-                    egg_resolver = resolve_egg_resolver(resolved_hive, effective_config)
-                    if egg_resolver is None:
-                        resolved_egg = _default_resolver(ticket.egg)
-                    else:
-                        if resolved_root is None:
-                            raise ValueError(
-                                "resolved_root is required when a custom egg resolver is configured"
-                            )
-                        timeout = resolve_egg_resolver_timeout(resolved_hive, effective_config)
-                        resolved_egg = await _invoke_custom_resolver(
-                            egg_resolver, ticket.egg, resolved_root, timeout
-                        )
                 except Exception as e:
-                    logger.error(f"Egg resolver failed for {ticket_id}: {e}")
+                    logger.error(f"Reference resolver failed for {ticket_id}: {e}")
                     errors.append({"id": ticket_id, "reason": str(e)})
-                    resolved_egg = ticket.egg
+                    resolved_reference_materials = ticket.reference_materials
             else:
-                resolved_egg = ticket.egg
+                resolved_reference_materials = ticket.reference_materials
 
             ticket_data = {
                 "ticket_id": ticket.id,
@@ -1600,7 +1624,7 @@ async def _show_ticket(
                 "ticket_status": ticket.status,
                 "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
                 "schema_version": ticket.schema_version,
-                "egg": resolved_egg,
+                "reference_materials": resolved_reference_materials,
                 "guid": ticket.guid,
             }
             tickets.append(ticket_data)

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
+    check_schema_version,
     load_bees_config,
     load_global_config,
     resolve_owning_scope,
@@ -260,9 +261,9 @@ def _clone_bee_core(
                 id_map.get(d, d) for d in source.down_dependencies
             ]
 
-        # Egg: copy on root bee only; omit on child tier tickets
+        # reference_materials: copy on root bee only; omit on child tier tickets
         if old_id == bee_id:
-            frontmatter["egg"] = source.egg
+            frontmatter["reference_materials"] = source.reference_materials
 
         # Write cloned ticket to destination hive
         try:
@@ -311,7 +312,7 @@ async def _clone_bee(
         - IDs and GUIDs are freshly generated (no reuse)
         - created_at is set to current time (not copied from source)
         - schema_version uses current constant (not copied from source)
-        - egg field is copied on root bee only, omitted on child tiers
+        - reference_materials field is copied on root bee only, omitted on child tiers
 
     Args:
         bee_id: The bee ticket ID to clone (e.g., "b.Amx").
@@ -356,4 +357,7 @@ async def _clone_bee(
           destination hive's configuration (only when force=False)
         - Child write failures are non-fatal: recorded in the 'failed' list, remaining children proceed
     """
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
     return _clone_bee_core(bee_id, destination_hive=destination_hive, force=force)

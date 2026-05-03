@@ -151,7 +151,7 @@ The `mcp_ticket_ops` module contains the core ticket CRUD (Create, Read, Update,
 - `_create_ticket()`: Creates new tickets (bee or configured tier types like t1, t2, etc.) with comprehensive validation, hive path verification, write permissions checking, and bidirectional relationship synchronization
 - `_update_ticket()`: Updates existing ticket fields with optional parameter sentinel pattern (`_UNSET`), tracking old/new relationships to sync only changes, and atomic file writes
 - `_delete_ticket()`: Accepts a single ticket ID or a list of ticket IDs. For each ticket, performs cascade deletion of all children recursively, cleanup of parent and dependency references in related tickets, and proper error handling. When given a single string, returns a single-ticket result. When given a list, returns a bulk response with deleted, not_found, and failed arrays.
-- `_show_ticket()`: Accepts a list of ticket ID strings, retrieves complete ticket data for each with hive auto-detection, type inference, and JSON serialization. Returns a bulk response with three lists: `tickets` (resolved ticket data), `not_found` (IDs that could not be located), and `errors` (IDs that were found but failed during egg resolution, with reason).
+- `_show_ticket()`: Accepts a list of ticket ID strings, retrieves complete ticket data for each with hive auto-detection, type inference, and JSON serialization. Returns a bulk response with three lists: `tickets` (resolved ticket data), `not_found` (IDs that could not be located), and `errors` (IDs that were found but failed during reference_materials resolution, with reason).
 
 **Module Dependencies**:
 - Used by: `mcp_server.py` (imports and registers as MCP tools via adapter wrappers)
@@ -191,6 +191,20 @@ The `mcp_move_bee` module implements bee ticket relocation between hives within 
 
 **File Location**: `src/mcp_move_bee.py`
 
+### mcp_resolver_ops Module
+
+The `mcp_resolver_ops` module implements the named resolver registry operations: registering, updating, removing, and listing resolver scripts.
+
+**Functions**:
+- `_set_resolver(name, path, timeout, unset)`: Register or update a resolver entry in the global `resolvers` config key. Extracts the `## RESOLVER CONVENTION` block from the script's module docstring automatically. Fails with `resolver_in_use` if unset is requested and the name is still referenced in any hive's `allowed_resolvers`.
+- `_get_resolvers()`: Return all registered resolvers plus the built-in `default` entry.
+
+**Module Dependencies**:
+- Used by: `mcp_server.py` (registered as `set_resolver` and `get_resolvers` MCP tools)
+- Imports: `config` (resolver registry load/save), `repo_context`
+
+**File Location**: `src/mcp_resolver_ops.py`
+
 ### mcp_clone_bee Module
 
 The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket subtree within the same hive or into a named destination hive, assigning fresh IDs, GUIDs, and timestamps to every cloned ticket. Cross-hive cloning includes a compatibility check that rejects the clone if source ticket statuses or tier types are incompatible with the destination hive's configuration; the `force` flag bypasses this check.
@@ -223,11 +237,10 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **update_ticket**: Update existing ticket fields with bidirectional relationship updates. The `body` parameter is constrained by the input schema to `maxLength: 10000` characters; for longer bodies, set the body to a short stub here and use `append_ticket_body` to write the rest in chunks. Accepts `body_file` (path to a UTF-8 file) as an alternative to `body`; `body` and `body_file` are mutually exclusive. The same 10000-character cap applies to `body_file`. Stdin (`"-"`) is not supported for `body_file` in the MCP context — pass content inline instead.
 - **append_ticket_body**: Append a chunk of text to the end of an existing ticket's body. Parameters: `ticket_id` (required), `chunk` (`maxLength: 10000` characters), `chunk_file` (path to a UTF-8 file), `hive` (optional name hint for faster lookup). Exactly one of `chunk` or `chunk_file` must be provided; they are mutually exclusive. The same 10000-character cap applies to `chunk_file`. Stdin (`"-"`) is not supported for `chunk_file` in the MCP context — pass content inline instead. Only the `body` field is touched; every other frontmatter field is preserved unchanged. Chunks are concatenated to the end of the current body in call order with no separator, no newline, and no framing injected by the server. An empty `chunk` is a success no-op (safe inside idempotent retry loops) — the file on disk is byte-identical before and after the call. Success return shape: `{"status": "success", "appended": [ticket_id], "not_found": [], "failed": []}`. On a write failure the tool returns a structured error rather than raising: `{"status": "error", "error_type": "write_error", "message": ...}`. Other error types: `ticket_not_found`, `hive_not_found`, `read_error`. See "Chunked body workflow" below.
 - **delete_ticket**: Delete one or more tickets with cascade deletion of all children and automatic relationship cleanup. Accepts a single ID string or a list of IDs.
-- **show_ticket**: Retrieve complete ticket data for a list of ticket IDs. Returns `{"status": "success", "tickets": [...], "not_found": [...], "errors": [...]}` — `tickets` contains full ticket data for each resolved ID, `not_found` lists IDs that could not be located, `errors` lists IDs that exist but failed egg resolution (with reason).
+- **show_ticket**: Retrieve complete ticket data for a list of ticket IDs. Returns `{"status": "success", "tickets": [...], "not_found": [...], "errors": [...]}` — `tickets` contains full ticket data for each resolved ID (including resolved `reference_materials` entries for bee tickets), `not_found` lists IDs that could not be located, `errors` lists IDs that exist but failed during reference_materials resolution (with reason).
 - **get_types**: Read raw child_tiers from global, scope, and hive configuration levels without inheritance resolution
 - **set_types**: Set or unset child_tiers configuration at the global, repo_scope, or hive level in ~/.bees/config.json. Config-only operation; no tickets are read or modified.
 - **clone_bee**: Deep-clone a bee and its full ticket subtree. Takes `bee_id` (required), `destination_hive` (optional string — destination hive name; defaults to source hive when omitted), and `force` (optional bool — when true, bypasses cross-hive status-value and tier-type compatibility checks). Returns `{"status": "success", "ticket_id": "<new-root-id>", "written": N, "failed": [...]}` on success, with `failed` listing any child tickets that could not be written. Source and destination hives must be in the same scope.
-- **resolve_eggs**: Resolve egg field from bee tickets into list of resource strings using configured resolver. Takes `ticket_id` parameter and returns dict with `status`, `ticket_id`, and `resources` (list[str] | None). Uses config resolution order (hive → scope → global → default). Default resolver handles inline conversion (null → null, string → [string], other → [json.dumps(value)]). Custom resolvers invoke subprocess with --repo-root and --egg-value arguments, parse JSON output (array of strings or null), and enforce timeout. See configuration.md for egg_resolver and egg_resolver_timeout config fields.
 
 ### Query Operations
 - **execute_named_query**: Execute a named query registered in `~/.bees/config.json`
@@ -244,9 +257,14 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **sanitize_hive**: Validate and auto-fix malformed tickets in a hive. Returns `config_conflict` when the hive exists in multiple overlapping scopes (ambiguous owning scope); resolves the owning scope automatically when only one matching scope contains the hive. Error types: `config_conflict`, `hive_not_found`.
 - **move_bee**: Move one or more bee tickets to a different hive within the same scope. Takes `bee_ids` (list of bee IDs), `destination_hive` (normalized hive name), and `force` (optional bool — when true, bypasses cross-hive status-value and tier-type compatibility checks). Before any moves are performed, bees scans the source tree against the destination hive's configuration; if any bee has incompatible status values or tier types, all moves are aborted with a `compatibility_error`. Pass `force=True` to skip that check. Returns counts of moved, skipped, not_found, and failed tickets. Error types: `hive_not_found`, `cemetery_destination`, `compatibility_error`.
 
+### Resolver Registry
+- **set_resolver**: Register or update a named resolver in the global `resolvers` registry. Parameters: `name` (cannot be `"default"`), `path` (absolute path to script), optional `timeout`, optional `--unset` to remove. Fails with `resolver_in_use` if removed name is still referenced by a hive's `allowed_resolvers`.
+- **get_resolvers**: List all registered resolvers plus the built-in `default` entry. Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
+
 ### Utility
 - **generate_index**: Generate markdown index of all tickets with optional filters. When `hive_name` is provided, generates index for that hive only. When `hive_name` is omitted (global mode), iterates all registered hives and generates index for each. The response always includes `status`, `markdown`, and `skipped_hives` keys (`skipped_hives` is always an empty list).
 - **health_check**: Check server health status and readiness
+- **update_config**: Apply pending schema migrations to `~/.bees/config.json`. When `details_only=True`, returns a preview of pending migrations without applying them (no confirmation required). When `details_only=False` (default), applies all pending migration hops — callers MUST obtain explicit user confirmation before invoking. Returns `current_version` and `pending_hops` in preview mode; returns `applied_hops` and `final_version` after applying.
 
 ## Chunked body workflow
 
@@ -261,7 +279,7 @@ The cap exists because the Claude Code `/v1/messages` streaming-stall watchdog w
 
 The `bees` command is registered as a Poetry script pointing to `src/cli.py`. This file is the sole entry point for all CLI operations and has no MCP dependencies.
 
-argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
+argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `update-config`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
 
 `create-ticket --body`, `update-ticket --body`, and `append-ticket-body --chunk` enforce the same 10000-character cap as their MCP counterparts; oversized values are rejected at the handler entry with a non-zero exit and a message on stderr pointing the caller at `bees append-ticket-body` for chunked writes. See "Chunked body workflow" above.
 

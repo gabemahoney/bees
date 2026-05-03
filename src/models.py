@@ -51,7 +51,7 @@ class Ticket:
     down_dependencies: list[str] = field(default_factory=list)
     parent: str | None = None
     children: list[str] = field(default_factory=list)
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None
+    reference_materials: list[dict[str, Any]] | None = None
     created_at: datetime | None = None
     status: str | None = None
     schema_version: str | None = None

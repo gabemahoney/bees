@@ -557,19 +557,25 @@ test_crud_update_tags() {
     pass_test "Update tags"
 }
 
-test_crud_update_egg() {
-    capture_cmd bees update-ticket --ids "$BEE1" --egg '{"priority":1,"estimate":"2h"}'
+test_crud_update_reference_materials() {
+    echo "test_ref" > /tmp/test_ref
+    capture_cmd bees update-ticket --ids "$BEE1" \
+        --reference-materials '[{"value":"/tmp/test_ref"}]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Update egg" "exit $CMD_EXIT: $CMD_OUT"
+        fail_test "Update reference_materials" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    assert_no_traceback "$CMD_OUT" "Update egg"
+    assert_no_traceback "$CMD_OUT" "Update reference_materials"
     capture_cmd bees show-ticket --ids "$BEE1"
-    local prio
-    prio=$(check_json "$CMD_OUT" "d['tickets'][0].get('egg',{}).get('priority','')")
-    if [ "$prio" != "1" ]; then
-        fail_test "Update egg" "Expected egg.priority=1, got $prio"
+    local ref_count ref_val
+    ref_count=$(check_json "$CMD_OUT" "len(d['tickets'][0].get('reference_materials') or [])")
+    ref_val=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
+    if [ "$ref_count" != "1" ]; then
+        fail_test "Update reference_materials" "Expected 1 reference_materials entry, got $ref_count"
     fi
-    pass_test "Update egg"
+    if [ "$ref_val" != "/tmp/test_ref" ]; then
+        fail_test "Update reference_materials" "Expected value=/tmp/test_ref, got $ref_val"
+    fi
+    pass_test "Update reference_materials"
 }
 
 test_crud_clear_tags() {
@@ -753,7 +759,7 @@ run_test test_crud_show_bulk
 run_test test_crud_update_title
 run_test test_crud_update_status
 run_test test_crud_update_tags
-run_test test_crud_update_egg
+run_test test_crud_update_reference_materials
 run_test test_crud_clear_tags
 run_test test_crud_delete_single
 run_test test_crud_delete_bulk
@@ -1259,7 +1265,7 @@ test_query_by_tag() {
 
 test_query_graph_children() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee, hive=query_hive_a]\n- [children]'
+        --query-yaml $'stages:\n  - [type=bee, hive=query_hive_a]\n  - [children]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query children traversal" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1273,7 +1279,7 @@ test_query_graph_children() {
 
 test_query_graph_parent() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=t1, hive=query_hive_a]\n- [parent]'
+        --query-yaml $'stages:\n  - [type=t1, hive=query_hive_a]\n  - [parent]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query parent traversal" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1300,7 +1306,7 @@ test_query_hive_filter() {
 
 test_query_up_deps() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee]\n- [up_dependencies]'
+        --query-yaml $'stages:\n  - [type=bee]\n  - [up_dependencies]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query up_dependencies" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1314,7 +1320,7 @@ test_query_up_deps() {
 
 test_query_down_deps() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee]\n- [down_dependencies]'
+        --query-yaml $'stages:\n  - [type=bee]\n  - [down_dependencies]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query down_dependencies" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1355,7 +1361,8 @@ test_nq_setup() {
 }
 
 test_nq_add_global() {
-    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope global
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml 'stages:
+  - [type=bee]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add global named query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1390,7 +1397,8 @@ test_nq_list() {
 }
 
 test_nq_conflict() {
-    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope repo
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml 'stages:
+  - [type=bee]' --scope repo
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Reject conflicting query name" "Expected failure but got success"
     fi
@@ -1404,7 +1412,8 @@ test_nq_conflict() {
 
 test_nq_add_repo() {
     capture_cmd bees add-named-query --query-name "worker_bees" \
-        --query-yaml "- [type=bee, status=worker]" --scope repo
+        --query-yaml 'stages:
+  - [type=bee, status=worker]' --scope repo
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add repo-scoped query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1460,158 +1469,237 @@ run_test test_nq_execute_repo
 run_test test_nq_delete_repo
 run_test test_nq_delete_global
 
-# === FORMER PHASE 5 GROUP A: EGG RESOLVER ===
+# === REFERENCE MATERIALS ===
 
-EGG_BEE1=""
-EGG_BEE2=""
-EGG_BEE3=""
+REF_BEE1=""
+REF_BEE2=""
+REF_BEE3=""
 
-test_egg_setup() {
+test_ref_setup() {
     capture_cmd bees colonize-hive \
-        --name "Egg Hive" \
-        --path "$REPO/tickets/egg_hive"
+        --name "Ref Hive" \
+        --path "$REPO/tickets/ref_hive"
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Egg setup" "exit $CMD_EXIT: $CMD_OUT"
+        fail_test "Ref setup" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    assert_no_traceback "$CMD_OUT" "Egg setup"
-    pass_test "Egg setup"
+    assert_no_traceback "$CMD_OUT" "Ref setup"
+    pass_test "Ref setup"
 }
 
-test_egg_string_inline() {
-    capture_cmd bees create-ticket --ticket-type bee --title "String Egg Bee" \
-        --hive egg_hive --egg '"hello"'
+test_ref_single_entry() {
+    echo "hello" > /tmp/ref_test_file
+    capture_cmd bees create-ticket --ticket-type bee --title "Single Ref Bee" \
+        --hive ref_hive --reference-materials '[{"value":"/tmp/ref_test_file"}]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "String egg inline" "Create failed: $CMD_OUT"
+        fail_test "Single reference_materials entry" "Create failed: $CMD_OUT"
     fi
-    EGG_BEE1=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$EGG_BEE1"
-    local egg_val
-    egg_val=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
-    if [ "$egg_val" != "hello" ]; then
-        fail_test "String egg inline" "Expected egg='hello', got '$egg_val'"
+    REF_BEE1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE1"
+    local ref_val
+    ref_val=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
+    if [ "$ref_val" != "/tmp/ref_test_file" ]; then
+        fail_test "Single reference_materials entry" "Expected value='/tmp/ref_test_file', got '$ref_val'"
     fi
-    pass_test "String egg inline"
+    pass_test "Single reference_materials entry"
 }
 
-test_egg_null_inline() {
-    capture_cmd bees create-ticket --ticket-type bee --title "Null Egg Bee" \
-        --hive egg_hive --egg 'null'
+test_ref_null_clear() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Null Ref Bee" \
+        --hive ref_hive --reference-materials 'null'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Null egg inline" "Create failed: $CMD_OUT"
+        fail_test "Null reference_materials" "Create failed: $CMD_OUT"
     fi
-    EGG_BEE2=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$EGG_BEE2"
-    local egg_val
-    egg_val=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
-    if [ "$egg_val" != "None" ]; then
-        fail_test "Null egg inline" "Expected egg=None, got '$egg_val'"
+    REF_BEE2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE2"
+    local ref_val
+    ref_val=$(check_json "$CMD_OUT" "d['tickets'][0].get('reference_materials')")
+    if [ "$ref_val" != "None" ]; then
+        fail_test "Null reference_materials" "Expected reference_materials=None, got '$ref_val'"
     fi
-    pass_test "Null egg inline"
+    pass_test "Null reference_materials"
 }
 
-test_egg_object_inline() {
-    capture_cmd bees create-ticket --ticket-type bee --title "Object Egg Bee" \
-        --hive egg_hive --egg '{"key":"val"}'
+test_ref_multi_entry() {
+    echo "val1" > /tmp/ref_file1
+    echo "val2" > /tmp/ref_file2
+    capture_cmd bees create-ticket --ticket-type bee --title "Multi Ref Bee" \
+        --hive ref_hive \
+        --reference-materials '[{"value":"/tmp/ref_file1"},{"value":"/tmp/ref_file2"}]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Object egg inline" "Create failed: $CMD_OUT"
+        fail_test "Multi-entry reference_materials" "Create failed: $CMD_OUT"
     fi
-    EGG_BEE3=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$EGG_BEE3"
-    local egg_key
-    egg_key=$(check_json "$CMD_OUT" "d['tickets'][0]['egg'].get('key','')")
-    if [ "$egg_key" != "val" ]; then
-        fail_test "Object egg inline" "Expected egg.key='val', got '$egg_key'"
+    REF_BEE3=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE3"
+    local ref_count ref_val1 ref_val2
+    ref_count=$(check_json "$CMD_OUT" "len(d['tickets'][0].get('reference_materials') or [])")
+    ref_val1=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
+    ref_val2=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{},{}])[1].get('value','')")
+    if [ "$ref_count" != "2" ]; then
+        fail_test "Multi-entry reference_materials" "Expected 2 entries, got $ref_count"
     fi
-    pass_test "Object egg inline"
+    if [ "$ref_val1" != "/tmp/ref_file1" ]; then
+        fail_test "Multi-entry reference_materials" "Expected first value=/tmp/ref_file1, got '$ref_val1'"
+    fi
+    if [ "$ref_val2" != "/tmp/ref_file2" ]; then
+        fail_test "Multi-entry reference_materials" "Expected second value=/tmp/ref_file2, got '$ref_val2'"
+    fi
+    pass_test "Multi-entry reference_materials"
 }
 
-test_egg_custom_resolver() {
-    # Create a shell script resolver that outputs JSON
+test_ref_custom_resolver() {
     mkdir -p "$REPO/scripts"
-    cat > "$REPO/scripts/egg_resolver.sh" << 'RESOLVER'
+    cat > "$REPO/scripts/test_resolver.sh" << 'RESOLVER'
 #!/bin/bash
-# Parse --egg-value argument
-EGG_VALUE=""
+# Parse --value argument
+VALUE=""
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --egg-value) EGG_VALUE="$2"; shift 2 ;;
+        --value) VALUE="$2"; shift 2 ;;
         --repo-root) shift 2 ;;
         *) shift ;;
     esac
 done
-echo "{\"resolved\": true, \"original\": \"$EGG_VALUE\"}"
+echo "{\"resolved\": true, \"original\": \"$VALUE\"}"
 RESOLVER
-    chmod +x "$REPO/scripts/egg_resolver.sh"
+    chmod +x "$REPO/scripts/test_resolver.sh"
+
+    capture_cmd bees set-resolver --name test_resolver \
+        --path "$REPO/scripts/test_resolver.sh"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom ref resolver" "set-resolver failed: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Custom ref resolver"
+
     capture_cmd bees colonize-hive \
         --name "Resolver Hive" \
         --path "$REPO/tickets/resolver_hive" \
-        --egg-resolver "$REPO/scripts/egg_resolver.sh"
+        --allowed-resolvers '["test_resolver"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Custom egg resolver" "Colonize failed: $CMD_OUT"
+        fail_test "Custom ref resolver" "Colonize failed: $CMD_OUT"
     fi
+
     capture_cmd bees create-ticket --ticket-type bee --title "Resolved Bee" \
-        --hive resolver_hive --egg '"test_value"'
+        --hive resolver_hive \
+        --reference-materials '[{"value":"test_value","resolver":"test_resolver"}]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Custom egg resolver" "Create failed: $CMD_OUT"
+        fail_test "Custom ref resolver" "Create failed: $CMD_OUT"
     fi
     local res_bee
     res_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+
     capture_cmd bees show-ticket --ids "$res_bee"
     local resolved
-    resolved=$(check_json "$CMD_OUT" "d['tickets'][0]['egg'].get('resolved', False)")
+    resolved=$(check_json "$CMD_OUT" \
+        "d['tickets'][0].get('reference_materials',[{}])[0].get('resolved',{}).get('resolved',False)")
     if [ "$resolved" != "True" ]; then
-        fail_test "Custom egg resolver" "Expected resolved=True in egg output"
+        fail_test "Custom ref resolver" "Expected resolved=True in reference_materials output"
     fi
-    pass_test "Custom egg resolver"
+    pass_test "Custom ref resolver"
 }
 
-test_egg_resolver_timeout() {
-    # Create a script that sleeps forever
+test_ref_resolver_timeout() {
     cat > "$REPO/scripts/slow_resolver.sh" << 'RESOLVER'
 #!/bin/bash
 sleep 60
 echo '{"never":"reached"}'
 RESOLVER
     chmod +x "$REPO/scripts/slow_resolver.sh"
+
+    capture_cmd bees set-resolver --name slow_resolver \
+        --path "$REPO/scripts/slow_resolver.sh" --timeout 2
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Ref resolver timeout" "set-resolver failed: $CMD_OUT"
+    fi
+
     capture_cmd bees colonize-hive \
         --name "Timeout Hive" \
         --path "$REPO/tickets/timeout_hive" \
-        --egg-resolver "$REPO/scripts/slow_resolver.sh" \
-        --egg-resolver-timeout 2
+        --allowed-resolvers '["slow_resolver"]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Egg resolver timeout" "Colonize failed: $CMD_OUT"
+        fail_test "Ref resolver timeout" "Colonize failed: $CMD_OUT"
     fi
+
     capture_cmd bees create-ticket --ticket-type bee --title "Timeout Bee" \
-        --hive timeout_hive --egg '"test"'
+        --hive timeout_hive \
+        --reference-materials '[{"value":"test","resolver":"slow_resolver"}]'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Egg resolver timeout" "Create failed: $CMD_OUT"
+        fail_test "Ref resolver timeout" "Create failed: $CMD_OUT"
     fi
     local to_bee
     to_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
-    # Show should succeed but egg resolution should fail gracefully
+
     capture_cmd bees show-ticket --ids "$to_bee"
-    assert_no_traceback "$CMD_OUT" "Egg resolver timeout"
-    # The ticket should still be returned (with errors or fallback egg)
+    assert_no_traceback "$CMD_OUT" "Ref resolver timeout"
     local ticket_count
     ticket_count=$(check_json "$CMD_OUT" "len(d.get('tickets',[]))")
     if [ "$ticket_count" != "1" ]; then
-        fail_test "Egg resolver timeout" "Expected 1 ticket returned, got $ticket_count"
+        fail_test "Ref resolver timeout" "Expected 1 ticket returned, got $ticket_count"
     fi
-    # Check that errors list mentions the timeout
-    local has_errors
-    has_errors=$(check_json "$CMD_OUT" "len(d.get('errors',[])) > 0")
-    if [ "$has_errors" != "True" ]; then
-        fail_test "Egg resolver timeout" "Expected errors for timeout, got none"
+    # Timeout errors are surfaced inside reference_materials[0]["resolved"], not in top-level errors
+    local resolved_status resolved_error
+    resolved_status=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('status','')")
+    resolved_error=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('error','')")
+    if [ "$resolved_status" != "error" ]; then
+        fail_test "Ref resolver timeout" "Expected resolved.status=error for timeout, got '$resolved_status'"
     fi
-    pass_test "Egg resolver timeout"
+    if [[ "$resolved_error" != *"timed out"* ]]; then
+        fail_test "Ref resolver timeout" "Expected 'timed out' in resolved.error, got '$resolved_error'"
+    fi
+    pass_test "Ref resolver timeout"
 }
 
-run_test test_egg_setup
-run_test test_egg_string_inline
-run_test test_egg_null_inline
-run_test test_egg_object_inline
-run_test test_egg_custom_resolver
-run_test test_egg_resolver_timeout
+run_test test_ref_setup
+run_test test_ref_single_entry
+run_test test_ref_null_clear
+run_test test_ref_multi_entry
+run_test test_ref_custom_resolver
+run_test test_ref_resolver_timeout
+
+# === UPDATE CONFIG ===
+
+test_update_config() {
+    capture_cmd bees update-config
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-config"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "update-config" "Expected status=success, got $status"
+    fi
+    local msg
+    msg=$(check_json "$CMD_OUT" "d.get('message','')")
+    if [ -z "$msg" ]; then
+        fail_test "update-config" "Expected non-empty message in response"
+    fi
+    pass_test "update-config"
+}
+
+test_update_config_details() {
+    capture_cmd bees update-config --details
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config --details" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-config --details"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "update-config --details" "Expected status=success, got $status"
+    fi
+    # Must have pending_hops key (list, possibly empty if already up to date)
+    local has_hops_key
+    has_hops_key=$(check_json "$CMD_OUT" "'pending_hops' in d")
+    if [ "$has_hops_key" != "True" ]; then
+        fail_test "update-config --details" "Expected pending_hops key in response"
+    fi
+    pass_test "update-config --details"
+}
+
+run_test test_update_config
+run_test test_update_config_details
 
 # === FORMER PHASE 5 GROUP A: INDEX GENERATION ===
 
@@ -1689,7 +1777,8 @@ test_undertaker_setup() {
 
 test_undertaker_yaml_query() {
     capture_cmd bees undertaker --hive archive_hive \
-        --query-yaml "- [status=finished]"
+        --query-yaml 'stages:
+  - [status=finished]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archive via YAML query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1728,7 +1817,8 @@ test_undertaker_cemetery_guid_naming() {
 
 test_undertaker_excluded_from_queries() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=archive_hive]"
+        --query-yaml 'stages:
+  - [type=bee, hive=archive_hive]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archived excluded from queries" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1743,7 +1833,8 @@ test_undertaker_excluded_from_queries() {
 test_undertaker_named_query() {
     # Register a named query for finished bees
     capture_cmd bees add-named-query --query-name "finished_bees" \
-        --query-yaml "- [status=finished]" --scope global
+        --query-yaml 'stages:
+  - [status=finished]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archive via named query" "add-named-query failed: $CMD_OUT"
     fi
@@ -1955,7 +2046,8 @@ test_move_blocked_by_tiers() {
 test_move_force_bypass() {
     # Use the compat_bee from the status_values test (still in compat_source)
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=compat_source, title~Compat Bee]"
+        --query-yaml 'stages:
+  - [type=bee, hive=compat_source, title~Compat Bee]'
     local force_bee
     force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
     capture_cmd bees move-bee --ids "$force_bee" --hive compat_dest --force
@@ -2387,15 +2479,17 @@ test_error_missing_on_update() {
 }
 
 test_error_missing_on_delete() {
+    # delete-ticket always uses bulk-delete (CLI passes nargs="+" list).
+    # Bulk-delete is idempotent: missing tickets go into not_found, not errors.
     capture_cmd bees delete-ticket --ids "b.zzz"
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "Missing ticket on delete" "Expected failure but got success"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Missing ticket on delete" "Expected success (idempotent), got exit $CMD_EXIT: $CMD_OUT"
     fi
     assert_no_traceback "$CMD_OUT" "Missing ticket on delete"
-    local error_type
-    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
-    if [ "$error_type" != "ticket_not_found" ]; then
-        fail_test "Missing ticket on delete" "Expected error_type=ticket_not_found, got $error_type"
+    local nf_count
+    nf_count=$(check_json "$CMD_OUT" "len(d.get('not_found',[]))")
+    if [ "$nf_count" -lt 1 ]; then
+        fail_test "Missing ticket on delete" "Expected b.zzz in not_found, got: $CMD_OUT"
     fi
     pass_test "Missing ticket on delete"
 }
@@ -2836,13 +2930,15 @@ run_test test_sv_create_invalid_status
 test_sv_glob_scope_setup() {
     # The default exact scope for $REPO already exists from earlier test setup.
     # Create a glob scope matching $REPO via its parent directory.
+    # Strip trailing slash from parent_dir so root "/" becomes "" not "/",
+    # producing "/**" instead of "//**" when REPO is a top-level directory.
     local parent_dir
     parent_dir=$(dirname "$REPO")
     mkdir -p "$REPO/tickets/glob_hive"
     capture_cmd bees colonize-hive \
         --name "Glob Hive" \
         --path "$REPO/tickets/glob_hive" \
-        --scope "${parent_dir}/**"
+        --scope "${parent_dir%/}/**"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "SV glob scope setup" "Colonize glob hive failed: $CMD_OUT"
     fi
@@ -2970,8 +3066,9 @@ test_clone_setup() {
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Clone setup" "exit $CMD_EXIT: $CMD_OUT"
     fi
+    echo "clone_ref" > /tmp/clone_ref
     capture_cmd bees create-ticket --ticket-type bee --title "Clone Source Bee" \
-        --hive clone_hive --status pupa --tags '["cloneable"]' --egg '"clone_egg"'
+        --hive clone_hive --status pupa --tags '["cloneable"]' --reference-materials '[{"value":"/tmp/clone_ref"}]'
     CLONE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
     capture_cmd bees create-ticket --ticket-type t1 --title "Clone Task 1" \
         --hive clone_hive --parent "$CLONE_BEE"
@@ -2984,8 +3081,9 @@ test_clone_setup() {
 
 test_clone_flat_bee() {
     # Create a simple bee with no children for flat clone
+    echo "flat_ref" > /tmp/flat_ref
     capture_cmd bees create-ticket --ticket-type bee --title "Flat Clone Bee" \
-        --hive clone_hive --status pupa --tags '["flat"]' --egg '"flat_egg"'
+        --hive clone_hive --status pupa --tags '["flat"]' --reference-materials '[{"value":"/tmp/flat_ref"}]'
     local flat_bee
     flat_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
     capture_cmd bees clone --bee-id "$flat_bee"
@@ -3003,14 +3101,14 @@ test_clone_flat_bee() {
     fi
     # Verify content matches
     capture_cmd bees show-ticket --ids "$new_id"
-    local clone_title clone_egg
+    local clone_title clone_ref_count
     clone_title=$(check_json "$CMD_OUT" "d['tickets'][0]['title']")
-    clone_egg=$(check_json "$CMD_OUT" "d['tickets'][0]['egg']")
+    clone_ref_count=$(check_json "$CMD_OUT" "len(d['tickets'][0].get('reference_materials') or [])")
     if [ "$clone_title" != "Flat Clone Bee" ]; then
         fail_test "Clone flat bee" "Title mismatch: $clone_title"
     fi
-    if [ "$clone_egg" != "flat_egg" ]; then
-        fail_test "Clone flat bee" "Egg mismatch: $clone_egg"
+    if [ "$clone_ref_count" != "1" ]; then
+        fail_test "Clone flat bee" "reference_materials count mismatch: $clone_ref_count"
     fi
     pass_test "Clone flat bee"
 }
@@ -3111,7 +3209,8 @@ test_clone_incompatible_blocked() {
 test_clone_force_bypass() {
     # Use same incompatible bee
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=clone_hive, title~Incompat Clone]"
+        --query-yaml 'stages:
+  - [type=bee, hive=clone_hive, title~Incompat Clone]'
     local force_bee
     force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
     capture_cmd bees clone --bee-id "$force_bee" --hive clone_dest --force
@@ -3189,7 +3288,7 @@ test_fast_parser_pipeline() {
 
     # Test 3: Graph traversal — children of bee1
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [id='"$fp_bee1"$']\n- [children]'
+        --query-yaml $'stages:\n  - [id='"$fp_bee1"$']\n  - [children]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Fast parser pipeline" "Children query failed: exit $CMD_EXIT: $CMD_OUT $CMD_ERR"
     fi
@@ -3201,7 +3300,7 @@ test_fast_parser_pipeline() {
 
     # Test 4: Chained search + traversal
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee, hive=fp_hive]\n- [children]'
+        --query-yaml $'stages:\n  - [type=bee, hive=fp_hive]\n  - [children]'
     local all_tasks
     all_tasks=$(check_json "$CMD_OUT" "all(not tid.startswith('b.') for tid in d.get('ticket_ids',[]))")
     if [ "$all_tasks" != "True" ]; then
@@ -3337,30 +3436,19 @@ test_scope_shadow_more_specific() {
         fail_test "Scope shadow more specific" "Broad colonize failed: $CMD_OUT"
     fi
 
-    # Narrow Bugs — should succeed (shadowing)
+    # Narrow Bugs — same name in overlapping scope must be rejected (cross_scope_hive_conflict).
+    # Shadowing is not supported; the protection prevents ambiguity across overlapping scopes.
     capture_cmd bees colonize-hive \
         --name "Bugs" \
         --path "$REPO/tickets/bugs_narrow" \
         --scope "/tmp/multi_test/general/team/*"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Scope shadow more specific" "Narrow colonize failed: $CMD_OUT"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Scope shadow more specific" "Expected cross_scope_hive_conflict but got success"
     fi
-
-    # From narrow path — narrow bugs wins
-    cd /tmp/multi_test/general/team/repo
-    capture_cmd bees list-hives
-    local bugs_path
-    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
-    if ! echo "$bugs_path" | grep -q "bugs_narrow"; then
-        fail_test "Scope shadow more specific" "Expected bugs_narrow path from narrow scope, got $bugs_path"
-    fi
-
-    # From broad path — broad bugs wins
-    cd /tmp/multi_test/general/other/repo
-    capture_cmd bees list-hives
-    bugs_path=$(check_json "$CMD_OUT" "[h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='bugs'][0] if any(h.get('normalized_name')=='bugs' for h in d.get('hives',[])) else ''")
-    if ! echo "$bugs_path" | grep -q "bugs_broad"; then
-        fail_test "Scope shadow more specific" "Expected bugs_broad path from broad scope, got $bugs_path"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "cross_scope_hive_conflict" ]; then
+        fail_test "Scope shadow more specific" "Expected error_type=cross_scope_hive_conflict, got $error_type"
     fi
 
     cd "$REPO"
@@ -3433,7 +3521,7 @@ test_scope_same_name_narrow_wins() {
     mkdir -p /tmp/same_test/work/team/repo
     mkdir -p /tmp/same_test/work/other/repo
 
-    # Both scopes define a hive named "Shared Work" — narrow scope should win
+    # Broad scope hive
     capture_cmd bees colonize-hive \
         --name "Shared Work" \
         --path "$REPO/tickets/shared_broad" \
@@ -3442,29 +3530,20 @@ test_scope_same_name_narrow_wins() {
         fail_test "Scope same name narrow wins" "Broad colonize failed: $CMD_OUT"
     fi
 
+    # Narrow scope — same name in overlapping scope must be rejected (cross_scope_hive_conflict).
+    # Shadowing is not supported; registering the same hive name in an overlapping scope is
+    # always an error regardless of scope specificity.
     capture_cmd bees colonize-hive \
         --name "Shared Work" \
         --path "$REPO/tickets/shared_narrow" \
         --scope "/tmp/same_test/work/team/*"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Scope same name narrow wins" "Narrow colonize failed: $CMD_OUT"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Scope same name narrow wins" "Expected cross_scope_hive_conflict but got success"
     fi
-
-    # From path matching both — narrow scope's path wins
-    cd /tmp/same_test/work/team/repo
-    capture_cmd bees list-hives
-    local shared_path
-    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
-    if ! echo "$shared_path" | grep -q "shared_narrow"; then
-        fail_test "Scope same name narrow wins" "Expected shared_narrow path, got: $shared_path"
-    fi
-
-    # From broad-only path — broad scope's path wins
-    cd /tmp/same_test/work/other/repo
-    capture_cmd bees list-hives
-    shared_path=$(check_json "$CMD_OUT" "next((h.get('path','') for h in d.get('hives',[]) if h.get('normalized_name')=='shared_work'), '')")
-    if ! echo "$shared_path" | grep -q "shared_broad"; then
-        fail_test "Scope same name narrow wins" "Expected shared_broad path, got: $shared_path"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "cross_scope_hive_conflict" ]; then
+        fail_test "Scope same name narrow wins" "Expected error_type=cross_scope_hive_conflict, got $error_type"
     fi
 
     cd "$REPO"
@@ -3567,7 +3646,8 @@ run_test test_id_3level_bidir
 
 test_list_named_queries_works() {
     # Register a query, list, verify
-    capture_cmd bees add-named-query --query-name "test_lnq" --query-yaml "- [type=bee]" --scope global
+    capture_cmd bees add-named-query --query-name "test_lnq" --query-yaml 'stages:
+  - [type=bee]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "list-named-queries" "add failed: $CMD_OUT"
     fi
@@ -3753,6 +3833,176 @@ run_test test_body_file_update
 run_test test_chunk_file_append
 run_test test_chunk_file_mutual_exclusion
 run_test test_body_file_not_found
+
+# === PHASE 6: RESOLVER REGISTRY ===
+
+test_p6_register_resolver_verify() {
+    cat > /tmp/test_resolver_p6.py << 'PYEOF'
+"""Test resolver for Phase 6.
+
+## RESOLVER CONVENTION
+Accepts a URL and returns its content.
+"""
+pass
+PYEOF
+    capture_cmd bees set-resolver --name test_resolver_p6 \
+        --path /tmp/test_resolver_p6.py --timeout 30
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Register resolver" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Register resolver"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "P6: Register resolver" "Expected status=success, got $status"
+    fi
+    capture_cmd bees get-resolvers
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Register resolver" "get-resolvers failed: $CMD_OUT"
+    fi
+    local has_resolver has_default
+    has_resolver=$(check_json "$CMD_OUT" \
+        "any(r['name']=='test_resolver_p6' and r['path']=='/tmp/test_resolver_p6.py' and r.get('timeout')==30 and r.get('built_in')==False for r in d.get('resolvers',[]))")
+    has_default=$(check_json "$CMD_OUT" \
+        "any(r['name']=='file-path' and r.get('built_in')==True for r in d.get('resolvers',[]))")
+    if [ "$has_resolver" != "True" ]; then
+        fail_test "P6: Register resolver" "test_resolver_p6 not found in get-resolvers output"
+    fi
+    if [ "$has_default" != "True" ]; then
+        fail_test "P6: Register resolver" "file-path resolver not found in get-resolvers output"
+    fi
+    pass_test "P6: Register resolver"
+}
+
+test_p6_reject_reserved_name() {
+    capture_cmd bees set-resolver --name file-path --path /tmp/test_resolver_p6.py
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "P6: Reject reserved name" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Reject reserved name"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "reserved_name" ]; then
+        fail_test "P6: Reject reserved name" "Expected error_type=reserved_name, got $error_type"
+    fi
+    capture_cmd bees set-resolver --name file-path --unset
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "P6: Reject reserved name (unset)" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Reject reserved name (unset)"
+    pass_test "P6: Reject reserved name"
+}
+
+test_p6_unset_resolver() {
+    capture_cmd bees set-resolver --name removable \
+        --path /tmp/test_resolver_p6.py
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Unset resolver" "Register failed: $CMD_OUT"
+    fi
+    capture_cmd bees get-resolvers
+    local has_removable
+    has_removable=$(check_json "$CMD_OUT" \
+        "any(r['name']=='removable' for r in d.get('resolvers',[]))")
+    if [ "$has_removable" != "True" ]; then
+        fail_test "P6: Unset resolver" "removable not found after register"
+    fi
+    capture_cmd bees set-resolver --name removable --unset
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Unset resolver" "Unset failed: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Unset resolver"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "P6: Unset resolver" "Expected status=success, got $status"
+    fi
+    capture_cmd bees get-resolvers
+    has_removable=$(check_json "$CMD_OUT" \
+        "any(r['name']=='removable' for r in d.get('resolvers',[]))")
+    if [ "$has_removable" != "False" ]; then
+        fail_test "P6: Unset resolver" "removable still present after unset"
+    fi
+    pass_test "P6: Unset resolver"
+}
+
+test_p6_colonize_allowed_resolvers() {
+    capture_cmd bees colonize-hive \
+        --name "P6 Resolver Test" \
+        --path "$REPO/tickets/p6_resolver_test" \
+        --allowed-resolvers '["test_resolver_p6","file-path"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Colonize allowed_resolvers" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Colonize allowed_resolvers"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "P6: Colonize allowed_resolvers" "Expected status=success, got $status"
+    fi
+    local allowed
+    allowed=$(check_json "$CMD_OUT" "sorted(d.get('allowed_resolvers') or [])")
+    if [ "$allowed" != "['file-path', 'test_resolver_p6']" ]; then
+        fail_test "P6: Colonize allowed_resolvers" "Expected sorted ['file-path','test_resolver_p6'], got $allowed"
+    fi
+    pass_test "P6: Colonize allowed_resolvers"
+}
+
+test_p6_reject_unregistered_resolver() {
+    capture_cmd bees colonize-hive \
+        --name "P6 Bad Hive" \
+        --path "$REPO/tickets/p6_bad_hive" \
+        --allowed-resolvers '["nonexistent_resolver"]'
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "P6: Reject unregistered resolver" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Reject unregistered resolver"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "unknown_resolver" ]; then
+        fail_test "P6: Reject unregistered resolver" "Expected error_type=unknown_resolver, got $error_type"
+    fi
+    pass_test "P6: Reject unregistered resolver"
+}
+
+test_p6_reject_unset_referenced_resolver() {
+    capture_cmd bees set-resolver --name protected_resolver \
+        --path /tmp/test_resolver_p6.py
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Reject unset referenced resolver" "Register failed: $CMD_OUT"
+    fi
+    capture_cmd bees colonize-hive \
+        --name "P6 Protected Hive" \
+        --path "$REPO/tickets/p6_protected_hive" \
+        --allowed-resolvers '["protected_resolver"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "P6: Reject unset referenced resolver" "Colonize failed: $CMD_OUT"
+    fi
+    capture_cmd bees set-resolver --name protected_resolver --unset
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "P6: Reject unset referenced resolver" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "P6: Reject unset referenced resolver"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "resolver_in_use" ]; then
+        fail_test "P6: Reject unset referenced resolver" "Expected error_type=resolver_in_use, got $error_type"
+    fi
+    capture_cmd bees get-resolvers
+    local still_present
+    still_present=$(check_json "$CMD_OUT" \
+        "any(r['name']=='protected_resolver' for r in d.get('resolvers',[]))")
+    if [ "$still_present" != "True" ]; then
+        fail_test "P6: Reject unset referenced resolver" "protected_resolver missing after failed unset"
+    fi
+    pass_test "P6: Reject unset referenced resolver"
+}
+
+run_test test_p6_register_resolver_verify
+run_test test_p6_reject_reserved_name
+run_test test_p6_unset_resolver
+run_test test_p6_colonize_allowed_resolvers
+run_test test_p6_reject_unregistered_resolver
+run_test test_p6_reject_unset_referenced_resolver
 
 # === SUCCESS SIGNAL ===
 echo ""

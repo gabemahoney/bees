@@ -38,6 +38,7 @@ from .mcp_query_ops import (
     _execute_named_query,
     _list_named_queries,
 )
+from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_roots import get_client_repo_root, get_repo_root, resolve_repo_root  # noqa: F401 - re-exported
 from .mcp_ticket_ops import (
     _append_ticket_body,
@@ -51,6 +52,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
+from .migrations.runner import preview_pending_migrations, run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - re-exported
 
@@ -208,7 +210,7 @@ async def create_ticket(
     status: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = None,
+    reference_materials: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Create a new ticket in a hive.
 
@@ -236,8 +238,8 @@ async def create_ticket(
         tags: List of string tags.
         status: Freeform if no status_values are configured for the hive; otherwise must be
                 one of the hive's configured values. Required when status_values are configured.
-        egg: Tracks external resources related to the ticket (any JSON-compatible value).
-             Only supported on bee (t0) tickets.
+        reference_materials: Tracks external resources related to the ticket.
+                             Only supported on bee (t0) tickets.
 
     """
     if body_file is not None and body != "":
@@ -262,7 +264,7 @@ async def create_ticket(
             down_dependencies=down_deps,
             tags=tags,
             status=status,
-            egg=egg,
+            reference_materials=reference_materials,
             resolved_root=resolved_root,
         )
 
@@ -279,7 +281,7 @@ async def update_ticket(
     add_tags: list[str] | None = None,
     remove_tags: list[str] | None = None,
     status: str | None | Literal["__UNSET__"] = _UNSET,
-    egg: dict[str, Any] | list[Any] | str | int | float | bool | None = _UNSET,  # type: ignore[assignment]
+    reference_materials: list[dict] | None = _UNSET,  # type: ignore[assignment]
     ctx: Context | None = None,
     repo_root: str | None = None,
     hive: str | None = None,
@@ -310,7 +312,7 @@ async def update_ticket(
         add_tags: Tags to add (single and batch).
         remove_tags: Tags to remove (single and batch).
         status: New status value (single and batch).
-        egg: New egg data (single mode only). Only supported on bee tickets.
+        reference_materials: New reference_materials data (single mode only). Only supported on bee tickets.
         hive: Optional hive name for faster lookup.
 
     """
@@ -335,7 +337,7 @@ async def update_ticket(
             add_tags=add_tags,
             remove_tags=remove_tags,
             status=status,
-            egg=egg,
+            reference_materials=reference_materials,
             hive_name=hive,
             resolved_root=resolved_root,
         )
@@ -369,7 +371,7 @@ async def append_ticket_body(
     body first, then loop `append_ticket_body` with chunks each no larger
     than 10000 characters. Only the `body` field is touched; every other
     frontmatter field (tags, status, guid, created_at, parent, children,
-    up_dependencies, down_dependencies, egg) is preserved unchanged.
+    up_dependencies, down_dependencies, reference_materials) is preserved unchanged.
 
     Args:
         ticket_id: The ticket whose body is being appended to.
@@ -590,10 +592,9 @@ async def colonize_hive(
     name: str,
     path: str,
     child_tiers: dict[str, list] | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
@@ -606,12 +607,12 @@ async def colonize_hive(
         path: Absolute path where the hive will be created. Does not need to exist.
         child_tiers: Optional per-hive tier config. Inherits from scope/global if omitted.
                      Pass {} for bees-only.
-        egg_resolver: Optional path to an egg resolver script for this hive.
-        egg_resolver_timeout: Optional timeout in seconds for the egg resolver script.
         scope: Optional scope pattern to register the hive under (e.g. /projects/**).
                When provided, the hive is placed under this explicit scope instead of
                the auto-detected scope for the repo root.
         description: Optional short description of the hive's purpose.
+        allowed_resolvers: Optional list of resolver names permitted for this hive.
+                           Each name must exist in the resolver registry or be "default".
     """
     # Special colonize_hive fallback logic:
     # 1. Try MCP Roots protocol via get_repo_root(ctx)
@@ -655,10 +656,9 @@ async def colonize_hive(
         path=path,
         child_tiers=child_tiers,
         repo_root=resolved_root,
-        egg_resolver=egg_resolver,
-        egg_resolver_timeout=egg_resolver_timeout,
         scope=scope,
         description=description,
+        allowed_resolvers=allowed_resolvers,
     )
 
 
@@ -865,7 +865,7 @@ async def execute_freeform_query(
             schema_version, guid, hive
 
         Excluded fields:
-            body, egg    — not available in query results; use show_ticket
+            body, reference_materials    — not available in query results; use show_ticket
 
         Example:
             stages:
@@ -1062,6 +1062,88 @@ async def clone_bee(
             force=force,
             resolved_root=resolved_root,
         )
+
+
+@mcp.tool()
+def set_resolver(
+    name: str,
+    path: str | None = None,
+    timeout: float | None = None,
+    unset: bool = False,
+) -> dict[str, Any]:
+    """Register, update, or remove a named resolver in the global registry.
+
+    In register/update mode (unset=False): registers the script at *path* under
+    *name*, extracting the RESOLVER CONVENTION section from its module docstring
+    automatically. The *path* must exist on disk.
+
+    In unset mode (unset=True): removes *name* from the registry. Fails if the
+    resolver is still referenced by any hive's allowed_resolvers.
+
+    The name "default" is reserved and cannot be used.
+
+    Args:
+        name: Resolver name. Cannot be "default".
+        path: Absolute path to the resolver script. Required unless unset=True.
+        timeout: Optional timeout in seconds for this resolver.
+        unset: If True, remove the resolver instead of registering/updating it.
+    """
+    return _set_resolver(name=name, path=path, timeout=timeout, unset=unset)
+
+
+@mcp.tool()
+def get_resolvers() -> dict[str, Any]:
+    """Return all registered resolvers plus the built-in default.
+
+    Each entry includes: name, path, timeout, convention, built_in.
+    The "default" entry (built_in=True) is always first and represents the
+    inline resolver used when no custom resolver is configured for a hive.
+    """
+    return _get_resolvers()
+
+
+@mcp.tool()
+def update_config(details_only: bool = False) -> dict[str, Any]:
+    """Apply pending schema migrations to the global bees configuration.
+
+    When details_only=True, returns a preview of pending migrations without
+    applying them. No confirmation is required for details_only=True.
+
+    IMPORTANT: When details_only=False, you MUST ask the user for explicit
+    confirmation before calling this tool. This tool modifies the global bees
+    configuration. It is safe to run when migrations are already up to date
+    (it will be a no-op), but it writes to disk and should not be called
+    without user awareness.
+
+    Applies all pending migration hops from the migration manifest to the
+    global config file (~/.bees/config.json), persisting schema_version after
+    each successful hop so that partial failures leave the config at the last
+    successfully applied version.
+
+    No repo_root or hive context is required — this operates on the global
+    bees config only.
+
+    Args:
+        details_only: If True, return pending migration info without applying
+            anything. Defaults to False.
+
+    Returns:
+        When details_only=True with no pending migrations:
+            {"status": "success", "message": "Config is up to date (version X). No pending migrations.",
+             "current_version": "<current>", "pending_hops": []}
+        When details_only=True with pending migrations:
+            {"status": "success", "current_version": "<current>",
+             "pending_hops": [{"from_version": "...", "to_version": "...", "description": "..."}]}
+        On success with no pending migrations (details_only=False):
+            {"status": "success", "message": "Already up to date", "version": "<current>"}
+        On success with applied migrations (details_only=False):
+            {"status": "success", "message": "Applied N migration(s)",
+             "applied_hops": [{"from_version": "...", "to_version": "..."}],
+             "final_version": "<new_version>"}
+    """
+    if details_only:
+        return preview_pending_migrations()
+    return run_pending_migrations()
 
 
 if __name__ == "__main__":

@@ -326,7 +326,7 @@ class QueryParser:
                 raise QueryValidationError("report list cannot be empty")
 
             for field in report:
-                if field in ("body", "egg"):
+                if field in ("body", "reference_materials"):
                     raise QueryValidationError(
                         f'report field "{field}" is not available in query results; use show_ticket to retrieve it'
                     )

@@ -68,6 +68,13 @@ class ChildTierConfig:
 
 
 @dataclass
+class ResolverEntry:
+    path: str
+    timeout: int | float | None = None
+    convention: str | None = None
+
+
+@dataclass
 class HiveConfig:
     """Configuration for a single hive."""
 
@@ -75,8 +82,6 @@ class HiveConfig:
     display_name: str
     created_at: str
     description: str | None = None
-    egg_resolver: str | None = None
-    egg_resolver_timeout: int | float | None = None
     child_tiers: dict[str, ChildTierConfig] | None = None
     status_values: list[str] | None = None
     status_values_explicitly_null: bool = False
@@ -84,6 +89,7 @@ class HiveConfig:
     undertaker_schedule_query_yaml: str | None = None
     undertaker_schedule_query_name: str | None = None
     undertaker_schedule_log_path: str | None = None
+    allowed_resolvers: list[str] | None = None
 
 
 @dataclass
@@ -95,16 +101,12 @@ class BeesConfig:
         schema_version: Schema version string
         child_tiers: Dictionary of tier keys (t1, t2, t3...) to ChildTierConfig objects
                      None means not configured, {} means explicitly bees-only
-        egg_resolver: Scope-level egg resolver command (optional)
-        egg_resolver_timeout: Scope-level egg resolver timeout in seconds (optional)
         status_values: Scope-level list of allowed status values (optional)
     """
 
     hives: dict[str, HiveConfig] = field(default_factory=dict)
     schema_version: str = "2.0"
     child_tiers: dict[str, ChildTierConfig] | None = None
-    egg_resolver: str | None = None
-    egg_resolver_timeout: int | float | None = None
     status_values: list[str] | None = None
 
 
@@ -120,7 +122,7 @@ class ConflictRecord:
 # Constants
 BEES_CONFIG_DIR = ".bees"
 BEES_CONFIG_FILENAME = "config.json"
-GLOBAL_SCHEMA_VERSION = "2.0"
+GLOBAL_SCHEMA_VERSION = "3.0"
 
 # Regex for converting scope patterns to regex
 _SCOPE_PATTERN_CACHE: dict[str, re.Pattern] = {}
@@ -543,6 +545,40 @@ def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None
     }
 
 
+def check_schema_version() -> dict | None:
+    """Check whether the config schema is current.
+
+    Loads the global config, reads its schema_version, and checks
+    whether any migration hops are pending.  Returns an error dict
+    when the schema is outdated, or None when it is current.
+
+    Does not raise on a missing config file — an absent config has no
+    pending migrations.
+
+    Returns:
+        None if schema is up to date; otherwise a dict with keys
+        ``status``, ``error_type``, and ``message``.
+    """
+    try:
+        global_config = load_global_config()
+    except Exception:
+        logger.warning("Failed to load config for schema check", exc_info=True)
+        return None
+    current_version = global_config.get("schema_version", GLOBAL_SCHEMA_VERSION)
+    from .migrations.manifest import find_pending_hops  # noqa: PLC0415
+    pending = find_pending_hops(current_version)
+    if not pending:
+        return None
+    return {
+        "status": "error",
+        "error_type": "schema_outdated",
+        "message": (
+            f"Config schema is outdated (version {current_version!r}). "
+            "Run `bees update-config --details` to preview, or `bees update-config` to migrate."
+        ),
+    }
+
+
 def _bare_prefix(canonical: str) -> str:
     """Return the bare prefix of an already-canonicalized scope pattern.
 
@@ -635,23 +671,6 @@ def load_global_config() -> dict:
     # Ensure scopes key exists
     if "scopes" not in data:
         data["scopes"] = {}
-
-    # Validate global-level egg_resolver if present
-    if "egg_resolver" in data:
-        egg_resolver = data["egg_resolver"]
-        if egg_resolver is not None and not isinstance(egg_resolver, str):
-            raise ValueError(f"Global egg_resolver must be a string or null, got {type(egg_resolver)}")
-
-    # Validate global-level egg_resolver_timeout if present
-    if "egg_resolver_timeout" in data:
-        egg_resolver_timeout = data["egg_resolver_timeout"]
-        if egg_resolver_timeout is not None:
-            if not isinstance(egg_resolver_timeout, (int, float)):
-                raise ValueError(
-                    f"Global egg_resolver_timeout must be a number or null, got {type(egg_resolver_timeout)}"
-                )
-            if egg_resolver_timeout <= 0:
-                raise ValueError(f"Global egg_resolver_timeout must be positive, got {egg_resolver_timeout}")
 
     # Validate global-level child_tiers if present
     if "child_tiers" in data:
@@ -787,6 +806,43 @@ def _parse_child_tiers_data(child_tiers_data: dict) -> dict[str, ChildTierConfig
     return child_tiers
 
 
+def _parse_resolvers_data(resolvers_data: dict) -> dict[str, ResolverEntry]:
+    """Parse resolvers from raw dict into ResolverEntry objects."""
+    if not isinstance(resolvers_data, dict):
+        raise ValueError(f"resolvers must be a dict, got {type(resolvers_data)}")
+
+    resolvers = {}
+    for name, entry_data in resolvers_data.items():
+        if not isinstance(entry_data, dict):
+            raise ValueError(f"Resolver '{name}' data must be a dict, got {type(entry_data)}")
+
+        if "path" not in entry_data:
+            raise ValueError(f"Resolver '{name}' missing required 'path' field")
+
+        path = entry_data["path"]
+        if not isinstance(path, str):
+            raise ValueError(f"Resolver '{name}' path must be a string, got {type(path)}")
+
+        timeout = entry_data.get("timeout")
+        if timeout is not None:
+            if not isinstance(timeout, (int, float)):
+                raise ValueError(
+                    f"Resolver '{name}' timeout must be a number or null, got {type(timeout)}"
+                )
+            if timeout <= 0:
+                raise ValueError(f"Resolver '{name}' timeout must be positive, got {timeout}")
+
+        convention = entry_data.get("convention")
+        if convention is not None and not isinstance(convention, str):
+            raise ValueError(
+                f"Resolver '{name}' convention must be a string or null, got {type(convention)}"
+            )
+
+        resolvers[name] = ResolverEntry(path=path, timeout=timeout, convention=convention)
+
+    return resolvers
+
+
 def _validate_status_values(values: Any, context_label: str) -> None:
     """Validate that status_values is a list of non-empty strings."""
     if not isinstance(values, list):
@@ -806,21 +862,6 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
     for name, hive_data in hives_data.items():
         if not isinstance(hive_data, dict):
             raise ValueError(f"Hive '{name}' data must be a dict, got {type(hive_data)}")
-
-        # Validate egg_resolver if present
-        egg_resolver = hive_data.get("egg_resolver")
-        if egg_resolver is not None and not isinstance(egg_resolver, str):
-            raise ValueError(f"Hive '{name}' egg_resolver must be a string or null, got {type(egg_resolver)}")
-
-        # Validate egg_resolver_timeout if present
-        egg_resolver_timeout = hive_data.get("egg_resolver_timeout")
-        if egg_resolver_timeout is not None:
-            if not isinstance(egg_resolver_timeout, (int, float)):
-                raise ValueError(
-                    f"Hive '{name}' egg_resolver_timeout must be a number or null, got {type(egg_resolver_timeout)}"
-                )
-            if egg_resolver_timeout <= 0:
-                raise ValueError(f"Hive '{name}' egg_resolver_timeout must be positive, got {egg_resolver_timeout}")
 
         # Parse and validate child_tiers if present
         # None/null means absent (fall through to scope/global)
@@ -883,13 +924,27 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
         if description is not None and not isinstance(description, str):
             raise ValueError(f"Hive '{name}' description must be a string or null, got {type(description)}")
 
+        # Parse optional allowed_resolvers
+        allowed_resolvers = None
+        if "allowed_resolvers" in hive_data:
+            ar = hive_data["allowed_resolvers"]
+            if ar is not None:
+                if not isinstance(ar, list):
+                    raise ValueError(
+                        f"Hive '{name}' allowed_resolvers must be a list or null, got {type(ar)}"
+                    )
+                for i, item in enumerate(ar):
+                    if not isinstance(item, str):
+                        raise ValueError(
+                            f"Hive '{name}' allowed_resolvers[{i}] must be a string, got {type(item)}"
+                        )
+                allowed_resolvers = ar
+
         hives[name] = HiveConfig(
             path=hive_data.get("path", ""),
             display_name=hive_data.get("display_name", ""),
             created_at=hive_data.get("created_at", ""),
             description=description,
-            egg_resolver=egg_resolver,
-            egg_resolver_timeout=egg_resolver_timeout,
             child_tiers=child_tiers,
             status_values=status_values,
             status_values_explicitly_null=status_values_explicitly_null,
@@ -897,6 +952,7 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
             undertaker_schedule_query_yaml=ut_sched_query_yaml,
             undertaker_schedule_query_name=ut_sched_query_name,
             undertaker_schedule_log_path=ut_sched_log_path,
+            allowed_resolvers=allowed_resolvers,
         )
     return hives
 
@@ -921,19 +977,6 @@ def parse_scope_to_bees_config(scope_data: dict) -> BeesConfig:
     else:
         child_tiers = _parse_child_tiers_data(scope_data["child_tiers"])
 
-    # Validate and parse scope-level egg_resolver
-    egg_resolver = scope_data.get("egg_resolver")
-    if egg_resolver is not None and not isinstance(egg_resolver, str):
-        raise ValueError(f"Scope egg_resolver must be a string or null, got {type(egg_resolver)}")
-
-    # Validate and parse scope-level egg_resolver_timeout
-    egg_resolver_timeout = scope_data.get("egg_resolver_timeout")
-    if egg_resolver_timeout is not None:
-        if not isinstance(egg_resolver_timeout, (int, float)):
-            raise ValueError(f"Scope egg_resolver_timeout must be a number or null, got {type(egg_resolver_timeout)}")
-        if egg_resolver_timeout <= 0:
-            raise ValueError(f"Scope egg_resolver_timeout must be positive, got {egg_resolver_timeout}")
-
     # Validate and parse scope-level status_values
     status_values = scope_data.get("status_values")
     if status_values is not None:
@@ -943,8 +986,6 @@ def parse_scope_to_bees_config(scope_data: dict) -> BeesConfig:
         hives=hives,
         schema_version=schema_version,
         child_tiers=child_tiers,
-        egg_resolver=egg_resolver,
-        egg_resolver_timeout=egg_resolver_timeout,
         status_values=status_values,
     )
 
@@ -976,11 +1017,6 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
         # Only include description if not None
         if hive_config.description is not None:
             hive_entry["description"] = hive_config.description
-        # Only include egg_resolver fields if they are not None
-        if hive_config.egg_resolver is not None:
-            hive_entry["egg_resolver"] = hive_config.egg_resolver
-        if hive_config.egg_resolver_timeout is not None:
-            hive_entry["egg_resolver_timeout"] = hive_config.egg_resolver_timeout
         # Only include child_tiers if not None
         if hive_config.child_tiers is not None:
             hive_entry["child_tiers"] = _serialize_child_tiers(hive_config.child_tiers)
@@ -1001,6 +1037,8 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
             ut_sched["log_path"] = hive_config.undertaker_schedule_log_path
         if ut_sched:
             hive_entry["undertaker_schedule"] = ut_sched
+        if hive_config.allowed_resolvers is not None:
+            hive_entry["allowed_resolvers"] = hive_config.allowed_resolvers
         hives_dict[name] = hive_entry
 
     scope_dict = {
@@ -1010,12 +1048,6 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
     # Only include scope-level child_tiers if not None
     if config.child_tiers is not None:
         scope_dict["child_tiers"] = _serialize_child_tiers(config.child_tiers)
-
-    # Only include scope-level egg_resolver fields if they are not None
-    if config.egg_resolver is not None:
-        scope_dict["egg_resolver"] = config.egg_resolver
-    if config.egg_resolver_timeout is not None:
-        scope_dict["egg_resolver_timeout"] = config.egg_resolver_timeout
 
     # Only include scope-level status_values if not None
     if config.status_values is not None:
@@ -1030,8 +1062,8 @@ def get_scoped_config(repo_root: Path) -> BeesConfig | None:
     Merges hives from all matching scopes (least-specific to most-specific), so hives
     defined in parent scopes (e.g. /Users/foo/**) are visible alongside hives in more
     specific scopes (e.g. /Users/foo/projects/myrepo/**).  More-specific scopes win on
-    hive name conflicts.  Non-hive settings (child_tiers, egg_resolver, etc.) come from
-    the most-specific scope.
+    hive name conflicts.  Non-hive settings (child_tiers, etc.) come from the most-specific
+    scope.
 
     Args:
         repo_root: The repository root to match against scope patterns
@@ -1096,6 +1128,43 @@ def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
         )
 
     global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(config)
+    save_global_config(global_config)
+
+
+def load_resolver_registry() -> dict[str, ResolverEntry]:
+    """Load the resolver registry from the global config.
+
+    Returns:
+        Dict mapping resolver names to ResolverEntry objects.
+        Empty dict if 'resolvers' key is absent.
+    """
+    global_config = load_global_config()
+    resolvers_data = global_config.get("resolvers")
+    if resolvers_data is None:
+        return {}
+    return _parse_resolvers_data(resolvers_data)
+
+
+def save_resolver_registry(registry: dict[str, ResolverEntry]) -> None:
+    """Save the resolver registry to the global config.
+
+    Serializes each ResolverEntry to a dict (omitting None optional fields),
+    loads the current global config, sets the 'resolvers' key, and saves.
+
+    Args:
+        registry: Dict mapping resolver names to ResolverEntry objects.
+    """
+    resolvers_dict = {}
+    for name, entry in registry.items():
+        entry_dict: dict = {"path": entry.path}
+        if entry.timeout is not None:
+            entry_dict["timeout"] = entry.timeout
+        if entry.convention is not None:
+            entry_dict["convention"] = entry.convention
+        resolvers_dict[name] = entry_dict
+
+    global_config = load_global_config()
+    global_config["resolvers"] = resolvers_dict
     save_global_config(global_config)
 
 
@@ -1255,117 +1324,6 @@ def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
 
             seen_names.add(tier_config.singular)
             seen_names.add(tier_config.plural)
-
-
-def resolve_egg_resolver(normalized_hive: str, config: BeesConfig | None = None) -> str | None:
-    """Resolve egg_resolver for a given hive using 3-level fallback.
-
-    Resolution order:
-    1. Hive level: Check the hive's egg_resolver
-    2. Scope level: Check the scope's (BeesConfig) egg_resolver
-    3. Global level: Check the global config's egg_resolver
-    4. Default: Return None
-
-    If any level has the special value "default", stop the fallback chain
-    and treat it as None (use the system default).
-
-    Args:
-        normalized_hive: The normalized hive name to resolve for
-        config: BeesConfig object (loads from disk if None)
-
-    Returns:
-        The resolved egg_resolver string, or None if not configured
-
-    Raises:
-        ValueError: If hive doesn't exist
-        RuntimeError: If repo_root not set in context
-    """
-    get_repo_root()
-
-    if config is None:
-        config = load_bees_config()
-
-    if config is None:
-        return None
-
-    # Check if hive exists
-    if normalized_hive not in config.hives:
-        raise ValueError(f"Hive '{normalized_hive}' does not exist")
-
-    # Level 1: Check hive-level egg_resolver
-    hive_config = config.hives[normalized_hive]
-    if hive_config.egg_resolver is not None:
-        if hive_config.egg_resolver == "default":
-            return None
-        return hive_config.egg_resolver
-
-    # Level 2: Check scope-level egg_resolver
-    if config.egg_resolver is not None:
-        if config.egg_resolver == "default":
-            return None
-        return config.egg_resolver
-
-    # Level 3: Check global-level egg_resolver
-    global_config = load_global_config()
-    global_egg_resolver = global_config.get("egg_resolver")
-    if global_egg_resolver is not None:
-        if global_egg_resolver == "default":
-            return None
-        return global_egg_resolver
-
-    # Level 4: No configuration found
-    return None
-
-
-def resolve_egg_resolver_timeout(normalized_hive: str, config: BeesConfig | None = None) -> int | float | None:
-    """Resolve egg_resolver_timeout for a given hive using 3-level fallback.
-
-    Resolution order:
-    1. Hive level: Check the hive's egg_resolver_timeout
-    2. Scope level: Check the scope's (BeesConfig) egg_resolver_timeout
-    3. Global level: Check the global config's egg_resolver_timeout
-    4. Default: Return None
-
-    Args:
-        normalized_hive: The normalized hive name to resolve for
-        config: BeesConfig object (loads from disk if None)
-
-    Returns:
-        The resolved egg_resolver_timeout value, or None if not configured
-
-    Raises:
-        ValueError: If hive doesn't exist
-        RuntimeError: If repo_root not set in context
-    """
-    get_repo_root()
-
-    if config is None:
-        config = load_bees_config()
-
-    if config is None:
-        return None
-
-    # Check if hive exists
-    if normalized_hive not in config.hives:
-        raise ValueError(f"Hive '{normalized_hive}' does not exist")
-
-    # Level 1: Check hive-level egg_resolver_timeout
-    hive_config = config.hives[normalized_hive]
-    if hive_config.egg_resolver_timeout is not None:
-        return hive_config.egg_resolver_timeout
-
-    # Level 2: Check scope-level egg_resolver_timeout
-    if config.egg_resolver_timeout is not None:
-        return config.egg_resolver_timeout
-
-    # Level 3: Check global-level egg_resolver_timeout
-    global_config = load_global_config()
-    global_timeout = global_config.get("egg_resolver_timeout")
-    if global_timeout is not None:
-        return global_timeout
-
-    # Level 4: No configuration found
-    return None
 
 
 def resolve_child_tiers_for_hive(normalized_hive: str, config: BeesConfig | None = None) -> dict[str, ChildTierConfig]:

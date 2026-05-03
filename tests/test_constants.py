@@ -275,15 +275,14 @@ TICKET_ID_HELPER_TASK_XYZ1 = "t1.xyz.1a"  # Helper task XYZ1 example (period-sep
 TICKET_ID_HELPER_BEE_GHI = "b.ghi"  # Helper bee GHI example (from doc examples)
 
 # ============================================================================
-# Egg Field Test Constants
+# Reference Materials Field Test Constants
 # ============================================================================
-EGG_URL = "https://example.com/spec.md"
-EGG_GUID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-EGG_NULL = None
-EGG_OBJECT = {"type": "spec", "url": "https://example.com/spec.md", "version": "1.0"}
-EGG_ARRAY = ["https://example.com/spec1.md", "https://example.com/spec2.md"]
+REFERENCE_MATERIALS_NULL = None
+REFERENCE_MATERIALS_SINGLE = [{"value": "docs/spec.md"}]
+REFERENCE_MATERIALS_WITH_RESOLVER = [{"value": "https://github.com/cli/cli/issues/1", "resolver": "github"}]
+REFERENCE_MATERIALS_MULTI = [{"value": "docs/spec.md"}, {"value": "docs/arch.md"}]
 
-# GitHub egg resolver test constants
+# GitHub resolver test constants
 GITHUB_ISSUE_URL = "https://github.com/cli/cli/issues/1"           # Standard github.com issue URL
 GITHUB_ENTERPRISE_URL = "https://github.example.com/org/repo/issues/42"  # GitHub Enterprise issue URL
 GITHUB_PR_URL = "https://github.com/cli/cli/pull/1"                # GitHub PR URL

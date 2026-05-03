@@ -15,6 +15,7 @@ from . import cache
 from .config import (
     BeesConfig,
     check_for_config_conflicts,
+    check_schema_version,
     find_all_matching_scopes,
     get_scope_key_for_hive,
     load_global_config,
@@ -354,5 +355,8 @@ async def _move_bee(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     return _move_bee_core(bee_ids, destination_hive, force=force)

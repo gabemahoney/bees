@@ -25,6 +25,7 @@ from .config import (
     canonicalize_scope_pattern,
     check_for_config_conflicts,
     check_queen_elevation,
+    check_schema_version,
     check_scope_conflict,
     compute_scope_specificity,
     find_all_matching_scopes,
@@ -33,6 +34,7 @@ from .config import (
     get_scope_key_for_hive,
     load_bees_config,
     load_global_config,
+    load_resolver_registry,
     match_scope_pattern,
     parse_scope_to_bees_config,
     resolve_owning_scope,
@@ -66,10 +68,9 @@ async def colonize_hive_core(
     path: str,
     child_tiers: dict[str, list] | None = None,
     repo_root: Path | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
@@ -89,9 +90,6 @@ async def colonize_hive_core(
                      If None, hive inherits from scope/global config
                      If {}, hive is bees-only (no child tiers)
         repo_root: Pre-resolved repo root path (injected by adapter)
-        egg_resolver: Optional path to egg resolver script for this hive (e.g., '/repo/resolve_eggs.sh')
-                      Sets egg_resolver at the hive level in config. If None, hive inherits from scope/global.
-
     Returns:
         dict: Success/error status with validation details
             On success: {
@@ -256,6 +254,22 @@ async def colonize_hive_core(
                         "validation_details": {"field": "child_tiers", "provided_value": child_tiers, "reason": str(e)},
                     }
 
+            # Step 4.6: Validate allowed_resolvers if provided
+            if allowed_resolvers is not None:
+                registry = load_resolver_registry()
+                _builtin_resolvers = {"default", "file-path", "github", "bees"}
+                unknown = [r for r in allowed_resolvers if r not in _builtin_resolvers and r not in registry]
+                if unknown:
+                    return {
+                        "status": "error",
+                        "message": f"Unknown resolver name(s): {unknown}. Register them first with set-resolver.",
+                        "error_type": "unknown_resolver",
+                        "validation_details": {
+                            "field": "allowed_resolvers",
+                            "unknown_names": unknown,
+                        },
+                    }
+
             # Step 5: Create hive directory structure
             # Create .hive marker folder with identity data
             hive_marker_path = validated_path / ".hive"
@@ -306,8 +320,7 @@ async def colonize_hive_core(
                     created_at=creation_timestamp.isoformat(),
                     description=description,
                     child_tiers=parsed_child_tiers,
-                    egg_resolver=egg_resolver,
-                    egg_resolver_timeout=egg_resolver_timeout,
+                    allowed_resolvers=allowed_resolvers,
                 )
 
                 if canonical_scope is not None:
@@ -373,12 +386,11 @@ async def colonize_hive_core(
                 "display_name": name,
                 "path": str(validated_path),
                 "child_tiers": child_tiers,
-                "egg_resolver": egg_resolver,
             }
-            if egg_resolver_timeout is not None:
-                result["egg_resolver_timeout"] = egg_resolver_timeout
             if description is not None:
                 result["description"] = description
+            if allowed_resolvers is not None:
+                result["allowed_resolvers"] = allowed_resolvers
             return result
 
     except ValueError as e:
@@ -400,10 +412,9 @@ async def _colonize_hive(
     path: str,
     child_tiers: dict[str, list] | None = None,
     repo_root: Path | None = None,
-    egg_resolver: str | None = None,
-    egg_resolver_timeout: int | float | None = None,
     scope: str | None = None,
     description: str | None = None,
+    allowed_resolvers: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Create and register a new hive at the specified path.
@@ -431,8 +442,6 @@ async def _colonize_hive(
                      If None: hive inherits from scope/global config
                      If {}: hive is bees-only (no child tiers)
         repo_root: Pre-resolved repo root path (injected by adapter)
-        egg_resolver: Optional path to egg resolver script for this hive (e.g., '/repo/resolve_eggs.sh')
-                      If None: hive inherits egg_resolver from scope/global config
         scope: Optional scope pattern to register the hive under (e.g., '/projects/**').
                When provided the hive is placed under this explicit scope rather than the
                auto-detected scope for repo_root.
@@ -478,8 +487,7 @@ async def _colonize_hive(
     try:
         result = await colonize_hive_core(
             name=name, path=path, child_tiers=child_tiers, repo_root=repo_root,
-            egg_resolver=egg_resolver, egg_resolver_timeout=egg_resolver_timeout,
-            scope=scope, description=description,
+            scope=scope, description=description, allowed_resolvers=allowed_resolvers,
         )
 
         if result.get("status") == "error":
@@ -560,6 +568,9 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         logger.info(f"_list_hives: resolved_root={resolved_root}, conflict_error={conflict_error}")
         if conflict_error is not None:
             return conflict_error
+        schema_error = check_schema_version()
+        if schema_error is not None:
+            return schema_error
 
         # Collect hives from all matching scopes (least→most specific)
         global_cfg = load_global_config()
@@ -756,6 +767,9 @@ async def _rename_hive(
     conflict_error = check_for_config_conflicts(resolved_root)
     if conflict_error is not None:
         return conflict_error
+    schema_error = check_schema_version()
+    if schema_error is not None:
+        return schema_error
 
     # Step 1: Normalize both names
     normalized_old = normalize_hive_name(old_name)

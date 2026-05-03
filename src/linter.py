@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src import cache
-from src.config import BeesConfig, resolve_child_tiers_for_hive, resolve_status_values_for_hive
+from src.config import BeesConfig, load_resolver_registry, resolve_child_tiers_for_hive, resolve_status_values_for_hive
 from src.constants import GUID_LENGTH, ID_CHARSET
 from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
 from src.linter_report import LinterReport, ValidationError
@@ -200,11 +200,11 @@ class Linter:
         # ID format validation
         self.validate_id_format(ticket, report)
 
-        # Egg field presence check for bee tickets
-        self.validate_egg_field_presence(ticket, report)
+        # reference_materials field presence check for bee tickets
+        self.validate_reference_materials_field_presence(ticket, report)
 
-        # Egg JSON-serializable validation
-        self.validate_egg_json_serializable(ticket, report)
+        # reference_materials JSON-serializable validation
+        self.validate_reference_materials_json_serializable(ticket, report)
 
         # Field format validation
         self.validate_title_format(ticket, report)
@@ -314,13 +314,13 @@ class Linter:
                 severity="error",
             )
 
-    def validate_egg_field_presence(self, ticket: Ticket, report: LinterReport) -> None:
-        """Validate that bee tickets have egg field present in frontmatter.
+    def validate_reference_materials_field_presence(self, ticket: Ticket, report: LinterReport) -> None:
+        """Validate that bee tickets have reference_materials field present in frontmatter.
 
-        The egg field must be PRESENT in bee ticket frontmatter. A null/None value is valid,
-        but a completely missing egg key is an error.
+        The reference_materials field must be PRESENT in bee ticket frontmatter. A null/None
+        value is valid, but a completely missing reference_materials key is an error.
 
-        Child tier tickets (t1, t2, t3, etc.) are not checked for egg field.
+        Child tier tickets (t1, t2, t3, etc.) are not checked for reference_materials field.
 
         Args:
             ticket: Ticket to validate
@@ -330,11 +330,11 @@ class Linter:
         if ticket.type != "bee":
             return
 
-        if "egg" not in getattr(ticket, "_raw_keys", frozenset()):
+        if "reference_materials" not in getattr(ticket, "_raw_keys", frozenset()):
             report.add_error(
                 ticket_id=ticket.id,
-                error_type="missing_egg_field",
-                message=f"Bee ticket '{ticket.id}' must have 'egg' field in frontmatter",
+                error_type="missing_reference_materials_field",
+                message=f"Bee ticket '{ticket.id}' must have 'reference_materials' field in frontmatter",
                 severity="error",
             )
 
@@ -560,10 +560,12 @@ class Linter:
                 severity="error",
             )
 
-    def validate_egg_json_serializable(self, ticket: Ticket, report: LinterReport) -> None:
-        """Validate that egg field is JSON-serializable.
+    def validate_reference_materials_json_serializable(self, ticket: Ticket, report: LinterReport) -> None:
+        """Validate that reference_materials field is JSON-serializable and well-structured.
 
-        Only applies to bee tickets. A null egg value is valid.
+        Only applies to bee tickets. A null reference_materials value is valid.
+        When present, must be a list of dicts each with a required 'value' key and
+        optional 'resolver' string key. Unregistered resolver names are flagged as warnings.
 
         Args:
             ticket: Ticket to validate
@@ -573,18 +575,71 @@ class Linter:
         if ticket.type != "bee":
             return
 
-        # Null/None egg is valid
-        if ticket.egg is None:
+        # Null/None reference_materials is valid
+        if ticket.reference_materials is None:
             return
 
-        # Try to serialize egg to JSON
+        # Empty list is valid
+        if ticket.reference_materials == []:
+            return
+
+        # Must be a list
+        if not isinstance(ticket.reference_materials, list):
+            report.add_error(
+                ticket_id=ticket.id,
+                error_type="invalid_field_type",
+                message="reference_materials field must be null, empty list, or list of dicts",
+                severity="error",
+            )
+            return
+
+        # Validate each entry
+        registry = load_resolver_registry()
+        for i, entry in enumerate(ticket.reference_materials):
+            if not isinstance(entry, dict):
+                report.add_error(
+                    ticket_id=ticket.id,
+                    error_type="invalid_field_type",
+                    message=f"reference_materials[{i}] must be a dict",
+                    severity="error",
+                )
+                continue
+
+            if "value" not in entry:
+                report.add_error(
+                    ticket_id=ticket.id,
+                    error_type="invalid_field_type",
+                    message=f"reference_materials[{i}] is missing required 'value' key",
+                    severity="error",
+                )
+
+            resolver = entry.get("resolver")
+            if resolver is not None:
+                if not isinstance(resolver, str):
+                    report.add_error(
+                        ticket_id=ticket.id,
+                        error_type="invalid_field_type",
+                        message=f"reference_materials[{i}] 'resolver' must be a string",
+                        severity="error",
+                    )
+                elif resolver not in registry:
+                    report.add_error(
+                        ticket_id=ticket.id,
+                        error_type="unknown_resolver",
+                        message=(
+                            f"reference_materials[{i}] references unregistered resolver '{resolver}'"
+                        ),
+                        severity="warning",
+                    )
+
+        # Try to serialize to JSON
         try:
-            json.dumps(ticket.egg)
+            json.dumps(ticket.reference_materials)
         except TypeError:
             report.add_error(
                 ticket_id=ticket.id,
                 error_type="invalid_field_type",
-                message="egg field must be JSON-serializable",
+                message="reference_materials field must be JSON-serializable",
                 severity="error",
             )
 
@@ -1185,8 +1240,10 @@ class Linter:
             if not is_ticket_id(dir_name):
                 continue
 
-            # Check if any .md file exists in the directory
-            if any(dir_path.glob("*.md")):
+            # Check if the expected ticket file exists (not just any .md file)
+            # Using an exact check avoids false positives from macOS resource fork
+            # files like ._b.xxx.md which match glob("*.md") but are not ticket files.
+            if (dir_path / f"{dir_name}.md").exists():
                 continue
 
             # Skip recently created directories (in-flight ticket creation)

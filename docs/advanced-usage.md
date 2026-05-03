@@ -60,13 +60,13 @@ Any string is valid as a status.
 
 You can lock down allowed values per-hive or per-scope with `status_values` in `~/.bees/config.json`. When configured, updates with invalid statuses are rejected. See [Configuration](#configuration).
 
-## Eggs
+## Reference Materials
 
-Each ticket has an optional `egg` field for arbitrary structured data — any JSON value (object, array, string, number, boolean, or null). A common use case is storing a list of file paths relevant to the ticket.
+Each bee ticket has an optional `reference_materials` field — a list of dicts, each with a `value` key and an optional `resolver` key. A common use case is storing a list of file paths or external identifiers relevant to the ticket.
 
-### Egg Resolvers
+### Reference Material Resolvers
 
-A custom script can be configured to resolve egg values at read time. Tell your LLM to set an egg resolver when creating a hive or by updating the configuration. See [Configuration](#configuration) and [Custom Resolvers](custom-resolvers.md).
+Three built-in resolvers are available immediately after installation: `file-path` (validates file paths, used when no resolver is specified), `github` (fetches GitHub issue/PR data), and `bees` (returns a Bee ticket ID as-is). Custom resolvers can also be configured to resolve `reference_materials` values at read time. Tell your LLM to set up a custom resolver using `bees set-resolver` or by updating the configuration. See [Configuration](#configuration) and [Custom Resolvers](custom-resolvers.md).
 
 ## Undertaker
 
@@ -275,20 +275,21 @@ View raw status_values at all configuration levels:
 bees get-status-values
 ```
 
-### Egg Resolver
+### Reference Material Resolvers
 
-Configure a custom script to resolve egg values at read time. Resolution falls through the same hierarchy as `child_tiers`: hive → scope → global.
+Resolvers are registered globally by name and referenced per-entry in `reference_materials`. Use `bees set-resolver` to register a resolver script:
+
+```
+bees set-resolver --name my_resolver --path /path/to/resolve.sh --timeout 5
+```
+
+To use a named resolver, set the `resolver` key on a `reference_materials` entry when creating or updating a ticket:
 
 ```json
-{
-  "scopes": {
-    "/path/to/repo": {
-      "egg_resolver": "/path/to/resolve_eggs.sh",
-      "egg_resolver_timeout": 5
-    }
-  }
-}
+{"value": "some-identifier", "resolver": "my_resolver"}
 ```
+
+See [Custom Resolvers](custom-resolvers.md) for the complete resolver interface.
 
 ### Undertaker Schedule
 
@@ -388,7 +389,7 @@ bees set-status-values --scope=hive --hive features --values '["pupa","worker"]'
 bees set-status-values --scope=global --unset
 ```
 
-`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--egg`).
+`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--reference-materials`).
 
 `create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
 
@@ -409,11 +410,19 @@ bees execute-freeform-query --yaml "- ['type=bee']" [--hives backend]
 ## Hive Management
 
 ```bash
-bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}']
+bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}'] [--allowed-resolvers '["guid_resolver","default"]']
 bees list-hives
 bees abandon-hive backend
 bees rename-hive old_name new_name
 bees sanitize-hive backend
+```
+
+## Resolver Registry
+
+```bash
+bees set-resolver --name my_resolver --path /abs/path/to/script.py [--timeout 10]
+bees set-resolver --name my_resolver --unset
+bees get-resolvers
 ```
 
 ## Utilities

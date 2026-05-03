@@ -147,4 +147,4 @@ pipx uninstall bees-md
 
 ## Advanced Usage
 
-See [docs/advanced-usage.md](docs/advanced-usage.md) for full documentation on hives, ticket hierarchy, tags, statuses, eggs, queries, configuration, and more.
+See [docs/advanced-usage.md](docs/advanced-usage.md) for full documentation on hives, ticket hierarchy, tags, statuses, reference materials, queries, configuration, and more.

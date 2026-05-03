@@ -330,10 +330,10 @@ class TestReportFieldValidation:
 
     @pytest.mark.parametrize(
         "field",
-        [pytest.param("body", id="body"), pytest.param("egg", id="egg")],
+        [pytest.param("body", id="body"), pytest.param("reference_materials", id="reference_materials")],
     )
-    def test_body_and_egg_rejected_with_show_ticket_hint(self, field):
-        """body and egg should be rejected with a message mentioning show_ticket."""
+    def test_body_and_reference_materials_rejected_with_show_ticket_hint(self, field):
+        """body and reference_materials should be rejected with a message mentioning show_ticket."""
         parser = QueryParser()
         with pytest.raises(QueryValidationError, match="show_ticket"):
             parser.parse_and_validate({"stages": [["type=t1"]], "report": [field]})

@@ -195,11 +195,22 @@ def _filter_ticket_fields(data: dict[str, Any]) -> dict[str, Any]:
         "down_dependencies",
         "parent",
         "children",
-        "egg",
+        "reference_materials",
         "created_at",
         "status",
         "schema_version",
         "guid",
     }
 
-    return {k: v for k, v in data.items() if k in known_fields}
+    result = {k: v for k, v in data.items() if k in known_fields}
+
+    # Backward compat: old tickets may have `egg` key instead of `reference_materials`.
+    # Convert egg -> reference_materials only when reference_materials is absent.
+    # If both exist, reference_materials takes precedence (already captured above).
+    if "egg" in data and "reference_materials" not in data:
+        egg_value = data["egg"]
+        if egg_value is not None:
+            result["reference_materials"] = [{"value": egg_value}]
+        # egg_value is None → leave reference_materials absent (defaults to None)
+
+    return result

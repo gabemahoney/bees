@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from src.config import GLOBAL_SCHEMA_VERSION
 from src.id_utils import generate_guid
 from src.repo_context import repo_root_context
 
@@ -84,7 +85,7 @@ def write_scoped_config(
 
     global_config = {
         "scopes": {str(repo_root): scope_data},
-        "schema_version": "2.0",
+        "schema_version": GLOBAL_SCHEMA_VERSION,
     }
     config_path = global_bees_dir / "config.json"
     config_path.write_text(json.dumps(global_config, indent=2))
@@ -104,7 +105,7 @@ def write_multi_scope_config(global_bees_dir: Path, scopes_dict: dict) -> None:
     """
     global_config = {
         "scopes": scopes_dict,
-        "schema_version": "2.0",
+        "schema_version": GLOBAL_SCHEMA_VERSION,
     }
     config_path = global_bees_dir / "config.json"
     config_path.write_text(json.dumps(global_config, indent=2))
@@ -124,7 +125,7 @@ def write_global_queries(global_bees_dir: Path, queries: dict[str, dict]) -> Non
     if config_path.exists():
         config = json.loads(config_path.read_text())
     else:
-        config = {"scopes": {}, "schema_version": "2.0"}
+        config = {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
     config["queries"] = queries
     config_path.write_text(json.dumps(config, indent=2))
 
@@ -144,7 +145,7 @@ def write_queen_repos_config(global_bees_dir: Path, entries: list[tuple[str, boo
     if config_path.exists():
         config = json.loads(config_path.read_text())
     else:
-        config = {"scopes": {}, "schema_version": "2.0"}
+        config = {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
 
     queen_repos = []
     for path_str, write in entries:
@@ -312,9 +313,9 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
                 **extra_fields,
             }
 
-            # Include egg: null for bee tickets so they pass linter integrity checks
-            if ticket_type == "bee" and "egg" not in extra_fields:
-                frontmatter["egg"] = None
+            # Include reference_materials: null for bee tickets so they pass linter integrity checks
+            if ticket_type == "bee" and "reference_materials" not in extra_fields:
+                frontmatter["reference_materials"] = None
 
             yaml_lines = ["---"]
             for key, value in frontmatter.items():

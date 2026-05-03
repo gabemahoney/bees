@@ -83,7 +83,7 @@ def write_corrupt_ticket(hive_dir: Path, ticket_id: str) -> None:
         "---\n"
         f"id: {ticket_id}\n"
         "type: bee\n"
-        "# Missing title, ticket_status, schema_version, guid, egg\n"
+        "# Missing title, ticket_status, schema_version, guid, reference_materials\n"
         "---\n"
         "Corrupt ticket body.\n"
     )
@@ -190,7 +190,7 @@ def make_ticket(
     down_dependencies: list[str] | None = None,
     created_at: str | None = None,
     schema_version: str = "0.1",
-    egg=None,
+    reference_materials=None,
     guid: str | None = "__AUTO__",
 ):
     """
@@ -224,7 +224,7 @@ def make_ticket(
         down_dependencies: List of blocked ticket IDs (default: None = [])
         created_at: Creation timestamp ISO format (default: "2024-01-01T00:00:00+00:00")
         schema_version: Schema version (default: "0.1")
-        egg: Egg field value (default: None). Can be string, dict, list, or any JSON-serializable type.
+        reference_materials: Reference materials list (default: None). List of dicts with "value" key, or None.
         guid: GUID string (default: "__AUTO__" = auto-generate from id). Pass None to omit.
 
     Returns:
@@ -250,11 +250,11 @@ def make_ticket(
         ...     tags=["urgent", "bug"]
         ... )
 
-        >>> # Bee with egg field
+        >>> # Bee with reference_materials field
         >>> ticket = make_ticket(
-        ...     id="b.egg",
-        ...     title="Egg Bee",
-        ...     egg="https://example.com/spec.md"
+        ...     id="b.ref",
+        ...     title="Ref Bee",
+        ...     reference_materials=[{"value": "docs/spec.md"}]
         ... )
     """
     from src.models import Ticket
@@ -273,7 +273,7 @@ def make_ticket(
         down_dependencies=down_dependencies if down_dependencies is not None else [],
         created_at=created_at or "2024-01-01T00:00:00+00:00",
         schema_version=schema_version,
-        egg=egg,
+        reference_materials=reference_materials,
         guid=resolved_guid,
     )
 
@@ -285,8 +285,8 @@ def write_ticket_file(
     type: str = "bee",
     status: str = "open",
     body: str = "",
-    egg=None,
-    omit_egg: bool = False,
+    reference_materials=None,
+    omit_reference_materials: bool = False,
     children: list[str] | None = None,
     parent: str | None = None,
     **overrides,
@@ -325,10 +325,10 @@ def write_ticket_file(
         type: Ticket type (default: "bee")
         status: Ticket status (default: "open")
         body: Optional markdown body content after frontmatter (default: "")
-        egg: Egg field value for bee tickets (default: None). Only included in frontmatter
-             for bee tickets. Child tier tickets (t1, t2, t3) do NOT get egg field.
-        omit_egg: If True, omit egg field from bee ticket frontmatter (default: False).
-                  Used for testing malformed bee tickets that are missing the required egg field.
+        reference_materials: Reference materials list for bee tickets (default: None). Only included
+             in frontmatter for bee tickets. Child tier tickets (t1, t2, t3) do NOT get the field.
+        omit_reference_materials: If True, omit reference_materials field from bee ticket frontmatter
+                  (default: False). Used for testing malformed bee tickets missing the required field.
         **overrides: Additional frontmatter fields to override defaults
                     (parent, children, tags, dependencies, etc.)
 
@@ -366,20 +366,20 @@ def write_ticket_file(
         ...     up_dependencies=[TICKET_ID_HELPER_TASK_XYZ1]
         ... )
 
-        >>> # Bee with egg field
+        >>> # Bee with reference_materials field
         >>> path = write_ticket_file(
         ...     hive_dir,
-        ...     "b.egg",
-        ...     title="Egg Bee",
-        ...     egg="https://example.com/spec.md"
+        ...     "b.ref",
+        ...     title="Ref Bee",
+        ...     reference_materials=[{"value": "docs/spec.md"}]
         ... )
 
-        >>> # Bee WITHOUT egg field (for testing malformed tickets)
+        >>> # Bee WITHOUT reference_materials field (for testing malformed tickets)
         >>> path = write_ticket_file(
         ...     hive_dir,
         ...     "b.bad",
         ...     title="Malformed Bee",
-        ...     omit_egg=True
+        ...     omit_reference_materials=True
         ... )
     """
     # Build frontmatter with defaults + overrides
@@ -398,10 +398,10 @@ def write_ticket_file(
         "guid": generate_guid(short_id),
     }
 
-    # Include egg field ONLY for bee tickets (not child tier tickets)
-    # Unless omit_egg=True (for testing malformed tickets)
-    if type == "bee" and not omit_egg:
-        frontmatter["egg"] = egg
+    # Include reference_materials field ONLY for bee tickets (not child tier tickets)
+    # Unless omit_reference_materials=True (for testing malformed tickets)
+    if type == "bee" and not omit_reference_materials:
+        frontmatter["reference_materials"] = reference_materials
 
     # Apply explicit children/parent params (override defaults when provided)
     if children is not None:
@@ -430,7 +430,23 @@ def write_ticket_file(
             else:
                 yaml_lines.append(f"{key}:")
                 for item in value:
-                    yaml_lines.append(f"  - {item}")
+                    if isinstance(item, dict):
+                        # Write dict items as YAML block sequence entries
+                        first = True
+                        for k, v in item.items():
+                            if first:
+                                if isinstance(v, str):
+                                    yaml_lines.append(f"  - {k}: {v}")
+                                else:
+                                    yaml_lines.append(f"  - {k}: {v!r}")
+                                first = False
+                            else:
+                                if isinstance(v, str):
+                                    yaml_lines.append(f"    {k}: {v}")
+                                else:
+                                    yaml_lines.append(f"    {k}: {v!r}")
+                    else:
+                        yaml_lines.append(f"  - {item}")
         else:
             yaml_lines.append(f"{key}: {value}")
     yaml_lines.append("---")

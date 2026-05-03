@@ -120,16 +120,16 @@ When child_tiers are configured, the valid types list also includes friendly nam
 Hive 'unknown_hive' not found in configuration
 ```
 
-### Egg Field Validation
+### Reference Materials Field Validation
 
 **Bee Tickets**:
-- `egg` field is required in frontmatter for bee tickets
-- `null` is a valid value for the egg field
-- Any type is accepted for egg values (`str`, `int`, `dict`, etc.)
+- `reference_materials` field may be present in frontmatter for bee tickets
+- `null` is a valid value for the `reference_materials` field
+- When present, must be a list of dicts, each with a `value` key and an optional `resolver` key
 
 **Child Tier Tickets**:
-- `egg` field must NOT be present in child tier frontmatter (t1, t2, t3, etc.)
-- Child tiers do not inherit or store egg values from their parent bees
+- `reference_materials` field must NOT be present in child tier frontmatter (t1, t2, t3, etc.)
+- Child tiers do not inherit or store reference materials from their parent bees
 
 ## Linter Architecture
 
@@ -149,7 +149,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - `TicketScanner` class loads tickets from filesystem using `src/reader.py`
 - Scans hive directories recursively (hierarchical storage: `{hive_name}/**/*.md`)
 - Validates hierarchical pattern: directory name must match file stem (`{ticket_id}/{ticket_id}.md`)
-- Excludes special directories (`eggs/`, `evicted/`, `.hive/`) and `index.md` files
+- Excludes special directories (`evicted/`, `.hive/`) and `index.md` files
 - Returns generator of `Ticket` objects with types validated against `~/.bees/config.json`
 - Handles filesystem errors gracefully, logging and skipping invalid files
 - `Linter` class orchestrates validation through `run()` method:
@@ -202,10 +202,10 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Type check: status must be a string (error: `invalid_field_type`)
 - Value check: If status_values configured via three-level resolution (hive → scope → global), validates status is in the list (error: `invalid_status`). If not configured, any string is valid (freeform mode).
 
-*Egg JSON-Serializable Validator*:
+*Reference Materials Validator*:
 - Only applies to bee tickets (child tiers skipped)
-- Validates egg field is JSON-serializable (error: `invalid_field_type`)
-- Null/None egg value is valid
+- Validates `reference_materials` is a list of dicts, each with a `value` key (error: `invalid_field_type`)
+- Null/None `reference_materials` value is valid
 
 **Disallowed Fields Detection**:
 - Scans raw YAML frontmatter for deprecated fields removed in schema cleanup (SR-6.3)
@@ -537,7 +537,7 @@ Write to {hive_path}/index.md
 - Uses `list_tickets()` from `paths.py` which scans hive directories recursively
 - Validates `bees_version` field presence and filters by YAML `type` field
 - Validates hierarchical pattern: directory name matches file stem
-- Excludes `/eggs`, `/evicted`, and `.hive` subdirectories automatically
+- Excludes `/evicted` and `.hive` subdirectories automatically
 - Groups tickets by type using YAML frontmatter `type` field
 - With `hive_name` parameter: only returns tickets from specified hive
 - Without `hive_name`: returns all tickets from all hives

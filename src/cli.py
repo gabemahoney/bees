@@ -13,7 +13,7 @@ import logging
 import sys
 from pathlib import Path
 
-from .config import check_queen_write_access, load_global_config, set_config_path, set_test_config_override
+from .config import GLOBAL_SCHEMA_VERSION, check_queen_write_access, load_global_config, set_config_path, set_test_config_override
 from .constants import BODY_MAX_LENGTH
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import _abandon_hive, _list_hives, _rename_hive, _sanitize_hive, colonize_hive_core
@@ -26,6 +26,7 @@ from .mcp_query_ops import (
     _execute_named_query,
     _list_named_queries,
 )
+from .mcp_resolver_ops import _get_resolvers, _set_resolver
 from .mcp_ticket_ops import (
     _append_ticket_body,
     _create_ticket,
@@ -38,6 +39,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
+from .migrations.runner import preview_pending_migrations, run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
@@ -211,7 +213,7 @@ def handle_create_ticket(args):
             down_dependencies=parse_json_arg(args.down_deps, "--down-deps") if args.down_deps is not None else None,
             tags=parse_json_arg(args.tags, "--tags") if args.tags is not None else None,
             status=args.status,
-            egg=parse_json_arg(args.egg, "--egg") if args.egg is not None else None,
+            reference_materials=parse_json_arg(args.reference_materials, "--reference-materials") if args.reference_materials is not None else None,
         ),
         root=root,
     )
@@ -258,8 +260,8 @@ def handle_update_ticket(args):
         kwargs["up_dependencies"] = parse_json_arg(args.up_deps, "--up-deps")
     if args.down_deps is not _UNSET:
         kwargs["down_dependencies"] = parse_json_arg(args.down_deps, "--down-deps")
-    if args.egg is not _UNSET:
-        kwargs["egg"] = parse_json_arg(args.egg, "--egg")
+    if args.reference_materials is not _UNSET:
+        kwargs["reference_materials"] = parse_json_arg(args.reference_materials, "--reference-materials")
     if args.add_tags is not _UNSET:
         kwargs["add_tags"] = parse_json_arg(args.add_tags, "--add-tags")
     if args.remove_tags is not _UNSET:
@@ -411,15 +413,15 @@ def handle_colonize_hive(args):
     if _guard_queen_write_cli(root):
         return
     parsed_child_tiers = parse_json_arg(args.child_tiers, "--child-tiers") if args.child_tiers is not None else None
+    parsed_allowed_resolvers = parse_json_arg(args.allowed_resolvers, "--allowed-resolvers") if args.allowed_resolvers is not None else None  # noqa: E501
     result = _run_in_repo(
         colonize_hive_core(
             name=args.name,
             path=args.path,
             child_tiers=parsed_child_tiers,
-            egg_resolver=args.egg_resolver,
-            egg_resolver_timeout=args.egg_resolver_timeout,
             scope=args.scope,
             description=args.description,
+            allowed_resolvers=parsed_allowed_resolvers,
         ),
         root=root,
     )
@@ -487,6 +489,29 @@ def handle_clone_bee(args):
     _output_result(result)
 
 
+def handle_update_config(args):
+    if args.details:
+        result = preview_pending_migrations()
+    else:
+        result = run_pending_migrations()
+    _output_result(result)
+
+
+def handle_set_resolver(args):
+    result = _set_resolver(
+        name=args.name,
+        path=args.path,
+        timeout=args.timeout,
+        unset=args.unset,
+    )
+    _output_result(result)
+
+
+def handle_get_resolvers(args):
+    result = _get_resolvers()
+    _output_result(result)
+
+
 def handle_undertaker(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
@@ -510,7 +535,7 @@ def handle_undertaker(args):
 def _resolve_test_config(value: str) -> dict:
     """Resolve --test-config value to a config dict. Exits on error."""
     if value == "":
-        return {"schema_version": "2.0", "scopes": {}}
+        return {"schema_version": GLOBAL_SCHEMA_VERSION, "scopes": {}}
     elif value.startswith("{"):
         try:
             resolved = json.loads(value)
@@ -797,7 +822,7 @@ def build_parser():
     p_create.add_argument("--down-deps", default=None, dest="down_deps", metavar="JSON", help="JSON array of ticket IDs this ticket must be resolved BEFORE.")  # noqa: E501
     p_create.add_argument("--tags", default=None, metavar="JSON", help='JSON array of tag strings e.g. \'["bug","urgent"]\'')  # noqa: E501
     p_create.add_argument("--status", default=None, help="Ticket status. Freeform unless the hive has status_values configured, in which case must be one of the allowed values.")  # noqa: E501
-    p_create.add_argument("--egg", default=None, metavar="JSON", help="Any JSON value. Tracks external resources related to the ticket. Only supported on bee (top-level) tickets.")  # noqa: E501
+    p_create.add_argument("--reference-materials", default=None, dest="reference_materials", metavar="JSON", help="JSON list of reference material dicts. Tracks external resources related to the ticket. Only supported on bee (top-level) tickets.")  # noqa: E501
     p_create.set_defaults(func=handle_create_ticket)
 
     # --- show-ticket ---
@@ -824,7 +849,7 @@ def build_parser():
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
     p_update.add_argument("--down-deps", default=_UNSET, dest="down_deps", metavar="JSON", help="Full replacement list of ticket IDs this ticket must be resolved BEFORE (null to clear)")  # noqa: E501
-    p_update.add_argument("--egg", default=_UNSET, metavar="JSON", help="Any JSON value tracking external resources. Bee tickets only. (null to clear)")  # noqa: E501
+    p_update.add_argument("--reference-materials", default=_UNSET, dest="reference_materials", metavar="JSON", help="JSON list of reference material dicts tracking external resources. Bee tickets only. (null to clear)")  # noqa: E501
     p_update.add_argument("--add-tags", default=_UNSET, dest="add_tags", metavar="JSON", help="JSON array of tags to add")  # noqa: E501
     p_update.add_argument("--remove-tags", default=_UNSET, dest="remove_tags", metavar="JSON", help="JSON array of tags to remove")  # noqa: E501
     p_update.add_argument("--hive", default=_UNSET, help="Hive name for faster lookup (optional)")
@@ -1032,10 +1057,9 @@ def build_parser():
     p_colonize.add_argument("--name", required=True, help='Display name for the hive (e.g. "Back End"). Normalized internally.')  # noqa: E501
     p_colonize.add_argument("--path", required=True, metavar="PATH", help="Absolute path where the hive will be created. Does not need to exist.")  # noqa: E501
     p_colonize.add_argument("--child-tiers", default=None, dest="child_tiers", metavar="JSON", help='Optional per-hive tier config as JSON dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["Epic","Epics"], "t2": ["Task","Tasks"]}. Pass {} for bees-only. Inherits from global config if omitted.')  # noqa: E501
-    p_colonize.add_argument("--egg-resolver", default=None, dest="egg_resolver", metavar="PATH", help="Optional path to an egg resolver script for this hive.")  # noqa: E501
-    p_colonize.add_argument("--egg-resolver-timeout", default=None, dest="egg_resolver_timeout", type=float, metavar="SECONDS", help="Optional timeout in seconds for the egg resolver script.")  # noqa: E501
     p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.add_argument("--description", default=None, metavar="TEXT", help="Optional short description of the hive's purpose.")  # noqa: E501
+    p_colonize.add_argument("--allowed-resolvers", default=None, dest="allowed_resolvers", metavar="JSON", help='Optional JSON list of resolver names permitted for this hive (e.g. ["my_resolver","default"]). Each name must exist in the resolver registry or be "default".')  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 
     # --- list-hives ---
@@ -1137,6 +1161,39 @@ def build_parser():
     undertaker_group.add_argument("--query-name", default=None, dest="query_name", metavar="NAME", help="Name of a saved named query (run list-named-queries to see available) — mutually exclusive with --query-yaml")  # noqa: E501
     p_undertaker.set_defaults(func=handle_undertaker)
 
+    # --- update-config ---
+    p_update_config = subparsers.add_parser(
+        "update-config",
+        help="Apply pending schema migrations to the global bees config",
+        description="Apply all pending schema migrations to the global bees configuration. No arguments required.",
+    )
+    p_update_config.add_argument("--details", action="store_true", default=False, help="Show pending migrations without applying them")
+    p_update_config.set_defaults(func=handle_update_config)
+
+    # --- set-resolver ---
+    p_set_resolver = subparsers.add_parser(
+        "set-resolver",
+        help="Register, update, or remove a named resolver in the global registry",
+        description=(
+            "Register or update a resolver script under a name in the global registry, "
+            "or remove it with --unset. The convention section is extracted automatically "
+            "from the script's module docstring."
+        ),
+    )
+    p_set_resolver.add_argument("--name", required=True, help="Resolver name (cannot be 'default')")
+    p_set_resolver.add_argument("--path", default=None, metavar="PATH", help="Absolute path to the resolver script (required unless --unset)")  # noqa: E501
+    p_set_resolver.add_argument("--timeout", default=None, type=float, metavar="SECONDS", help="Optional timeout in seconds for the resolver")  # noqa: E501
+    p_set_resolver.add_argument("--unset", action="store_true", default=False, help="Remove the resolver from the registry")  # noqa: E501
+    p_set_resolver.set_defaults(func=handle_set_resolver)
+
+    # --- get-resolvers ---
+    p_get_resolvers = subparsers.add_parser(
+        "get-resolvers",
+        help="List all registered resolvers plus the built-in default",
+        description="List all registered resolvers plus the built-in default. No arguments required.",
+    )
+    p_get_resolvers.set_defaults(func=handle_get_resolvers)
+
     # --- sting ---
     p_sting = subparsers.add_parser("sting", help="Output bees context for Claude Code sessions")
     p_sting.set_defaults(func=handle_sting)
@@ -1208,7 +1265,7 @@ def build_parser():
         p_types, p_set_types, p_set_status_values, p_get_status_values,
         p_anq, p_enq, p_efq, p_dnq, p_lnq,
         p_colonize, p_list_hives, p_abandon, p_rename, p_sanitize,
-        p_index, p_move, p_clone, p_undertaker, p_sting, p_cli_mode,
+        p_index, p_move, p_clone, p_undertaker, p_update_config, p_set_resolver, p_get_resolvers, p_sting, p_cli_mode,
     ]
     for _p in _non_serve_parsers:
         _p.add_argument("--test-config", nargs="?", const="", default=None, dest="test_config")

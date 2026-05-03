@@ -1,23 +1,18 @@
 #!/usr/bin/env python3
-"""GitHub Issues/PR egg resolver.
+"""GitHub Issues/PR reference_materials resolver.
 
 ## RESOLVER CONVENTION
 
-The egg field stores one or more GitHub issue or pull request URLs.
+The reference_materials field stores a single GitHub issue or pull request URL.
 
 Single URL (string):
   "https://github.com/owner/repo/issues/123"
 
-Multiple URLs (JSON array):
-  ["https://github.com/owner/repo/issues/123", "https://github.com/owner/repo/pull/456"]
-
-For a single URL, the output is a JSON object with two keys:
+The output is a JSON object with two keys:
   - "issue": the verbatim API response for the issue/PR
   - "comments": the verbatim API response for the comments (an array)
 
-For multiple URLs, the output is a JSON array of such objects, one per URL.
-
-If any URL fails, the entire resolution fails.
+JSON arrays are not supported. If a JSON array is provided, the resolver will exit with an error.
 """
 
 import argparse
@@ -97,15 +92,15 @@ def fetch_issue(hostname, owner, repo, number):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Resolve GitHub issue/PR egg values")
+    parser = argparse.ArgumentParser(description="Resolve GitHub issue/PR reference_materials values")
     parser.add_argument("--repo-root", required=True, help="Repository root path")
-    parser.add_argument("--egg-value", required=True, help="Egg field value (raw string, JSON array, or 'null')")
+    parser.add_argument("--value", required=True, help="reference_materials field value (URL string or 'null')")
     args = parser.parse_args()
 
-    egg_value = args.egg_value
+    value = args.value
 
     # Null handling — before any parsing or network calls
-    if egg_value == "null":
+    if value == "null":
         print("null")
         sys.exit(0)
 
@@ -114,40 +109,22 @@ def main():
         print("gh is not installed or not on PATH", file=sys.stderr)
         sys.exit(1)
 
-    # Detect single URL (string) vs multiple URLs (JSON array)
-    urls = None
+    # Reject JSON arrays — only single URLs are supported
     try:
-        parsed = json.loads(egg_value)
+        parsed = json.loads(value)
         if isinstance(parsed, list):
-            urls = parsed
+            print("JSON arrays are not supported; provide a single GitHub URL", file=sys.stderr)
+            sys.exit(1)
     except (json.JSONDecodeError, TypeError):
         pass
 
-    if urls is not None:
-        # Multiple URLs — resolve each, fail on first error
-        if not urls:
-            print("Empty URL list", file=sys.stderr)
-            sys.exit(1)
-        results = []
-        for url in urls:
-            if not isinstance(url, str):
-                print(f"Expected URL string, got: {url}", file=sys.stderr)
-                sys.exit(1)
-            try:
-                hostname, owner, repo, number = parse_github_url(url)
-            except ValueError as exc:
-                print(str(exc), file=sys.stderr)
-                sys.exit(1)
-            results.append(fetch_issue(hostname, owner, repo, number))
-        print(json.dumps(results))
-    else:
-        # Single URL
-        try:
-            hostname, owner, repo, number = parse_github_url(egg_value)
-        except ValueError as exc:
-            print(str(exc), file=sys.stderr)
-            sys.exit(1)
-        print(json.dumps(fetch_issue(hostname, owner, repo, number)))
+    # Single URL
+    try:
+        hostname, owner, repo, number = parse_github_url(value)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps(fetch_issue(hostname, owner, repo, number)))
 
     sys.exit(0)
 

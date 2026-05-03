@@ -10,7 +10,6 @@ import src.cache
 import src.mcp_index_ops
 import src.mcp_move_bee
 import src.reader
-from src.mcp_egg_ops import _resolve_eggs
 from src.mcp_hive_ops import _list_hives, _sanitize_hive
 from src.mcp_index_ops import _generate_index
 from src.mcp_move_bee import _move_bee
@@ -51,7 +50,7 @@ _CRUD_CALLS = [
     pytest.param(lambda: _update_ticket(TICKET_ID_CORRUPT_BEE, status="open", hive_name=HIVE_BACKEND), id="update"),
     pytest.param(lambda: _delete_ticket(TICKET_ID_CORRUPT_BEE, hive_name=HIVE_BACKEND), id="delete"),
     pytest.param(lambda: _show_ticket([TICKET_ID_CORRUPT_BEE]), id="show"),
-    pytest.param(lambda: _resolve_eggs(TICKET_ID_CORRUPT_BEE), id="resolve_eggs"),
+    pytest.param(lambda: _list_hives(), id="list_hives"),
 ]
 
 

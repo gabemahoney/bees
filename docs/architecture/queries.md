@@ -227,7 +227,7 @@ The `report` parameter enables field projection on query results. When omitted, 
 | `hive` | The hive's normalized name (the hive directory name) |
 
 **Excluded fields**:
-- `body` / `egg` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
+- `body` / `reference_materials` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
 
 ### CLI Commands
 
