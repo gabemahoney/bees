@@ -1265,7 +1265,7 @@ test_query_by_tag() {
 
 test_query_graph_children() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee, hive=query_hive_a]\n- [children]'
+        --query-yaml $'stages:\n  - [type=bee, hive=query_hive_a]\n  - [children]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query children traversal" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1279,7 +1279,7 @@ test_query_graph_children() {
 
 test_query_graph_parent() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=t1, hive=query_hive_a]\n- [parent]'
+        --query-yaml $'stages:\n  - [type=t1, hive=query_hive_a]\n  - [parent]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query parent traversal" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1306,7 +1306,7 @@ test_query_hive_filter() {
 
 test_query_up_deps() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee]\n- [up_dependencies]'
+        --query-yaml $'stages:\n  - [type=bee]\n  - [up_dependencies]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query up_dependencies" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1320,7 +1320,7 @@ test_query_up_deps() {
 
 test_query_down_deps() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee]\n- [down_dependencies]'
+        --query-yaml $'stages:\n  - [type=bee]\n  - [down_dependencies]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Query down_dependencies" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1361,7 +1361,8 @@ test_nq_setup() {
 }
 
 test_nq_add_global() {
-    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope global
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml 'stages:
+  - [type=bee]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add global named query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1396,7 +1397,8 @@ test_nq_list() {
 }
 
 test_nq_conflict() {
-    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml "- [type=bee]" --scope repo
+    capture_cmd bees add-named-query --query-name "all_bees" --query-yaml 'stages:
+  - [type=bee]' --scope repo
     if [ "$CMD_EXIT" -eq 0 ]; then
         fail_test "Reject conflicting query name" "Expected failure but got success"
     fi
@@ -1410,7 +1412,8 @@ test_nq_conflict() {
 
 test_nq_add_repo() {
     capture_cmd bees add-named-query --query-name "worker_bees" \
-        --query-yaml "- [type=bee, status=worker]" --scope repo
+        --query-yaml 'stages:
+  - [type=bee, status=worker]' --scope repo
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Add repo-scoped query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1746,7 +1749,8 @@ test_undertaker_setup() {
 
 test_undertaker_yaml_query() {
     capture_cmd bees undertaker --hive archive_hive \
-        --query-yaml "- [status=finished]"
+        --query-yaml 'stages:
+  - [status=finished]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archive via YAML query" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1785,7 +1789,8 @@ test_undertaker_cemetery_guid_naming() {
 
 test_undertaker_excluded_from_queries() {
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=archive_hive]"
+        --query-yaml 'stages:
+  - [type=bee, hive=archive_hive]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archived excluded from queries" "exit $CMD_EXIT: $CMD_OUT"
     fi
@@ -1800,7 +1805,8 @@ test_undertaker_excluded_from_queries() {
 test_undertaker_named_query() {
     # Register a named query for finished bees
     capture_cmd bees add-named-query --query-name "finished_bees" \
-        --query-yaml "- [status=finished]" --scope global
+        --query-yaml 'stages:
+  - [status=finished]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Archive via named query" "add-named-query failed: $CMD_OUT"
     fi
@@ -2012,7 +2018,8 @@ test_move_blocked_by_tiers() {
 test_move_force_bypass() {
     # Use the compat_bee from the status_values test (still in compat_source)
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=compat_source, title~Compat Bee]"
+        --query-yaml 'stages:
+  - [type=bee, hive=compat_source, title~Compat Bee]'
     local force_bee
     force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
     capture_cmd bees move-bee --ids "$force_bee" --hive compat_dest --force
@@ -3170,7 +3177,8 @@ test_clone_incompatible_blocked() {
 test_clone_force_bypass() {
     # Use same incompatible bee
     capture_cmd bees execute-freeform-query \
-        --query-yaml "- [type=bee, hive=clone_hive, title~Incompat Clone]"
+        --query-yaml 'stages:
+  - [type=bee, hive=clone_hive, title~Incompat Clone]'
     local force_bee
     force_bee=$(check_json "$CMD_OUT" "d['ticket_ids'][0]")
     capture_cmd bees clone --bee-id "$force_bee" --hive clone_dest --force
@@ -3248,7 +3256,7 @@ test_fast_parser_pipeline() {
 
     # Test 3: Graph traversal — children of bee1
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [id='"$fp_bee1"$']\n- [children]'
+        --query-yaml $'stages:\n  - [id='"$fp_bee1"$']\n  - [children]'
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Fast parser pipeline" "Children query failed: exit $CMD_EXIT: $CMD_OUT $CMD_ERR"
     fi
@@ -3260,7 +3268,7 @@ test_fast_parser_pipeline() {
 
     # Test 4: Chained search + traversal
     capture_cmd bees execute-freeform-query \
-        --query-yaml $'- [type=bee, hive=fp_hive]\n- [children]'
+        --query-yaml $'stages:\n  - [type=bee, hive=fp_hive]\n  - [children]'
     local all_tasks
     all_tasks=$(check_json "$CMD_OUT" "all(not tid.startswith('b.') for tid in d.get('ticket_ids',[]))")
     if [ "$all_tasks" != "True" ]; then
@@ -3626,7 +3634,8 @@ run_test test_id_3level_bidir
 
 test_list_named_queries_works() {
     # Register a query, list, verify
-    capture_cmd bees add-named-query --query-name "test_lnq" --query-yaml "- [type=bee]" --scope global
+    capture_cmd bees add-named-query --query-name "test_lnq" --query-yaml 'stages:
+  - [type=bee]' --scope global
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "list-named-queries" "add failed: $CMD_OUT"
     fi
