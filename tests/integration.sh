@@ -1635,10 +1635,17 @@ RESOLVER
     if [ "$ticket_count" != "1" ]; then
         fail_test "Ref resolver timeout" "Expected 1 ticket returned, got $ticket_count"
     fi
-    local has_errors
-    has_errors=$(check_json "$CMD_OUT" "len(d.get('errors',[])) > 0")
-    if [ "$has_errors" != "True" ]; then
-        fail_test "Ref resolver timeout" "Expected errors for timeout, got none"
+    # Timeout errors are surfaced inside reference_materials[0]["resolved"], not in top-level errors
+    local resolved_status resolved_error
+    resolved_status=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('status','')")
+    resolved_error=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('error','')")
+    if [ "$resolved_status" != "error" ]; then
+        fail_test "Ref resolver timeout" "Expected resolved.status=error for timeout, got '$resolved_status'"
+    fi
+    if [[ "$resolved_error" != *"timed out"* ]]; then
+        fail_test "Ref resolver timeout" "Expected 'timed out' in resolved.error, got '$resolved_error'"
     fi
     pass_test "Ref resolver timeout"
 }
