@@ -52,7 +52,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
-from .migrations.runner import run_pending_migrations
+from .migrations.runner import preview_pending_migrations, run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - re-exported
 
@@ -1103,13 +1103,17 @@ def get_resolvers() -> dict[str, Any]:
 
 
 @mcp.tool()
-def update_config() -> dict[str, Any]:
+def update_config(details_only: bool = False) -> dict[str, Any]:
     """Apply pending schema migrations to the global bees configuration.
 
-    IMPORTANT: Before calling this tool, you MUST ask the user for explicit
-    confirmation. This tool modifies the global bees configuration. It is safe
-    to run when migrations are already up to date (it will be a no-op), but
-    it writes to disk and should not be called without user awareness.
+    When details_only=True, returns a preview of pending migrations without
+    applying them. No confirmation is required for details_only=True.
+
+    IMPORTANT: When details_only=False, you MUST ask the user for explicit
+    confirmation before calling this tool. This tool modifies the global bees
+    configuration. It is safe to run when migrations are already up to date
+    (it will be a no-op), but it writes to disk and should not be called
+    without user awareness.
 
     Applies all pending migration hops from the migration manifest to the
     global config file (~/.bees/config.json), persisting schema_version after
@@ -1119,14 +1123,26 @@ def update_config() -> dict[str, Any]:
     No repo_root or hive context is required — this operates on the global
     bees config only.
 
+    Args:
+        details_only: If True, return pending migration info without applying
+            anything. Defaults to False.
+
     Returns:
-        On success with no pending migrations:
+        When details_only=True with no pending migrations:
+            {"status": "success", "message": "Config is up to date (version X). No pending migrations.",
+             "current_version": "<current>", "pending_hops": []}
+        When details_only=True with pending migrations:
+            {"status": "success", "current_version": "<current>",
+             "pending_hops": [{"from_version": "...", "to_version": "...", "description": "..."}]}
+        On success with no pending migrations (details_only=False):
             {"status": "success", "message": "Already up to date", "version": "<current>"}
-        On success with applied migrations:
+        On success with applied migrations (details_only=False):
             {"status": "success", "message": "Applied N migration(s)",
              "applied_hops": [{"from_version": "...", "to_version": "..."}],
              "final_version": "<new_version>"}
     """
+    if details_only:
+        return preview_pending_migrations()
     return run_pending_migrations()
 
 

@@ -5,7 +5,38 @@ persisting schema_version after each successful hop.
 """
 
 from src.config import load_global_config, save_global_config
-from src.migrations.manifest import find_pending_hops
+from src.migrations.manifest import find_pending_hops, get_pending_hops_info
+
+
+def preview_pending_migrations() -> dict:
+    """Return info about pending migrations without applying them.
+
+    Loads the global config, determines which migration hops are pending,
+    and returns their descriptions without modifying anything.
+
+    Returns:
+        Dict with status, current_version, and pending_hops list.
+    """
+    config_data = load_global_config()
+    current_version = config_data.get("schema_version", "")
+    info = get_pending_hops_info(current_version)
+
+    if not info["pending_hops"]:
+        return {
+            "status": "success",
+            "message": f"Config is up to date (version {current_version}). No pending migrations.",
+            "current_version": current_version,
+            "pending_hops": [],
+        }
+
+    return {
+        "status": "success",
+        "current_version": current_version,
+        "pending_hops": [
+            {"from_version": hop["from_version"], "to_version": hop["to_version"], "description": hop["description"]}
+            for hop in info["pending_hops"]
+        ],
+    }
 
 
 def run_pending_migrations() -> dict:

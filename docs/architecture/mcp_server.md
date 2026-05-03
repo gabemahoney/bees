@@ -264,6 +264,7 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 ### Utility
 - **generate_index**: Generate markdown index of all tickets with optional filters. When `hive_name` is provided, generates index for that hive only. When `hive_name` is omitted (global mode), iterates all registered hives and generates index for each. The response always includes `status`, `markdown`, and `skipped_hives` keys (`skipped_hives` is always an empty list).
 - **health_check**: Check server health status and readiness
+- **update_config**: Apply pending schema migrations to `~/.bees/config.json`. When `details_only=True`, returns a preview of pending migrations without applying them (no confirmation required). When `details_only=False` (default), applies all pending migration hops — callers MUST obtain explicit user confirmation before invoking. Returns `current_version` and `pending_hops` in preview mode; returns `applied_hops` and `final_version` after applying.
 
 ## Chunked body workflow
 
@@ -278,7 +279,7 @@ The cap exists because the Claude Code `/v1/messages` streaming-stall watchdog w
 
 The `bees` command is registered as a Poetry script pointing to `src/cli.py`. This file is the sole entry point for all CLI operations and has no MCP dependencies.
 
-argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
+argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `update-config`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
 
 `create-ticket --body`, `update-ticket --body`, and `append-ticket-body --chunk` enforce the same 10000-character cap as their MCP counterparts; oversized values are rejected at the handler entry with a non-zero exit and a message on stderr pointing the caller at `bees append-ticket-body` for chunked writes. See "Chunked body workflow" above.
 

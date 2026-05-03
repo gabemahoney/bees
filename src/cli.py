@@ -39,7 +39,7 @@ from .mcp_ticket_ops import (
     _update_ticket,
 )
 from .mcp_undertaker import _undertaker
-from .migrations.runner import run_pending_migrations
+from .migrations.runner import preview_pending_migrations, run_pending_migrations
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
@@ -490,7 +490,10 @@ def handle_clone_bee(args):
 
 
 def handle_update_config(args):
-    result = run_pending_migrations()
+    if args.details:
+        result = preview_pending_migrations()
+    else:
+        result = run_pending_migrations()
     _output_result(result)
 
 
@@ -1164,6 +1167,7 @@ def build_parser():
         help="Apply pending schema migrations to the global bees config",
         description="Apply all pending schema migrations to the global bees configuration. No arguments required.",
     )
+    p_update_config.add_argument("--details", action="store_true", default=False, help="Show pending migrations without applying them")
     p_update_config.set_defaults(func=handle_update_config)
 
     # --- set-resolver ---

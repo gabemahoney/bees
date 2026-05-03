@@ -51,7 +51,7 @@ Run bees <command> -h for full usage on any command.
   generate-index          Generate index.md files for hives
   undertaker              Archive bee tickets to /cemetery
   move-bee                Move bee tickets to a different hive
-  update-config           Apply pending schema migrations to global config"""
+  update-config           Apply pending schema migrations to global config (--details for preview)"""
 
 
 def _key_matches_bees(key: str) -> bool:

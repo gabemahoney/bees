@@ -19,11 +19,13 @@ class ManifestEntry:
         to_version: Schema version this hop upgrades to.
         upgrade_script: Callable that accepts the raw config dict and mutates
             it in place. Must be idempotent. Must NOT set schema_version.
+        description: Human-readable description of what this migration does.
     """
 
     from_version: str
     to_version: str
     upgrade_script: Callable[[dict], None]
+    description: str = ""
 
 
 from src.migrations.upgrade_v2_to_v3 import upgrade as _upgrade_v2_to_v3
@@ -31,8 +33,18 @@ from src.migrations.upgrade_v3_to_v4 import upgrade as _upgrade_v3_to_v4
 
 # Ordered list of migration hops.
 MANIFEST: list[ManifestEntry] = [
-    ManifestEntry(from_version="2.0", to_version="3.0", upgrade_script=_upgrade_v2_to_v3),
-    ManifestEntry(from_version="3.0", to_version="4.0", upgrade_script=_upgrade_v3_to_v4),
+    ManifestEntry(
+        from_version="2.0",
+        to_version="3.0",
+        upgrade_script=_upgrade_v2_to_v3,
+        description="Egg to Reference Materials: converts egg_resolver config keys to named resolver registry and renames 'egg' ticket field to 'reference_materials'",
+    ),
+    ManifestEntry(
+        from_version="3.0",
+        to_version="4.0",
+        upgrade_script=_upgrade_v3_to_v4,
+        description="Rename default resolver: renames built-in resolver 'default' to 'file-path' in config and ticket fields",
+    ),
 ]
 
 
@@ -62,3 +74,29 @@ def find_pending_hops(current_version: str) -> list[ManifestEntry]:
         hops.append(hop)
         version = hop.to_version
     return hops
+
+
+def get_pending_hops_info(current_version: str) -> dict:
+    """Return info about pending hops without applying them.
+
+    Returns dict with current_version, pending_hops list (each with
+    from_version, to_version, description).
+
+    Args:
+        current_version: The schema_version currently stored in the config.
+
+    Returns:
+        Dict with current_version and pending_hops list.
+    """
+    hops = find_pending_hops(current_version)
+    return {
+        "current_version": current_version,
+        "pending_hops": [
+            {
+                "from_version": hop.from_version,
+                "to_version": hop.to_version,
+                "description": hop.description,
+            }
+            for hop in hops
+        ],
+    }

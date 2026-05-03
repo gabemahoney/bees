@@ -574,7 +574,7 @@ def check_schema_version() -> dict | None:
         "error_type": "schema_outdated",
         "message": (
             f"Config schema is outdated (version {current_version!r}). "
-            "Run `bees update-config` to migrate."
+            "Run `bees update-config --details` to preview, or `bees update-config` to migrate."
         ),
     }
 
