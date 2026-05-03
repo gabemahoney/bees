@@ -2458,15 +2458,17 @@ test_error_missing_on_update() {
 }
 
 test_error_missing_on_delete() {
+    # delete-ticket always uses bulk-delete (CLI passes nargs="+" list).
+    # Bulk-delete is idempotent: missing tickets go into not_found, not errors.
     capture_cmd bees delete-ticket --ids "b.zzz"
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "Missing ticket on delete" "Expected failure but got success"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Missing ticket on delete" "Expected success (idempotent), got exit $CMD_EXIT: $CMD_OUT"
     fi
     assert_no_traceback "$CMD_OUT" "Missing ticket on delete"
-    local error_type
-    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
-    if [ "$error_type" != "ticket_not_found" ]; then
-        fail_test "Missing ticket on delete" "Expected error_type=ticket_not_found, got $error_type"
+    local nf_count
+    nf_count=$(check_json "$CMD_OUT" "len(d.get('not_found',[]))")
+    if [ "$nf_count" -lt 1 ]; then
+        fail_test "Missing ticket on delete" "Expected b.zzz in not_found, got: $CMD_OUT"
     fi
     pass_test "Missing ticket on delete"
 }
