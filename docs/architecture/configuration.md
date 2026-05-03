@@ -749,9 +749,9 @@ Set via `colonize-hive --allowed-resolvers '["guid_resolver","file-path"]'`.
 - `load_resolver_registry()` / `save_resolver_registry()` in `src/config.py`
 - `_set_resolver()` / `_get_resolvers()` in `src/mcp_resolver_ops.py`
 
-### Config Migration: `default` → `file-path` (v3→v4)
+### Config Migration: `default` → `file-path`
 
-When bees loads a config that was written before the `file-path` rename, it automatically migrates any `"default"` references in `allowed_resolvers` lists to `"file-path"`. This migration runs transparently at load time and is written back to `~/.bees/config.json`. No manual action is required.
+When bees upgrades a config that was written before the `file-path` rename, it migrates any `"default"` references in the resolver registry and `allowed_resolvers` lists to `"file-path"`. This migration is applied by the v2→v3 schema upgrade, which runs when `update-config` is invoked. No manual action is required.
 
 ## Hive Colonization
 

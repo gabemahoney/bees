@@ -122,7 +122,7 @@ class ConflictRecord:
 # Constants
 BEES_CONFIG_DIR = ".bees"
 BEES_CONFIG_FILENAME = "config.json"
-GLOBAL_SCHEMA_VERSION = "4.0"
+GLOBAL_SCHEMA_VERSION = "3.0"
 
 # Regex for converting scope patterns to regex
 _SCOPE_PATTERN_CACHE: dict[str, re.Pattern] = {}

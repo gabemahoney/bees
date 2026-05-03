@@ -1,4 +1,5 @@
-"""Migration: egg_resolver config keys and egg ticket fields → reference_materials.
+"""Migration: egg_resolver config keys and egg ticket fields → reference_materials,
+and rename built-in resolver "default" → "file-path".
 
 Upgrades the global config from schema version 2.0 to 3.0.
 
@@ -14,7 +15,15 @@ Phase 2 — Config migration:
     config["resolvers"].  Existing resolvers are not overwritten.  All
     egg_resolver / egg_resolver_timeout keys are removed.
 
-Phase 3 — Ticket migration:
+    Additionally, if config["resolvers"] contains an entry named "default" and
+    "file-path" does not already exist, rename "default" to "file-path".
+
+Phase 3 — allowed_resolvers migration:
+    Walk every hive in every scope.  For each allowed_resolvers list that
+    contains "default", replace it with "file-path" (unless "file-path" is
+    already present in the list).
+
+Phase 4 — Ticket migration:
     Walk every hive path found in the config scopes.  For each .md file whose
     YAML frontmatter contains an ``egg`` key, convert it to
     ``reference_materials`` (a list with a single {"value": ...} entry, or
@@ -22,6 +31,9 @@ Phase 3 — Ticket migration:
     egg_resolver, the resolver name is added to each entry as "resolver".
     Files that already use reference_materials and have no egg key are
     skipped.
+
+    Additionally, for each .md file whose reference_materials list contains an
+    entry with ``resolver: default``, rename it to ``resolver: file-path``.
 """
 
 from __future__ import annotations
@@ -85,7 +97,7 @@ def _collect_egg_resolvers(config: dict) -> dict[str, dict[str, Any]]:
     if global_path:
         _register(global_path, _get_timeout(config))
 
-    for scope_key, scope_data in config.get("scopes", {}).items():
+    for _scope_key, scope_data in config.get("scopes", {}).items():
         if not isinstance(scope_data, dict):
             continue
 
@@ -142,7 +154,12 @@ def _migrate_ticket_file(
     md_path: Path,
     resolver_name: str | None,
 ) -> bool:
-    """Migrate a single ticket file from egg → reference_materials.
+    """Migrate a single ticket file: egg → reference_materials, default → file-path resolver.
+
+    Performs two mutations if needed:
+    1. Converts ``egg`` frontmatter key to ``reference_materials``.
+    2. Renames ``resolver: default`` entries in ``reference_materials`` to
+       ``resolver: file-path``.
 
     Returns True if the file was modified, False if skipped.
     """
@@ -152,27 +169,36 @@ def _migrate_ticket_file(
         return False
     frontmatter, body = parsed
 
-    # Skip if already migrated
-    if "egg" not in frontmatter:
-        return False
-    if "reference_materials" in frontmatter:
-        # Both keys present — remove egg, leave reference_materials untouched
-        del frontmatter["egg"]
+    modified = False
+
+    # --- egg → reference_materials ---
+    if "egg" in frontmatter:
+        if "reference_materials" in frontmatter:
+            # Both keys present — remove egg, leave reference_materials untouched
+            del frontmatter["egg"]
+        else:
+            egg_value = frontmatter.pop("egg")
+            if egg_value is None:
+                frontmatter["reference_materials"] = None
+            else:
+                entry: dict[str, Any] = {"value": egg_value}
+                if resolver_name is not None:
+                    entry["resolver"] = resolver_name
+                frontmatter["reference_materials"] = [entry]
+        modified = True
+
+    # --- resolver: default → resolver: file-path ---
+    ref_mats = frontmatter.get("reference_materials")
+    if isinstance(ref_mats, list):
+        for entry in ref_mats:
+            if isinstance(entry, dict) and entry.get("resolver") == "default":
+                entry["resolver"] = "file-path"
+                modified = True
+
+    if modified:
         md_path.write_text(_dump_frontmatter(frontmatter, body), encoding="utf-8")
-        return True
 
-    egg_value = frontmatter.pop("egg")
-
-    if egg_value is None:
-        frontmatter["reference_materials"] = None
-    else:
-        entry: dict[str, Any] = {"value": egg_value}
-        if resolver_name is not None:
-            entry["resolver"] = resolver_name
-        frontmatter["reference_materials"] = [entry]
-
-    md_path.write_text(_dump_frontmatter(frontmatter, body), encoding="utf-8")
-    return True
+    return modified
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +209,8 @@ def _migrate_ticket_file(
 def upgrade(config: dict) -> None:
     """Upgrade the raw config dict from schema 2.0 to 3.0 in place.
 
-    Idempotent: if no egg_resolver keys are found and no ticket egg fields
-    exist, this function is a no-op.
+    Idempotent: if no egg_resolver keys are found, no ticket egg fields exist,
+    and no "default" resolver references remain, this function is a no-op.
 
     Args:
         config: The raw global config dict (mutated in place).
@@ -199,9 +225,9 @@ def upgrade(config: dict) -> None:
     resolvers = _collect_egg_resolvers(config)
 
     # Build hive_name → resolver_name mapping before we remove any keys
-    # (used in Phase 3 to annotate ticket reference_materials entries).
+    # (used in Phase 4 to annotate ticket reference_materials entries).
     hive_to_resolver: dict[str, str] = {}
-    for path, info in resolvers.items():
+    for _path, info in resolvers.items():
         for hive_name in info["hive_names"]:
             hive_to_resolver[hive_name] = info["name"]
 
@@ -239,8 +265,36 @@ def upgrade(config: dict) -> None:
                 if isinstance(hive_data, dict):
                     _remove_egg_keys(hive_data)
 
+    # Rename "default" → "file-path" in resolver registry
+    registry = config.get("resolvers")
+    if isinstance(registry, dict) and "default" in registry:
+        if "file-path" not in registry:
+            registry["file-path"] = registry["default"]
+        del registry["default"]
+
     # ------------------------------------------------------------------
-    # Phase 3: Ticket migration
+    # Phase 3: allowed_resolvers migration
+    # ------------------------------------------------------------------
+    for scope_data in config.get("scopes", {}).values():
+        if not isinstance(scope_data, dict):
+            continue
+        for hive_data in scope_data.get("hives", {}).values():
+            if not isinstance(hive_data, dict):
+                continue
+            allowed = hive_data.get("allowed_resolvers")
+            if not isinstance(allowed, list) or "default" not in allowed:
+                continue
+            new_allowed: list[str] = []
+            seen: set[str] = set()
+            for item in allowed:
+                effective = "file-path" if item == "default" else item
+                if effective not in seen:
+                    new_allowed.append(effective)
+                    seen.add(effective)
+            hive_data["allowed_resolvers"] = new_allowed
+
+    # ------------------------------------------------------------------
+    # Phase 4: Ticket migration
     # ------------------------------------------------------------------
     for scope_data in config.get("scopes", {}).values():
         if not isinstance(scope_data, dict):

@@ -1,4 +1,5 @@
-"""Tests for the v2 → v3 migration: egg_resolver config and egg ticket fields → reference_materials."""
+"""Tests for the v2 → v3 migration: egg_resolver config and egg ticket fields → reference_materials,
+and "default" → "file-path" resolver rename (registry, allowed_resolvers, ticket files)."""
 
 from __future__ import annotations
 
@@ -272,6 +273,22 @@ def test_already_migrated_ticket_skipped(tmp_path):
     assert md.read_text() == content
 
 
+def test_egg_and_reference_materials_both_present(tmp_path):
+    """When both egg and reference_materials keys exist, egg is removed and reference_materials is preserved unchanged."""
+    hive_dir = tmp_path / "h"
+    hive_dir.mkdir()
+    md = hive_dir / "b.xx" / "b.xx.md"
+    content = (
+        "---\nid: b.xx\ntype: bee\ntitle: T\nstatus: open\n"
+        "egg: some_val\nreference_materials:\n- value: existing\n---\nBody.\n"
+    )
+    _write(md, content)
+    upgrade(_hive_config(hive_dir))
+    fm = _frontmatter(md)
+    assert "egg" not in fm
+    assert fm["reference_materials"] == [{"value": "existing"}]
+
+
 def test_empty_hive_no_error(tmp_path):
     hive_dir = tmp_path / "h"
     hive_dir.mkdir()
@@ -340,3 +357,138 @@ def test_upgrade_idempotent(tmp_path):
     upgrade(config)
     assert config == config_snap
     assert md.read_text() == ticket_snap
+
+
+# ---------------------------------------------------------------------------
+# "default" → "file-path" resolver rename — registry
+# ---------------------------------------------------------------------------
+
+
+def test_default_resolver_registry_renamed_to_file_path():
+    """upgrade() renames 'default' → 'file-path' in the resolver registry."""
+    config = {"resolvers": {"default": {"path": "/bin/default", "timeout": 10}}}
+    upgrade(config)
+    assert "default" not in config["resolvers"]
+    assert config["resolvers"]["file-path"] == {"path": "/bin/default", "timeout": 10}
+
+
+def test_no_default_resolver_registry_is_noop():
+    config = {"resolvers": {"custom": {"path": "/bin/custom"}}}
+    upgrade(config)
+    assert config["resolvers"] == {"custom": {"path": "/bin/custom"}}
+
+
+def test_default_resolver_collision_file_path_wins():
+    """If both 'default' and 'file-path' exist, 'default' is removed; 'file-path' wins."""
+    config = {
+        "resolvers": {
+            "default": {"path": "/bin/old"},
+            "file-path": {"path": "/bin/new"},
+        }
+    }
+    upgrade(config)
+    assert "default" not in config["resolvers"]
+    assert config["resolvers"]["file-path"] == {"path": "/bin/new"}
+
+
+# ---------------------------------------------------------------------------
+# "default" → "file-path" resolver rename — allowed_resolvers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "initial,expected",
+    [
+        pytest.param(["default", "custom"], ["file-path", "custom"], id="default_renamed"),
+        pytest.param(["custom", "other"], ["custom", "other"], id="no_default_noop"),
+        pytest.param(["default", "file-path"], ["file-path"], id="collision_no_duplicate"),
+    ],
+)
+def test_allowed_resolvers_default_renamed(tmp_path, initial, expected):
+    hive_path = str(tmp_path / "myhive")
+    config = {
+        "scopes": {
+            str(tmp_path): {
+                "hives": {"myhive": {"path": hive_path, "allowed_resolvers": initial}}
+            }
+        }
+    }
+    upgrade(config)
+    allowed = config["scopes"][str(tmp_path)]["hives"]["myhive"]["allowed_resolvers"]
+    assert allowed == expected
+
+
+# ---------------------------------------------------------------------------
+# "default" → "file-path" resolver rename — ticket reference_materials
+# ---------------------------------------------------------------------------
+
+
+def _make_ticket_md(resolver_name: str) -> str:
+    """Return a .md ticket with a reference_materials entry using the given resolver."""
+    frontmatter = {
+        "id": "b.abc",
+        "type": "bee",
+        "title": "Test",
+        "reference_materials": [{"value": "/some/path.txt", "resolver": resolver_name}],
+    }
+    yaml_text = yaml.dump(
+        frontmatter, default_flow_style=False, allow_unicode=True, sort_keys=False
+    )
+    return f"---\n{yaml_text}---\nBody text.\n"
+
+
+def test_ticket_resolver_default_renamed_to_file_path(tmp_path):
+    """upgrade() renames resolver: default → resolver: file-path in ticket .md files."""
+    hive_dir = tmp_path / "myhive"
+    hive_dir.mkdir()
+    md_file = hive_dir / "b.abc.md"
+    md_file.write_text(_make_ticket_md("default"))
+
+    config = {"scopes": {str(tmp_path): {"hives": {"myhive": {"path": str(hive_dir)}}}}}
+    upgrade(config)
+
+    content = md_file.read_text()
+    assert "resolver: file-path" in content
+    assert "resolver: default" not in content
+
+
+def test_ticket_non_default_resolver_unchanged(tmp_path):
+    """upgrade() does not touch tickets whose resolver is already 'file-path' or another name."""
+    hive_dir = tmp_path / "myhive"
+    hive_dir.mkdir()
+
+    fp_file = hive_dir / "b.fp.md"
+    fp_file.write_text(_make_ticket_md("file-path"))
+    gh_file = hive_dir / "b.gh.md"
+    gh_file.write_text(_make_ticket_md("github"))
+
+    config = {"scopes": {str(tmp_path): {"hives": {"myhive": {"path": str(hive_dir)}}}}}
+    upgrade(config)
+
+    assert "resolver: file-path" in fp_file.read_text()
+    assert "resolver: github" in gh_file.read_text()
+
+
+def test_default_rename_idempotent(tmp_path):
+    """Running upgrade twice on a 'default' resolver config is idempotent."""
+    hive_dir = tmp_path / "myhive"
+    hive_dir.mkdir()
+    md_file = hive_dir / "b.abc.md"
+    md_file.write_text(_make_ticket_md("default"))
+
+    config = {
+        "resolvers": {"default": {"path": "/bin/d"}},
+        "scopes": {
+            str(tmp_path): {
+                "hives": {"myhive": {"path": str(hive_dir), "allowed_resolvers": ["default"]}}
+            }
+        },
+    }
+
+    upgrade(config)
+    config_snap = copy.deepcopy(config)
+    md_snap = md_file.read_text()
+
+    upgrade(config)
+    assert config == config_snap
+    assert md_file.read_text() == md_snap
