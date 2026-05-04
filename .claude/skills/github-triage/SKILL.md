@@ -41,7 +41,9 @@ Process each issue one at a time. First check if the issue is already locked
 (triaged) by running `gh api repos/{owner}/{repo}/issues/{number} --jq '.locked'`.
 If locked, skip it.
 
-If unlocked, read the full details — title, body, labels, and comments — then
+If unlocked, output: 🐞[incoming]: #<number> <title>
+
+Then read the full details — title, body, labels, and comments — and
 follow this decision tree:
 
 #### Step 1: Is this worth working on?
@@ -100,11 +102,11 @@ to focus on or ignore (e.g. if there's a long comment thread of argument, note t
 it can be disregarded). Set `reference_materials`
 to the GitHub issue URL using the built-in `github` resolver.
 
-### Summary
+### Output
 
-Only output a summary if any issues were accepted (locked). List each accepted
-issue with its classification and bee ID. Don't report on closed or needs-info
-issues — those don't require user action.
+When an issue is triaged (locked), output: 🐞[triaged]: #<number> <title>: <classification as BUG or FEATURE, bee ID, and one-line summary of action taken>
+
+Don't report on closed or needs-info issues — those don't require user action.
 
 ## Notes
 
