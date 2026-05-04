@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -145,9 +146,8 @@ async def _invoke_custom_resolver(
     """
     Invoke a custom resolver as a subprocess.
 
-    Command format: {command} --repo-root {shlex.quote(path)} --value {value}
-    where value is shlex.quote(value) for strings, shlex.quote(json.dumps(value))
-    for other types.
+    Command format: {interpreter_tokens} + [command, "--repo-root", repo_root, "--value", value]
+    where value is a raw string for str types, or json.dumps(value) for other types.
 
     String values are passed as raw strings. Non-string, non-None values (dict,
     list, int, etc.) are JSON-encoded before being passed to the resolver. None
@@ -170,20 +170,36 @@ async def _invoke_custom_resolver(
     if value is None:
         return None
 
-    # Build command with args
+    # Build args list — no shell quoting needed with create_subprocess_exec.
     # Pass strings raw; JSON-encode non-string types.
     if isinstance(value, str):
-        value_arg = shlex.quote(value)
+        raw_value = value
     else:
-        value_arg = shlex.quote(json.dumps(value))
-    full_command = f"{shlex.quote(command)} --repo-root {shlex.quote(str(repo_root))} --value {value_arg}"
+        raw_value = json.dumps(value)
+    # Detect interpreter so scripts don't need the executable bit set.
+    # 1. By file extension: .py → use the current Python interpreter.
+    # 2. Fallback: read shebang from first line of the script file.
+    # 3. No interpreter found: invoke directly (legacy behaviour).
+    interpreter_tokens: list[str] = []
+    if command.endswith(".py"):
+        interpreter_tokens = [sys.executable]
+    else:
+        try:
+            with open(command, encoding="utf-8", errors="replace") as _f:
+                first_line = _f.readline()
+            if first_line.startswith("#!"):
+                interpreter_tokens = shlex.split(first_line[2:].strip())
+        except OSError:
+            pass  # Can't read file — fall back to direct invocation
 
-    logger.info(f"Invoking custom resolver: {full_command}")
+    args = interpreter_tokens + [command, "--repo-root", str(repo_root), "--value", raw_value]
+
+    logger.info(f"Invoking custom resolver: {args}")
 
     try:
         # Invoke subprocess with timeout
-        proc = await asyncio.create_subprocess_shell(
-            full_command,
+        proc = await asyncio.create_subprocess_exec(
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -192,12 +208,9 @@ async def _invoke_custom_resolver(
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            # Kill process on timeout; close transport while loop is running to
-            # avoid "Event loop is closed" GC traceback on loop teardown.
+            # Kill process on timeout
             proc.kill()
             await proc.wait()
-            if hasattr(proc, "_transport") and proc._transport is not None:
-                proc._transport.close()
             timeout_msg = f"Resolver timed out after {timeout} seconds"
             logger.error(timeout_msg)
             raise RuntimeError(timeout_msg) from None

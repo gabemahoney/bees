@@ -44,7 +44,7 @@ An identity resolver for Bee ticket IDs. Returns the value as-is, confirming it 
 
 ## Resolver Contract
 
-A custom resolver is an executable that implements this interface:
+A custom resolver is a script that implements this interface:
 
 ### Input (CLI Arguments)
 
@@ -121,7 +121,12 @@ if __name__ == "__main__":
     main()
 ```
 
-Save this as `file_resolver.py`, make it executable (`chmod +x file_resolver.py`), and register it with `bees set-resolver`.
+Save this as `file_resolver.py` and register it with `bees set-resolver`.
+
+**No `chmod +x` needed.** Bees detects how to invoke the script automatically:
+- `.py` files are run via the current Python interpreter.
+- Scripts with a `#!/...` shebang line are run via that interpreter.
+- Scripts with neither must have the executable bit set (direct invocation).
 
 ## Real-World Example: GitHub Issues Resolver
 
