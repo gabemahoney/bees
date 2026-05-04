@@ -20,10 +20,12 @@ SCOPE - Tests that DON'T belong here:
 """
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 from src.config import load_global_config
+from src.mcp_hive_ops import read_identity
 from src.mcp_ticket_ops import _set_types, _show_ticket
 from tests.test_constants import (
     GLOBAL_TIER_DEFAULT,
@@ -140,6 +142,9 @@ class TestSetTypesSet:
         helper = isolated_bees_env
         helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT)
+        # Create .hive marker so write_identity can persist there
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
 
         result = asyncio.run(
             _set_types(
@@ -155,10 +160,65 @@ class TestSetTypesSet:
         assert result["hive_name"] == HIVE_FEATURES
         assert result["child_tiers"] == {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
 
-        # Verify persisted in the hive entry
+        # Verify persisted in identity.json
+        identity = read_identity(hive_marker_path)
+        assert identity["child_tiers"] == {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
+
+        # config.json hive entry should NOT have child_tiers
         config = load_global_config()
         hive_entry = config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]
-        assert hive_entry["child_tiers"] == {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
+        assert "child_tiers" not in hive_entry
+
+
+# ===========================================================================
+# Scope isolation: global/repo_scope writes go to config.json, not identity.json
+# ===========================================================================
+
+
+class TestSetTypesScopeIsolation:
+    def test_set_global_does_not_write_identity(self, isolated_bees_env):
+        helper = isolated_bees_env
+        helper.create_hive(HIVE_FEATURES)
+        helper.write_config(SCOPE_TIER_DEFAULT)
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
+
+        asyncio.run(
+            _set_types(scope="global", child_tiers=GLOBAL_TIER_DEFAULT)
+        )
+
+        # Global write should only touch config.json
+        config = load_global_config()
+        assert config["child_tiers"] == GLOBAL_TIER_DEFAULT
+
+        # identity.json should not exist (no hive-scope write occurred)
+        identity = read_identity(hive_marker_path)
+        assert identity is None
+
+    def test_set_repo_scope_does_not_write_identity(self, isolated_bees_env):
+        helper = isolated_bees_env
+        helper.create_hive(HIVE_FEATURES)
+        helper.write_config(SCOPE_TIER_DEFAULT)
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
+
+        new_tiers = {"t1": ["Story", "Stories"]}
+        asyncio.run(
+            _set_types(
+                scope="repo_scope",
+                child_tiers=new_tiers,
+                resolved_root=helper.base_path,
+            )
+        )
+
+        # repo_scope write should only touch config.json
+        config = load_global_config()
+        scope_block = config["scopes"][str(helper.base_path)]
+        assert scope_block["child_tiers"] == new_tiers
+
+        # identity.json should not exist (no hive-scope write occurred)
+        identity = read_identity(hive_marker_path)
+        assert identity is None
 
 
 # ===========================================================================
@@ -211,6 +271,9 @@ class TestSetTypesUnset:
         helper = isolated_bees_env
         helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT)
+        # Create .hive marker so write_identity can persist there
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
 
         # First set hive-level child_tiers
         asyncio.run(
@@ -236,10 +299,9 @@ class TestSetTypesUnset:
         assert result["scope"] == "hive"
         assert result["hive_name"] == HIVE_FEATURES
 
-        # Verify removed from hive entry
-        config = load_global_config()
-        hive_entry = config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]
-        assert "child_tiers" not in hive_entry
+        # Verify removed from identity.json
+        identity = read_identity(hive_marker_path)
+        assert "child_tiers" not in identity
 
 
 # ===========================================================================
@@ -272,6 +334,9 @@ class TestSetTypeBeesOnly:
         helper = isolated_bees_env
         helper.create_hive(HIVE_BUGS)
         helper.write_config(SCOPE_TIER_DEFAULT)
+        # Create .hive marker so write_identity can persist there
+        hive_marker_path = helper.base_path / HIVE_BUGS / ".hive"
+        hive_marker_path.mkdir()
 
         result = asyncio.run(
             _set_types(
@@ -285,10 +350,14 @@ class TestSetTypeBeesOnly:
         assert result["status"] == "success"
         assert result["child_tiers"] == {}
 
-        # Verify persisted
+        # Verify persisted in identity.json
+        identity = read_identity(hive_marker_path)
+        assert identity["child_tiers"] == {}
+
+        # config.json hive entry should NOT have child_tiers
         config = load_global_config()
         hive_entry = config["scopes"][str(helper.base_path)]["hives"][HIVE_BUGS]
-        assert hive_entry["child_tiers"] == {}
+        assert "child_tiers" not in hive_entry
 
 
 # ===========================================================================

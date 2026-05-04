@@ -44,6 +44,7 @@ from .id_utils import (
     resolve_tier_info,
     ticket_type_from_prefix,
 )
+from .mcp_hive_ops import read_identity, write_identity
 from .mcp_relationships import (
     _add_to_down_dependencies,
     _add_to_up_dependencies,
@@ -1817,11 +1818,14 @@ async def _set_types(
                 "message": f"Hive '{normalized}' not found in configuration",
             }
         hive_entry = hives[normalized]
+        hive_marker_path = Path(hive_entry["path"]) / ".hive"
+        hive_marker_path.mkdir(parents=True, exist_ok=True)
+        identity = read_identity(hive_marker_path) or {"normalized_name": normalized}
         if unset:
-            hive_entry.pop("child_tiers", None)
+            identity.pop("child_tiers", None)
         else:
-            hive_entry["child_tiers"] = _serialize_child_tiers(parsed)
-        save_global_config(global_config)
+            identity["child_tiers"] = _serialize_child_tiers(parsed)
+        write_identity(hive_marker_path, identity)
         if unset:
             return {"status": "success", "scope": "hive", "hive_name": normalized}
         else:
@@ -1829,7 +1833,7 @@ async def _set_types(
                 "status": "success",
                 "scope": "hive",
                 "hive_name": normalized,
-                "child_tiers": hive_entry["child_tiers"],
+                "child_tiers": identity["child_tiers"],
             }
 
 
@@ -2029,12 +2033,17 @@ async def _set_status_values(
                 "message": f"Hive '{normalized}' not found in configuration",
             }
         hive_entry = global_config["scopes"][owning_pattern]["hives"][normalized]
+        hive_marker_path = Path(hive_entry["path"]) / ".hive"
+        hive_marker_path.mkdir(parents=True, exist_ok=True)
+        identity = read_identity(hive_marker_path) or {"normalized_name": normalized}
         if unset:
             # Store null explicitly so hive overrides scope/global inheritance
-            hive_entry["status_values"] = None
+            identity.pop("status_values", None)
+            identity["status_values_explicitly_null"] = True
         else:
-            hive_entry["status_values"] = status_values
-        save_global_config(global_config)
+            identity.pop("status_values_explicitly_null", None)
+            identity["status_values"] = status_values
+        write_identity(hive_marker_path, identity)
         if unset:
             return {"status": "success", "scope": "hive", "hive_name": normalized}
         else:
