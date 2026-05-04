@@ -57,13 +57,17 @@ class TestGetTypesCore:
     async def test_hive_set_others_null(self, isolated_bees_env):
         """One hive's child_tiers set; global and scope null."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.write_config()
 
         config = load_global_config()
         config["scopes"][str(helper.base_path)].pop("child_tiers", None)
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["child_tiers"] = CHILD_TIERS_HIVE
         save_global_config(config)
+
+        # Write child_tiers to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "child_tiers": CHILD_TIERS_HIVE}))
 
         result = await _get_types(resolved_root=helper.base_path)
 
@@ -76,13 +80,17 @@ class TestGetTypesCore:
     async def test_all_three_levels_set(self, isolated_bees_env):
         """All three levels set; returned independently, no merging."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.write_config(CHILD_TIERS_SCOPE)
 
         config = load_global_config()
         config["child_tiers"] = CHILD_TIERS_GLOBAL
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["child_tiers"] = CHILD_TIERS_HIVE
         save_global_config(config)
+
+        # Write child_tiers to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "child_tiers": CHILD_TIERS_HIVE}))
 
         result = await _get_types(resolved_root=helper.base_path)
 
@@ -113,14 +121,18 @@ class TestGetTypesCore:
     async def test_hive_empty_dict_vs_null(self, isolated_bees_env):
         """One hive has {}, another has null; appear as {} and null."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.create_hive(HIVE_BUGS)
         helper.write_config()
 
         config = load_global_config()
         config["scopes"][str(helper.base_path)].pop("child_tiers", None)
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["child_tiers"] = {}
         save_global_config(config)
+
+        # Write empty child_tiers to identity.json for HIVE_FEATURES; HIVE_BUGS has none
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "child_tiers": {}}))
 
         result = await _get_types(resolved_root=helper.base_path)
 
@@ -132,15 +144,19 @@ class TestGetTypesCore:
     async def test_multiple_hives_mixed(self, isolated_bees_env):
         """Multiple hives with mixed configurations."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir_features = helper.create_hive(HIVE_FEATURES)
         helper.create_hive(HIVE_BUGS)
-        helper.create_hive(HIVE_BACKEND)
+        hive_dir_backend = helper.create_hive(HIVE_BACKEND)
         helper.write_config(CHILD_TIERS_SCOPE)
 
-        config = load_global_config()
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["child_tiers"] = CHILD_TIERS_HIVE
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_BACKEND]["child_tiers"] = CHILD_TIERS_SCOPE
-        save_global_config(config)
+        # Write child_tiers to identity.json for HIVE_FEATURES and HIVE_BACKEND; HIVE_BUGS has none
+        for hive_dir, hive_name, tiers in [
+            (hive_dir_features, HIVE_FEATURES, CHILD_TIERS_HIVE),
+            (hive_dir_backend, HIVE_BACKEND, CHILD_TIERS_SCOPE),
+        ]:
+            marker = hive_dir / ".hive" / "identity.json"
+            marker.parent.mkdir(exist_ok=True)
+            marker.write_text(json.dumps({"normalized_name": hive_name, "child_tiers": tiers}))
 
         result = await _get_types(resolved_root=helper.base_path)
 
@@ -191,13 +207,17 @@ class TestGetTypesMCPAdapter:
         from src.mcp_server import get_types
 
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.write_config(CHILD_TIERS_SCOPE)
 
         config = load_global_config()
         config["child_tiers"] = CHILD_TIERS_GLOBAL
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["child_tiers"] = CHILD_TIERS_HIVE
         save_global_config(config)
+
+        # Write child_tiers to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "child_tiers": CHILD_TIERS_HIVE}))
 
         result = await get_types(ctx=None, repo_root=str(helper.base_path))
 

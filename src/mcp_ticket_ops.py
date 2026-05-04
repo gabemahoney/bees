@@ -1692,12 +1692,21 @@ async def _get_types(
     # Read scope-level child_tiers (raw)
     scope_child_tiers = scope_block.get("child_tiers", None)
 
-    # Read hive-level child_tiers for every hive (raw)
+    # Read hive-level child_tiers for every hive from identity.json (raw)
     hives_child_tiers: dict[str, dict | None] = {}
     hives_data = scope_block.get("hives", {})
     for hive_key in hives_data:
         normalized = normalize_hive_name(hive_key)
-        hives_child_tiers[normalized] = hives_data[hive_key].get("child_tiers", None)
+        hive_path = hives_data[hive_key].get("path")
+        if hive_path:
+            marker_path = Path(hive_path) / ".hive"
+            try:
+                identity = read_identity(marker_path)
+            except ValueError:
+                identity = None
+            hives_child_tiers[normalized] = identity.get("child_tiers") if identity else None
+        else:
+            hives_child_tiers[normalized] = None
 
     return {
         "status": "success",
@@ -1891,7 +1900,7 @@ async def _get_status_values(
     scope_block = global_config["scopes"][most_specific_pattern]
     scope_status_values = scope_block.get("status_values", None)
 
-    # Aggregate hive-level status_values across all matching scopes.
+    # Aggregate hive-level status_values across all matching scopes from identity.json.
     # Ascending specificity order means last-write-wins for duplicate hives
     # (same merge strategy as _list_hives).
     hives_status: dict[str, list[str] | None] = {}
@@ -1899,7 +1908,16 @@ async def _get_status_values(
         hives_data = global_config["scopes"][pattern_key].get("hives", {})
         for hive_key in hives_data:
             normalized = normalize_hive_name(hive_key)
-            hives_status[normalized] = hives_data[hive_key].get("status_values", None)
+            hive_path = hives_data[hive_key].get("path")
+            if hive_path:
+                marker_path = Path(hive_path) / ".hive"
+                try:
+                    identity = read_identity(marker_path)
+                except ValueError:
+                    identity = None
+                hives_status[normalized] = identity.get("status_values") if identity else None
+            else:
+                hives_status[normalized] = None
 
     return {
         "status": "success",
