@@ -104,9 +104,7 @@ to the GitHub issue URL using the built-in `github` resolver.
 
 ### Output
 
-When an issue is triaged (locked), tell the user: 🐞[triaged]: #<number> <title>: <classification as BUG or FEATURE, bee ID, and one-line summary of action taken>
-
-Don't report on closed or needs-info issues — those don't require user action.
+After processing each issue, tell the user exactly this and nothing else: 🐞[triaged]: #<number> <title>: <one-line summary of action taken — classification, bee ID if filed, closed reason, or what info was requested>
 
 ## Notes
 
