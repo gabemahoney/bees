@@ -14,7 +14,9 @@ from the main MCP server infrastructure.
 
 import json
 import logging
+import os
 import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -61,6 +63,91 @@ def _find_exact_scope(repo_root: Path, global_config: dict) -> str | None:
             if wildcard_tier == 0:
                 return pattern
     return None
+
+
+def _build_identity_dict(data: dict) -> dict:
+    out: dict = {}
+    for field in ("normalized_name", "display_name", "created_at", "version"):
+        if field in data:
+            out[field] = data[field]
+    for field in ("child_tiers", "schema_version", "description", "allowed_resolvers"):
+        if data.get(field) is not None:
+            out[field] = data[field]
+    if data.get("status_values_explicitly_null"):
+        out["status_values"] = None
+    elif data.get("status_values") is not None:
+        out["status_values"] = data["status_values"]
+    return out
+
+
+def write_identity(hive_marker_path: Path, data: dict) -> None:
+    identity_file = hive_marker_path / "identity.json"
+    filtered = _build_identity_dict(data)
+    temp_fd = None
+    temp_path = None
+
+    try:
+        temp_fd, temp_path = tempfile.mkstemp(
+            dir=str(hive_marker_path), prefix=".identity.json.", text=True
+        )
+        with os.fdopen(temp_fd, "w") as f:
+            temp_fd = None
+            json.dump(filtered, f, indent=2)
+            f.write("\n")
+        os.replace(temp_path, identity_file)
+        temp_path = None
+    except Exception as e:
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except Exception:
+                pass
+        if temp_path is not None and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+        raise OSError(f"Failed to write identity to {identity_file}: {e}") from e
+
+
+def read_identity(hive_marker_path: Path) -> dict | None:
+    identity_file = hive_marker_path / "identity.json"
+    if not identity_file.exists():
+        return None
+    try:
+        with open(identity_file, encoding="utf-8") as f:
+            raw = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Corrupt identity file {identity_file}: {e}") from e
+    except OSError as e:
+        raise ValueError(f"Cannot read identity file {identity_file}: {e}") from e
+
+    if not isinstance(raw, dict):
+        raise ValueError(f"Identity file {identity_file}: expected object, got {type(raw).__name__}")
+
+    if "normalized_name" not in raw:
+        raise ValueError(f"Identity file {identity_file}: missing required field 'normalized_name'")
+    if not isinstance(raw["normalized_name"], str):
+        raise ValueError(
+            f"Identity file {identity_file}: 'normalized_name' must be a string, "
+            f"got {type(raw['normalized_name']).__name__}"
+        )
+
+    if "child_tiers" in raw and raw["child_tiers"] is not None:
+        ct = raw["child_tiers"]
+        if not isinstance(ct, dict) or not all(isinstance(k, str) for k in ct):
+            raise ValueError(
+                f"Identity file {identity_file}: 'child_tiers' must be a dict with string keys"
+            )
+
+    if "status_values" in raw and raw["status_values"] is not None:
+        sv = raw["status_values"]
+        if not isinstance(sv, list) or not all(isinstance(v, str) for v in sv):
+            raise ValueError(
+                f"Identity file {identity_file}: 'status_values' must be a list of strings or null"
+            )
+
+    return raw
 
 
 async def colonize_hive_core(
