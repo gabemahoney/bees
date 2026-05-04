@@ -11,13 +11,55 @@ user-invocable: true
 Automatically triage new GitHub issues for the current repository. Installed per-repo
 and triggered on a recurring cron schedule.
 
+## One-Time Setup
+
+1. **Create a GitHub App** at https://github.com/settings/apps/new:
+   - Permissions: Issues (Read & Write), Contents (Read-only)
+   - Uncheck Webhook > Active
+   - Install on target repos
+
+2. **Store credentials** in `~/.secrets/`:
+   ```bash
+   echo -n '<app-id>' > ~/.secrets/github_app_id
+   echo -n '<installation-id>' > ~/.secrets/github_app_installation_id
+   mv ~/Downloads/<app-name>.private-key.pem ~/.secrets/queen-bee.pem
+   chmod 600 ~/.secrets/github_app_id ~/.secrets/github_app_installation_id ~/.secrets/queen-bee.pem
+   ```
+
+3. **Install Python deps**: `pip install PyJWT cryptography requests`
+
 ## Prerequisites
 
 If any of these are missing, output a clear error and exit.
 
-- The `gh` CLI is installed, authenticated, and the current directory is a GitHub-backed repo.
+- The `gh` CLI is installed and the current directory is a GitHub-backed repo.
 - A bees hive for bugs exists for the current scope.
 - A bees hive for ideas/features exists for the current scope.
+
+## Authentication
+
+All `gh` commands must run with a GitHub App token, not the user's personal auth.
+Before issuing any `gh` command, generate a short-lived token:
+
+```bash
+GH_TOKEN=$(python3 -c "
+import jwt, time, requests, pathlib
+pk = pathlib.Path.home() / '.secrets' / 'queen-bee.pem'
+app_id = (pathlib.Path.home() / '.secrets' / 'github_app_id').read_text().strip()
+install_id = (pathlib.Path.home() / '.secrets' / 'github_app_installation_id').read_text().strip()
+now = int(time.time())
+token = jwt.encode({'iat': now-60, 'exp': now+600, 'iss': app_id}, pk.read_text(), algorithm='RS256')
+r = requests.post(f'https://api.github.com/app/installations/{install_id}/access_tokens',
+    headers={'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json'})
+print(r.json()['token'])
+")
+```
+
+Then prefix every `gh` call with `GH_TOKEN=$GH_TOKEN`. Generate the token once at
+the start of the skill run — it's valid for 1 hour.
+
+If the token generation fails (missing `.pem`, missing IDs, expired key), report
+the error and exit. Do not fall back to the user's personal `gh` auth.
 
 ## Security
 

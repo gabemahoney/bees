@@ -111,6 +111,29 @@ Compute the new version by splitting `MAJOR.MINOR.PATCH` and incrementing the ap
    ```
    If it returns 200, stop: "Version <new-version> is already published on PyPI."
 
+7. **Stale bee check — resolved but not marked done?**
+
+   Query the Bugs and Ideas hives for bees that are NOT in a "done" state but have a
+   `github` resolver in their `reference_materials`. For each, call `show_ticket` to
+   get the GitHub URL, then check if the GitHub issue is closed:
+
+   ```bash
+   gh issue view <number> --repo gabemahoney/bees --json state --jq '.state'
+   ```
+
+   If any GitHub issues are closed but their corresponding bees are still open, warn:
+
+   ```
+   Warning: These bees have closed GitHub issues but are not marked done:
+     b.xxx — GH#12: <title> (bee status: <status>, GitHub: closed)
+     b.yyy — GH#34: <title> (bee status: <status>, GitHub: closed)
+   
+   Continue anyway? (yes to proceed)
+   ```
+
+   Wait for the user to confirm. This catches bugs that were fixed in the code but
+   the bee status was never updated.
+
 Report: "Preflight passed. Bumping <current> → <new-version>."
 
 ## Step 2 — Bump version in pyproject.toml
@@ -227,7 +250,44 @@ gh release create "v<version>" --title "v<version>" --generate-notes
 
 On failure, warn but do not stop — the package is already published. Report: "Warning: GitHub release creation failed. Create manually at https://github.com/gabemahoney/bees/releases"
 
-## Step 10 — Install locally
+## Step 10 — Close resolved GitHub issues
+
+Query the Bugs and Ideas hives for tickets that are in a "done" state (e.g. `fixed`)
+and have a `github` resolver in their `reference_materials`. For each one, extract the
+GitHub issue URL and check whether the issue is still open. If it is, close it with a
+comment referencing the release:
+
+```
+Resolved in v<version>: https://github.com/gabemahoney/bees/releases/tag/v<version>
+```
+
+```bash
+gh issue close <number> --repo gabemahoney/bees --comment "Resolved in v<version>: https://github.com/gabemahoney/bees/releases/tag/v<version>"
+```
+
+Use the bees MCP tools to query — something like:
+
+```yaml
+stages:
+  - [hive=bees_bugs, status=fixed]
+report: [title, ticket_status]
+```
+
+Then call `show_ticket` on each to inspect `reference_materials` for `resolver: "github"`.
+Repeat for the Ideas hive with whatever "done" status it uses.
+
+Report each issue closed:
+```
+Closed GitHub issues:
+  #3  — colonize-hive overwrites created_at on re-registration
+  #8  — test_conftest assertion path mismatch
+```
+
+If no resolved GitHub issues are found, report: "No GitHub issues to close."
+
+On failure to close an individual issue, warn but continue with the rest.
+
+## Step 11 — Install locally
 
 Reinstall the newly published version via pipx:
 
@@ -243,4 +303,5 @@ Published bees-md <version> to PyPI.
   PyPI    : https://pypi.org/project/bees-md/<version>/
   Release : https://github.com/gabemahoney/bees/releases/tag/v<version>
   Installed locally via pipx.
+  GitHub issues closed: <count> (or "none")
 ```
