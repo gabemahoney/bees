@@ -4002,6 +4002,137 @@ run_test test_p6_colonize_allowed_resolvers
 run_test test_p6_reject_unregistered_resolver
 run_test test_p6_reject_unset_referenced_resolver
 
+# === HIVE PORTABILITY: IDENTITY.JSON (b.f6y) ===
+
+HP_HIVE_PATH="$REPO/tickets/hp_hive"
+
+test_hp_identity_written() {
+    # colonize-hive must write identity.json with normalized_name and child_tiers
+    capture_cmd bees colonize-hive \
+        --name "HP Hive" \
+        --path "$HP_HIVE_PATH" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Identity.json written on colonize" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    if [ ! -f "$identity_file" ]; then
+        fail_test "Identity.json written on colonize" "identity.json not found at $identity_file"
+    fi
+    local norm_name has_tiers
+    norm_name=$(python3 -c "import json; d=json.load(open('$identity_file')); print(d.get('normalized_name',''))")
+    if [ "$norm_name" != "hp_hive" ]; then
+        fail_test "Identity.json written on colonize" "Expected normalized_name=hp_hive, got $norm_name"
+    fi
+    has_tiers=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
+    if [ "$has_tiers" != "True" ]; then
+        fail_test "Identity.json written on colonize" "child_tiers.t1 missing from identity.json"
+    fi
+    pass_test "Identity.json written on colonize"
+}
+
+test_hp_colonize_no_name_uses_marker() {
+    # Re-colonizing without --name must use normalized_name from existing identity.json
+    capture_cmd bees colonize-hive --path "$HP_HIVE_PATH"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Colonize no --name uses marker" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local norm_name
+    norm_name=$(check_json "$CMD_OUT" "d.get('normalized_name','')")
+    assert_eq "$norm_name" "hp_hive" "Colonize no --name uses marker"
+}
+
+test_hp_colonize_no_name_no_marker_fails() {
+    # --name is required when no identity.json marker exists
+    local hive_path="$REPO/tickets/hp_new_hive_no_name"
+    mkdir -p "$hive_path"
+    capture_cmd bees colonize-hive --path "$hive_path"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Colonize no --name no marker" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Colonize no --name no marker"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "validation_error" "Colonize no --name no marker"
+}
+
+test_hp_colonize_corrupt_marker() {
+    # Corrupt identity.json must return error; file must not be modified
+    local hive_path="$REPO/tickets/hp_corrupt_hive"
+    mkdir -p "$hive_path/.hive"
+    printf '{{not valid json' > "$hive_path/.hive/identity.json"
+    capture_cmd bees colonize-hive --name "Corrupt Hive" --path "$hive_path"
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "Colonize corrupt marker" "Expected failure but got success"
+    fi
+    assert_no_traceback "$CMD_OUT" "Colonize corrupt marker"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "corrupt_marker" ]; then
+        fail_test "Colonize corrupt marker" "Expected error_type=corrupt_marker, got $error_type"
+    fi
+    local content
+    content=$(cat "$hive_path/.hive/identity.json")
+    if [ "$content" != "{{not valid json" ]; then
+        fail_test "Colonize corrupt marker" "Corrupt file was modified: $content"
+    fi
+    pass_test "Colonize corrupt marker"
+}
+
+test_hp_set_status_values_writes_identity() {
+    # hive-scope set-status-values must write to identity.json
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    capture_cmd bees set-status-values --scope hive --hive "HP Hive" \
+        --status-values '["open","done"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "set-status-values writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local sv_in_identity
+    sv_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('done' in (d.get('status_values') or []))")
+    if [ "$sv_in_identity" != "True" ]; then
+        fail_test "set-status-values writes identity.json" "status_values not found in identity.json"
+    fi
+    pass_test "set-status-values writes identity.json"
+}
+
+test_hp_set_types_writes_identity() {
+    # hive-scope set-types must write to identity.json
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    capture_cmd bees set-types --scope hive --hive "HP Hive" \
+        --child-tiers '{"t1":["Epic","Epics"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "set-types writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local ct_in_identity
+    ct_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
+    if [ "$ct_in_identity" != "True" ]; then
+        fail_test "set-types writes identity.json" "child_tiers.t1 not found in identity.json"
+    fi
+    pass_test "set-types writes identity.json"
+}
+
+test_hp_update_config_no_pending_migrations() {
+    # Fresh v4 install should have no pending migration hops
+    capture_cmd bees update-config --details
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config no pending migrations" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local pending_count
+    pending_count=$(check_json "$CMD_OUT" "len(d.get('pending_hops',[]))")
+    if [ "$pending_count" != "0" ]; then
+        fail_test "update-config no pending migrations" "Expected 0 pending hops, got $pending_count"
+    fi
+    pass_test "update-config no pending migrations"
+}
+
+run_test test_hp_identity_written
+run_test test_hp_colonize_no_name_uses_marker
+run_test test_hp_colonize_no_name_no_marker_fails
+run_test test_hp_colonize_corrupt_marker
+run_test test_hp_set_status_values_writes_identity
+run_test test_hp_set_types_writes_identity
+run_test test_hp_update_config_no_pending_migrations
+
 # === SUCCESS SIGNAL ===
 echo ""
 echo "=========================================="
