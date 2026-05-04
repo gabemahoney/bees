@@ -41,7 +41,7 @@ Process each issue one at a time. First check if the issue is already locked
 (triaged) by running `gh api repos/{owner}/{repo}/issues/{number} --jq '.locked'`.
 If locked, skip it.
 
-If unlocked, output: 🐞[incoming]: #<number> <title>
+If unlocked, tell the user: 🐞[incoming]: #<number> <title>
 
 Then read the full details — title, body, labels, and comments — and
 follow this decision tree:
@@ -104,7 +104,7 @@ to the GitHub issue URL using the built-in `github` resolver.
 
 ### Output
 
-When an issue is triaged (locked), output: 🐞[triaged]: #<number> <title>: <classification as BUG or FEATURE, bee ID, and one-line summary of action taken>
+When an issue is triaged (locked), tell the user: 🐞[triaged]: #<number> <title>: <classification as BUG or FEATURE, bee ID, and one-line summary of action taken>
 
 Don't report on closed or needs-info issues — those don't require user action.
 
