@@ -478,7 +478,7 @@ class TestTestConfigFlag:
             args = _make_serve_args(http=True, test_config="")
             handle_serve(args)
 
-        mock_override.assert_called_once_with({"schema_version": "3.0", "scopes": {}})
+        mock_override.assert_called_once_with({"schema_version": "4.0", "scopes": {}})
 
     def test_info_log_emitted(self, caplog):
         """An INFO log mentioning test mode is emitted when --test-config is active."""

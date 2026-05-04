@@ -2237,9 +2237,10 @@ class TestSetStatusValuesGlobScope:
 
     @pytest.mark.asyncio
     async def test_set_on_glob_scope_hive_writes_to_correct_scope(self, mock_global_bees_dir):
-        """Status values should be written to the glob scope entry, not the exact scope."""
+        """Status values should be written to the hive's identity.json, not config.json."""
         from pathlib import Path
         from src.config import load_global_config
+        from src.mcp_hive_ops import read_identity
 
         write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
 
@@ -2250,12 +2251,14 @@ class TestSetStatusValuesGlobScope:
             resolved_root=Path("/test/project/main"),
         )
 
-        # Reload config and verify the write landed in the glob scope
-        config = load_global_config()
-        glob_hive = config["scopes"]["/test/project/**"]["hives"]["shared_hive"]
-        assert glob_hive["status_values"] == ["open", "closed"]
+        # Verify status_values written to identity.json at the hive's .hive dir
+        hive_marker = Path("tickets/shared/.hive")
+        identity = read_identity(hive_marker)
+        assert identity is not None
+        assert identity["status_values"] == ["open", "closed"]
 
         # The exact scope should NOT have gained the hive
+        config = load_global_config()
         exact_hives = config["scopes"]["/test/project/main"].get("hives", {})
         assert "shared_hive" not in exact_hives
 
@@ -2300,9 +2303,9 @@ class TestSetStatusValuesGlobScope:
 
     @pytest.mark.asyncio
     async def test_unset_on_glob_scope_hive_succeeds(self, mock_global_bees_dir):
-        """Unsetting status_values on a glob-scope hive should succeed and write null."""
+        """Unsetting status_values on a glob-scope hive should succeed and write null to identity."""
         from pathlib import Path
-        from src.config import load_global_config
+        from src.mcp_hive_ops import read_identity
 
         write_multi_scope_config(mock_global_bees_dir, _make_glob_and_exact_scopes())
 
@@ -2316,7 +2319,8 @@ class TestSetStatusValuesGlobScope:
         assert result["status"] == "success"
         assert result["hive_name"] == "shared_hive"
 
-        # Verify null was written to the glob scope
-        config = load_global_config()
-        glob_hive = config["scopes"]["/test/project/**"]["hives"]["shared_hive"]
-        assert glob_hive["status_values"] is None
+        # Verify null was written to identity.json (explicit override)
+        hive_marker = Path("tickets/shared/.hive")
+        identity = read_identity(hive_marker)
+        assert identity is not None
+        assert identity.get("status_values") is None

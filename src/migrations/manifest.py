@@ -29,6 +29,7 @@ class ManifestEntry:
 
 
 from src.migrations.upgrade_v2_to_v3 import upgrade as _upgrade_v2_to_v3
+from src.migrations.upgrade_v3_to_v4 import upgrade as _upgrade_v3_to_v4
 
 # Ordered list of migration hops.
 MANIFEST: list[ManifestEntry] = [
@@ -37,6 +38,12 @@ MANIFEST: list[ManifestEntry] = [
         to_version="3.0",
         upgrade_script=_upgrade_v2_to_v3,
         description="Egg to Reference Materials: converts egg_resolver config keys to named resolver registry, renames 'egg' ticket field to 'reference_materials', and renames built-in resolver 'default' to 'file-path'",
+    ),
+    ManifestEntry(
+        from_version="3.0",
+        to_version="4.0",
+        upgrade_script=_upgrade_v3_to_v4,
+        description="Hive Portability: moves hive-level child_tiers and status_values from config.json to each hive's identity.json, deregisters inaccessible hives",
     ),
 ]
 
