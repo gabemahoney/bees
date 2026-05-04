@@ -445,7 +445,9 @@ For complete details on child_tiers resolution and fallback behavior, see `docs/
 
 ### Creation is Idempotent
 
-Uses `Path.mkdir(parents=True, exist_ok=True)` for safe directory creation without errors if directories already exist.
+Directory creation is safe to repeat — existing directories are not modified.
+
+If `.hive/identity.json` already exists when `colonize_hive` runs, the existing `created_at` value is preserved. Only `normalized_name`, `display_name`, and `version` are updated. This ensures `created_at` always reflects the original hive creation time, even if the hive is re-registered (e.g., after `abandon_hive` and `colonize_hive` on the same directory).
 
 ## Storage Best Practices
 

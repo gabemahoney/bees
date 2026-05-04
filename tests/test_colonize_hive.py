@@ -280,6 +280,54 @@ class TestColonizeHive:
 
         assert result["status"] == "success"
 
+    async def test_created_at_preserved_on_recolonize(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Re-colonizing an existing hive (e.g. on a new machine) must not overwrite created_at.
+
+        This is a regression test for b.nbt: colonize_hive_core was generating a fresh
+        created_at on every call, even when identity.json already existed on disk.
+
+        Scenario: hive is colonized, then the global config is wiped (simulating a fresh
+        machine where the hive path exists on disk but is unregistered). A second
+        colonize call re-registers the hive. The created_at in identity.json must be
+        unchanged.
+
+        FAILS without the fix (created_at is overwritten) and PASSES with it.
+        """
+        import src.config
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # First colonization — establishes identity.json with an original created_at
+        result1 = await colonize_hive("Test Hive", str(hive_path))
+        assert result1["status"] == RESULT_STATUS_SUCCESS
+
+        identity_file = hive_path / ".hive" / "identity.json"
+        with open(identity_file) as f:
+            original_identity = json.load(f)
+        original_created_at = original_identity["created_at"]
+
+        # Simulate a new machine: wipe the global config so the hive is unregistered.
+        # The .hive/identity.json on disk remains intact (it's part of the repo).
+        empty_config = {"scopes": {}, "schema_version": src.config.GLOBAL_SCHEMA_VERSION}
+        (mock_global_bees_dir / "config.json").write_text(json.dumps(empty_config))
+        src.config._GLOBAL_CONFIG_CACHE = None
+        src.config._GLOBAL_CONFIG_CACHE_MTIME = None
+
+        # Second colonization on the same path — re-registers the hive from scratch
+        result2 = await colonize_hive("Test Hive", str(hive_path))
+        assert result2["status"] == RESULT_STATUS_SUCCESS, (
+            f"Second colonize failed: {result2.get('message')}"
+        )
+
+        with open(identity_file) as f:
+            new_identity = json.load(f)
+
+        assert new_identity["created_at"] == original_created_at, (
+            f"created_at was overwritten on re-colonization. "
+            f"Original: {original_created_at!r}, new: {new_identity['created_at']!r}"
+        )
+
 
 class TestScanForHive:
     """Tests for scan_for_hive() function."""

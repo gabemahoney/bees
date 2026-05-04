@@ -288,15 +288,27 @@ async def colonize_hive_core(
                 }
 
             # Store hive identity in marker file
+            # Preserve existing created_at if the marker already exists on disk,
+            # so re-registration on a new machine doesn't churn committed files.
+            identity_file = hive_marker_path / "identity.json"
+            created_at = datetime.now().isoformat()
+            if identity_file.exists():
+                try:
+                    with open(identity_file, encoding="utf-8") as _f:
+                        existing_identity = json.load(_f)
+                    if "created_at" in existing_identity:
+                        created_at = existing_identity["created_at"]
+                except (OSError, json.JSONDecodeError):
+                    pass  # corrupted or unreadable — fall back to current time
+
             identity_data = {
                 "normalized_name": normalized_name,
                 "display_name": name,
-                "created_at": datetime.now().isoformat(),
+                "created_at": created_at,
                 "version": SCHEMA_VERSION,
             }
-            identity_file = hive_marker_path / "identity.json"
             try:
-                with open(identity_file, "w") as f:
+                with open(identity_file, "w", encoding="utf-8") as f:
                     json.dump(identity_data, f, indent=2)
                 logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
             except (PermissionError, OSError) as e:
@@ -313,11 +325,10 @@ async def colonize_hive_core(
 
             # Step 6: Register hive in global scoped config
             try:
-                creation_timestamp = datetime.now()
                 new_hive = HiveConfig(
                     path=str(validated_path),
                     display_name=name,
-                    created_at=creation_timestamp.isoformat(),
+                    created_at=created_at,
                     description=description,
                     child_tiers=parsed_child_tiers,
                     allowed_resolvers=allowed_resolvers,
