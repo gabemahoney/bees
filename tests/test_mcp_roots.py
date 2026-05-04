@@ -3,7 +3,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock
 from src.mcp_repo_utils import get_client_repo_root, get_repo_root
-from src.config import get_config_path, load_bees_config
+from src.config import load_bees_config
 from src.repo_context import repo_root_context
 
 
@@ -74,16 +74,6 @@ async def test_get_repo_root_with_context():
     assert result is not None
 
 
-@pytest.mark.asyncio
-async def test_get_config_path_with_repo_root():
-    """Test get_config_path uses explicit repo_root."""
-    test_repo = Path(__file__).parent.parent
-    with repo_root_context(test_repo):
-        config_path = get_config_path()
-
-    assert config_path == test_repo / ".bees" / "config.json"
-    assert "test_mcp_roots.py" not in str(config_path)
-
 
 @pytest.mark.asyncio
 async def test_load_bees_config_with_repo_root():
@@ -98,25 +88,6 @@ async def test_load_bees_config_with_repo_root():
     # The important thing is it doesn't raise an error about wrong directory
     assert config is None or hasattr(config, 'hives')
 
-
-@pytest.mark.needs_real_git_check
-@pytest.mark.no_repo_context
-def test_get_config_path_raises_without_git_repo():
-    """Test get_config_path raises RuntimeError when no repo_root set in context."""
-    import tempfile
-    import os
-
-    # Create a temporary directory that's not in a git repo
-    with tempfile.TemporaryDirectory() as tmpdir:
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(tmpdir)
-
-            # Should raise RuntimeError since no context was set
-            with pytest.raises(RuntimeError, match="repo_root not set in context"):
-                get_config_path()
-        finally:
-            os.chdir(old_cwd)
 
 
 # Phase 2 Tests - Critical MCP Tools
@@ -207,14 +178,6 @@ async def test_colonize_hive_uses_context():
         import shutil
         if hive_path.exists():
             shutil.rmtree(hive_path)
-
-        # Remove from config
-        from src.config import load_bees_config, save_bees_config
-        with repo_root_context(test_repo):
-            config = load_bees_config()
-            if config and "test_context_hive" in config.hives:
-                del config.hives["test_context_hive"]
-                save_bees_config(config)
     finally:
         # Cleanup
         import shutil
