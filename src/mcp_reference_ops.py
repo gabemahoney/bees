@@ -208,9 +208,24 @@ async def _invoke_custom_resolver(
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            # Kill process on timeout
+            # Kill process on timeout, then drain stdout/stderr to EOF so
+            # the pipe transports close cleanly.  Without this, asyncio logs
+            # "Future exception was never retrieved" tracebacks to stderr when
+            # the event loop cleans up the still-active pipe transports.
             proc.kill()
-            await proc.wait()
+
+            async def _drain(stream: asyncio.StreamReader | None) -> None:
+                if stream:
+                    try:
+                        await stream.read()
+                    except Exception:
+                        pass
+
+            await asyncio.gather(
+                _drain(proc.stdout),
+                _drain(proc.stderr),
+                proc.wait(),
+            )
             timeout_msg = f"Resolver timed out after {timeout} seconds"
             logger.error(timeout_msg)
             raise RuntimeError(timeout_msg) from None
