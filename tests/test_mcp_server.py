@@ -626,14 +626,11 @@ class TestColonizeHiveMCPErrorCases:
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
-        original_open = open
 
-        def mock_open_func(file, *args, **kwargs):
-            if "identity.json" in str(file):
-                raise PermissionError("Permission denied")
-            return original_open(file, *args, **kwargs)
+        def mock_write_identity(marker_path, data):
+            raise OSError("Failed to write identity to identity.json: Permission denied")
 
-        with patch("builtins.open", mock_open_func):
+        with patch("src.mcp_hive_ops.write_identity", mock_write_identity):
             result = await _colonize_hive("Test Hive", str(hive_path))
             assert result["status"] == "error"
             assert result["error_type"] == "filesystem_error"

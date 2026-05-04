@@ -151,13 +151,15 @@ def read_identity(hive_marker_path: Path) -> dict | None:
 
 
 async def colonize_hive_core(
-    name: str,
+    name: str | None,
     path: str,
     child_tiers: dict[str, list] | None = None,
     repo_root: Path | None = None,
     scope: str | None = None,
     description: str | None = None,
     allowed_resolvers: list[str] | None = None,
+    status_values: list[str] | None = None,
+    status_values_explicitly_null: bool = False,
 ) -> dict[str, Any]:
     """
     Create a new hive directory structure at the specified path.
@@ -199,7 +201,46 @@ async def colonize_hive_core(
         {'status': 'success', 'normalized_name': 'back_end', 'display_name': 'Back End', ...}
     """
     try:
-        # Step 1: Normalize hive name using config system
+        # Step 0: Detect existing .hive marker and apply defaults
+        hive_marker_path = Path(path) / ".hive"
+        existing_marker: dict | None = None
+        try:
+            existing_marker = read_identity(hive_marker_path)
+        except ValueError as e:
+            return {
+                "status": "error",
+                "message": f"Corrupt .hive marker: {e}",
+                "error_type": "corrupt_marker",
+                "validation_details": {"path": str(hive_marker_path)},
+            }
+
+        # Apply marker defaults: caller-provided values take precedence
+        if existing_marker is not None:
+            if name is None:
+                name = existing_marker.get("display_name")
+            if child_tiers is None:
+                marker_ct = existing_marker.get("child_tiers")
+                if marker_ct is not None:
+                    child_tiers = marker_ct
+            if status_values is None and not status_values_explicitly_null:
+                marker_sv = existing_marker.get("status_values")
+                if marker_sv is not None:
+                    status_values = marker_sv
+                elif "status_values" in existing_marker and existing_marker["status_values"] is None:
+                    status_values_explicitly_null = True
+
+        # Step 1: Validate and normalize hive name
+        if name is None:
+            return {
+                "status": "error",
+                "message": "--name is required when no .hive/identity.json marker exists",
+                "error_type": "validation_error",
+                "validation_details": {
+                    "field": "name",
+                    "reason": "No name provided and no existing marker to derive it from",
+                },
+            }
+
         normalized_name = normalize_hive_name(name)
         logger.info(f"Normalized hive name '{name}' to '{normalized_name}'")
 
@@ -377,35 +418,32 @@ async def colonize_hive_core(
             # Store hive identity in marker file
             # Preserve existing created_at if the marker already exists on disk,
             # so re-registration on a new machine doesn't churn committed files.
-            identity_file = hive_marker_path / "identity.json"
             created_at = datetime.now().isoformat()
-            if identity_file.exists():
-                try:
-                    with open(identity_file, encoding="utf-8") as _f:
-                        existing_identity = json.load(_f)
-                    if "created_at" in existing_identity:
-                        created_at = existing_identity["created_at"]
-                except (OSError, json.JSONDecodeError):
-                    pass  # corrupted or unreadable — fall back to current time
+            if existing_marker is not None and "created_at" in existing_marker:
+                created_at = existing_marker["created_at"]
 
             identity_data = {
                 "normalized_name": normalized_name,
                 "display_name": name,
                 "created_at": created_at,
                 "version": SCHEMA_VERSION,
+                "child_tiers": child_tiers,
+                "status_values": status_values,
+                "status_values_explicitly_null": status_values_explicitly_null,
+                "description": description,
+                "allowed_resolvers": allowed_resolvers,
             }
             try:
-                with open(identity_file, "w", encoding="utf-8") as f:
-                    json.dump(identity_data, f, indent=2)
+                write_identity(hive_marker_path, identity_data)
                 logger.info(f"Created .hive marker at {hive_marker_path} with identity: {identity_data}")
-            except (PermissionError, OSError) as e:
+            except OSError as e:
                 return {
                     "status": "error",
                     "message": f"Failed to write .hive identity file: {e}",
                     "error_type": "filesystem_error",
                     "validation_details": {
                         "operation": "write_identity_file",
-                        "path": str(identity_file),
+                        "path": str(hive_marker_path),
                         "reason": str(e),
                     },
                 }
@@ -419,6 +457,8 @@ async def colonize_hive_core(
                     description=description,
                     child_tiers=parsed_child_tiers,
                     allowed_resolvers=allowed_resolvers,
+                    status_values=status_values,
+                    status_values_explicitly_null=status_values_explicitly_null,
                 )
 
                 if canonical_scope is not None:

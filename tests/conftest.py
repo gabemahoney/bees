@@ -13,6 +13,7 @@ import pytest
 
 from src.config import GLOBAL_SCHEMA_VERSION
 from src.id_utils import generate_guid
+from src.mcp_hive_ops import write_identity
 from src.repo_context import repo_root_context
 
 
@@ -400,10 +401,13 @@ def bees_repo(tmp_path):
 # ============================================================================
 
 
-@pytest.fixture(scope="function", params=["bees_only", "two_tier", "three_tier", "four_tier"])
+@pytest.fixture(
+    scope="function",
+    params=["bees_only", "two_tier", "three_tier", "four_tier", "two_tier_with_status"],
+)
 def hive_tier_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
     """
-    PARAMETERIZED: Tests 4 tier configs (bees-only, 2-tier, 3-tier, 4-tier).
+    PARAMETERIZED: Tests 5 tier configs (bees-only, 2-tier, 3-tier, 4-tier, 2-tier-with-status).
     Returns (repo_root, hive_path, tier_config_dict).
     """
     from tests.test_constants import HIVE_BACKEND
@@ -413,20 +417,33 @@ def hive_tier_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
     hive_path = repo_root / HIVE_BACKEND
     hive_path.mkdir(parents=True, exist_ok=True)
 
-    # Create .hive identity marker
-    hive_identity_dir = hive_path / ".hive"
-    hive_identity_dir.mkdir(parents=True, exist_ok=True)
-    identity_data = {"normalized_name": HIVE_BACKEND, "display_name": "Backend", "created_at": "2026-02-05T00:00:00"}
-    (hive_identity_dir / "identity.json").write_text(json.dumps(identity_data, indent=2))
-
     tier_configs = {
         "bees_only": {},
         "two_tier": {"t1": ["Task", "Tasks"]},
         "three_tier": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
         "four_tier": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"], "t3": ["Work Item", "Work Items"]},
+        "two_tier_with_status": {"t1": ["Task", "Tasks"]},
+    }
+
+    status_values_map = {
+        "two_tier_with_status": ["open", "in_progress", "review", "done"],
     }
 
     tier_config = tier_configs[request.param]
+    status_values = status_values_map.get(request.param)
+
+    # Create .hive identity marker with child_tiers and optional status_values
+    hive_identity_dir = hive_path / ".hive"
+    hive_identity_dir.mkdir(parents=True, exist_ok=True)
+    identity_data = {
+        "normalized_name": HIVE_BACKEND,
+        "display_name": "Backend",
+        "created_at": "2026-02-05T00:00:00",
+        "child_tiers": tier_config,
+    }
+    if status_values is not None:
+        identity_data["status_values"] = status_values
+    write_identity(hive_identity_dir, identity_data)
 
     scope_data = {
         "hives": {HIVE_BACKEND: {"path": str(hive_path), "display_name": "Backend"}},
@@ -468,15 +485,16 @@ def multi_hive_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
         hive_path = repo_root / hive_name
         hive_path.mkdir(parents=True, exist_ok=True)
 
-        # Create .hive identity marker
+        # Create .hive identity marker with child_tiers
         hive_identity_dir = hive_path / ".hive"
         hive_identity_dir.mkdir(parents=True, exist_ok=True)
         identity_data = {
             "normalized_name": hive_name,
             "display_name": hive_name.title(),
             "created_at": "2026-02-05T00:00:00",
+            "child_tiers": tier_config,
         }
-        (hive_identity_dir / "identity.json").write_text(json.dumps(identity_data, indent=2))
+        write_identity(hive_identity_dir, identity_data)
 
         hive_paths.append(hive_path)
         hives_config[hive_name] = {"path": str(hive_path), "display_name": hive_name.title()}
@@ -503,17 +521,19 @@ def multi_hive_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
         "hive_bees_only_override",
         "hive_inherits_scope",
         "mixed_hive_tiers",
+        "hive_with_status_values",
     ],
 )
 def per_hive_tier_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
     """
-    PARAMETERIZED: Tests 4 per-hive child_tiers resolution scenarios.
+    PARAMETERIZED: Tests 5 per-hive child_tiers resolution scenarios.
 
     Scenarios:
         - hive_override_epics: features hive overrides scope with Epic/Task tiers
         - hive_bees_only_override: bugs hive uses empty {} to force bees-only
         - hive_inherits_scope: backend hive has no child_tiers key, inherits scope default
         - mixed_hive_tiers: multiple hives each with different tier configs
+        - hive_with_status_values: features hive with explicit status_values in identity
 
     Returns:
         tuple: (repo_root, hive_paths_dict, scope_child_tiers, hive_child_tiers_dict)
@@ -533,25 +553,29 @@ def per_hive_tier_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
     repo_root = bees_repo
     monkeypatch.chdir(repo_root)
 
-    def _make_hive(name):
+    def _make_hive(name, child_tiers=None, status_values=None):
         hive_path = repo_root / name
         hive_path.mkdir(parents=True, exist_ok=True)
         hive_identity_dir = hive_path / ".hive"
         hive_identity_dir.mkdir(parents=True, exist_ok=True)
         identity_data = {"normalized_name": name, "display_name": name.title(), "created_at": "2026-02-05T00:00:00"}
-        (hive_identity_dir / "identity.json").write_text(json.dumps(identity_data, indent=2))
+        if child_tiers is not None:
+            identity_data["child_tiers"] = child_tiers
+        if status_values is not None:
+            identity_data["status_values"] = status_values
+        write_identity(hive_identity_dir, identity_data)
         return hive_path
 
     if request.param == "hive_override_epics":
         # features hive overrides scope with Epic/Task
-        hive_paths = {HIVE_FEATURES: _make_hive(HIVE_FEATURES)}
+        hive_paths = {HIVE_FEATURES: _make_hive(HIVE_FEATURES, child_tiers=HIVE_TIER_EPICS)}
         scope_tiers = SCOPE_TIER_DEFAULT
         per_hive = {HIVE_FEATURES: HIVE_TIER_EPICS}
         expected = {HIVE_FEATURES: HIVE_TIER_EPICS}
 
     elif request.param == "hive_bees_only_override":
         # bugs hive forces bees-only with empty {}
-        hive_paths = {HIVE_BUGS: _make_hive(HIVE_BUGS)}
+        hive_paths = {HIVE_BUGS: _make_hive(HIVE_BUGS, child_tiers=HIVE_TIER_BEES_ONLY)}
         scope_tiers = SCOPE_TIER_DEFAULT
         per_hive = {HIVE_BUGS: HIVE_TIER_BEES_ONLY}
         expected = {HIVE_BUGS: HIVE_TIER_BEES_ONLY}
@@ -563,11 +587,24 @@ def per_hive_tier_config(request, bees_repo, monkeypatch, mock_global_bees_dir):
         per_hive = {}  # no hive-level overrides
         expected = {HIVE_BACKEND: SCOPE_TIER_DEFAULT}
 
+    elif request.param == "hive_with_status_values":
+        # features hive with explicit status_values in identity
+        hive_paths = {
+            HIVE_FEATURES: _make_hive(
+                HIVE_FEATURES,
+                child_tiers=HIVE_TIER_EPICS,
+                status_values=["todo", "doing", "review", "merged"],
+            ),
+        }
+        scope_tiers = SCOPE_TIER_DEFAULT
+        per_hive = {HIVE_FEATURES: HIVE_TIER_EPICS}
+        expected = {HIVE_FEATURES: HIVE_TIER_EPICS}
+
     else:  # mixed_hive_tiers
         # features=Epic/Task, bugs=bees-only, backend=inherits scope
         hive_paths = {
-            HIVE_FEATURES: _make_hive(HIVE_FEATURES),
-            HIVE_BUGS: _make_hive(HIVE_BUGS),
+            HIVE_FEATURES: _make_hive(HIVE_FEATURES, child_tiers=HIVE_TIER_EPICS),
+            HIVE_BUGS: _make_hive(HIVE_BUGS, child_tiers=HIVE_TIER_BEES_ONLY),
             HIVE_BACKEND: _make_hive(HIVE_BACKEND),
         }
         scope_tiers = SCOPE_TIER_DEFAULT
@@ -599,11 +636,16 @@ def hive_env(tmp_path, monkeypatch, mock_global_bees_dir):
     hive_dir = tmp_path / "tickets" / "backend"
     hive_dir.mkdir(parents=True)
 
-    # Create .hive marker
+    # Create .hive marker with child_tiers
     hive_marker = hive_dir / ".hive"
     hive_marker.mkdir()
-    identity_data = {"normalized_name": "backend", "display_name": "Backend", "created_at": "2026-02-05T00:00:00"}
-    (hive_marker / "identity.json").write_text(json.dumps(identity_data, indent=2))
+    identity_data = {
+        "normalized_name": "backend",
+        "display_name": "Backend",
+        "created_at": "2026-02-05T00:00:00",
+        "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
+    }
+    write_identity(hive_marker, identity_data)
 
     # Write scoped global config
     scope_data = {
