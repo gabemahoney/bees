@@ -41,7 +41,7 @@ Process each issue one at a time. First check if the issue is already locked
 (triaged) by running `gh api repos/{owner}/{repo}/issues/{number} --jq '.locked'`.
 If locked, skip it.
 
-If unlocked, tell the user: 🐞[incoming]: #<number> <title>
+If unlocked, tell the user exactly this and nothing else: 🐞[incoming]: #<number> <title>
 
 Then read the full details — title, body, labels, and comments — and
 follow this decision tree:
