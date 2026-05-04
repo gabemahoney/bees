@@ -675,8 +675,8 @@ Queries are validated at registration time via `QueryParser.parse_and_validate()
 - `resolve_named_query(name, repo_root, global_config) -> dict`: Resolve a query name using 2-level fallback with out-of-scope detection. In `src/config.py`.
 - `check_query_name_conflict(name, scope, repo_root, global_config) -> dict | None`: Check for name conflicts before saving. In `src/config.py`.
 - `_add_named_query(name, query_yaml, scope, resolved_root) -> dict`: Register a new named query in config-backed storage. In `src/mcp_query_ops.py`.
-- `_delete_named_query(name, scope, resolved_root) -> dict`: Remove a named query from config-backed storage with empty-dict cleanup. In `src/mcp_query_ops.py`.
-- `_list_named_queries(show_all, resolved_root) -> dict`: List queries accessible from the caller's context, or all queries system-wide. In `src/mcp_query_ops.py`.
+- `_delete_named_query(name, resolved_root) -> dict`: Remove a named query from config-backed storage with empty-dict cleanup; searches global then repo scope. In `src/mcp_query_ops.py`.
+- `_list_named_queries(resolved_root) -> dict`: List queries accessible from the current repo scope (matched repo-scoped queries + global queries). In `src/mcp_query_ops.py`.
 
 ## Named Resolver Registry
 
