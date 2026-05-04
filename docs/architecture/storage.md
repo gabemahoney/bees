@@ -33,8 +33,7 @@ hive_root/
 - `created_at`: Timestamp of hive creation
 - `version`: Schema version at creation time
 - `child_tiers`: (optional) Per-hive tier configuration override
-- `status_values`: (optional) Per-hive status values override
-- `status_values_explicitly_null`: (optional) Boolean flag indicating status values are explicitly disabled for this hive
+- `status_values`: (optional) Per-hive status values override — can be a list (override active), `null` (explicit override — use no labels), or absent (inherit from scope/global)
 
 **`/cemetery`**: Archive directory for retired tickets managed by the undertaker. Files use the naming convention `{tier}.{guid}.md`. Excluded from all active operations (queries, linting, indexing, path resolution). Not auto-created during colonization.
 
@@ -73,7 +72,7 @@ Configuration fields are optional. Only fields with hive-level overrides are pre
 
 **Recovery**: If missing, can be recreated during rename operations (recovery scenario)
 
-**Dual purpose**: The identity marker serves both hive discovery and hive-level configuration storage. Configuration fields (`child_tiers`, `status_values`, `status_values_explicitly_null`) use presence-based semantics: field present = hive-level override active; field absent = fall through to scope/global configuration via the resolution chain.
+**Dual purpose**: The identity marker serves both hive discovery and hive-level configuration storage. Configuration fields (`child_tiers`, `status_values`) use presence-based semantics: field present = hive-level override active; field absent = fall through to scope/global configuration via the resolution chain.
 
 ## Cemetery Directory
 

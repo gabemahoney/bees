@@ -9,7 +9,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 **Schema Structure**:
 ```json
 {
-  "schema_version": "2.0",
+  "schema_version": "4.0",
   "child_tiers": {
     "t1": ["Epic", "Epics"],
     "t2": ["Task", "Tasks"],
@@ -52,7 +52,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 ```
 
 **Top-Level Fields**:
-- `schema_version`: Config format version, currently "2.0"
+- `schema_version`: Config format version, currently "4.0"
 - `child_tiers`: (Optional) Global-level child_tiers configuration (dict or null). See Child Tiers Configuration below.
 - `queries`: (Optional) Global-level named queries dictionary. See Named Queries Configuration below.
 - `resolvers`: (Optional) Named resolver registry. Dict mapping resolver names to `{path, timeout?, convention?}` objects. Managed via `set-resolver` / `get-resolvers`. See Named Resolver Registry below.
@@ -943,7 +943,7 @@ The `--test-config` flag activates an in-memory config mode for isolated testing
 
 The flag accepts three value forms:
 
-- **Bare flag or no value**: Produces an empty in-memory config — `{"schema_version": "2.0", "scopes": {}}`
+- **Bare flag or no value**: Produces an empty in-memory config — `{"schema_version": "4.0", "scopes": {}}`
 - **Value starting with `{`**: Parsed as inline JSON
 - **Any other value**: Treated as a file path; the file is read and parsed as JSON
 

@@ -367,12 +367,11 @@ async def colonize_hive_core(
                             }
 
             # Step 4.5: Validate child_tiers if provided
-            parsed_child_tiers = None
             if child_tiers is not None:
                 try:
                     from .config import _parse_child_tiers_data
 
-                    parsed_child_tiers = _parse_child_tiers_data(child_tiers)
+                    _parse_child_tiers_data(child_tiers)
                     logger.info(f"Validated child_tiers: {child_tiers}")
                 except ValueError as e:
                     return {
@@ -1017,34 +1016,19 @@ async def _rename_hive(
     # Ticket IDs are globally unique and independent of hive names.
     try:
         hive_marker_path = hive_path / ".hive"
-        identity_file = hive_marker_path / "identity.json"
+        hive_marker_path.mkdir(exist_ok=True)
 
-        if identity_file.exists():
-            # Read current identity
-            with open(identity_file, encoding="utf-8") as f:
-                identity_data = json.load(f)
+        identity_data = read_identity(hive_marker_path) or {}
 
-            # Update normalized_name and display_name
-            identity_data["normalized_name"] = normalized_new
-            identity_data["display_name"] = new_name
+        identity_data["normalized_name"] = normalized_new
+        identity_data["display_name"] = new_name
+        if "created_at" not in identity_data:
+            identity_data["created_at"] = datetime.now().isoformat()
+        if "version" not in identity_data:
+            identity_data["version"] = SCHEMA_VERSION
 
-            # Write back
-            with open(identity_file, "w", encoding="utf-8") as f:
-                json.dump(identity_data, f, indent=2)
-
-            logger.info(f"Updated .hive marker with new identity: {normalized_new}")
-        else:
-            # Create marker if it doesn't exist
-            hive_marker_path.mkdir(exist_ok=True)
-            identity_data = {
-                "normalized_name": normalized_new,
-                "display_name": new_name,
-                "created_at": datetime.now().isoformat(),
-                "version": SCHEMA_VERSION,
-            }
-            with open(identity_file, "w", encoding="utf-8") as f:
-                json.dump(identity_data, f, indent=2)
-            logger.info(f"Created .hive marker with new identity: {normalized_new}")
+        write_identity(hive_marker_path, identity_data)
+        logger.info(f"Updated .hive marker with new identity: {normalized_new}")
     except Exception as e:
         return {
             "status": "error",

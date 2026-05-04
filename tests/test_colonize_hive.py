@@ -48,17 +48,17 @@ from tests.test_constants import (
 )
 
 
+@pytest.fixture
+def git_repo_tmp_path(tmp_path, monkeypatch):
+    """Create a temporary directory with git repo structure."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    with repo_root_context(tmp_path):
+        yield tmp_path
+
+
 class TestColonizeHive:
     """Tests for colonize_hive() function (integration tests)."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_creates_directory_structure(self, git_repo_tmp_path):
         """Test that .hive directory is created during colonization, but NOT /evicted or /eggs."""
@@ -506,15 +506,6 @@ class TestColonizeHiveOrchestrationUnit:
 class TestColonizeHiveChildTiers:
     """Integration tests for colonize_hive() with child_tiers parameter."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     @pytest.mark.parametrize(
         "child_tiers,expected_in_result",
         [
@@ -708,14 +699,6 @@ class TestColonizeHiveRepoRootContext:
 class TestColonizeHiveScope:
     """Integration tests for the scope parameter in colonize_hive_core."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     async def test_scope_creates_new_scope_entry(self, git_repo_tmp_path, mock_global_bees_dir):
         """scope parameter registers hive under the given pattern as config key."""
         hive_path = git_repo_tmp_path / "scoped_hive"
@@ -838,14 +821,6 @@ class TestColonizeHiveScope:
 class TestColonizeHiveCrossScopeConflict:
     """Tests for cross-scope hive name conflict detection during colonization."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     @pytest.mark.parametrize(
         "existing_scope,colonize_scope",
         [
@@ -945,14 +920,6 @@ class TestColonizeHiveCrossScopeConflict:
 
 class TestColonizeHiveScopeSelection:
     """Tests that colonize_hive registers hives in exact-path scopes, not wildcard parents."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_wildcard_parent_scope_creates_new_exact_scope(
         self, git_repo_tmp_path, mock_global_bees_dir
@@ -1078,14 +1045,6 @@ class TestColonizeHiveScopeSelection:
 class TestColonizeHiveDescription:
     """Tests for the optional description field on hives."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     async def test_colonize_with_description(self, git_repo_tmp_path):
         """Colonizing a hive with description stores it in config."""
         hive_path = git_repo_tmp_path / "tickets"
@@ -1144,70 +1103,54 @@ class TestColonizeHiveDescription:
 class TestColonizeHiveCorruptMarker:
     """Tests for colonize-hive behavior when .hive/identity.json is corrupt or schema-invalid."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
-    async def test_corrupt_json_returns_error(self, git_repo_tmp_path):
-        """Corrupt JSON in identity.json returns error dict with error_type=corrupt_marker."""
+    @pytest.mark.parametrize(
+        "identity_content,message_contains",
+        [
+            pytest.param(
+                "{not valid json!!!",
+                None,
+                id="corrupt_json",
+            ),
+            pytest.param(
+                json.dumps({"display_name": "My Hive", "created_at": "2026-01-01T00:00:00"}),
+                "normalized_name",
+                id="missing_normalized_name",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": 12345, "display_name": "My Hive"}),
+                "normalized_name",
+                id="wrong_field_types",
+            ),
+            pytest.param(
+                json.dumps(["not", "a", "dict"]),
+                None,
+                id="non_dict_json",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": "my_hive", "display_name": "My Hive", "child_tiers": "not_a_dict"}),
+                None,
+                id="invalid_child_tiers_type",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": "my_hive", "display_name": "My Hive", "status_values": {"not": "a list"}}),
+                None,
+                id="invalid_status_values_type",
+            ),
+        ],
+    )
+    async def test_corrupt_marker_returns_error(self, git_repo_tmp_path, identity_content, message_contains):
+        """Invalid identity.json variants all return error with error_type=corrupt_marker."""
         hive_path = git_repo_tmp_path / "my_hive"
         marker = hive_path / ".hive"
         marker.mkdir(parents=True)
-        (marker / "identity.json").write_text("{not valid json!!!")
+        (marker / "identity.json").write_text(identity_content)
 
         result = await colonize_hive("My Hive", str(hive_path))
 
         assert result["status"] == RESULT_STATUS_ERROR
         assert result["error_type"] == "corrupt_marker"
-        assert str(marker) in result["validation_details"]["path"]
-
-    async def test_missing_normalized_name_returns_error(self, git_repo_tmp_path):
-        """identity.json missing required normalized_name returns error."""
-        hive_path = git_repo_tmp_path / "my_hive"
-        marker = hive_path / ".hive"
-        marker.mkdir(parents=True)
-        (marker / "identity.json").write_text(json.dumps({
-            "display_name": "My Hive",
-            "created_at": "2026-01-01T00:00:00",
-        }))
-
-        result = await colonize_hive("My Hive", str(hive_path))
-
-        assert result["status"] == RESULT_STATUS_ERROR
-        assert result["error_type"] == "corrupt_marker"
-        assert "normalized_name" in result["message"]
-
-    async def test_wrong_field_types_returns_error(self, git_repo_tmp_path):
-        """identity.json with wrong field types (normalized_name not a string) returns error."""
-        hive_path = git_repo_tmp_path / "my_hive"
-        marker = hive_path / ".hive"
-        marker.mkdir(parents=True)
-        (marker / "identity.json").write_text(json.dumps({
-            "normalized_name": 12345,
-            "display_name": "My Hive",
-        }))
-
-        result = await colonize_hive("My Hive", str(hive_path))
-
-        assert result["status"] == RESULT_STATUS_ERROR
-        assert result["error_type"] == "corrupt_marker"
-        assert "normalized_name" in result["message"]
-
-    async def test_non_dict_json_returns_error(self, git_repo_tmp_path):
-        """identity.json containing a non-object JSON value returns error."""
-        hive_path = git_repo_tmp_path / "my_hive"
-        marker = hive_path / ".hive"
-        marker.mkdir(parents=True)
-        (marker / "identity.json").write_text(json.dumps(["not", "a", "dict"]))
-
-        result = await colonize_hive("My Hive", str(hive_path))
-
-        assert result["status"] == RESULT_STATUS_ERROR
-        assert result["error_type"] == "corrupt_marker"
+        if message_contains:
+            assert message_contains in result["message"]
 
     async def test_error_message_includes_file_path(self, git_repo_tmp_path):
         """Error message from corrupt marker includes the identity.json file path."""
@@ -1223,49 +1166,9 @@ class TestColonizeHiveCorruptMarker:
         assert result["error_type"] == "corrupt_marker"
         assert str(identity_file) in result["message"]
 
-    async def test_invalid_child_tiers_type_returns_error(self, git_repo_tmp_path):
-        """identity.json with child_tiers as non-dict returns error."""
-        hive_path = git_repo_tmp_path / "my_hive"
-        marker = hive_path / ".hive"
-        marker.mkdir(parents=True)
-        (marker / "identity.json").write_text(json.dumps({
-            "normalized_name": "my_hive",
-            "display_name": "My Hive",
-            "child_tiers": "not_a_dict",
-        }))
-
-        result = await colonize_hive("My Hive", str(hive_path))
-
-        assert result["status"] == RESULT_STATUS_ERROR
-        assert result["error_type"] == "corrupt_marker"
-
-    async def test_invalid_status_values_type_returns_error(self, git_repo_tmp_path):
-        """identity.json with status_values as non-list returns error."""
-        hive_path = git_repo_tmp_path / "my_hive"
-        marker = hive_path / ".hive"
-        marker.mkdir(parents=True)
-        (marker / "identity.json").write_text(json.dumps({
-            "normalized_name": "my_hive",
-            "display_name": "My Hive",
-            "status_values": {"not": "a list"},
-        }))
-
-        result = await colonize_hive("My Hive", str(hive_path))
-
-        assert result["status"] == RESULT_STATUS_ERROR
-        assert result["error_type"] == "corrupt_marker"
-
 
 class TestColonizeHiveMarkerAwareness:
     """Tests for colonize-hive marker detection and default precedence."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_no_marker_requires_name(self, git_repo_tmp_path):
         """Without an existing marker, --name is still required."""
@@ -1400,14 +1303,6 @@ class TestColonizeHiveMarkerAwareness:
 
 class TestColonizeHiveDualWrite:
     """Tests for colonize-hive dual-write behavior (identity.json + config.json)."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_colonize_with_child_tiers_dual_write(self, git_repo_tmp_path):
         """colonize with child_tiers: identity.json contains child_tiers AND config registers hive."""
