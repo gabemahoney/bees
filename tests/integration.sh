@@ -4032,7 +4032,11 @@ test_hp_identity_written() {
 }
 
 test_hp_colonize_no_name_uses_marker() {
-    # Re-colonizing without --name must use normalized_name from existing identity.json
+    # Abandon first so colonize-hive re-adopts from the on-disk marker (no --name)
+    capture_cmd bees abandon-hive --hive "HP Hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Colonize no --name uses marker" "abandon-hive failed: $CMD_OUT"
+    fi
     capture_cmd bees colonize-hive --path "$HP_HIVE_PATH"
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "Colonize no --name uses marker" "exit $CMD_EXIT: $CMD_OUT"
