@@ -178,15 +178,14 @@ Repo scope queries shadow global queries of the same name. Validated queries are
 - Performs pre-flight hive integrity check before execution
 
 **delete_named_query** — Delete a named query from config-backed storage.
-- Parameters: `name` (str, required), `scope` (str, "global" or "repo", required)
-- Returns on success: `{status: "success", query_name, scope, message}`
+- Parameters: `name` (str, required)
+- Returns on success: `{status: "success", query_name, message}`
 - Returns on error: `{status: "error", error_type, message}`
 - Cleans up the `queries` key entirely if the last query at a scope level is removed
 
 **list_named_queries** — List named queries from config-backed storage.
-- Parameters: `all` (bool, default: False)
-- When `all=False`: Returns queries accessible from current repo scope (matched repo-scoped queries + global queries)
-- When `all=True`: Returns all queries across every scope and global
+- Parameters: none
+- Returns queries accessible from current repo scope: matched repo-scoped queries + global queries
 - Returns: `{status: "success", queries: [{name, definition, scope, repo_root}, ...], count}`
 
 **execute_freeform_query** — One-step ad-hoc query execution without persistence.

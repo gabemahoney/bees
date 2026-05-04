@@ -367,8 +367,8 @@ Child IDs embed the parent's short ID as a prefix (hierarchical): bee `b.amx` â†
 ## Ticket Operations
 
 ```bash
-bees create-ticket --type bee --title "Bug fix" --hive backend
-bees create-ticket --type bee --title "Long writeup" --hive backend --body "stub - see appended chunks"
+bees create-ticket --ticket-type bee --title "Bug fix" --hive backend
+bees create-ticket --ticket-type bee --title "Long writeup" --hive backend --body "stub - see appended chunks"
 bees create-ticket --ticket-type bee --title "From file" --hive backend --body-file ./writeup.md
 bees show-ticket b.amx t1.amx.12
 bees update-ticket --ids b.amx --status worker --tags '["urgent"]'

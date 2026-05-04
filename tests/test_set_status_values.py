@@ -19,10 +19,12 @@ SCOPE - Tests that DON'T belong here:
 """
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 from src.config import load_global_config
+from src.mcp_hive_ops import read_identity
 from src.mcp_ticket_ops import _set_status_values, _show_ticket
 from tests.test_constants import (
     HIVE_BUGS,
@@ -136,6 +138,9 @@ class TestSetStatusValuesSet:
         helper = isolated_bees_env
         helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT)
+        # Create .hive marker so write_identity can persist there
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
 
         result = asyncio.run(
             _set_status_values(
@@ -151,9 +156,64 @@ class TestSetStatusValuesSet:
         assert result["hive_name"] == HIVE_FEATURES
         assert result["status_values"] == STATUS_VALUES_HIVE
 
+        # Hive-scope writes go to identity.json, not config.json
+        identity = read_identity(hive_marker_path)
+        assert identity["status_values"] == STATUS_VALUES_HIVE
+
+        # config.json hive entry should NOT have status_values
         config = load_global_config()
         hive_entry = config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]
-        assert hive_entry["status_values"] == STATUS_VALUES_HIVE
+        assert "status_values" not in hive_entry
+
+
+# ===========================================================================
+# Scope isolation: global/repo_scope writes go to config.json, not identity.json
+# ===========================================================================
+
+
+class TestSetStatusValuesScopeIsolation:
+    def test_set_global_does_not_write_identity(self, isolated_bees_env):
+        helper = isolated_bees_env
+        helper.create_hive(HIVE_FEATURES)
+        helper.write_config(SCOPE_TIER_DEFAULT)
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
+
+        asyncio.run(
+            _set_status_values(scope="global", status_values=STATUS_VALUES_GLOBAL)
+        )
+
+        # Global write should only touch config.json
+        config = load_global_config()
+        assert config["status_values"] == STATUS_VALUES_GLOBAL
+
+        # identity.json should not exist (no hive-scope write occurred)
+        identity = read_identity(hive_marker_path)
+        assert identity is None
+
+    def test_set_repo_scope_does_not_write_identity(self, isolated_bees_env):
+        helper = isolated_bees_env
+        helper.create_hive(HIVE_FEATURES)
+        helper.write_config(SCOPE_TIER_DEFAULT)
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
+
+        asyncio.run(
+            _set_status_values(
+                scope="repo_scope",
+                status_values=STATUS_VALUES_SCOPE,
+                resolved_root=helper.base_path,
+            )
+        )
+
+        # repo_scope write should only touch config.json
+        config = load_global_config()
+        scope_block = config["scopes"][str(helper.base_path)]
+        assert scope_block["status_values"] == STATUS_VALUES_SCOPE
+
+        # identity.json should not exist (no hive-scope write occurred)
+        identity = read_identity(hive_marker_path)
+        assert identity is None
 
 
 # ===========================================================================
@@ -203,6 +263,9 @@ class TestSetStatusValuesUnset:
         helper = isolated_bees_env
         helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT)
+        # Create .hive marker so write_identity can persist there
+        hive_marker_path = helper.base_path / HIVE_FEATURES / ".hive"
+        hive_marker_path.mkdir()
 
         # First set hive-level status_values
         asyncio.run(
@@ -227,11 +290,9 @@ class TestSetStatusValuesUnset:
         assert result["scope"] == "hive"
         assert result["hive_name"] == HIVE_FEATURES
 
-        config = load_global_config()
-        hive_entry = config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]
-        # Explicit null is stored so this hive overrides scope/global inheritance
-        assert "status_values" in hive_entry
-        assert hive_entry["status_values"] is None
+        # Explicit null is stored in identity.json so this hive overrides scope/global inheritance
+        identity = read_identity(hive_marker_path)
+        assert identity["status_values"] is None
 
 
 # ===========================================================================

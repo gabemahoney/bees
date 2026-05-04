@@ -148,7 +148,7 @@ class TestFixtureIntegration:
 
         # Config operations should work with the mock
         helper.write_config()
-        config_path = Path.cwd() / '.bees' / 'config.json'
+        config_path = helper.global_bees_dir / 'config.json'
         assert config_path.exists()
 
     def test_setup_tickets_dir_uses_mock(self, tmp_path, monkeypatch):

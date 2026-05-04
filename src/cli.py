@@ -414,6 +414,12 @@ def handle_colonize_hive(args):
         return
     parsed_child_tiers = parse_json_arg(args.child_tiers, "--child-tiers") if args.child_tiers is not None else None
     parsed_allowed_resolvers = parse_json_arg(args.allowed_resolvers, "--allowed-resolvers") if args.allowed_resolvers is not None else None  # noqa: E501
+    parsed_status_values = None
+    status_values_explicitly_null = False
+    if args.status_values is not None:
+        parsed_status_values = parse_json_arg(args.status_values, "--status-values")
+        if parsed_status_values is None:
+            status_values_explicitly_null = True
     result = _run_in_repo(
         colonize_hive_core(
             name=args.name,
@@ -422,6 +428,8 @@ def handle_colonize_hive(args):
             scope=args.scope,
             description=args.description,
             allowed_resolvers=parsed_allowed_resolvers,
+            status_values=parsed_status_values,
+            status_values_explicitly_null=status_values_explicitly_null,
         ),
         root=root,
     )
@@ -1054,11 +1062,12 @@ def build_parser():
         help="Create and register a new hive",
         description="Create and register a new hive. A hive is a directory where related tickets are stored.",
     )
-    p_colonize.add_argument("--name", required=True, help='Display name for the hive (e.g. "Back End"). Normalized internally.')  # noqa: E501
+    p_colonize.add_argument("--name", required=False, default=None, help='Display name for the hive (e.g. "Back End"). Normalized internally. Optional when a .hive/identity.json marker exists at the target path.')  # noqa: E501
     p_colonize.add_argument("--path", required=True, metavar="PATH", help="Absolute path where the hive will be created. Does not need to exist.")  # noqa: E501
     p_colonize.add_argument("--child-tiers", default=None, dest="child_tiers", metavar="JSON", help='Optional per-hive tier config as JSON dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["Epic","Epics"], "t2": ["Task","Tasks"]}. Pass {} for bees-only. Inherits from global config if omitted.')  # noqa: E501
     p_colonize.add_argument("--scope", default=None, metavar="PATTERN", help="Register this hive under the given scope pattern (e.g. /projects/**) instead of the repo root.")  # noqa: E501
     p_colonize.add_argument("--description", default=None, metavar="TEXT", help="Optional short description of the hive's purpose.")  # noqa: E501
+    p_colonize.add_argument("--status-values", default=None, dest="status_values", metavar="JSON", help='Optional JSON array of allowed status strings (e.g. \'["open","in_progress","done"]\'). Pass "null" to explicitly disable status enforcement for this hive. Inherits from scope/global config if omitted.')  # noqa: E501
     p_colonize.add_argument("--allowed-resolvers", default=None, dest="allowed_resolvers", metavar="JSON", help='Optional JSON list of resolver names permitted for this hive (e.g. ["my_resolver","default"]). Each name must exist in the resolver registry or be "default".')  # noqa: E501
     p_colonize.set_defaults(func=handle_colonize_hive)
 

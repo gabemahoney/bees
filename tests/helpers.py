@@ -13,6 +13,7 @@ from pathlib import Path
 
 from src.config import ChildTierConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
 from src.constants import BODY_MAX_LENGTH
+from src.mcp_hive_ops import read_identity, write_identity
 from src.repo_context import get_repo_root
 from src.id_utils import generate_guid
 from tests.test_constants import (
@@ -97,11 +98,11 @@ def _default_guid_for_id(ticket_id: str) -> str:
 
 def setup_hive_child_tiers(hive_name: str, tier_config: dict[str, tuple[str, str]]) -> None:
     """
-    Configure child_tiers on a specific hive entry in .bees/config.json.
+    Configure child_tiers on a specific hive's identity.json.
 
     This sets hive-level child_tiers, which takes priority over scope-level
-    child_tiers in the three-level resolution chain:
-    hive → scope → global → bees-only.
+    child_tiers in the four-level resolution chain:
+    identity.json → scope → global → bees-only.
 
     Args:
         hive_name: The normalized hive name (must already exist in config)
@@ -119,17 +120,20 @@ def setup_hive_child_tiers(hive_name: str, tier_config: dict[str, tuple[str, str
     if hive_name not in config.hives:
         raise KeyError(f"Hive '{hive_name}' not found in config. Available: {list(config.hives.keys())}")
 
-    # Build ChildTierConfig objects for the hive-level override
-    hive_tiers = {
-        tier_id: ChildTierConfig(singular, plural) for tier_id, (singular, plural) in tier_config.items()
-    }
+    # Build raw child_tiers dict for identity.json
+    raw_tiers = {tier_id: [singular, plural] for tier_id, (singular, plural) in tier_config.items()}
 
-    # Set child_tiers on the HiveConfig object directly
-    config.hives[hive_name].child_tiers = hive_tiers
-    repo_root = get_repo_root()
-    global_config = load_global_config()
-    scope_pattern = find_matching_scope(repo_root, global_config)
-    save_bees_config(config, scope_pattern)
+    # Write to the hive's identity.json
+    hive_path = Path(config.hives[hive_name].path)
+    hive_marker = hive_path / ".hive"
+    hive_marker.mkdir(parents=True, exist_ok=True)
+
+    # Read existing identity data to preserve other fields
+    existing = read_identity(hive_marker) or {}
+    existing["child_tiers"] = raw_tiers
+    if "normalized_name" not in existing:
+        existing["normalized_name"] = hive_name
+    write_identity(hive_marker, existing)
 
 
 def setup_child_tiers(tier_config: dict[str, tuple[str, str]]) -> None:

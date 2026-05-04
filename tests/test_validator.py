@@ -23,7 +23,7 @@ class TestValidateTicketTypeWithHiveName:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {
@@ -59,7 +59,7 @@ class TestValidateTicketTypeWithHiveName:
         scope_data = {
             "hives": {
                 "docs": {
-                    "path": "tickets/docs/",
+                    "path": str(tmp_path / "tickets" / "docs"),
                     "display_name": "Docs",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {},  # Explicitly bees-only
@@ -84,7 +84,7 @@ class TestValidateTicketTypeWithHiveName:
         scope_data = {
             "hives": {
                 "frontend": {
-                    "path": "tickets/frontend/",
+                    "path": str(tmp_path / "tickets" / "frontend"),
                     "display_name": "Frontend",
                     "created_at": "2026-02-01T12:00:00",
                     # No child_tiers key → falls through to scope level
@@ -112,7 +112,7 @@ class TestValidateTicketTypeWithHiveName:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {
@@ -120,7 +120,7 @@ class TestValidateTicketTypeWithHiveName:
                     },
                 },
                 "frontend": {
-                    "path": "tickets/frontend/",
+                    "path": str(tmp_path / "tickets" / "frontend"),
                     "display_name": "Frontend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {
@@ -162,7 +162,7 @@ class TestValidateTicketTypeBackwardCompat:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -191,7 +191,7 @@ class TestValidateTicketTypeBackwardCompat:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -229,7 +229,7 @@ class TestValidateChildTierParentWithHiveName:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {
@@ -269,7 +269,7 @@ class TestValidateChildTierParentWithHiveName:
         scope_data = {
             "hives": {
                 "docs": {
-                    "path": "tickets/docs/",
+                    "path": str(tmp_path / "tickets" / "docs"),
                     "display_name": "Docs",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {},
@@ -292,7 +292,7 @@ class TestValidateChildTierParentWithHiveName:
         scope_data = {
             "hives": {
                 "frontend": {
-                    "path": "tickets/frontend/",
+                    "path": str(tmp_path / "tickets" / "frontend"),
                     "display_name": "Frontend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -322,7 +322,7 @@ class TestValidateChildTierParentBackwardCompat:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -349,7 +349,7 @@ class TestValidateChildTierParentBackwardCompat:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -375,7 +375,7 @@ class TestValidateTicketTypeEdgeCases:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -403,7 +403,7 @@ class TestValidateTicketTypeEdgeCases:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {},
@@ -425,7 +425,7 @@ class TestValidateChildTierParentEdgeCases:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                 },
@@ -450,7 +450,7 @@ class TestValidateChildTierParentEdgeCases:
         scope_data = {
             "hives": {
                 "backend": {
-                    "path": "tickets/backend/",
+                    "path": str(tmp_path / "tickets" / "backend"),
                     "display_name": "Backend",
                     "created_at": "2026-02-01T12:00:00",
                     "child_tiers": {

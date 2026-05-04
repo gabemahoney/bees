@@ -1245,7 +1245,8 @@ class TestPerHiveChildTiers:
         self, tmp_path, monkeypatch, mock_global_bees_dir
     ):
         """Bees-only hive (child_tiers = {}) rejects child tier with clear error."""
-        from src.config import load_bees_config
+        from src.config import load_bees_config, resolve_child_tiers_for_hive
+        from src.mcp_hive_ops import write_identity
 
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
@@ -1257,18 +1258,20 @@ class TestPerHiveChildTiers:
         frontend_hive = repo_root / "frontend"
         frontend_hive.mkdir()
 
+        # Write identity.json with hive-level child_tiers
+        for hive_dir, name, ct in [
+            (backend_hive, "backend", {"t1": ["Task", "Tasks"]}),
+            (frontend_hive, "frontend", {}),
+        ]:
+            marker = hive_dir / ".hive"
+            marker.mkdir(parents=True, exist_ok=True)
+            identity = {"normalized_name": name, "display_name": name.title(), "created_at": "2026-02-05T00:00:00", "child_tiers": ct}
+            write_identity(marker, identity)
+
         scope_data = {
             "hives": {
-                "backend": {
-                    "path": str(backend_hive),
-                    "display_name": "Backend",
-                    "child_tiers": {"t1": ["Task", "Tasks"]},
-                },
-                "frontend": {
-                    "path": str(frontend_hive),
-                    "display_name": "Frontend",
-                    "child_tiers": {},  # Explicitly bees-only
-                },
+                "backend": {"path": str(backend_hive), "display_name": "Backend"},
+                "frontend": {"path": str(frontend_hive), "display_name": "Frontend"},
             },
         }
         write_scoped_config(mock_global_bees_dir, repo_root, scope_data)
@@ -1278,7 +1281,7 @@ class TestPerHiveChildTiers:
             config = load_bees_config()
             assert "backend" in config.hives
             assert "frontend" in config.hives
-            assert config.hives["frontend"].child_tiers == {}
+            assert resolve_child_tiers_for_hive("frontend", config) == {}
 
             # Create bee parent in frontend hive (should succeed)
             bee_result = await _create_ticket(

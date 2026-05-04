@@ -56,14 +56,14 @@ class TestGetStatusValuesCore:
     async def test_hive_level_set_for_one_hive_only(self, isolated_bees_env):
         """Hive-level set for one hive only -> that hive returns list, others null."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.create_hive(HIVE_BUGS)
         helper.write_config(SCOPE_TIER_DEFAULT)
 
-        # Set hive-level status_values for features only
-        config = load_global_config()
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["status_values"] = STATUS_VALUES_HIVE
-        save_global_config(config)
+        # Write status_values to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "status_values": STATUS_VALUES_HIVE}))
 
         result = await _get_status_values(resolved_root=helper.base_path)
 
@@ -75,15 +75,18 @@ class TestGetStatusValuesCore:
     async def test_all_three_levels_set(self, isolated_bees_env):
         """All 3 levels set simultaneously -> all 3 returned independently (not resolved/merged)."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT, status_values=STATUS_VALUES_SCOPE)
 
         # Set global-level
         config = load_global_config()
         config["status_values"] = STATUS_VALUES_GLOBAL
-        # Set hive-level
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["status_values"] = STATUS_VALUES_HIVE
         save_global_config(config)
+
+        # Write status_values to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "status_values": STATUS_VALUES_HIVE}))
 
         result = await _get_status_values(resolved_root=helper.base_path)
 
@@ -110,16 +113,19 @@ class TestGetStatusValuesCore:
     async def test_multiple_hives_mixed_config(self, isolated_bees_env):
         """Multiple hives with mixed config -> all hives appear in response."""
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir_features = helper.create_hive(HIVE_FEATURES)
         helper.create_hive(HIVE_BUGS)
-        helper.create_hive(HIVE_BACKEND)
+        hive_dir_backend = helper.create_hive(HIVE_BACKEND)
         helper.write_config(SCOPE_TIER_DEFAULT)
 
-        # Set hive-level for features and backend, leave bugs unset
-        config = load_global_config()
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["status_values"] = STATUS_VALUES_HIVE
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_BACKEND]["status_values"] = STATUS_VALUES_SCOPE
-        save_global_config(config)
+        # Write status_values to identity.json for HIVE_FEATURES and HIVE_BACKEND; HIVE_BUGS has none
+        for hive_dir, hive_name, sv in [
+            (hive_dir_features, HIVE_FEATURES, STATUS_VALUES_HIVE),
+            (hive_dir_backend, HIVE_BACKEND, STATUS_VALUES_SCOPE),
+        ]:
+            marker = hive_dir / ".hive" / "identity.json"
+            marker.parent.mkdir(exist_ok=True)
+            marker.write_text(json.dumps({"normalized_name": hive_name, "status_values": sv}))
 
         result = await _get_status_values(resolved_root=helper.base_path)
 
@@ -156,14 +162,18 @@ class TestGetStatusValuesMCPAdapter:
         from src.mcp_server import get_status_values
 
         helper = isolated_bees_env
-        helper.create_hive(HIVE_FEATURES)
+        hive_dir = helper.create_hive(HIVE_FEATURES)
         helper.write_config(SCOPE_TIER_DEFAULT, status_values=STATUS_VALUES_SCOPE)
 
         # Set global-level
         config = load_global_config()
         config["status_values"] = STATUS_VALUES_GLOBAL
-        config["scopes"][str(helper.base_path)]["hives"][HIVE_FEATURES]["status_values"] = STATUS_VALUES_HIVE
         save_global_config(config)
+
+        # Write status_values to identity.json (source of truth for hive-level)
+        marker = hive_dir / ".hive" / "identity.json"
+        marker.parent.mkdir(exist_ok=True)
+        marker.write_text(json.dumps({"normalized_name": HIVE_FEATURES, "status_values": STATUS_VALUES_HIVE}))
 
         result = await get_status_values(ctx=None, repo_root=str(helper.base_path))
 

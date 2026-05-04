@@ -41,23 +41,24 @@ from src.mcp_hive_utils import scan_for_hive
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config
 from tests.test_constants import (
+    RESULT_STATUS_ERROR,
     RESULT_STATUS_SUCCESS,
     SCOPE_PATTERN_PROJECTS_DEEP,
     SCOPE_PATTERN_PROJECTS_EXACT,
 )
 
 
+@pytest.fixture
+def git_repo_tmp_path(tmp_path, monkeypatch):
+    """Create a temporary directory with git repo structure."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    with repo_root_context(tmp_path):
+        yield tmp_path
+
+
 class TestColonizeHive:
     """Tests for colonize_hive() function (integration tests)."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_creates_directory_structure(self, git_repo_tmp_path):
         """Test that .hive directory is created during colonization, but NOT /evicted or /eggs."""
@@ -142,14 +143,10 @@ class TestColonizeHive:
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
 
-        original_open = open
+        def mock_write_identity(marker_path, data):
+            raise OSError("Failed to write identity to identity.json: Permission denied")
 
-        def mock_open_func(file, *args, **kwargs):
-            if "identity.json" in str(file):
-                raise PermissionError("Permission denied")
-            return original_open(file, *args, **kwargs)
-
-        with patch("builtins.open", mock_open_func):
+        with patch("src.mcp_hive_ops.write_identity", mock_write_identity):
             result = await colonize_hive("Test Hive", str(hive_path))
 
             assert result["status"] == "error"
@@ -167,16 +164,13 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == child_tiers
 
-        # Verify it was stored in config by reading the global config directly
-        from src.config import load_global_config
+        # Verify it was stored in identity.json (hive-level overrides live there now)
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" in hive_data
-        assert hive_data["child_tiers"] == child_tiers
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == child_tiers
 
     async def test_colonize_with_empty_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive accepts empty child_tiers (bees-only hive)."""
@@ -188,16 +182,13 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == {}
 
-        # Verify it was stored in config by reading the global config directly
-        from src.config import load_global_config
+        # Verify it was stored in identity.json
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" in hive_data
-        assert hive_data["child_tiers"] == {}
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {}
 
     async def test_colonize_without_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive without child_tiers parameter stores None."""
@@ -209,15 +200,12 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] is None
 
-        # Verify child_tiers key is NOT in the config (should be omitted when None)
-        from src.config import load_global_config
+        # Verify child_tiers key is NOT in identity.json (should be omitted when None)
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" not in hive_data  # Should be omitted when None
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" not in identity  # Should be omitted when None
 
     async def test_colonize_with_invalid_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive rejects invalid child_tiers configuration."""
@@ -279,6 +267,54 @@ class TestColonizeHive:
         result = await colonize_hive("Test Hive", str(hive_path), child_tiers=child_tiers)
 
         assert result["status"] == "success"
+
+    async def test_created_at_preserved_on_recolonize(self, git_repo_tmp_path, mock_global_bees_dir):
+        """Re-colonizing an existing hive (e.g. on a new machine) must not overwrite created_at.
+
+        This is a regression test for b.nbt: colonize_hive_core was generating a fresh
+        created_at on every call, even when identity.json already existed on disk.
+
+        Scenario: hive is colonized, then the global config is wiped (simulating a fresh
+        machine where the hive path exists on disk but is unregistered). A second
+        colonize call re-registers the hive. The created_at in identity.json must be
+        unchanged.
+
+        FAILS without the fix (created_at is overwritten) and PASSES with it.
+        """
+        import src.config
+
+        hive_path = git_repo_tmp_path / "test_hive"
+        hive_path.mkdir()
+
+        # First colonization — establishes identity.json with an original created_at
+        result1 = await colonize_hive("Test Hive", str(hive_path))
+        assert result1["status"] == RESULT_STATUS_SUCCESS
+
+        identity_file = hive_path / ".hive" / "identity.json"
+        with open(identity_file) as f:
+            original_identity = json.load(f)
+        original_created_at = original_identity["created_at"]
+
+        # Simulate a new machine: wipe the global config so the hive is unregistered.
+        # The .hive/identity.json on disk remains intact (it's part of the repo).
+        empty_config = {"scopes": {}, "schema_version": src.config.GLOBAL_SCHEMA_VERSION}
+        (mock_global_bees_dir / "config.json").write_text(json.dumps(empty_config))
+        src.config._GLOBAL_CONFIG_CACHE = None
+        src.config._GLOBAL_CONFIG_CACHE_MTIME = None
+
+        # Second colonization on the same path — re-registers the hive from scratch
+        result2 = await colonize_hive("Test Hive", str(hive_path))
+        assert result2["status"] == RESULT_STATUS_SUCCESS, (
+            f"Second colonize failed: {result2.get('message')}"
+        )
+
+        with open(identity_file) as f:
+            new_identity = json.load(f)
+
+        assert new_identity["created_at"] == original_created_at, (
+            f"created_at was overwritten on re-colonization. "
+            f"Original: {original_created_at!r}, new: {new_identity['created_at']!r}"
+        )
 
 
 class TestScanForHive:
@@ -360,10 +396,12 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_server.get_repo_root")
     @patch("src.mcp_hive_ops.normalize_hive_name")
     @patch("pathlib.Path.mkdir")
-    @patch("builtins.open", new_callable=mock_open)
+    @patch("src.mcp_hive_ops.write_identity")
+    @patch("src.mcp_hive_ops.read_identity", return_value=None)
     async def test_calls_normalize_name(
         self,
-        mock_file_open,
+        mock_read_identity,
+        mock_write_identity,
         mock_mkdir,
         mock_normalize,
         mock_get_repo,
@@ -378,7 +416,7 @@ class TestColonizeHiveOrchestrationUnit:
         mock_get_repo.return_value = Path("/repo")
         mock_validate_path.return_value = Path("/repo/tickets")
         mock_load_config.return_value = None
-        mock_load_global.return_value = {"scopes": {}, "schema_version": "2.0"}
+        mock_load_global.return_value = {"scopes": {}, "schema_version": "3.0"}
 
         await colonize_hive("Back End", "/repo/tickets")
 
@@ -421,10 +459,12 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_hive_ops.get_repo_root_from_path")
     @patch("src.mcp_hive_ops.normalize_hive_name")
     @patch("pathlib.Path.mkdir")
-    @patch("builtins.open", new_callable=mock_open)
+    @patch("src.mcp_hive_ops.write_identity")
+    @patch("src.mcp_hive_ops.read_identity", return_value=None)
     async def test_success_return_structure(
         self,
-        mock_file_open,
+        mock_read_identity,
+        mock_write_identity,
         mock_mkdir,
         mock_normalize,
         mock_get_repo_from_path,
@@ -439,7 +479,7 @@ class TestColonizeHiveOrchestrationUnit:
         mock_get_repo_from_path.return_value = Path("/repo")
         mock_validate_path.return_value = Path("/repo/tickets")
         mock_load_config.return_value = None
-        mock_load_global.return_value = {"scopes": {}, "schema_version": "2.0"}
+        mock_load_global.return_value = {"scopes": {}, "schema_version": "3.0"}
 
         result = await colonize_hive("Backend", "/repo/tickets")
 
@@ -465,15 +505,6 @@ class TestColonizeHiveOrchestrationUnit:
 
 class TestColonizeHiveChildTiers:
     """Integration tests for colonize_hive() with child_tiers parameter."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     @pytest.mark.parametrize(
         "child_tiers,expected_in_result",
@@ -525,10 +556,9 @@ class TestColonizeHiveChildTiers:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == {}
 
-    async def test_colonize_child_tiers_persisted_in_config(self, git_repo_tmp_path):
-        """Test that child_tiers provided to colonize_hive are persisted in config."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+    async def test_colonize_child_tiers_persisted_in_identity(self, git_repo_tmp_path):
+        """Test that child_tiers provided to colonize_hive are persisted in identity.json."""
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -537,19 +567,14 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path), child_tiers=child_tiers)
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is not None
-            assert "t1" in hive_config.child_tiers
-            assert hive_config.child_tiers["t1"].singular == "Epic"
-            assert hive_config.child_tiers["t1"].plural == "Epics"
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {"t1": ["Epic", "Epics"]}
 
     async def test_colonize_none_child_tiers_not_persisted(self, git_repo_tmp_path):
-        """Test that colonize_hive without child_tiers leaves HiveConfig.child_tiers as None."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+        """Test that colonize_hive without child_tiers leaves identity.json without child_tiers."""
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -557,16 +582,13 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path))
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is None
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" not in identity
 
     async def test_colonize_empty_child_tiers_persisted_as_empty(self, git_repo_tmp_path):
         """Test that colonize_hive with {} persists empty dict, not None."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -574,12 +596,10 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path), child_tiers={})
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is not None
-            assert hive_config.child_tiers == {}
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {}
 
     async def test_colonize_child_tiers_resolution_after_colonize(self, git_repo_tmp_path):
         """Test resolve_child_tiers_for_hive works correctly after colonizing with child_tiers."""
@@ -678,14 +698,6 @@ class TestColonizeHiveRepoRootContext:
 
 class TestColonizeHiveScope:
     """Integration tests for the scope parameter in colonize_hive_core."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_scope_creates_new_scope_entry(self, git_repo_tmp_path, mock_global_bees_dir):
         """scope parameter registers hive under the given pattern as config key."""
@@ -809,14 +821,6 @@ class TestColonizeHiveScope:
 class TestColonizeHiveCrossScopeConflict:
     """Tests for cross-scope hive name conflict detection during colonization."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     @pytest.mark.parametrize(
         "existing_scope,colonize_scope",
         [
@@ -916,14 +920,6 @@ class TestColonizeHiveCrossScopeConflict:
 
 class TestColonizeHiveScopeSelection:
     """Tests that colonize_hive registers hives in exact-path scopes, not wildcard parents."""
-
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        """Create a temporary directory with git repo structure."""
-        (tmp_path / ".git").mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
 
     async def test_wildcard_parent_scope_creates_new_exact_scope(
         self, git_repo_tmp_path, mock_global_bees_dir
@@ -1049,14 +1045,6 @@ class TestColonizeHiveScopeSelection:
 class TestColonizeHiveDescription:
     """Tests for the optional description field on hives."""
 
-    @pytest.fixture
-    def git_repo_tmp_path(self, tmp_path, monkeypatch):
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        monkeypatch.chdir(tmp_path)
-        with repo_root_context(tmp_path):
-            yield tmp_path
-
     async def test_colonize_with_description(self, git_repo_tmp_path):
         """Colonizing a hive with description stores it in config."""
         hive_path = git_repo_tmp_path / "tickets"
@@ -1110,3 +1098,298 @@ class TestColonizeHiveDescription:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert len(result["hives"]) == 1
         assert "description" not in result["hives"][0]
+
+
+class TestColonizeHiveCorruptMarker:
+    """Tests for colonize-hive behavior when .hive/identity.json is corrupt or schema-invalid."""
+
+    @pytest.mark.parametrize(
+        "identity_content,message_contains",
+        [
+            pytest.param(
+                "{not valid json!!!",
+                None,
+                id="corrupt_json",
+            ),
+            pytest.param(
+                json.dumps({"display_name": "My Hive", "created_at": "2026-01-01T00:00:00"}),
+                "normalized_name",
+                id="missing_normalized_name",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": 12345, "display_name": "My Hive"}),
+                "normalized_name",
+                id="wrong_field_types",
+            ),
+            pytest.param(
+                json.dumps(["not", "a", "dict"]),
+                None,
+                id="non_dict_json",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": "my_hive", "display_name": "My Hive", "child_tiers": "not_a_dict"}),
+                None,
+                id="invalid_child_tiers_type",
+            ),
+            pytest.param(
+                json.dumps({"normalized_name": "my_hive", "display_name": "My Hive", "status_values": {"not": "a list"}}),
+                None,
+                id="invalid_status_values_type",
+            ),
+        ],
+    )
+    async def test_corrupt_marker_returns_error(self, git_repo_tmp_path, identity_content, message_contains):
+        """Invalid identity.json variants all return error with error_type=corrupt_marker."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        (marker / "identity.json").write_text(identity_content)
+
+        result = await colonize_hive("My Hive", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_ERROR
+        assert result["error_type"] == "corrupt_marker"
+        if message_contains:
+            assert message_contains in result["message"]
+
+    async def test_error_message_includes_file_path(self, git_repo_tmp_path):
+        """Error message from corrupt marker includes the identity.json file path."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        identity_file = marker / "identity.json"
+        identity_file.write_text("<<<garbage>>>")
+
+        result = await colonize_hive("My Hive", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_ERROR
+        assert result["error_type"] == "corrupt_marker"
+        assert str(identity_file) in result["message"]
+
+
+class TestColonizeHiveMarkerAwareness:
+    """Tests for colonize-hive marker detection and default precedence."""
+
+    async def test_no_marker_requires_name(self, git_repo_tmp_path):
+        """Without an existing marker, --name is still required."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        hive_path.mkdir()
+
+        result = await colonize_hive(None, str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_ERROR
+        assert result["error_type"] == "validation_error"
+        assert "name" in result["validation_details"]["field"]
+
+    async def test_marker_provides_default_name(self, git_repo_tmp_path):
+        """Existing marker with display_name, no --name: succeeds using marker's name."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "my_hive",
+            "display_name": "My Hive",
+            "created_at": "2026-01-01T00:00:00",
+        }))
+
+        result = await colonize_hive(None, str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["display_name"] == "My Hive"
+        assert result["normalized_name"] == "my_hive"
+
+    async def test_explicit_name_overrides_marker(self, git_repo_tmp_path):
+        """Existing marker + explicit --name: explicit name wins."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "old_name",
+            "display_name": "Old Name",
+            "created_at": "2026-01-01T00:00:00",
+        }))
+
+        result = await colonize_hive("New Name", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["display_name"] == "New Name"
+        assert result["normalized_name"] == "new_name"
+
+    async def test_marker_child_tiers_become_defaults(self, git_repo_tmp_path):
+        """Marker with child_tiers: those become defaults when no --child-tiers provided."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        marker_tiers = {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "my_hive",
+            "display_name": "My Hive",
+            "created_at": "2026-01-01T00:00:00",
+            "child_tiers": marker_tiers,
+        }))
+
+        result = await colonize_hive(None, str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        identity = json.loads((marker / "identity.json").read_text())
+        assert identity["child_tiers"] == marker_tiers
+
+    async def test_marker_status_values_become_defaults(self, git_repo_tmp_path):
+        """Marker with status_values: those become defaults when no --status-values provided."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        marker_sv = ["open", "in_progress", "done"]
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "my_hive",
+            "display_name": "My Hive",
+            "created_at": "2026-01-01T00:00:00",
+            "status_values": marker_sv,
+        }))
+
+        result = await colonize_hive(None, str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        identity = json.loads((marker / "identity.json").read_text())
+        assert identity["status_values"] == marker_sv
+
+    @pytest.mark.parametrize(
+        "marker_field,marker_value,override_field,override_value,check_field,expected",
+        [
+            pytest.param(
+                "child_tiers", {"t1": ["Epic", "Epics"]},
+                "child_tiers", {"t1": ["Task", "Tasks"]},
+                "child_tiers", {"t1": ["Task", "Tasks"]},
+                id="explicit_child_tiers_override_marker",
+            ),
+            pytest.param(
+                "status_values", ["open", "closed"],
+                "status_values", ["todo", "doing", "done"],
+                "status_values", ["todo", "doing", "done"],
+                id="explicit_status_values_override_marker",
+            ),
+            pytest.param(
+                "child_tiers", {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]},
+                "child_tiers", {},
+                "child_tiers", {},
+                id="explicit_empty_child_tiers_override_marker",
+            ),
+        ],
+    )
+    async def test_explicit_args_override_marker_defaults(
+        self, git_repo_tmp_path, marker_field, marker_value, override_field, override_value,
+        check_field, expected,
+    ):
+        """Explicit CLI args always override marker defaults (parametrized precedence)."""
+        hive_path = git_repo_tmp_path / "my_hive"
+        marker = hive_path / ".hive"
+        marker.mkdir(parents=True)
+        identity = {
+            "normalized_name": "my_hive",
+            "display_name": "My Hive",
+            "created_at": "2026-01-01T00:00:00",
+            marker_field: marker_value,
+        }
+        (marker / "identity.json").write_text(json.dumps(identity))
+
+        kwargs = {"name": "My Hive", "path": str(hive_path)}
+        kwargs[override_field] = override_value
+        result = await colonize_hive(**kwargs)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        written_identity = json.loads((marker / "identity.json").read_text())
+        assert written_identity[check_field] == expected
+
+
+class TestColonizeHiveDualWrite:
+    """Tests for colonize-hive dual-write behavior (identity.json + config.json)."""
+
+    async def test_colonize_with_child_tiers_dual_write(self, git_repo_tmp_path):
+        """colonize with child_tiers: identity.json contains child_tiers AND config registers hive."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+        tiers = {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
+
+        result = await colonize_hive("Tickets", str(hive_path), child_tiers=tiers)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        # Verify identity.json has child_tiers
+        identity = json.loads((hive_path / ".hive" / "identity.json").read_text())
+        assert identity["child_tiers"] == tiers
+        assert identity["normalized_name"] == "tickets"
+
+        # Verify config.json registers the hive
+        config = load_global_config()
+        scope_key = str(git_repo_tmp_path)
+        hive_data = config["scopes"][scope_key]["hives"]["tickets"]
+        assert hive_data["path"] == str(hive_path)
+
+    async def test_colonize_with_status_values_dual_write(self, git_repo_tmp_path):
+        """colonize with status_values: identity.json contains status_values AND config registers hive."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+        sv = ["open", "in_progress", "done"]
+
+        result = await colonize_hive("Tickets", str(hive_path), status_values=sv)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        # Verify identity.json has status_values
+        identity = json.loads((hive_path / ".hive" / "identity.json").read_text())
+        assert identity["status_values"] == sv
+
+        # Verify config.json registers the hive
+        config = load_global_config()
+        scope_key = str(git_repo_tmp_path)
+        hive_data = config["scopes"][scope_key]["hives"]["tickets"]
+        assert hive_data["path"] == str(hive_path)
+
+    async def test_colonize_without_optional_fields_no_spurious_keys(self, git_repo_tmp_path):
+        """colonize without optional fields: neither file has spurious keys."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+
+        result = await colonize_hive("Tickets", str(hive_path))
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        # Verify identity.json has core fields but no child_tiers/status_values
+        identity = json.loads((hive_path / ".hive" / "identity.json").read_text())
+        assert identity["normalized_name"] == "tickets"
+        assert identity["display_name"] == "Tickets"
+        assert "child_tiers" not in identity
+        assert "status_values" not in identity
+
+        # Verify config.json registers the hive without optional fields
+        config = load_global_config()
+        scope_key = str(git_repo_tmp_path)
+        hive_data = config["scopes"][scope_key]["hives"]["tickets"]
+        assert hive_data["path"] == str(hive_path)
+
+    async def test_recolonize_idempotent_dual_write(self, git_repo_tmp_path):
+        """Re-colonize (idempotent): both files consistent after second call."""
+        hive_path = git_repo_tmp_path / "tickets"
+        hive_path.mkdir()
+        tiers = {"t1": ["Task", "Tasks"]}
+        sv = ["open", "closed"]
+
+        # First colonize
+        result1 = await colonize_hive("Tickets", str(hive_path), child_tiers=tiers, status_values=sv)
+        assert result1["status"] == RESULT_STATUS_SUCCESS
+
+        identity1 = json.loads((hive_path / ".hive" / "identity.json").read_text())
+        created_at = identity1["created_at"]
+
+        # Second colonize — same name hits duplicate_hive_name check
+        result2 = await colonize_hive(None, str(hive_path), child_tiers=tiers, status_values=sv)
+
+        if result2["status"] == RESULT_STATUS_ERROR:
+            assert result2["error_type"] == "duplicate_hive_name"
+
+        # Regardless, both files should be consistent from the first colonize
+        identity2 = json.loads((hive_path / ".hive" / "identity.json").read_text())
+        assert identity2["normalized_name"] == "tickets"
+        assert identity2["child_tiers"] == tiers
+        assert identity2["status_values"] == sv
+        assert identity2["created_at"] == created_at

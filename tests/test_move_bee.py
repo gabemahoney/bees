@@ -7,6 +7,7 @@ import pytest
 
 from src import cache
 from src.config import get_scope_key_for_hive
+from src.mcp_hive_ops import write_identity
 from src.mcp_move_bee import _move_bee_core
 from src.reader import read_ticket
 from tests.helpers import write_ticket_file
@@ -24,6 +25,15 @@ from tests.test_constants import (
     TICKET_ID_MOVE_BEE_2,
     TICKET_ID_T1,
 )
+
+
+def _write_hive_identity(hive_dir: Path, hive_name: str, **extra):
+    """Write identity.json for a hive with hive-level overrides (status_values, child_tiers)."""
+    marker = hive_dir / ".hive"
+    marker.mkdir(parents=True, exist_ok=True)
+    data = {"normalized_name": hive_name, "display_name": hive_name.title(), "created_at": "2026-01-30T10:00:00"}
+    data.update(extra)
+    write_identity(marker, data)
 
 
 @pytest.mark.parametrize(
@@ -548,9 +558,9 @@ def test_move_bee_incompatible_status_values(isolated_bees_env):
     and the source bee has a status not in that list. Bee is not moved."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open", "done"]
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compat Test", status="worker")
 
@@ -571,11 +581,11 @@ def test_move_bee_incompatible_tier_types(isolated_bees_env):
     child_tiers and source bee has a child with a tier type not in that config."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     # Dest hive only allows t1; source bee has a t2 child
-    env.hives[HIVE_CLONE_DEST]["child_tiers"] = {"t1": ["Epic", "Epics"]}
     # Scope-level tiers include t2 so the child ticket can exist in source
     env.write_config(child_tiers={"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]})
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, child_tiers={"t1": ["Epic", "Epics"]})
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Parent Bee")
     write_ticket_file(
@@ -602,9 +612,9 @@ def test_move_bee_batch_abort_on_one_failing(isolated_bees_env):
     Error lists only the failing bee ID with its incompatible values."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open", "done"]
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Bee One", status="open")
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_2, title="Bee Two", status="worker")
@@ -628,8 +638,8 @@ def test_move_bee_force_bypass(isolated_bees_env):
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open", "done"]
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Force Move", status="worker")
 
@@ -645,8 +655,8 @@ def test_move_bee_same_hive_unaffected(isolated_bees_env):
     """Moving to same hive skips compatibility check; bee with non-allowed status is still skipped."""
     env = isolated_bees_env
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open"]
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open"])
 
     # Bee already in dest hive with status not in allowed list
     write_ticket_file(dest_dir, TICKET_ID_MOVE_BEE_1, title="Same Hive Bee", status="worker")
@@ -663,8 +673,8 @@ def test_move_bee_compatible_cross_hive_unaffected(isolated_bees_env):
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open", "done", "worker"]
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done", "worker"])
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compatible Bee", status="open")
 

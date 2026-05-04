@@ -452,7 +452,7 @@ class TestTestConfigFlag:
 
     def test_file_path_calls_override(self, tmp_path):
         """--test-config /path/to/file.json reads file and calls set_test_config_override."""
-        config = {"schema_version": "2.0", "scopes": {"/repo": {"hives": {}}}}
+        config = {"schema_version": "3.0", "scopes": {"/repo": {"hives": {}}}}
         config_file = tmp_path / "test_cfg.json"
         config_file.write_text(json.dumps(config))
 
@@ -478,7 +478,7 @@ class TestTestConfigFlag:
             args = _make_serve_args(http=True, test_config="")
             handle_serve(args)
 
-        mock_override.assert_called_once_with({"schema_version": "2.0", "scopes": {}})
+        mock_override.assert_called_once_with({"schema_version": "4.0", "scopes": {}})
 
     def test_info_log_emitted(self, caplog):
         """An INFO log mentioning test mode is emitted when --test-config is active."""
@@ -547,11 +547,11 @@ class TestTestConfigIsolation:
         initial_bytes = config_file.read_bytes()
 
         try:
-            set_test_config_override({"schema_version": "2.0", "scopes": {}})
+            set_test_config_override({"schema_version": "3.0", "scopes": {}})
 
-            save_global_config({"scopes": {"/op1": {"hives": {}}}, "schema_version": "2.0"})
-            save_global_config({"scopes": {"/op2": {"hives": {}}}, "schema_version": "2.0"})
-            save_global_config({"scopes": {"/op3": {"hives": {}}}, "schema_version": "2.0"})
+            save_global_config({"scopes": {"/op1": {"hives": {}}}, "schema_version": "3.0"})
+            save_global_config({"scopes": {"/op2": {"hives": {}}}, "schema_version": "3.0"})
+            save_global_config({"scopes": {"/op3": {"hives": {}}}, "schema_version": "3.0"})
 
             # In-memory state reflects the last write
             in_memory = load_global_config()
@@ -571,7 +571,7 @@ class TestTestConfigIsolation:
         from src.config import load_global_config, save_global_config, set_test_config_override
 
         try:
-            set_test_config_override({"schema_version": "2.0", "scopes": {}})
+            set_test_config_override({"schema_version": "3.0", "scopes": {}})
 
             # Load returns a reference to the override; mutate in-place then save
             cfg = load_global_config()

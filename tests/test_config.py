@@ -24,6 +24,7 @@ from src.config import (
     match_scope_pattern,
     parse_scope_to_bees_config,
     resolve_child_tiers_for_hive,
+    resolve_status_values_for_hive,
     save_bees_config,
     save_global_config,
     scopes_overlap,
@@ -33,6 +34,7 @@ from src.config import (
     validate_child_tiers,
     validate_scope_pattern,
 )
+from src.mcp_hive_ops import write_identity
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config, write_scoped_config
 from tests.test_constants import (
@@ -51,6 +53,27 @@ def _make_hive(path="tickets/backend/", display_name="Backend", created_at=TS):
     return HiveConfig(path=path, display_name=display_name, created_at=created_at)
 
 
+def _setup_hive_identity(tmp_path, hive_name, *, child_tiers=None, status_values=None, status_values_null=False):
+    """Create a hive directory with .hive/identity.json for resolution tests.
+
+    Returns the hive directory path (str) for use in config.json hive entries.
+    """
+    hive_dir = tmp_path / hive_name
+    hive_dir.mkdir(parents=True, exist_ok=True)
+    hive_marker = hive_dir / ".hive"
+    hive_marker.mkdir(parents=True, exist_ok=True)
+    identity_data = {"normalized_name": hive_name, "display_name": hive_name.title(), "created_at": TS}
+    if child_tiers is not None:
+        identity_data["child_tiers"] = child_tiers
+    if status_values_null:
+        identity_data["status_values"] = None
+        identity_data["status_values_explicitly_null"] = True
+    elif status_values is not None:
+        identity_data["status_values"] = status_values
+    write_identity(hive_marker, identity_data)
+    return str(hive_dir)
+
+
 @pytest.fixture(autouse=True)
 def setup_repo_context(tmp_path):
     """Set repo_root context to tmp_path for all tests."""
@@ -67,28 +90,6 @@ class TestBeesConfigDataclasses:
         assert hive.path == "/path/to/hive"
         assert hive.display_name == "My Hive"
         assert hive.created_at == "2026-02-01T13:45:30.123456"
-
-    @pytest.mark.parametrize(
-        "child_tiers,expected",
-        [
-            pytest.param(None, None, id="default_none"),
-            pytest.param({}, {}, id="bees_only_empty_dict"),
-            pytest.param(
-                {"t1": ChildTierConfig("Task", "Tasks"), "t2": ChildTierConfig("Subtask", "Subtasks")},
-                {"t1": ChildTierConfig("Task", "Tasks"), "t2": ChildTierConfig("Subtask", "Subtasks")},
-                id="populated_tiers",
-            ),
-        ],
-    )
-    def test_hive_config_with_child_tiers(self, child_tiers, expected):
-        """Test HiveConfig initialization with various child_tiers values."""
-        hive = HiveConfig(
-            path="/path/to/hive",
-            display_name="My Hive",
-            created_at=TS,
-            child_tiers=child_tiers,
-        )
-        assert hive.child_tiers == expected
 
     @pytest.mark.parametrize(
         "kwargs,expected_hives,expected_version",
@@ -564,27 +565,6 @@ class TestParseScopeToBeesConfig:
         config = parse_scope_to_bees_config(scope)
         assert config.child_tiers == {}
 
-    @pytest.mark.parametrize(
-        "hive_child_tiers,expected_child_tiers",
-        [
-            pytest.param(None, None, id="hive_child_tiers_absent"),
-            pytest.param({}, {}, id="hive_child_tiers_empty"),
-            pytest.param(
-                {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
-                {"t1": ChildTierConfig("Task", "Tasks"), "t2": ChildTierConfig("Subtask", "Subtasks")},
-                id="hive_child_tiers_populated",
-            ),
-        ],
-    )
-    def test_hive_level_child_tiers_parsing(self, hive_child_tiers, expected_child_tiers):
-        """Test _parse_hives_data correctly parses hive-level child_tiers."""
-        hive_data = {"path": "/path", "display_name": "Backend", "created_at": TS}
-        if hive_child_tiers is not None:
-            hive_data["child_tiers"] = hive_child_tiers
-        scope = {"hives": {"backend": hive_data}}
-        config = parse_scope_to_bees_config(scope)
-        assert config.hives["backend"].child_tiers == expected_child_tiers
-
     def test_missing_scope_child_tiers_no_warning(self, caplog):
         """Test parse_scope_to_bees_config doesn't log warning when child_tiers is missing."""
         import logging
@@ -624,76 +604,31 @@ class TestSerializeBeesConfigToScope:
         scope = serialize_bees_config_to_scope(config)
         assert scope["child_tiers"]["t1"] == []
 
-    @pytest.mark.parametrize(
-        "hive_child_tiers,expected_serialized",
-        [
-            pytest.param(None, None, id="hive_child_tiers_none_omitted"),
-            pytest.param({}, {}, id="hive_child_tiers_empty_preserved"),
-            pytest.param(
-                {"t1": ChildTierConfig("Task", "Tasks")},
-                {"t1": ["Task", "Tasks"]},
-                id="hive_child_tiers_populated",
-            ),
-        ],
-    )
-    def test_hive_level_child_tiers_serialization(self, hive_child_tiers, expected_serialized):
-        """Test serialize_bees_config_to_scope handles hive-level child_tiers correctly."""
+    def test_hive_entries_have_no_child_tiers(self):
+        """Test serialized hive entries never contain child_tiers (now in identity.json)."""
         config = BeesConfig(
-            hives={
-                "backend": HiveConfig(
-                    path="/path",
-                    display_name="Backend",
-                    created_at=TS,
-                    child_tiers=hive_child_tiers,
-                )
-            }
+            hives={"backend": HiveConfig(path="/path", display_name="Backend", created_at=TS)},
+            child_tiers={"t1": ChildTierConfig("Task", "Tasks")},
         )
         scope = serialize_bees_config_to_scope(config)
-        if expected_serialized is None:
-            assert "child_tiers" not in scope["hives"]["backend"]
-        else:
-            assert scope["hives"]["backend"]["child_tiers"] == expected_serialized
+        assert "child_tiers" not in scope["hives"]["backend"]
+        # Scope-level child_tiers should be present
+        assert scope["child_tiers"]["t1"] == ["Task", "Tasks"]
 
-    @pytest.mark.parametrize(
-        "scope_child_tiers,hive_child_tiers",
-        [
-            pytest.param(None, None, id="both_none"),
-            pytest.param({}, {}, id="both_empty"),
-            pytest.param(None, {}, id="scope_none_hive_empty"),
-            pytest.param({}, None, id="scope_empty_hive_none"),
-            pytest.param(
-                {"t1": ["Task", "Tasks"]},
-                {"t1": ["Subtask", "Subtasks"]},
-                id="both_populated",
-            ),
-        ],
-    )
-    def test_round_trip_none_vs_empty_dict(self, scope_child_tiers, hive_child_tiers):
-        """Test serialize/parse round-trip preserves None vs {} distinction."""
-        # Build scope dict manually
-        scope = {"hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}}}
-        if scope_child_tiers is not None:
-            scope["child_tiers"] = scope_child_tiers
-        if hive_child_tiers is not None:
-            scope["hives"]["backend"]["child_tiers"] = hive_child_tiers
+    def test_scope_round_trip_none_vs_empty_dict(self):
+        """Test serialize/parse round-trip preserves None vs {} for scope-level child_tiers."""
+        for scope_child_tiers in [None, {}, {"t1": ["Task", "Tasks"]}]:
+            scope = {"hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}}}
+            if scope_child_tiers is not None:
+                scope["child_tiers"] = scope_child_tiers
 
-        # Parse to BeesConfig
-        config = parse_scope_to_bees_config(scope)
+            config = parse_scope_to_bees_config(scope)
+            reserialized = serialize_bees_config_to_scope(config)
 
-        # Serialize back to scope dict
-        reserialized = serialize_bees_config_to_scope(config)
-
-        # Verify scope-level child_tiers
-        if scope_child_tiers is None:
-            assert "child_tiers" not in reserialized
-        else:
-            assert reserialized["child_tiers"] == scope_child_tiers
-
-        # Verify hive-level child_tiers
-        if hive_child_tiers is None:
-            assert "child_tiers" not in reserialized["hives"]["backend"]
-        else:
-            assert reserialized["hives"]["backend"]["child_tiers"] == hive_child_tiers
+            if scope_child_tiers is None:
+                assert "child_tiers" not in reserialized
+            else:
+                assert reserialized["child_tiers"] == scope_child_tiers
 
 
 class TestUndertakerScheduleParsing:
@@ -982,22 +917,16 @@ class TestSaveBeesConfig:
 
 
 class TestResolveChildTiersForHive:
-    """Test resolve_child_tiers_for_hive() with 3-level fallback."""
+    """Test resolve_child_tiers_for_hive() with 4-level fallback (identity.json → scope → global → default)."""
 
-    def test_hive_level_overrides_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test hive-level child_tiers takes precedence over scope-level."""
+    def test_identity_json_overrides_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test identity.json child_tiers takes precedence over scope-level."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", child_tiers={"t1": ["Issue", "Issues"]})
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "child_tiers": {"t1": ["Issue", "Issues"]},
-                        }
-                    },
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {"t1": ["Task", "Tasks"]},
                 }
             },
@@ -1009,12 +938,13 @@ class TestResolveChildTiersForHive:
         assert result == {"t1": ChildTierConfig("Issue", "Issues")}
 
     def test_scope_level_overrides_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test scope-level child_tiers takes precedence when hive has none."""
+        """Test scope-level child_tiers takes precedence when identity.json has no child_tiers."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")  # no child_tiers
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {"t1": ["Task", "Tasks"]},
                 }
             },
@@ -1027,12 +957,13 @@ class TestResolveChildTiersForHive:
         assert result == {"t1": ChildTierConfig("Task", "Tasks")}
 
     def test_global_level_fallback(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test global-level child_tiers used when hive and scope are None."""
+        """Test global-level child_tiers used when identity.json and scope have none."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")  # no child_tiers
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                 }
             },
             "schema_version": "2.0",
@@ -1046,10 +977,11 @@ class TestResolveChildTiersForHive:
     def test_all_levels_none_returns_empty(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test returns {} (bees-only) when no level has child_tiers configured."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                 }
             },
             "schema_version": "2.0",
@@ -1059,20 +991,14 @@ class TestResolveChildTiersForHive:
         result = resolve_child_tiers_for_hive("backend")
         assert result == {}
 
-    def test_empty_dict_stops_at_hive(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test {} at hive level stops the chain even if scope has tiers."""
+    def test_empty_dict_in_identity_stops_chain(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test {} in identity.json stops the chain even if scope has tiers."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", child_tiers={})
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "child_tiers": {},
-                        }
-                    },
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {"t1": ["Task", "Tasks"]},
                 }
             },
@@ -1086,10 +1012,11 @@ class TestResolveChildTiersForHive:
     def test_empty_dict_stops_at_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test {} at scope level stops the chain even if global has tiers."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                 }
             },
@@ -1104,10 +1031,11 @@ class TestResolveChildTiersForHive:
     def test_empty_dict_stops_at_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test {} at global level returns bees-only."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                 }
             },
             "schema_version": "2.0",
@@ -1121,10 +1049,11 @@ class TestResolveChildTiersForHive:
     def test_nonexistent_hive_raises(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test ValueError raised when hive doesn't exist in config."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                 }
             },
@@ -1135,33 +1064,28 @@ class TestResolveChildTiersForHive:
         with pytest.raises(ValueError, match="nonexistent"):
             resolve_child_tiers_for_hive("nonexistent")
 
-    def test_config_param_used_when_provided(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test that explicit config param is used instead of loading."""
+    def test_config_param_with_identity_json(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test explicit config param is used, hive-level still reads identity.json."""
+        monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "myhive", child_tiers={"t1": ["Task", "Tasks"]})
         config = BeesConfig(
-            hives={"myhive": HiveConfig(
-                path="/path", display_name="My Hive", created_at=TS,
-                child_tiers={"t1": ChildTierConfig("Task", "Tasks")},
-            )},
+            hives={"myhive": HiveConfig(path=hive_path, display_name="My Hive", created_at=TS)},
             child_tiers={"t1": ChildTierConfig("Epic", "Epics")},
         )
 
         result = resolve_child_tiers_for_hive("myhive", config=config)
         assert result == {"t1": ChildTierConfig("Task", "Tasks")}
 
-    def test_null_at_hive_level_falls_through_to_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test explicit null child_tiers at hive level falls through to scope."""
+    def test_no_identity_json_falls_through_to_scope(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test absent identity.json falls through to scope without error."""
         monkeypatch.chdir(tmp_path)
+        # Create hive dir but no .hive/identity.json
+        hive_dir = tmp_path / "backend"
+        hive_dir.mkdir()
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "child_tiers": None,
-                        }
-                    },
+                    "hives": {"backend": {"path": str(hive_dir), "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {"t1": ["Task", "Tasks"]},
                 }
             },
@@ -1172,17 +1096,19 @@ class TestResolveChildTiersForHive:
         result = resolve_child_tiers_for_hive("backend")
         assert result == {"t1": ChildTierConfig("Task", "Tasks")}
 
-    def test_missing_key_at_hive_level_falls_through(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test absent child_tiers key at hive level falls through (same as None)."""
+    def test_corrupt_identity_json_falls_through(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test corrupt identity.json logs warning and falls through to scope."""
         monkeypatch.chdir(tmp_path)
-        # Hive entry has no child_tiers key at all
+        hive_dir = tmp_path / "backend"
+        hive_dir.mkdir()
+        hive_marker = hive_dir / ".hive"
+        hive_marker.mkdir()
+        (hive_marker / "identity.json").write_text("not valid json{{{")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {"path": "/path", "display_name": "Backend", "created_at": TS}
-                    },
-                    "child_tiers": {"t1": ["Epic", "Epics"]},
+                    "hives": {"backend": {"path": str(hive_dir), "display_name": "Backend", "created_at": TS}},
+                    "child_tiers": {"t1": ["Scope Task", "Scope Tasks"]},
                 }
             },
             "schema_version": "2.0",
@@ -1190,7 +1116,7 @@ class TestResolveChildTiersForHive:
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
         result = resolve_child_tiers_for_hive("backend")
-        assert result == {"t1": ChildTierConfig("Epic", "Epics")}
+        assert result == {"t1": ChildTierConfig("Scope Task", "Scope Tasks")}
 
     @pytest.mark.parametrize(
         "hive_tiers,scope_tiers,global_tiers,expected_t1_name",
@@ -1217,11 +1143,12 @@ class TestResolveChildTiersForHive:
     ):
         """Test fallback priority across all three configured levels."""
         monkeypatch.chdir(tmp_path)
-        hive_data = {"path": "/path", "display_name": "Backend", "created_at": TS}
         if hive_tiers is not None:
-            hive_data["child_tiers"] = hive_tiers
+            hive_path = _setup_hive_identity(tmp_path, "backend", child_tiers=hive_tiers)
+        else:
+            hive_path = _setup_hive_identity(tmp_path, "backend")
 
-        scope_entry = {"hives": {"backend": hive_data}}
+        scope_entry = {"hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}}}
         if scope_tiers is not None:
             scope_entry["child_tiers"] = scope_tiers
 
@@ -1236,32 +1163,21 @@ class TestResolveChildTiersForHive:
 
 
 class TestResolveChildTiersMultipleHives:
-    """Test per-hive child_tiers resolution with multiple independent hives."""
+    """Test per-hive child_tiers resolution with multiple independent hives (via identity.json)."""
 
     def test_each_hive_resolves_independently(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test multiple hives each resolve to their own child_tiers independently."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", child_tiers={"t1": ["Epic", "Epics"]})
+        bugs_path = _setup_hive_identity(tmp_path, "bugs", child_tiers={})
+        backend_path = _setup_hive_identity(tmp_path, "backend")  # no child_tiers
         global_config = {
             "scopes": {
                 str(tmp_path): {
                     "hives": {
-                        "features": {
-                            "path": "/features",
-                            "display_name": "Features",
-                            "created_at": TS,
-                            "child_tiers": {"t1": ["Epic", "Epics"]},
-                        },
-                        "bugs": {
-                            "path": "/bugs",
-                            "display_name": "Bugs",
-                            "created_at": TS,
-                            "child_tiers": {},
-                        },
-                        "backend": {
-                            "path": "/backend",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                        },
+                        "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                        "bugs": {"path": bugs_path, "display_name": "Bugs", "created_at": TS},
+                        "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
                     },
                     "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
                 }
@@ -1270,16 +1186,16 @@ class TestResolveChildTiersMultipleHives:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        # features: hive-level override → Epics only
+        # features: identity.json override → Epics only
         features_tiers = resolve_child_tiers_for_hive("features")
         assert features_tiers["t1"].singular == "Epic"
         assert len(features_tiers) == 1
 
-        # bugs: hive-level empty {} → bees-only
+        # bugs: identity.json empty {} → bees-only
         bugs_tiers = resolve_child_tiers_for_hive("bugs")
         assert bugs_tiers == {}
 
-        # backend: no hive child_tiers → inherits scope Task/Subtask
+        # backend: no child_tiers in identity.json → inherits scope Task/Subtask
         backend_tiers = resolve_child_tiers_for_hive("backend")
         assert backend_tiers["t1"].singular == "Task"
         assert backend_tiers["t2"].singular == "Subtask"
@@ -1288,17 +1204,14 @@ class TestResolveChildTiersMultipleHives:
     def test_hive_override_does_not_affect_other_hives(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test setting child_tiers on one hive doesn't bleed into others."""
         monkeypatch.chdir(tmp_path)
+        a_path = _setup_hive_identity(tmp_path, "hive_a", child_tiers={"t1": ["Custom", "Customs"]})
+        b_path = _setup_hive_identity(tmp_path, "hive_b")
         global_config = {
             "scopes": {
                 str(tmp_path): {
                     "hives": {
-                        "hive_a": {
-                            "path": "/a", "display_name": "A", "created_at": TS,
-                            "child_tiers": {"t1": ["Custom", "Customs"]},
-                        },
-                        "hive_b": {
-                            "path": "/b", "display_name": "B", "created_at": TS,
-                        },
+                        "hive_a": {"path": a_path, "display_name": "A", "created_at": TS},
+                        "hive_b": {"path": b_path, "display_name": "B", "created_at": TS},
                     },
                     "child_tiers": {"t1": ["Task", "Tasks"]},
                 }
@@ -1331,15 +1244,11 @@ class TestResolveChildTiersMultipleHives:
     ):
         """Test hive can have different number of tiers than scope."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "test_hive", child_tiers=hive_tiers)
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "test_hive": {
-                            "path": "/path", "display_name": "Test", "created_at": TS,
-                            "child_tiers": hive_tiers,
-                        }
-                    },
+                    "hives": {"test_hive": {"path": hive_path, "display_name": "Test", "created_at": TS}},
                     "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
                 }
             },
@@ -1352,20 +1261,21 @@ class TestResolveChildTiersMultipleHives:
 
 
 class TestChildTiersConfigRoundTrip:
-    """Test per-hive child_tiers survives config save/load round-trip."""
+    """Test scope-level child_tiers survives config save/load round-trip.
 
-    def test_hive_child_tiers_preserved_through_save_load(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test per-hive child_tiers persists through save_bees_config/load_bees_config cycle."""
+    Note: Hive-level child_tiers are now stored in identity.json, not config.json.
+    Config.json round-trip only tests scope-level tiers.
+    """
+
+    def test_scope_child_tiers_preserved_through_save_load(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test scope-level child_tiers persists through save_bees_config/load_bees_config cycle."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", child_tiers={"t1": ["Epic", "Epics"]})
+        backend_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
             "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "child_tiers": {"t1": ["Epic", "Epics"]},
-                },
-                "backend": {
-                    "path": "/backend", "display_name": "Backend", "created_at": TS,
-                },
+                "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
             },
             "child_tiers": {"t1": ["Task", "Tasks"]},
         }
@@ -1375,50 +1285,24 @@ class TestChildTiersConfigRoundTrip:
         assert config is not None
         save_bees_config(config, str(tmp_path))
 
-        # Verify per-hive tiers survived in raw JSON
-        raw = json.loads((mock_global_bees_dir / "config.json").read_text())
-        features_data = raw["scopes"][str(tmp_path)]["hives"]["features"]
-        assert "child_tiers" in features_data
-        assert features_data["child_tiers"]["t1"] == ["Epic", "Epics"]
-
-        # Verify backend still has no hive-level child_tiers
-        backend_data = raw["scopes"][str(tmp_path)]["hives"]["backend"]
-        assert "child_tiers" not in backend_data
-
-    def test_scope_child_tiers_preserved_alongside_hive_overrides(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test scope-level child_tiers aren't corrupted by hive-level overrides."""
-        monkeypatch.chdir(tmp_path)
-        scope_data = {
-            "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "child_tiers": {"t1": ["Epic", "Epics"]},
-                },
-            },
-            "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
-        }
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-
-        config = load_bees_config()
-        save_bees_config(config, str(tmp_path))
-
+        # Verify scope-level tiers survived in raw JSON
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
         scope = raw["scopes"][str(tmp_path)]
         assert scope["child_tiers"]["t1"] == ["Task", "Tasks"]
-        assert scope["child_tiers"]["t2"] == ["Subtask", "Subtasks"]
+
+        # Verify hive entries in config.json have NO child_tiers (stored in identity.json)
+        features_data = raw["scopes"][str(tmp_path)]["hives"]["features"]
+        assert "child_tiers" not in features_data
 
     def test_resolution_consistent_after_round_trip(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test resolve_child_tiers_for_hive gives same result before and after save/load."""
+        """Test resolve_child_tiers_for_hive gives same result before and after config save/load."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", child_tiers={"t1": ["Epic", "Epics"]})
+        backend_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
             "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "child_tiers": {"t1": ["Epic", "Epics"]},
-                },
-                "backend": {
-                    "path": "/backend", "display_name": "Backend", "created_at": TS,
-                },
+                "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
             },
             "child_tiers": {"t1": ["Task", "Tasks"]},
         }
@@ -1428,11 +1312,11 @@ class TestChildTiersConfigRoundTrip:
         before_features = resolve_child_tiers_for_hive("features")
         before_backend = resolve_child_tiers_for_hive("backend")
 
-        # Round-trip
+        # Round-trip config.json
         config = load_bees_config()
         save_bees_config(config, str(tmp_path))
 
-        # Resolve after round-trip
+        # Resolve after round-trip — identity.json unchanged, so results must match
         after_features = resolve_child_tiers_for_hive("features")
         after_backend = resolve_child_tiers_for_hive("backend")
 
@@ -1446,7 +1330,11 @@ class TestChildTiersConfigRoundTrip:
 
 
 class TestStatusValuesConfigValidation:
-    """Test status_values validation at global, scope, and hive levels."""
+    """Test status_values validation at global and scope levels.
+
+    Note: Hive-level status_values are now in identity.json and validated by read_identity,
+    not by config.json loading.
+    """
 
     @pytest.mark.parametrize(
         "level,status_values",
@@ -1456,12 +1344,10 @@ class TestStatusValuesConfigValidation:
             pytest.param("global", ["pupa", "larva", "worker", "finished"], id="global_multiple_values"),
             pytest.param("scope", ["todo", "doing", "done"], id="scope_valid_list"),
             pytest.param("scope", [], id="scope_empty_list"),
-            pytest.param("hive", ["open", "in_progress", "completed"], id="hive_valid_list"),
-            pytest.param("hive", [], id="hive_empty_list"),
         ],
     )
     def test_valid_status_values_load(self, level, status_values, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test valid status_values load correctly at all levels."""
+        """Test valid status_values load correctly at global and scope levels."""
         monkeypatch.chdir(tmp_path)
 
         if level == "global":
@@ -1470,7 +1356,7 @@ class TestStatusValuesConfigValidation:
             loaded = load_global_config()
             assert loaded.get("status_values") == status_values
 
-        elif level == "scope":
+        else:  # scope
             scope_data = {
                 "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
                 "child_tiers": {},
@@ -1479,13 +1365,6 @@ class TestStatusValuesConfigValidation:
             write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
             config = load_bees_config()
             assert config.status_values == status_values
-
-        else:  # hive level
-            hive_data = {"path": "/path", "display_name": "Backend", "created_at": TS, "status_values": status_values}
-            scope_data = {"hives": {"backend": hive_data}, "child_tiers": {}}
-            write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-            config = load_bees_config()
-            assert config.hives["backend"].status_values == status_values
 
     @pytest.mark.parametrize(
         "level,invalid_value,error_match",
@@ -1499,17 +1378,12 @@ class TestStatusValuesConfigValidation:
             pytest.param("scope", {"status": "open"}, "Scope status_values must be a list", id="scope_dict"),
             pytest.param("scope", 456, "Scope status_values must be a list", id="scope_int"),
             pytest.param("scope", ["todo", 789], "must be a list of strings", id="scope_list_with_non_string"),
-            pytest.param("hive", "open", "Hive 'backend' status_values must be a list", id="hive_string"),
-            pytest.param("hive", {"status": "open"}, "Hive 'backend' status_values must be a list", id="hive_dict"),
-            pytest.param("hive", 123, "Hive 'backend' status_values must be a list", id="hive_int"),
-            pytest.param("hive", ["open", False], "must be a list of strings", id="hive_list_with_bool"),
             pytest.param("global", ["open", ""], "must not contain empty strings", id="global_empty_string"),
             pytest.param("scope", ["", "done"], "must not contain empty strings", id="scope_empty_string"),
-            pytest.param("hive", ["open", "  "], "must not contain empty strings", id="hive_whitespace_string"),
         ],
     )
     def test_invalid_status_values_raise_error(self, level, invalid_value, error_match, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test invalid status_values raise ValueError at all levels."""
+        """Test invalid status_values raise ValueError at global and scope levels."""
         monkeypatch.chdir(tmp_path)
 
         if level == "global":
@@ -1518,7 +1392,7 @@ class TestStatusValuesConfigValidation:
             with pytest.raises(ValueError, match=error_match):
                 load_global_config()
 
-        elif level == "scope":
+        else:  # scope
             scope_data = {
                 "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
                 "child_tiers": {},
@@ -1528,31 +1402,18 @@ class TestStatusValuesConfigValidation:
             with pytest.raises(ValueError, match=error_match):
                 load_bees_config()
 
-        else:  # hive level
-            hive_data = {"path": "/path", "display_name": "Backend", "created_at": TS, "status_values": invalid_value}
-            scope_data = {"hives": {"backend": hive_data}, "child_tiers": {}}
-            write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-            with pytest.raises(ValueError, match=error_match):
-                load_bees_config()
-
 
 class TestStatusValuesResolution:
-    """Test status_values resolution with 3-level fallback."""
+    """Test status_values resolution with 4-level fallback (identity.json → scope → global → default)."""
 
-    def test_hive_overrides_scope_and_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test hive-level status_values takes precedence."""
+    def test_identity_json_overrides_scope_and_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test identity.json status_values takes precedence."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", status_values=["hive_open", "hive_closed"])
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "status_values": ["hive_open", "hive_closed"],
-                        }
-                    },
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                     "status_values": ["scope_todo", "scope_done"],
                 }
@@ -1562,17 +1423,17 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == ["hive_open", "hive_closed"]
 
     def test_scope_overrides_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test scope-level status_values takes precedence when hive has none."""
+        """Test scope-level status_values takes precedence when identity.json has no status_values."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")  # no status_values
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                     "status_values": ["scope_todo", "scope_done"],
                 }
@@ -1582,17 +1443,17 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == ["scope_todo", "scope_done"]
 
-    def test_global_used_when_scope_and_hive_none(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test global-level status_values used when scope and hive have none."""
+    def test_global_used_when_scope_and_identity_none(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test global-level status_values used when identity.json and scope have none."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                 }
             },
@@ -1601,24 +1462,17 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == ["global_open", "global_closed"]
 
-    def test_empty_list_falls_through_to_next_level(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test empty list [] at hive level falls through to scope."""
+    def test_empty_list_in_identity_falls_through(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test empty list [] in identity.json falls through to scope."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", status_values=[])
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "status_values": [],
-                        }
-                    },
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                     "status_values": ["scope_todo", "scope_done"],
                 }
@@ -1627,17 +1481,17 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == ["scope_todo", "scope_done"]
 
     def test_empty_list_at_scope_falls_through_to_global(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test empty list [] at scope level falls through to global."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                     "status_values": [],
                 }
@@ -1647,24 +1501,17 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == ["global_open", "global_closed"]
 
-    def test_null_overrides_scope_inheritance(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test explicit null at hive level stops inheritance — no constraints for that hive."""
+    def test_null_in_identity_blocks_inheritance(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test explicit null in identity.json stops inheritance — no constraints for that hive."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", status_values_null=True)
         global_config = {
             "scopes": {
                 str(tmp_path): {
-                    "hives": {
-                        "backend": {
-                            "path": "/path",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                            "status_values": None,
-                        }
-                    },
+                    "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
                     "child_tiers": {},
                     "status_values": ["scope_todo", "scope_done"],
                 }
@@ -1673,49 +1520,89 @@ class TestStatusValuesResolution:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result is None
 
     def test_no_config_anywhere_returns_none(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test resolve_status_values_for_hive returns None when not configured anywhere."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
-            "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+            "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
             "child_tiers": {},
         }
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result is None
 
     def test_nonexistent_hive_raises_error(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test resolve_status_values_for_hive raises error for nonexistent hive."""
         monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
-            "hives": {"backend": {"path": "/path", "display_name": "Backend", "created_at": TS}},
+            "hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}},
             "child_tiers": {},
         }
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
 
-        from src.config import resolve_status_values_for_hive
         with pytest.raises(ValueError, match="Hive 'nonexistent' does not exist"):
             resolve_status_values_for_hive("nonexistent")
 
-    def test_config_param_used_when_provided(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test that explicit config param is used instead of loading."""
+    def test_config_param_with_identity_json(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test explicit config param is used, hive-level still reads identity.json."""
+        monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "myhive", status_values=["open", "closed"])
         config = BeesConfig(
-            hives={"myhive": HiveConfig(
-                path="/path", display_name="My Hive", created_at=TS,
-                status_values=["open", "closed"],
-            )},
+            hives={"myhive": HiveConfig(path=hive_path, display_name="My Hive", created_at=TS)},
             status_values=["todo", "done"],
         )
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("myhive", config=config)
         assert result == ["open", "closed"]
+
+    def test_no_identity_json_falls_through(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test absent identity.json falls through to scope without error."""
+        monkeypatch.chdir(tmp_path)
+        hive_dir = tmp_path / "backend"
+        hive_dir.mkdir()
+        global_config = {
+            "scopes": {
+                str(tmp_path): {
+                    "hives": {"backend": {"path": str(hive_dir), "display_name": "Backend", "created_at": TS}},
+                    "child_tiers": {},
+                    "status_values": ["scope_todo", "scope_done"],
+                }
+            },
+            "schema_version": "2.0",
+        }
+        (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
+
+        result = resolve_status_values_for_hive("backend")
+        assert result == ["scope_todo", "scope_done"]
+
+    def test_corrupt_identity_json_falls_through(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test corrupt identity.json logs warning and falls through to scope."""
+        monkeypatch.chdir(tmp_path)
+        hive_dir = tmp_path / "backend"
+        hive_dir.mkdir()
+        hive_marker = hive_dir / ".hive"
+        hive_marker.mkdir()
+        (hive_marker / "identity.json").write_text("{invalid json")
+        global_config = {
+            "scopes": {
+                str(tmp_path): {
+                    "hives": {"backend": {"path": str(hive_dir), "display_name": "Backend", "created_at": TS}},
+                    "child_tiers": {},
+                    "status_values": ["scope_todo", "scope_done"],
+                }
+            },
+            "schema_version": "2.0",
+        }
+        (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
+
+        result = resolve_status_values_for_hive("backend")
+        assert result == ["scope_todo", "scope_done"]
 
     @pytest.mark.parametrize(
         "hive_values,scope_values,global_values,expected",
@@ -1731,33 +1618,24 @@ class TestStatusValuesResolution:
                 id="scope_wins_when_hive_none",
             ),
             pytest.param(
-                [], ["scope_todo", "scope_done"],
-                ["global_open", "global_closed"], ["scope_todo", "scope_done"],
-                id="scope_wins_when_hive_empty",
-            ),
-            pytest.param(
                 None, None, ["global_open", "global_closed"], ["global_open", "global_closed"],
                 id="global_wins_when_hive_and_scope_none",
             ),
-            pytest.param(
-                [], [], ["global_open", "global_closed"], ["global_open", "global_closed"],
-                id="global_wins_when_hive_and_scope_empty",
-            ),
             pytest.param(None, None, None, None, id="all_none_returns_none"),
-            pytest.param([], [], [], None, id="all_empty_returns_none"),
         ],
     )
     def test_fallback_priority_parametrized(
         self, hive_values, scope_values, global_values, expected,
         tmp_path, monkeypatch, mock_global_bees_dir,
     ):
-        """Test fallback priority across all three configured levels."""
+        """Test fallback priority across all configured levels."""
         monkeypatch.chdir(tmp_path)
-        hive_data = {"path": "/path", "display_name": "Backend", "created_at": TS}
         if hive_values is not None:
-            hive_data["status_values"] = hive_values
+            hive_path = _setup_hive_identity(tmp_path, "backend", status_values=hive_values)
+        else:
+            hive_path = _setup_hive_identity(tmp_path, "backend")
 
-        scope_entry = {"hives": {"backend": hive_data}}
+        scope_entry = {"hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}}}
         if scope_values is not None:
             scope_entry["status_values"] = scope_values
 
@@ -1767,38 +1645,26 @@ class TestStatusValuesResolution:
 
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         result = resolve_status_values_for_hive("backend")
         assert result == expected
 
 
 class TestStatusValuesMultipleHives:
-    """Test per-hive status_values resolution with multiple independent hives."""
+    """Test per-hive status_values resolution with multiple independent hives (via identity.json)."""
 
     def test_each_hive_resolves_independently(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test multiple hives each resolve to their own status_values independently."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", status_values=["backlog", "active", "shipped"])
+        bugs_path = _setup_hive_identity(tmp_path, "bugs", status_values=[])
+        backend_path = _setup_hive_identity(tmp_path, "backend")  # no status_values
         global_config = {
             "scopes": {
                 str(tmp_path): {
                     "hives": {
-                        "features": {
-                            "path": "/features",
-                            "display_name": "Features",
-                            "created_at": TS,
-                            "status_values": ["backlog", "active", "shipped"],
-                        },
-                        "bugs": {
-                            "path": "/bugs",
-                            "display_name": "Bugs",
-                            "created_at": TS,
-                            "status_values": [],
-                        },
-                        "backend": {
-                            "path": "/backend",
-                            "display_name": "Backend",
-                            "created_at": TS,
-                        },
+                        "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                        "bugs": {"path": bugs_path, "display_name": "Bugs", "created_at": TS},
+                        "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
                     },
                     "child_tiers": {},
                     "status_values": ["todo", "doing", "done"],
@@ -1808,34 +1674,29 @@ class TestStatusValuesMultipleHives:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
-
-        # features: hive-level override
+        # features: identity.json override
         features_values = resolve_status_values_for_hive("features")
         assert features_values == ["backlog", "active", "shipped"]
 
-        # bugs: hive-level empty [] → falls through to scope
+        # bugs: identity.json empty [] → falls through to scope
         bugs_values = resolve_status_values_for_hive("bugs")
         assert bugs_values == ["todo", "doing", "done"]
 
-        # backend: no hive status_values → inherits scope
+        # backend: no status_values in identity.json → inherits scope
         backend_values = resolve_status_values_for_hive("backend")
         assert backend_values == ["todo", "doing", "done"]
 
     def test_hive_override_does_not_affect_other_hives(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test setting status_values on one hive doesn't bleed into others."""
         monkeypatch.chdir(tmp_path)
+        a_path = _setup_hive_identity(tmp_path, "hive_a", status_values=["custom_open", "custom_closed"])
+        b_path = _setup_hive_identity(tmp_path, "hive_b")
         global_config = {
             "scopes": {
                 str(tmp_path): {
                     "hives": {
-                        "hive_a": {
-                            "path": "/a", "display_name": "A", "created_at": TS,
-                            "status_values": ["custom_open", "custom_closed"],
-                        },
-                        "hive_b": {
-                            "path": "/b", "display_name": "B", "created_at": TS,
-                        },
+                        "hive_a": {"path": a_path, "display_name": "A", "created_at": TS},
+                        "hive_b": {"path": b_path, "display_name": "B", "created_at": TS},
                     },
                     "child_tiers": {},
                     "status_values": ["open", "closed"],
@@ -1845,7 +1706,6 @@ class TestStatusValuesMultipleHives:
         }
         (mock_global_bees_dir / "config.json").write_text(json.dumps(global_config))
 
-        from src.config import resolve_status_values_for_hive
         a_values = resolve_status_values_for_hive("hive_a")
         b_values = resolve_status_values_for_hive("hive_b")
 
@@ -1854,110 +1714,68 @@ class TestStatusValuesMultipleHives:
 
 
 class TestStatusValuesSerialization:
-    """Test status_values serialization preserves None, [], and non-empty lists."""
+    """Test status_values serialization at scope level.
 
-    def test_serialize_includes_fields_when_present(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test serialization includes status_values when not None."""
+    Note: Hive-level status_values are now in identity.json, not config.json.
+    Serialization only needs to handle scope-level status_values.
+    """
+
+    def test_serialize_scope_status_values(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test serialization includes scope-level status_values when not None."""
         config = BeesConfig(
-            hives={
-                "backend": HiveConfig(
-                    path="/path",
-                    display_name="Backend",
-                    created_at=TS,
-                    status_values=["hive_open", "hive_closed"],
-                )
-            },
+            hives={"backend": HiveConfig(path="/path", display_name="Backend", created_at=TS)},
             status_values=["scope_todo", "scope_done"],
         )
 
         scope_dict = serialize_bees_config_to_scope(config)
-
-        # Check hive-level fields
-        assert scope_dict["hives"]["backend"]["status_values"] == ["hive_open", "hive_closed"]
-
-        # Check scope-level fields
         assert scope_dict["status_values"] == ["scope_todo", "scope_done"]
 
-    def test_serialize_excludes_fields_when_none(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test serialization excludes status_values when None."""
+    def test_serialize_excludes_scope_status_values_when_none(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test serialization excludes scope-level status_values when None."""
         config = BeesConfig(
-            hives={
-                "backend": HiveConfig(
-                    path="/path",
-                    display_name="Backend",
-                    created_at=TS,
-                    status_values=None,
-                )
-            },
+            hives={"backend": HiveConfig(path="/path", display_name="Backend", created_at=TS)},
             status_values=None,
         )
 
         scope_dict = serialize_bees_config_to_scope(config)
-
-        # Check hive-level fields are not present
-        assert "status_values" not in scope_dict["hives"]["backend"]
-
-        # Check scope-level fields are not present
         assert "status_values" not in scope_dict
 
     def test_serialize_preserves_empty_list(self, tmp_path, monkeypatch, mock_global_bees_dir):
         """Test serialization preserves empty list [] (different from None)."""
         config = BeesConfig(
-            hives={
-                "backend": HiveConfig(
-                    path="/path",
-                    display_name="Backend",
-                    created_at=TS,
-                    status_values=[],
-                )
-            },
+            hives={"backend": HiveConfig(path="/path", display_name="Backend", created_at=TS)},
             status_values=[],
         )
 
         scope_dict = serialize_bees_config_to_scope(config)
-
-        # Check empty list is preserved at both levels
-        assert scope_dict["hives"]["backend"]["status_values"] == []
         assert scope_dict["status_values"] == []
 
-    def test_scope_level_not_corrupted_by_hive_overrides(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test scope-level status_values aren't corrupted by hive-level overrides."""
-        monkeypatch.chdir(tmp_path)
-        scope_data = {
-            "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "status_values": ["backlog", "active"],
-                },
-            },
-            "child_tiers": {},
-            "status_values": ["todo", "doing", "done"],
-        }
-        write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
+    def test_hive_entries_have_no_status_values(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test hive entries in serialized config never contain status_values."""
+        config = BeesConfig(
+            hives={"backend": HiveConfig(path="/path", display_name="Backend", created_at=TS)},
+            status_values=["todo", "done"],
+        )
 
-        config = load_bees_config()
-        save_bees_config(config, str(tmp_path))
-
-        raw = json.loads((mock_global_bees_dir / "config.json").read_text())
-        scope = raw["scopes"][str(tmp_path)]
-        assert scope["status_values"] == ["todo", "doing", "done"]
+        scope_dict = serialize_bees_config_to_scope(config)
+        assert "status_values" not in scope_dict["hives"]["backend"]
 
 
 class TestStatusValuesConfigRoundTrip:
-    """Test status_values survives config save/load round-trip."""
+    """Test scope-level status_values survives config save/load round-trip.
 
-    def test_hive_status_values_preserved_through_save_load(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test per-hive status_values persists through save_bees_config/load_bees_config cycle."""
+    Note: Hive-level status_values are now in identity.json, not config.json.
+    """
+
+    def test_scope_status_values_preserved_through_save_load(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test scope-level status_values persists through save_bees_config/load_bees_config cycle."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", status_values=["backlog", "active", "shipped"])
+        backend_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
             "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "status_values": ["backlog", "active", "shipped"],
-                },
-                "backend": {
-                    "path": "/backend", "display_name": "Backend", "created_at": TS,
-                },
+                "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
             },
             "child_tiers": {},
             "status_values": ["todo", "doing", "done"],
@@ -1968,35 +1786,29 @@ class TestStatusValuesConfigRoundTrip:
         assert config is not None
         save_bees_config(config, str(tmp_path))
 
-        # Verify per-hive values survived in raw JSON
+        # Verify scope-level values survived
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
-        features_data = raw["scopes"][str(tmp_path)]["hives"]["features"]
-        assert "status_values" in features_data
-        assert features_data["status_values"] == ["backlog", "active", "shipped"]
+        scope = raw["scopes"][str(tmp_path)]
+        assert scope["status_values"] == ["todo", "doing", "done"]
 
-        # Verify backend still has no hive-level status_values
-        backend_data = raw["scopes"][str(tmp_path)]["hives"]["backend"]
-        assert "status_values" not in backend_data
+        # Verify hive entries in config.json have NO status_values
+        features_data = raw["scopes"][str(tmp_path)]["hives"]["features"]
+        assert "status_values" not in features_data
 
     def test_resolution_consistent_after_round_trip(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test resolve_status_values_for_hive gives same result before and after save/load."""
+        """Test resolve_status_values_for_hive gives same result before and after config save/load."""
         monkeypatch.chdir(tmp_path)
+        features_path = _setup_hive_identity(tmp_path, "features", status_values=["backlog", "active"])
+        backend_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
             "hives": {
-                "features": {
-                    "path": "/features", "display_name": "Features", "created_at": TS,
-                    "status_values": ["backlog", "active"],
-                },
-                "backend": {
-                    "path": "/backend", "display_name": "Backend", "created_at": TS,
-                },
+                "features": {"path": features_path, "display_name": "Features", "created_at": TS},
+                "backend": {"path": backend_path, "display_name": "Backend", "created_at": TS},
             },
             "child_tiers": {},
             "status_values": ["todo", "done"],
         }
         write_scoped_config(mock_global_bees_dir, tmp_path, scope_data)
-
-        from src.config import resolve_status_values_for_hive
 
         # Resolve before round-trip
         before_features = resolve_status_values_for_hive("features")
@@ -2013,16 +1825,12 @@ class TestStatusValuesConfigRoundTrip:
         assert before_features == after_features
         assert before_backend == after_backend
 
-    def test_empty_list_preserved_through_round_trip(self, tmp_path, monkeypatch, mock_global_bees_dir):
-        """Test empty list [] is preserved through save/load cycle."""
+    def test_scope_empty_list_preserved_through_round_trip(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Test scope-level empty list [] is preserved through save/load cycle."""
         monkeypatch.chdir(tmp_path)
+        backend_path = _setup_hive_identity(tmp_path, "backend")
         scope_data = {
-            "hives": {
-                "backend": {
-                    "path": "/backend", "display_name": "Backend", "created_at": TS,
-                    "status_values": [],
-                },
-            },
+            "hives": {"backend": {"path": backend_path, "display_name": "Backend", "created_at": TS}},
             "child_tiers": {},
             "status_values": [],
         }
@@ -2031,10 +1839,8 @@ class TestStatusValuesConfigRoundTrip:
         config = load_bees_config()
         save_bees_config(config, str(tmp_path))
 
-        # Verify empty lists are preserved in raw JSON
+        # Verify scope-level empty list is preserved in raw JSON
         raw = json.loads((mock_global_bees_dir / "config.json").read_text())
-        backend_data = raw["scopes"][str(tmp_path)]["hives"]["backend"]
-        assert backend_data["status_values"] == []
         assert raw["scopes"][str(tmp_path)]["status_values"] == []
 
 

@@ -27,11 +27,13 @@ hive_root/
 
 ### Directory Components
 
-**`.hive/identity.json`**: Identity marker file containing hive metadata
+**`.hive/identity.json`**: Identity marker file containing hive metadata and hive-level configuration
 - `normalized_name`: Internal hive identifier (lowercase, underscores)
 - `display_name`: Original display name preserving case
 - `created_at`: Timestamp of hive creation
 - `version`: Schema version at creation time
+- `child_tiers`: (optional) Per-hive tier configuration override
+- `status_values`: (optional) Per-hive status values override — can be a list (override active), `null` (explicit override — use no labels), or absent (inherit from scope/global)
 
 **`/cemetery`**: Archive directory for retired tickets managed by the undertaker. Files use the naming convention `{tier}.{guid}.md`. Excluded from all active operations (queries, linting, indexing, path resolution). Not auto-created during colonization.
 
@@ -56,9 +58,13 @@ The `.hive/identity.json` file serves as the authoritative marker that identifie
   "normalized_name": "backend",
   "display_name": "Back End",
   "created_at": "2026-02-01T12:00:00",
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "child_tiers": {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]},
+  "status_values": ["open", "in_progress", "done"]
 }
 ```
+
+Configuration fields are optional. Only fields with hive-level overrides are present.
 
 **Creation**: Automatically created during hive colonization (`colonize_hive()`)
 
@@ -66,7 +72,7 @@ The `.hive/identity.json` file serves as the authoritative marker that identifie
 
 **Recovery**: If missing, can be recreated during rename operations (recovery scenario)
 
-**Note**: The identity marker does NOT store per-hive configuration like `child_tiers`. These fields are only stored in `~/.bees/config.json`. The identity marker serves solely for hive discovery and basic metadata.
+**Dual purpose**: The identity marker serves both hive discovery and hive-level configuration storage. Configuration fields (`child_tiers`, `status_values`) use presence-based semantics: field present = hive-level override active; field absent = fall through to scope/global configuration via the resolution chain.
 
 ## Cemetery Directory
 
@@ -387,8 +393,8 @@ When creating a new hive via `colonize_hive(name, path, child_tiers=None)`:
 3. **Uniqueness Check**: Verifies normalized name doesn't exist in registry
 4. **child_tiers Validation**: Validates optional per-hive tier configuration if provided (Step 4.5)
 5. **Directory Structure**: Creates `/.hive` directory
-6. **Identity Marker**: Writes `.hive/identity.json` with hive metadata (no child_tiers field)
-7. **Config Registration**: Registers hive in `~/.bees/config.json` with optional child_tiers field
+6. **Identity Marker**: Writes `.hive/identity.json` with hive metadata and optional hive-level config overrides
+7. **Config Registration**: Registers hive in `~/.bees/config.json`
 
 **Note**: Only the `.hive/` directory is created during colonization. Ticket directories are created when tickets are written.
 
@@ -439,13 +445,15 @@ The optional `child_tiers` parameter allows setting per-hive tier configuration 
 - `hub`: Empty dict stored → bees-only mode, no child tiers allowed
 - `frontend`: No child_tiers key → inherits from scope/global config
 
-**Important**: The `child_tiers` field is ONLY stored in `~/.bees/config.json`, NOT in `.hive/identity.json`. The identity marker contains only basic hive identification metadata.
+**Important**: After the v3→v4 migration, hive-level `child_tiers` and `status_values` are stored in `.hive/identity.json` (the source of truth for hive-level overrides). Scope-level and global-level values remain in `~/.bees/config.json` as fallback levels in the resolution chain.
 
 For complete details on child_tiers resolution and fallback behavior, see `docs/architecture/configuration.md`.
 
 ### Creation is Idempotent
 
-Uses `Path.mkdir(parents=True, exist_ok=True)` for safe directory creation without errors if directories already exist.
+Directory creation is safe to repeat — existing directories are not modified.
+
+If `.hive/identity.json` already exists when `colonize_hive` runs, the existing `created_at` value is preserved. Only `normalized_name`, `display_name`, and `version` are updated. This ensures `created_at` always reflects the original hive creation time, even if the hive is re-registered (e.g., after `abandon_hive` and `colonize_hive` on the same directory).
 
 ## Storage Best Practices
 

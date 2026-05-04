@@ -9,7 +9,8 @@ Tests the _resolve_references pipeline and helper functions in mcp_reference_ops
 """
 
 import json
-from unittest.mock import MagicMock, patch
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -21,7 +22,6 @@ from src.mcp_reference_ops import (
 )
 from src.repo_context import repo_root_context
 from tests.conftest import write_scoped_config
-from tests.helpers import write_ticket_file
 from tests.test_constants import GITHUB_API_COMMENTS, GITHUB_API_ISSUE, GITHUB_ISSUE_URL, HIVE_BACKEND
 
 
@@ -322,6 +322,126 @@ echo '["verified"]'
         captured = captured_file.read_text()
         # Dict values are JSON-encoded
         assert captured == json.dumps(dict_value)
+
+    # -------------------------------------------------------------------------
+    # Interpreter-detection tests (mock subprocess to capture command string)
+    # -------------------------------------------------------------------------
+
+    def _make_mock_process(self, stdout_data=b'["ok"]', returncode=0):
+        """Build an AsyncMock that mimics asyncio.subprocess.Process."""
+        proc = MagicMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout_data, b""))
+        proc.kill = MagicMock()
+        proc.wait = AsyncMock(return_value=None)
+        return proc
+
+    async def test_py_extension_uses_sys_executable(self, tmp_path):
+        """Command ending in .py uses sys.executable as interpreter — no executable bit required."""
+        script = tmp_path / "my_resolver.py"
+        script.write_text("# python resolver\n")
+        # Intentionally NOT setting executable bit
+
+        captured_args = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            captured_args.append(list(args))
+            return self._make_mock_process()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec):
+            result = await _invoke_custom_resolver(
+                command=str(script),
+                value="some-value",
+                repo_root=tmp_path,
+                timeout=5,
+            )
+
+        assert result == ["ok"]
+        assert len(captured_args) == 1
+        args = captured_args[0]
+        # sys.executable must be the first argument
+        assert args[0] == sys.executable
+        # The script path must follow the interpreter
+        assert str(script) in args
+
+    async def test_shebang_line_uses_extracted_interpreter(self, tmp_path):
+        """Command with #!/usr/bin/env python3 shebang uses /usr/bin/env python3 as interpreter."""
+        script = tmp_path / "my_resolver.sh"
+        script.write_text("#!/usr/bin/env python3\n# not really python\n")
+        # No executable bit needed — shebang detection handles it
+
+        captured_args = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            captured_args.append(list(args))
+            return self._make_mock_process()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec):
+            result = await _invoke_custom_resolver(
+                command=str(script),
+                value="some-value",
+                repo_root=tmp_path,
+                timeout=5,
+            )
+
+        assert result == ["ok"]
+        assert len(captured_args) == 1
+        args = captured_args[0]
+        # The shebang interpreter must be the first argument
+        assert args[0] == "/usr/bin/env"
+        assert str(script) in args
+
+    async def test_no_interpreter_falls_back_to_direct_invocation(self, tmp_path):
+        """Command with no .py extension and no shebang invokes the script directly."""
+        script = tmp_path / "my_resolver.sh"
+        # Plain content, no shebang
+        script.write_text("echo 'nothing'\n")
+        script.chmod(0o755)
+
+        captured_args = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            captured_args.append(list(args))
+            return self._make_mock_process()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec):
+            result = await _invoke_custom_resolver(
+                command=str(script),
+                value="some-value",
+                repo_root=tmp_path,
+                timeout=5,
+            )
+
+        assert result == ["ok"]
+        assert len(captured_args) == 1
+        args = captured_args[0]
+        # Must not contain sys.executable or /usr/bin/env as a leading arg
+        assert args[0] == str(script)
+
+    async def test_unreadable_script_falls_back_to_direct_invocation(self, tmp_path):
+        """If the script file cannot be read (OSError), falls back to direct invocation."""
+        # Use a path that doesn't exist — open() will raise FileNotFoundError (subclass of OSError)
+        nonexistent = tmp_path / "ghost_resolver.sh"
+
+        captured_args = []
+
+        async def fake_create_subprocess_exec(*args, **kwargs):
+            captured_args.append(list(args))
+            return self._make_mock_process()
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_create_subprocess_exec):
+            result = await _invoke_custom_resolver(
+                command=str(nonexistent),
+                value="some-value",
+                repo_root=tmp_path,
+                timeout=5,
+            )
+
+        assert result == ["ok"]
+        assert len(captured_args) == 1
+        args = captured_args[0]
+        # Direct invocation: first arg is the script path itself
+        assert args[0] == str(nonexistent)
 
 
 # ============================================================================

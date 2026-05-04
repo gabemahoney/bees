@@ -1,9 +1,9 @@
 """Tests for MCP roots protocol integration."""
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 from src.mcp_repo_utils import get_client_repo_root, get_repo_root
-from src.config import get_config_path, load_bees_config
+from src.config import load_bees_config
 from src.repo_context import repo_root_context
 
 
@@ -74,16 +74,6 @@ async def test_get_repo_root_with_context():
     assert result is not None
 
 
-@pytest.mark.asyncio
-async def test_get_config_path_with_repo_root():
-    """Test get_config_path uses explicit repo_root."""
-    test_repo = Path(__file__).parent.parent
-    with repo_root_context(test_repo):
-        config_path = get_config_path()
-
-    assert config_path == test_repo / ".bees" / "config.json"
-    assert "test_mcp_roots.py" not in str(config_path)
-
 
 @pytest.mark.asyncio
 async def test_load_bees_config_with_repo_root():
@@ -99,47 +89,19 @@ async def test_load_bees_config_with_repo_root():
     assert config is None or hasattr(config, 'hives')
 
 
-@pytest.mark.needs_real_git_check
-@pytest.mark.no_repo_context
-def test_get_config_path_raises_without_git_repo():
-    """Test get_config_path raises RuntimeError when no repo_root set in context."""
-    import tempfile
-    import os
-
-    # Create a temporary directory that's not in a git repo
-    with tempfile.TemporaryDirectory() as tmpdir:
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(tmpdir)
-
-            # Should raise RuntimeError since no context was set
-            with pytest.raises(RuntimeError, match="repo_root not set in context"):
-                get_config_path()
-        finally:
-            os.chdir(old_cwd)
-
 
 # Phase 2 Tests - Critical MCP Tools
 
 @pytest.mark.asyncio
 async def test_list_hives_uses_context():
-    """Test that list_hives uses client context to find hives."""
+    """Test that list_hives uses resolved_root to find hives."""
     from src.mcp_hive_ops import _list_hives
 
-    ctx = Mock()
-    mock_root = Mock()
-    # Point to actual test repo
     test_repo = Path(__file__).parent.parent
-    mock_root.uri = f"file://{test_repo}"
 
-    # Mock the async list_roots method
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
-
-    # This should not raise and should use the context
-    result = await _list_hives(ctx=ctx)
+    # Should use resolved_root to find hives
+    with repo_root_context(test_repo):
+        result = await _list_hives(resolved_root=test_repo)
     assert "status" in result
     # May have hives or not, but should succeed
     assert result["status"] == "success"
@@ -147,57 +109,42 @@ async def test_list_hives_uses_context():
 
 @pytest.mark.asyncio
 async def test_create_ticket_uses_context():
-    """Test that create_ticket uses client context."""
-    from src.mcp_server import _create_ticket
+    """Test that create_ticket uses repo_root_context."""
+    from src.mcp_ticket_ops import _create_ticket
 
-    ctx = Mock()
-    mock_root = Mock()
     test_repo = Path(__file__).parent.parent
-    mock_root.uri = f"file://{test_repo}"
 
-    # Mock the async list_roots method
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
-
-    # Should use context to find hive config
-    # This will fail if hive doesn't exist, but that's expected
-    with pytest.raises(ValueError, match="not found in config"):
-        await _create_ticket(
+    # Should use repo_root_context to find hive config
+    # Returns error dict when hive doesn't exist, validating context was used
+    # May return invalid_ticket_type (validate_ticket_type fails first) or hive_not_found
+    with repo_root_context(test_repo):
+        result = await _create_ticket(
             ticket_type="task",
             title="Test",
             hive_name="nonexistent_hive_for_test",
-            ctx=ctx
         )
+    assert result["status"] == "error"
+    assert result["error_type"] in ("hive_not_found", "invalid_ticket_type")
 
 
 @pytest.mark.asyncio
 async def test_colonize_hive_uses_context():
-    """Test that colonize_hive uses client context to find repo root."""
-    from src.mcp_server import colonize_hive_core
+    """Test that colonize_hive uses repo_root to find repo root."""
+    from src.mcp_hive_ops import colonize_hive_core
 
-    ctx = Mock()
-    mock_root = Mock()
     test_repo = Path(__file__).parent.parent
-    mock_root.uri = f"file://{test_repo}"
-
-    # Mock the async list_roots method
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
 
     # Create a hive in the test repo
     hive_path = test_repo / "test_context_hive"
     hive_path.mkdir(exist_ok=True)
 
     try:
-        result = await colonize_hive_core(
-            name="Test Context Hive",
-            path=str(hive_path),
-            ctx=ctx
-        )
+        with repo_root_context(test_repo):
+            result = await colonize_hive_core(
+                name="Test Context Hive",
+                path=str(hive_path),
+                repo_root=test_repo,
+            )
 
         # Should succeed using context
         assert result["status"] == "success"
@@ -207,14 +154,6 @@ async def test_colonize_hive_uses_context():
         import shutil
         if hive_path.exists():
             shutil.rmtree(hive_path)
-
-        # Remove from config
-        from src.config import load_bees_config, save_bees_config
-        with repo_root_context(test_repo):
-            config = load_bees_config()
-            if config and "test_context_hive" in config.hives:
-                del config.hives["test_context_hive"]
-                save_bees_config(config)
     finally:
         # Cleanup
         import shutil
@@ -274,78 +213,56 @@ async def test_get_repo_root_returns_none_on_none_roots():
 
 @pytest.mark.asyncio
 async def test_create_ticket_works_with_context():
-    """Test _create_ticket works with MCP context."""
-    from src.mcp_server import _create_ticket
+    """Test _create_ticket works with repo_root_context."""
+    from src.mcp_ticket_ops import _create_ticket
 
     test_repo = Path(__file__).parent.parent
 
-    ctx = Mock()
-    mock_root = Mock()
-    mock_root.uri = f"file://{test_repo}"
-
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
-
-    # Should work with context
-    # Will fail because hive doesn't exist, but that validates context was used
-    with pytest.raises(ValueError, match="not found in config"):
-        await _create_ticket(
+    # Should work with repo_root_context
+    # Returns error dict when hive doesn't exist, validating context was used
+    # May return invalid_ticket_type (validate_ticket_type fails first) or hive_not_found
+    with repo_root_context(test_repo):
+        result = await _create_ticket(
             ticket_type="task",
             title="Test Task",
             hive_name="nonexistent_test_hive",
-            ctx=ctx
         )
+    assert result["status"] == "error"
+    assert result["error_type"] in ("hive_not_found", "invalid_ticket_type")
 
 
 @pytest.mark.asyncio
 async def test_show_ticket_works_with_context():
-    """Test _show_ticket works with MCP context."""
-    from src.mcp_server import _show_ticket
+    """Test _show_ticket works with resolved_root."""
+    from src.mcp_ticket_ops import _show_ticket
 
     test_repo = Path(__file__).parent.parent
 
-    ctx = Mock()
-    mock_root = Mock()
-    mock_root.uri = f"file://{test_repo}"
-
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
-
-    # Should work with context
-    # Will fail with ticket error, which validates context was used
-    with pytest.raises(ValueError, match="(Ticket file not found|Ticket does not exist|Hive.*not found)"):
-        await _show_ticket(
-            ticket_id="bugs.bees-xxx",
-            ctx=ctx
+    # Should work with resolved_root
+    # Will return not_found for nonexistent ticket
+    with repo_root_context(test_repo):
+        result = await _show_ticket(
+            ticket_ids=["b.zzz"],
+            resolved_root=test_repo,
         )
+    assert result["status"] == "success"
+    assert "b.zzz" in result["not_found"]
 
 
 @pytest.mark.asyncio
 async def test_execute_freeform_query_works_with_context():
-    """Test _execute_freeform_query works with MCP context."""
-    from src.mcp_server import _execute_freeform_query
+    """Test _execute_freeform_query works with resolved_root."""
+    from src.mcp_query_ops import _execute_freeform_query
 
     test_repo = Path(__file__).parent.parent
 
-    ctx = Mock()
-    mock_root = Mock()
-    mock_root.uri = f"file://{test_repo}"
-
-    async def mock_list_roots():
-        return [mock_root]
-
-    ctx.list_roots = mock_list_roots
-
-    # Should work with context
-    # Simple query that should execute successfully
-    result = await _execute_freeform_query(
-        query_yaml="- ['type=epic']",
-        ctx=ctx
-    )
+    # Should work with resolved_root
+    # Simple query that should execute successfully (needs stages key)
+    with repo_root_context(test_repo):
+        result = await _execute_freeform_query(
+            query_yaml="stages:\n  - [type=epic]",
+            resolved_root=test_repo,
+        )
 
     # Should succeed and return proper structure
     assert "status" in result

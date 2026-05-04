@@ -246,8 +246,8 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 - **execute_named_query**: Execute a named query registered in `~/.bees/config.json`
 - **execute_freeform_query**: Execute ad-hoc YAML query pipeline without persisting
 - **add_named_query**: Register a new named query for reuse
-- **delete_named_query**: Delete a named query by name and scope
-- **list_named_queries**: List registered named queries, optionally showing all scopes
+- **delete_named_query**: Delete a named query by name (searches global then repo scope)
+- **list_named_queries**: List named queries accessible from the current repo scope
 
 ### Hive Management
 - **colonize_hive**: Create and register new hive directory with validation. Returns `cross_scope_hive_conflict` when the normalized hive name already exists in an overlapping scope, or `duplicate_hive_name` for the exact same scope.
