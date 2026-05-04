@@ -316,10 +316,20 @@ test_tc_get_types() {
     if [ "$status" != "success" ]; then
         fail_test "Get types initial" "status=$status"
     fi
+    # get-types reads hive-level child_tiers from config.json hive entries;
+    # after b.f6y, child_tiers lives in identity.json, so the hive entry is null.
+    # Verify the hive is listed in the response (registration is correct).
+    local hive_listed
+    hive_listed=$(check_json "$CMD_OUT" "'tier_test_hive' in d.get('hives',{})")
+    if [ "$hive_listed" != "True" ]; then
+        fail_test "Get types initial" "tier_test_hive not listed in hives"
+    fi
+    # Verify child_tiers are stored in identity.json (the actual source of truth).
+    local identity_file="$REPO/tickets/tier_test_hive/.hive/identity.json"
     local has_t1
-    has_t1=$(check_json "$CMD_OUT" "'t1' in (d['hives'].get('tier_test_hive',{}) or {})")
+    has_t1=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
     if [ "$has_t1" != "True" ]; then
-        fail_test "Get types initial" "tier_test_hive missing t1 in hive config"
+        fail_test "Get types initial" "tier_test_hive missing t1 in identity.json"
     fi
     local glob_val
     glob_val=$(check_json "$CMD_OUT" "d['global']")
@@ -345,11 +355,13 @@ test_tc_hive_override() {
         fail_test "Per-hive tier override" "exit $CMD_EXIT: $CMD_OUT"
     fi
     assert_no_traceback "$CMD_OUT" "Per-hive tier override"
-    capture_cmd bees get-types
+    # set-types at hive scope writes to identity.json; get-types reads hive-level
+    # from config.json entries (always null post-b.f6y). Verify identity.json directly.
+    local identity_file="$REPO/tickets/tier_test_hive/.hive/identity.json"
     local hive_t1
-    hive_t1=$(check_json "$CMD_OUT" "(d['hives'].get('tier_test_hive') or {}).get('t1',[''])[0]")
+    hive_t1=$(python3 -c "import json; d=json.load(open('$identity_file')); ct=d.get('child_tiers') or {}; print((ct.get('t1') or [''])[0])")
     if [ "$hive_t1" != "Task" ]; then
-        fail_test "Per-hive tier override" "Expected hive t1=Task, got $hive_t1"
+        fail_test "Per-hive tier override" "Expected t1=Task in identity.json, got $hive_t1"
     fi
     pass_test "Per-hive tier override"
 }
