@@ -1561,7 +1561,6 @@ while [[ $# -gt 0 ]]; do
 done
 echo "{\"resolved\": true, \"original\": \"$VALUE\"}"
 RESOLVER
-    chmod +x "$REPO/scripts/test_resolver.sh"
 
     capture_cmd bees set-resolver --name test_resolver \
         --path "$REPO/scripts/test_resolver.sh"
@@ -1603,7 +1602,6 @@ test_ref_resolver_timeout() {
 sleep 60
 echo '{"never":"reached"}'
 RESOLVER
-    chmod +x "$REPO/scripts/slow_resolver.sh"
 
     capture_cmd bees set-resolver --name slow_resolver \
         --path "$REPO/scripts/slow_resolver.sh" --timeout 2
