@@ -1679,25 +1679,15 @@ def setup_multi_hive_config(tmp_path, hive_configs):
             "display_name": hive_spec.get("display_name", hive_name.title()),
             "created_at": "2026-02-05T00:00:00",
         }
-        (hive_identity_dir / "identity.json").write_text(json.dumps(identity_data, indent=2))
-
-        # Parse child_tiers from list format to ChildTierConfig objects
         child_tiers_data = hive_spec.get("child_tiers")
-        child_tiers = None
         if child_tiers_data is not None:
-            if isinstance(child_tiers_data, dict):
-                child_tiers = {}
-                for tier_id, names in child_tiers_data.items():
-                    if isinstance(names, list):
-                        child_tiers[tier_id] = ChildTierConfig(singular=names[0], plural=names[1])
-                    else:
-                        child_tiers[tier_id] = ChildTierConfig(singular=names, plural=names)
+            identity_data["child_tiers"] = child_tiers_data
+        (hive_identity_dir / "identity.json").write_text(json.dumps(identity_data, indent=2))
 
         hives_config[hive_name] = HiveConfig(
             path=str(hive_path),
             display_name=hive_spec.get("display_name", hive_name.title()),
             created_at="2026-02-05T00:00:00",
-            child_tiers=child_tiers,
         )
 
     # Create BeesConfig with global child_tiers if provided
@@ -1927,13 +1917,20 @@ Test body."""
         bees_dir.mkdir()
         write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", status="open")
 
+        # Write status_values to identity.json (hive-level overrides live there now)
+        marker = tmp_path / ".hive"
+        marker.mkdir(parents=True, exist_ok=True)
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "default", "display_name": "Default",
+            "created_at": "2026-02-05T00:00:00", "status_values": ["open", "closed"],
+        }))
+
         config = BeesConfig(
             hives={
                 "default": HiveConfig(
                     path=str(tmp_path),
                     display_name="Default",
                     created_at="2026-02-05T00:00:00",
-                    status_values=["open", "closed"],
                 )
             },
             child_tiers={},
@@ -1952,13 +1949,20 @@ Test body."""
         bees_dir.mkdir()
         write_ticket_file(bees_dir, TICKET_ID_ABC, title="Test", status="bad_value")
 
+        # Write status_values to identity.json
+        marker = tmp_path / ".hive"
+        marker.mkdir(parents=True, exist_ok=True)
+        (marker / "identity.json").write_text(json.dumps({
+            "normalized_name": "default", "display_name": "Default",
+            "created_at": "2026-02-05T00:00:00", "status_values": ["open", "closed"],
+        }))
+
         config = BeesConfig(
             hives={
                 "default": HiveConfig(
                     path=str(tmp_path),
                     display_name="Default",
                     created_at="2026-02-05T00:00:00",
-                    status_values=["open", "closed"],
                 )
             },
             child_tiers={},

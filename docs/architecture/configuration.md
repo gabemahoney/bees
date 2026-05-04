@@ -31,11 +31,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
         "normalized_name": {
           "display_name": "Display Name",
           "path": "/absolute/path/to/hive",
-          "created_at": "2026-02-03T10:30:45.123456",
-          "child_tiers": {
-            "t1": ["Task", "Tasks"],
-            "t2": ["Subtask", "Subtasks"]
-          }
+          "created_at": "2026-02-03T10:30:45.123456"
         }
       },
       "child_tiers": {
@@ -74,7 +70,6 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 - `path`: Absolute path to hive directory
 - `display_name`: User-friendly display name
 - `created_at`: ISO 8601 timestamp of hive creation
-- `child_tiers`: (Optional) Hive-level child_tiers configuration (dict or null). See Child Tiers Configuration below.
 - `allowed_resolvers`: (Optional) List of resolver names permitted for this hive (list of strings or null). Each name must exist in the global `resolvers` registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). When set, only the listed resolvers may be used with this hive. See Named Resolver Registry below.
 
 **Note**: Ticket IDs are globally unique across all hives. Dependencies can reference tickets in any hive, with same-tier restriction (bee→bee, t1→t1, etc.).
@@ -187,30 +182,26 @@ Child tiers define the ticket hierarchy for a hive (e.g., t1=Epic, t2=Task, t3=S
 }
 ```
 
-**Hive Level** (within a hive entry):
+**Hive Level** (within `.hive/identity.json` in the hive directory):
 ```json
 {
-  "scopes": {
-    "/path/to/repo": {
-      "hives": {
-        "normalized_name": {
-          "path": "/absolute/path/to/hive",
-          "child_tiers": {
-            "t1": ["Task", "Tasks"],
-            "t2": ["Subtask", "Subtasks"]
-          }
-        }
-      }
-    }
+  "normalized_name": "normalized_name",
+  "display_name": "Display Name",
+  "created_at": "2026-02-03T10:30:45.123456",
+  "child_tiers": {
+    "t1": ["Task", "Tasks"],
+    "t2": ["Subtask", "Subtasks"]
   }
 }
 ```
+
+Hive-level child_tiers are stored in `.hive/identity.json`, not in the config.json hive entry. The `colonize_hive` tool writes this value at creation time.
 
 ### Resolution Order
 
 The `resolve_child_tiers_for_hive()` function determines which child_tiers to use via fallback chain:
 
-1. **Hive level**: Check hive's `child_tiers`
+1. **Hive level**: Read `child_tiers` from the hive's `.hive/identity.json`
 2. **Scope level**: Check scope's `child_tiers`
 3. **Global level**: Check top-level `child_tiers`
 4. **Default**: Return `{}` (bees-only, no child tiers)
@@ -346,9 +337,16 @@ The hive registry tracks all registered hives within a scope, mapping normalized
 {
   "normalized_name": "back_end",
   "display_name": "Back End",
-  "created_at": "2026-02-03T10:30:45.123456"
+  "created_at": "2026-02-03T10:30:45.123456",
+  "child_tiers": {
+    "t1": ["Task", "Tasks"],
+    "t2": ["Subtask", "Subtasks"]
+  },
+  "status_values": ["pupa", "worker", "finished"]
 }
 ```
+
+The `child_tiers` and `status_values` keys in identity.json are the authoritative source for hive-level overrides of these settings. Absent keys mean the hive inherits from scope/global. See the Child Tiers Configuration and Status Values Configuration sections for resolution semantics.
 
 **Operations**:
 - `colonize_hive(name, path, child_tiers=None)`: Register new hive, create identity marker, write to global config. Creates exact-path scope if no scope matches. Optional `child_tiers` parameter allows setting per-hive tier configuration at creation time (see Hive Colonization section below).
@@ -477,36 +475,34 @@ Status values can be configured at three levels:
 }
 ```
 
-**Hive Level** (within a hive entry):
+**Hive Level** (within `.hive/identity.json` in the hive directory):
 ```json
 {
-  "scopes": {
-    "/path/to/repo": {
-      "hives": {
-        "normalized_name": {
-          "path": "/absolute/path/to/hive",
-          "status_values": ["open", "closed"]
-        }
-      }
-    }
-  }
+  "normalized_name": "normalized_name",
+  "display_name": "Display Name",
+  "created_at": "2026-02-03T10:30:45.123456",
+  "status_values": ["open", "closed"]
 }
 ```
+
+Hive-level status_values are stored in `.hive/identity.json`, not in the config.json hive entry. The `colonize_hive` tool writes this value at creation time.
 
 ### Resolution Order
 
 Status values are resolved using a 3-level fallback chain with a default:
 
-1. **Hive level**: Check hive's `status_values`
+1. **Hive level**: Read `status_values` from the hive's `.hive/identity.json`
 2. **Scope level**: Check scope's `status_values`
 3. **Global level**: Check top-level `status_values`
 4. **Default**: Return `None` (freeform - any string accepted)
 
 ### Fallback Semantics
 
-**null or omitted**: Fall through to next level in the chain
-**[] (empty list)**: Fall through to next level (treated as absent)
-**Non-empty list**: Stop fallback chain and use this exact configuration
+**Key absent from identity.json**: Fall through to next level in the chain
+**null in identity.json**: Explicit override — stop inheritance and return `None` (freeform)
+**Non-empty list in identity.json**: Stop fallback chain and use this exact configuration
+**[] (empty list) at scope/global**: Fall through to next level (treated as absent)
+**Non-empty list at scope/global**: Stop fallback chain and use this exact configuration
 
 ### No Merging
 
@@ -519,7 +515,7 @@ Each level completely replaces the status_values configuration — there is NO m
 - Empty list `[]` is treated as absent (falls through to next level)
 - Global validation: `load_global_config()` checks global-level field
 - Scope validation: `parse_scope_to_bees_config()` checks scope-level field
-- Hive validation: `_parse_hives_data()` checks hive-level field
+- Hive validation: Hive-level status_values are read from `.hive/identity.json` at resolution time
 
 ### Implementation
 
@@ -800,19 +796,19 @@ The `scope` parameter controls which scope key the hive is registered under in `
 The `child_tiers` parameter supports three semantic states that control how the hive resolves its tier configuration:
 
 **1. `None` (default, parameter omitted)**:
-- Hive does NOT store a child_tiers key in config
+- Hive does NOT store a child_tiers key in identity.json
 - Enables fallback chain: hive → scope → global → default
 - Hive inherits tier configuration from parent scope or global level
 - Use when hive should follow standard project tier configuration
 
 **2. `{}` (empty dictionary)**:
-- Hive stores `"child_tiers": {}` in config (empty dict persisted)
+- Hive stores `"child_tiers": {}` in identity.json (empty dict persisted)
 - Stops fallback chain immediately
 - Hive operates in bees-only mode (no child tiers allowed)
 - Use for project hub hives that only track top-level bees
 
 **3. Populated dictionary (e.g., `{"t1": ["Task", "Tasks"]}`)**:
-- Hive stores exact tier configuration in config
+- Hive stores exact tier configuration in identity.json
 - Stops fallback chain immediately
 - Hive uses its own custom tier hierarchy
 - Use when hive needs different tier structure than project default
@@ -837,17 +833,12 @@ When `child_tiers` is provided (not None), validation occurs at Step 4.5 in `col
         "backend": {
           "path": "/path/to/repo/tickets/backend",
           "display_name": "Back End",
-          "created_at": "2026-02-16T12:00:00",
-          "child_tiers": {
-            "t1": ["Task", "Tasks"],
-            "t2": ["Subtask", "Subtasks"]
-          }
+          "created_at": "2026-02-16T12:00:00"
         },
         "hub": {
           "path": "/path/to/repo/tickets/hub",
           "display_name": "Project Hub",
-          "created_at": "2026-02-16T12:00:00",
-          "child_tiers": {}
+          "created_at": "2026-02-16T12:00:00"
         },
         "frontend": {
           "path": "/path/to/repo/tickets/frontend",
@@ -860,12 +851,16 @@ When `child_tiers` is provided (not None), validation occurs at Step 4.5 in `col
 }
 ```
 
-In this example:
-- `backend` hive has custom tiers (t1, t2) → Uses own configuration
-- `hub` hive has empty child_tiers → Bees-only mode
-- `frontend` hive has no child_tiers key → Inherits from scope/global
+Hive entries in config.json store path, display name, and metadata. Hive-level `child_tiers` and `status_values` are stored in each hive's `.hive/identity.json` file (see Identity Markers in the Hive Registry section).
 
-**Note**: The `.hive/identity.json` marker does NOT store child_tiers. This field is only stored in `~/.bees/config.json`.
+**Identity Storage** (`.hive/identity.json` within each hive directory):
+
+In this example:
+- `backend` hive has custom tiers (t1, t2) in its identity.json → Uses own configuration
+- `hub` hive has `"child_tiers": {}` in its identity.json → Bees-only mode
+- `frontend` hive has no `child_tiers` key in its identity.json → Inherits from scope/global
+
+**Note**: The `.hive/identity.json` marker stores `child_tiers` and `status_values` as the authoritative source for hive-level overrides. The runtime resolution functions read from identity.json at the hive level, not from config.json hive entries.
 
 ### Usage Examples
 
@@ -902,12 +897,12 @@ colonize_hive(
 
 The `child_tiers` parameter integrates with the 3-level fallback chain described in the "Child Tiers Configuration" section:
 
-1. If hive has `child_tiers` key in config (empty or populated), use that value
-2. If hive has no `child_tiers` key, fall back to scope level
+1. If hive has `child_tiers` key in identity.json (empty or populated), use that value
+2. If hive has no `child_tiers` key in identity.json, fall back to scope level
 3. If scope has no `child_tiers`, fall back to global level
 4. If global has no `child_tiers`, default to `{}` (bees-only)
 
-The distinction between "key absent" (None) and "key present with empty dict" ({}) is critical for correct fallback behavior.
+The distinction between "key absent" and "key present with empty dict" ({}) in identity.json is critical for correct fallback behavior.
 
 ### Implementation
 

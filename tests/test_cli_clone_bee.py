@@ -1,7 +1,9 @@
 """CLI integration tests for `bees clone` command."""
 
 import json
+from pathlib import Path
 
+from src.mcp_hive_ops import write_identity
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_CLONE_DEST,
@@ -100,9 +102,18 @@ def test_clone_compatibility_error_via_cli(cli_runner, isolated_bees_env):
     """Incompatible dest exits 1; error_type==compatibility_error; both list fields present."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open"]
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     env.write_config()
+
+    # Write status_values to identity.json (hive-level overrides live there now)
+    dest_marker = dest_dir / ".hive"
+    dest_marker.mkdir(parents=True, exist_ok=True)
+    write_identity(dest_marker, {
+        "normalized_name": HIVE_CLONE_DEST,
+        "display_name": HIVE_CLONE_DEST.title(),
+        "created_at": "2026-01-30T10:00:00",
+        "status_values": ["open"],
+    })
 
     write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Compat Error CLI Bee", status="pupa")
 

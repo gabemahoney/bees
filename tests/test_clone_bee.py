@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from src.mcp_clone_bee import _clone_bee_core
+from src.mcp_hive_ops import write_identity
 from src.reader import read_ticket
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
@@ -16,6 +17,16 @@ from tests.test_constants import (
     TICKET_ID_NONEXISTENT,
     TICKET_ID_T1,
 )
+
+
+def _write_hive_identity(hive_dir: Path, hive_name: str, **extra):
+    """Write identity.json for a hive with hive-level overrides (status_values, child_tiers)."""
+    marker = hive_dir / ".hive"
+    marker.mkdir(parents=True, exist_ok=True)
+    data = {"normalized_name": hive_name, "display_name": hive_name.title(), "created_at": "2026-01-30T10:00:00"}
+    data.update(extra)
+    write_identity(marker, data)
+
 
 # ============================================================================
 # Happy Path Tests
@@ -293,9 +304,9 @@ def test_clone_incompatible_status_values(isolated_bees_env):
     """Dest hive restricts status values; source has status not in list -> compatibility_error."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open"]
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open"])
 
     write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Status Incompatible Bee", status="pupa")
 
@@ -311,10 +322,10 @@ def test_clone_incompatible_tier_types(isolated_bees_env):
     """Dest hive restricts child_tiers; source tree has tier type not in config -> compatibility_error."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     # Scope has t1+t2; source tree has t2 grandchildren; dest hive only supports t1 -> t2 incompatible
-    env.hives[HIVE_CLONE_DEST]["child_tiers"] = {"t1": ["Task", "Tasks"]}
     env.write_config(child_tiers={"t1": ["Task", "Tasks"], "t2": ["Sub", "Subs"]})
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, child_tiers={"t1": ["Task", "Tasks"]})
 
     # Build: bee -> t1 child -> t2 grandchild
     t2_child_id = "t2.cn1.ab.cd"
@@ -344,10 +355,9 @@ def test_clone_both_checks_fail(isolated_bees_env):
     """Both status and tier checks fail -> single compatibility_error with both lists populated."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
-    env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open"]
-    env.hives[HIVE_CLONE_DEST]["child_tiers"] = {"t1": ["Task", "Tasks"]}
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
     env.write_config(child_tiers={"t1": ["Task", "Tasks"], "t2": ["Sub", "Subs"]})
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open"], child_tiers={"t1": ["Task", "Tasks"]})
 
     # Build: bee -> t1 child -> t2 grandchild; bee has incompatible status "pupa"
     t2_child_id = "t2.cn1.ab.cd"
@@ -379,8 +389,8 @@ def test_clone_force_bypass(isolated_bees_env):
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.hives[HIVE_CLONE_DEST]["status_values"] = ["open"]
     env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open"])
 
     write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Force Bypass Bee", status="pupa")
 

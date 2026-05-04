@@ -455,10 +455,7 @@ async def colonize_hive_core(
                     display_name=name,
                     created_at=created_at,
                     description=description,
-                    child_tiers=parsed_child_tiers,
                     allowed_resolvers=allowed_resolvers,
-                    status_values=status_values,
-                    status_values_explicitly_null=status_values_explicitly_null,
                 )
 
                 if canonical_scope is not None:

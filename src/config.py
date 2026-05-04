@@ -24,6 +24,10 @@ _CONFIG_PATH_OVERRIDE: str | None = None
 _GLOBAL_CONFIG_CACHE: dict | None = None
 _GLOBAL_CONFIG_CACHE_MTIME: float | None = None
 
+# mtime-based cache for identity.json reads (keyed by hive path)
+_IDENTITY_CACHE: dict[str, dict] = {}
+_IDENTITY_CACHE_MTIME: dict[str, float] = {}
+
 # In-memory config override for tests (bypasses disk I/O entirely)
 _GLOBAL_CONFIG_OVERRIDE: dict | None = None
 _TEST_CONFIG_LOCK = threading.Lock()
@@ -82,9 +86,6 @@ class HiveConfig:
     display_name: str
     created_at: str
     description: str | None = None
-    child_tiers: dict[str, ChildTierConfig] | None = None
-    status_values: list[str] | None = None
-    status_values_explicitly_null: bool = False
     undertaker_schedule_seconds: int | None = None
     undertaker_schedule_query_yaml: str | None = None
     undertaker_schedule_query_name: str | None = None
@@ -863,25 +864,6 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
         if not isinstance(hive_data, dict):
             raise ValueError(f"Hive '{name}' data must be a dict, got {type(hive_data)}")
 
-        # Parse and validate child_tiers if present
-        # None/null means absent (fall through to scope/global)
-        # {} means bees-only (stops the chain)
-        child_tiers = None
-        if "child_tiers" in hive_data and hive_data["child_tiers"] is not None:
-            child_tiers = _parse_child_tiers_data(hive_data["child_tiers"])
-            validate_child_tiers(child_tiers)
-
-        # Parse and validate status_values if present.
-        # Distinguish absent key (fall through to scope) from explicit null (no constraints).
-        status_values = None
-        status_values_explicitly_null = False
-        if "status_values" in hive_data:
-            if hive_data["status_values"] is None:
-                status_values_explicitly_null = True
-            else:
-                status_values = hive_data["status_values"]
-                _validate_status_values(status_values, f"Hive '{name}'")
-
         # Parse undertaker_schedule sub-dict if present
         ut_sched_seconds = None
         ut_sched_query_yaml = None
@@ -945,9 +927,6 @@ def _parse_hives_data(hives_data: dict) -> dict[str, HiveConfig]:
             display_name=hive_data.get("display_name", ""),
             created_at=hive_data.get("created_at", ""),
             description=description,
-            child_tiers=child_tiers,
-            status_values=status_values,
-            status_values_explicitly_null=status_values_explicitly_null,
             undertaker_schedule_seconds=ut_sched_seconds,
             undertaker_schedule_query_yaml=ut_sched_query_yaml,
             undertaker_schedule_query_name=ut_sched_query_name,
@@ -1017,14 +996,6 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
         # Only include description if not None
         if hive_config.description is not None:
             hive_entry["description"] = hive_config.description
-        # Only include child_tiers if not None
-        if hive_config.child_tiers is not None:
-            hive_entry["child_tiers"] = _serialize_child_tiers(hive_config.child_tiers)
-        # Preserve explicit null (unset overrides scope inheritance) vs absent (fall through)
-        if hive_config.status_values_explicitly_null:
-            hive_entry["status_values"] = None
-        elif hive_config.status_values is not None:
-            hive_entry["status_values"] = hive_config.status_values
         # Only include undertaker_schedule if any field is non-None
         ut_sched = {}
         if hive_config.undertaker_schedule_seconds is not None:
@@ -1326,11 +1297,64 @@ def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
             seen_names.add(tier_config.plural)
 
 
+def _read_identity_cached(hive_path: str) -> dict | None:
+    """Read identity.json for a hive with mtime-based caching.
+
+    Uses the same caching pattern as load_global_config: checks the file's
+    mtime and returns the cached dict if unchanged.
+
+    Args:
+        hive_path: The hive's filesystem path (HiveConfig.path)
+
+    Returns:
+        Parsed identity dict, or None if missing/corrupt.
+    """
+    global _IDENTITY_CACHE, _IDENTITY_CACHE_MTIME
+
+    identity_file = Path(hive_path) / ".hive" / "identity.json"
+
+    if not identity_file.exists():
+        # Clear cache entry if file was removed
+        _IDENTITY_CACHE.pop(hive_path, None)
+        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        return None
+
+    try:
+        current_mtime = identity_file.stat().st_mtime
+    except OSError:
+        _IDENTITY_CACHE.pop(hive_path, None)
+        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        return None
+
+    if hive_path in _IDENTITY_CACHE and _IDENTITY_CACHE_MTIME.get(hive_path) == current_mtime:
+        return _IDENTITY_CACHE[hive_path]
+
+    try:
+        from .mcp_hive_ops import read_identity  # noqa: PLC0415
+
+        hive_marker_path = Path(hive_path) / ".hive"
+        data = read_identity(hive_marker_path)
+    except (ValueError, OSError) as e:
+        logger.warning("Failed to read identity.json for hive at %s: %s", hive_path, e)
+        _IDENTITY_CACHE.pop(hive_path, None)
+        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        return None
+
+    if data is not None:
+        _IDENTITY_CACHE[hive_path] = data
+        _IDENTITY_CACHE_MTIME[hive_path] = current_mtime
+    else:
+        _IDENTITY_CACHE.pop(hive_path, None)
+        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+
+    return data
+
+
 def resolve_child_tiers_for_hive(normalized_hive: str, config: BeesConfig | None = None) -> dict[str, ChildTierConfig]:
     """Resolve child_tiers for a given hive using 4-level fallback.
 
     Resolution order:
-    1. Hive level: Check the hive's child_tiers
+    1. Hive level: Read from identity.json in the hive's .hive directory
     2. Scope level: Check the scope's (BeesConfig) child_tiers
     3. Global level: Check the global config's child_tiers
     4. Default: Return {} (bees-only)
@@ -1362,10 +1386,13 @@ def resolve_child_tiers_for_hive(normalized_hive: str, config: BeesConfig | None
     if normalized_hive not in config.hives:
         raise ValueError(f"Hive '{normalized_hive}' does not exist")
 
-    # Level 1: Check hive-level child_tiers
+    # Level 1: Read child_tiers from identity.json
     hive_config = config.hives[normalized_hive]
-    if hive_config.child_tiers is not None:
-        return hive_config.child_tiers
+    identity = _read_identity_cached(hive_config.path)
+    if identity is not None and "child_tiers" in identity:
+        ct_raw = identity["child_tiers"]
+        if ct_raw is not None:
+            return _parse_child_tiers_data(ct_raw)
 
     # Level 2: Check scope-level child_tiers
     if config.child_tiers is not None:
@@ -1382,17 +1409,16 @@ def resolve_child_tiers_for_hive(normalized_hive: str, config: BeesConfig | None
 
 
 def resolve_status_values_for_hive(normalized_hive: str, config: BeesConfig | None = None) -> list[str] | None:
-    """Resolve status_values for a given hive using 3-level fallback.
+    """Resolve status_values for a given hive using 4-level fallback.
 
     Resolution order:
-    1. Hive level: Check the hive's status_values
+    1. Hive level: Read from identity.json in the hive's .hive directory
+       - status_values: null → explicit override, stop inheritance (return None)
+       - status_values: [...] → use that list
+       - key absent → fall through to scope/global
     2. Scope level: Check the scope's (BeesConfig) status_values
     3. Global level: Check the global config's status_values
     4. Default: Return None (freeform, any string accepted)
-
-    None or empty list [] at any level falls through to next level.
-    Non-empty list at any level stops the chain.
-    No merging between levels.
 
     Args:
         normalized_hive: The normalized hive name to resolve for
@@ -1417,13 +1443,16 @@ def resolve_status_values_for_hive(normalized_hive: str, config: BeesConfig | No
     if normalized_hive not in config.hives:
         raise ValueError(f"Hive '{normalized_hive}' does not exist")
 
-    # Level 1: Check hive-level status_values
+    # Level 1: Read status_values from identity.json
     hive_config = config.hives[normalized_hive]
-    if hive_config.status_values_explicitly_null:
-        # Explicitly unset — override scope/global inheritance, no constraints
-        return None
-    if hive_config.status_values is not None and len(hive_config.status_values) > 0:
-        return hive_config.status_values
+    identity = _read_identity_cached(hive_config.path)
+    if identity is not None and "status_values" in identity:
+        sv = identity["status_values"]
+        if sv is None:
+            # Explicit null → stop inheritance, no constraints
+            return None
+        if isinstance(sv, list) and len(sv) > 0:
+            return sv
 
     # Level 2: Check scope-level status_values
     if config.status_values is not None and len(config.status_values) > 0:

@@ -164,16 +164,13 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == child_tiers
 
-        # Verify it was stored in config by reading the global config directly
-        from src.config import load_global_config
+        # Verify it was stored in identity.json (hive-level overrides live there now)
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" in hive_data
-        assert hive_data["child_tiers"] == child_tiers
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == child_tiers
 
     async def test_colonize_with_empty_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive accepts empty child_tiers (bees-only hive)."""
@@ -185,16 +182,13 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == {}
 
-        # Verify it was stored in config by reading the global config directly
-        from src.config import load_global_config
+        # Verify it was stored in identity.json
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" in hive_data
-        assert hive_data["child_tiers"] == {}
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {}
 
     async def test_colonize_without_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive without child_tiers parameter stores None."""
@@ -206,15 +200,12 @@ class TestColonizeHive:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] is None
 
-        # Verify child_tiers key is NOT in the config (should be omitted when None)
-        from src.config import load_global_config
+        # Verify child_tiers key is NOT in identity.json (should be omitted when None)
+        from src.mcp_hive_ops import read_identity
 
-        global_config = load_global_config()
-        scope_data = global_config["scopes"].get(str(git_repo_tmp_path))
-        assert scope_data is not None
-        hive_data = scope_data["hives"].get("test_hive")
-        assert hive_data is not None
-        assert "child_tiers" not in hive_data  # Should be omitted when None
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" not in identity  # Should be omitted when None
 
     async def test_colonize_with_invalid_child_tiers(self, git_repo_tmp_path):
         """Test that colonize_hive rejects invalid child_tiers configuration."""
@@ -574,10 +565,9 @@ class TestColonizeHiveChildTiers:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["child_tiers"] == {}
 
-    async def test_colonize_child_tiers_persisted_in_config(self, git_repo_tmp_path):
-        """Test that child_tiers provided to colonize_hive are persisted in config."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+    async def test_colonize_child_tiers_persisted_in_identity(self, git_repo_tmp_path):
+        """Test that child_tiers provided to colonize_hive are persisted in identity.json."""
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -586,19 +576,14 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path), child_tiers=child_tiers)
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is not None
-            assert "t1" in hive_config.child_tiers
-            assert hive_config.child_tiers["t1"].singular == "Epic"
-            assert hive_config.child_tiers["t1"].plural == "Epics"
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {"t1": ["Epic", "Epics"]}
 
     async def test_colonize_none_child_tiers_not_persisted(self, git_repo_tmp_path):
-        """Test that colonize_hive without child_tiers leaves HiveConfig.child_tiers as None."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+        """Test that colonize_hive without child_tiers leaves identity.json without child_tiers."""
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -606,16 +591,13 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path))
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is None
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" not in identity
 
     async def test_colonize_empty_child_tiers_persisted_as_empty(self, git_repo_tmp_path):
         """Test that colonize_hive with {} persists empty dict, not None."""
-        from src.config import load_bees_config
-        from src.repo_context import repo_root_context
+        from src.mcp_hive_ops import read_identity
 
         hive_path = git_repo_tmp_path / "test_hive"
         hive_path.mkdir()
@@ -623,12 +605,10 @@ class TestColonizeHiveChildTiers:
         result = await colonize_hive("Test Hive", str(hive_path), child_tiers={})
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        with repo_root_context(git_repo_tmp_path):
-            config = load_bees_config()
-            assert config is not None
-            hive_config = config.hives["test_hive"]
-            assert hive_config.child_tiers is not None
-            assert hive_config.child_tiers == {}
+        identity = read_identity(hive_path / ".hive")
+        assert identity is not None
+        assert "child_tiers" in identity
+        assert identity["child_tiers"] == {}
 
     async def test_colonize_child_tiers_resolution_after_colonize(self, git_repo_tmp_path):
         """Test resolve_child_tiers_for_hive works correctly after colonizing with child_tiers."""
