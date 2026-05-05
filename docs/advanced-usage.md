@@ -62,7 +62,7 @@ You can lock down allowed values per-hive or per-scope with `status_values` in `
 
 ## Reference Materials
 
-Each bee ticket has an optional `reference_materials` field — a list of dicts, each with a `value` key and an optional `resolver` key. A common use case is storing a list of file paths or external identifiers relevant to the ticket.
+Each bee ticket has an optional `reference_materials` field — a list of dicts, each with a `value` key and an optional `resolver` key. A common use case is storing a list of file paths or external identifiers relevant to the ticket. The `--reference-materials` argument on `create-ticket` and `update-ticket` must be `null` or a JSON array of dicts; any other value is rejected at the CLI with exit 1 and an error response.
 
 ### Reference Material Resolvers
 

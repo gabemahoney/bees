@@ -202,6 +202,16 @@ def handle_create_ticket(args):
         args.body = _read_body_file_arg("--body-file", args.body_file)
     if args.body is not None and args.body_file is None:
         _reject_oversized_body_cli("--body", args.body)
+    parsed_reference_materials = (
+        parse_json_arg(args.reference_materials, "--reference-materials")
+        if args.reference_materials is not None else None
+    )
+    if parsed_reference_materials is not None and not (
+        isinstance(parsed_reference_materials, list)
+        and all(isinstance(item, dict) for item in parsed_reference_materials)
+    ):
+        _output_result({"status": "error", "error_type": "invalid_argument", "message": "reference_materials must be a list of dicts or null"})  # noqa: E501
+        return
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -214,7 +224,7 @@ def handle_create_ticket(args):
             down_dependencies=parse_json_arg(args.down_deps, "--down-deps") if args.down_deps is not None else None,
             tags=parse_json_arg(args.tags, "--tags") if args.tags is not None else None,
             status=args.status,
-            reference_materials=parse_json_arg(args.reference_materials, "--reference-materials") if args.reference_materials is not None else None,
+            reference_materials=parsed_reference_materials,
         ),
         root=root,
     )
@@ -262,7 +272,14 @@ def handle_update_ticket(args):
     if args.down_deps is not _UNSET:
         kwargs["down_dependencies"] = parse_json_arg(args.down_deps, "--down-deps")
     if args.reference_materials is not _UNSET:
-        kwargs["reference_materials"] = parse_json_arg(args.reference_materials, "--reference-materials")
+        parsed_reference_materials = parse_json_arg(args.reference_materials, "--reference-materials")
+        if parsed_reference_materials is not None and not (
+            isinstance(parsed_reference_materials, list)
+            and all(isinstance(item, dict) for item in parsed_reference_materials)
+        ):
+            _output_result({"status": "error", "error_type": "invalid_argument", "message": "reference_materials must be a list of dicts or null"})  # noqa: E501
+            return
+        kwargs["reference_materials"] = parsed_reference_materials
     if args.add_tags is not _UNSET:
         kwargs["add_tags"] = parse_json_arg(args.add_tags, "--add-tags")
     if args.remove_tags is not _UNSET:

@@ -122,7 +122,16 @@ Hive 'unknown_hive' not found in configuration
 
 ### Reference Materials Field Validation
 
-**Bee Tickets**:
+**CLI Input Validation** (`src/cli.py` — `create-ticket` and `update-ticket`):
+- The `--reference-materials` argument is validated at the CLI entry point before any core logic runs
+- Valid values: `null` (omitted/None) or a JSON array of dicts
+- If the parsed value is non-null and not a list of dicts, the command returns exit 1 with:
+  ```json
+  {"status": "error", "error_type": "invalid_argument", "message": "reference_materials must be a list of dicts or null"}
+  ```
+- This rejects malformed input before any ticket creation or mutation occurs
+
+**Bee Tickets (Linter Validation)**:
 - `reference_materials` field may be present in frontmatter for bee tickets
 - `null` is a valid value for the `reference_materials` field
 - When present, must be a list of dicts, each with a `value` key and an optional `resolver` key

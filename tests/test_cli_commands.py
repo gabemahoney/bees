@@ -74,28 +74,75 @@ def test_create_ticket_happy_path(cli_runner, isolated_bees_env):
     assert "ticket_id" in result
 
 
-def test_create_ticket_null_reference_materials(cli_runner, isolated_bees_env):
+@pytest.mark.parametrize(
+    "ref_materials_json",
+    [
+        pytest.param('"just a string"', id="bare_string"),
+        pytest.param('["not", "dicts"]', id="list_of_strings"),
+        pytest.param('42', id="integer"),
+    ],
+)
+def test_create_ticket_invalid_reference_materials(cli_runner, isolated_bees_env, ref_materials_json):
+    """Regression b.h4z: non-dict reference_materials must exit 1 with status=error."""
     isolated_bees_env.create_hive("test", "Test")
     isolated_bees_env.write_config()
 
     stdout, exit_code = cli_runner(
         [
             "create-ticket",
-            "--ticket-type",
-            "bee",
-            "--title",
-            "Reference Materials Test",
-            "--hive",
-            "test",
-            "--reference-materials",
-            "null",
+            "--ticket-type", "bee",
+            "--title", "Ref Test",
+            "--hive", "test",
+            "--reference-materials", ref_materials_json,
+        ]
+    )
+
+    assert exit_code == 1
+    result = json.loads(stdout)
+    assert result["status"] == "error"
+    assert result.get("error_type") == "invalid_argument"
+
+
+@pytest.mark.parametrize(
+    "ref_materials_json,expected",
+    [
+        pytest.param("null", None, id="null"),
+        # Empty list is serialized as absent (writer skips empty lists); reads back as None.
+        pytest.param('[]', None, id="empty_list"),
+        pytest.param('[{"url": "https://example.com", "title": "Docs"}]', {"url": "https://example.com", "title": "Docs"}, id="list_of_dicts"),
+    ],
+)
+def test_create_ticket_valid_reference_materials(cli_runner, isolated_bees_env, ref_materials_json, expected):
+    """Valid reference_materials values (null, empty list, list of dicts) must succeed with correct stored value."""
+    isolated_bees_env.create_hive("test", "Test")
+    isolated_bees_env.write_config()
+
+    stdout, exit_code = cli_runner(
+        [
+            "create-ticket",
+            "--ticket-type", "bee",
+            "--title", "Ref Test",
+            "--hive", "test",
+            "--reference-materials", ref_materials_json,
         ]
     )
 
     assert exit_code == 0
     result = json.loads(stdout)
     assert result["status"] == "success"
-    assert result.get("reference_materials") is None
+
+    ticket_id = result["ticket_id"]
+    show_out, _ = cli_runner(["show-ticket", "--ids", ticket_id])
+    ticket = json.loads(show_out)["tickets"][0]
+    stored = ticket.get("reference_materials")
+
+    if expected is None:
+        assert stored is None
+    else:
+        assert isinstance(stored, list)
+        # Each stored entry may be augmented with a 'resolved' key by the resolver pipeline;
+        # check that the expected dict is a subset of at least one stored entry.
+        assert any(expected.items() <= entry.items() for entry in stored)
 
 
 def test_create_ticket_json_tags(cli_runner, isolated_bees_env):
@@ -257,6 +304,49 @@ def test_update_ticket_single_id_with_title(cli_runner, isolated_bees_env):
     show_out, _ = cli_runner(["show-ticket", "--ids", ticket_id])
     ticket = json.loads(show_out)["tickets"][0]
     assert ticket["title"] == "New Title"
+
+
+@pytest.mark.parametrize(
+    "ref_materials_json",
+    [
+        pytest.param('"just a string"', id="bare_string"),
+        pytest.param('["not", "dicts"]', id="list_of_strings"),
+        pytest.param('42', id="integer"),
+    ],
+)
+def test_update_ticket_invalid_reference_materials(cli_runner, isolated_bees_env, ref_materials_json):
+    """Regression b.h4z: non-dict reference_materials on update-ticket must exit 1 with status=error."""
+    ticket_id = _create_bee(cli_runner, isolated_bees_env)
+
+    stdout, exit_code = cli_runner(
+        ["update-ticket", "--ids", ticket_id, "--reference-materials", ref_materials_json]
+    )
+
+    assert exit_code == 1
+    result = json.loads(stdout)
+    assert result["status"] == "error"
+    assert result.get("error_type") == "invalid_argument"
+
+
+@pytest.mark.parametrize(
+    "ref_materials_json",
+    [
+        pytest.param("null", id="null"),
+        pytest.param('[]', id="empty_list"),
+        pytest.param('[{"url": "https://example.com"}]', id="list_of_dicts"),
+    ],
+)
+def test_update_ticket_valid_reference_materials(cli_runner, isolated_bees_env, ref_materials_json):
+    """Valid reference_materials values (null, empty list, list of dicts) must succeed on update-ticket."""
+    ticket_id = _create_bee(cli_runner, isolated_bees_env)
+
+    stdout, exit_code = cli_runner(
+        ["update-ticket", "--ids", ticket_id, "--reference-materials", ref_materials_json]
+    )
+
+    assert exit_code == 0
+    result = json.loads(stdout)
+    assert result["status"] == "success"
 
 
 # ---------------------------------------------------------------------------
