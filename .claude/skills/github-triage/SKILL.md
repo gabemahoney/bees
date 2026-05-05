@@ -91,8 +91,9 @@ follow this decision tree:
 #### Step 1: Is this worth working on?
 
 Decide if the issue is actionable. If it's spam, incoherent, a support question
-that belongs in Discussions, or empty/vague with no response after 7+ days — close
-it with a comment and move on. Use your best judgement on tone and wording.
+that belongs in Discussions, or empty/vague with no response after 7+ days — apply
+the `invalid` label, close it with a comment, and move on. Use your best judgement
+on tone and wording.
 
 If it looks legitimate, continue.
 
@@ -118,7 +119,7 @@ four sections:
 - **Actual Result**
 
 **If you have enough info** — post the structured bug report as a comment on the
-issue, apply the `type:bug` label, lock the issue, and file a bee in the bugs hive.
+issue, apply the `bug` label, lock the issue, and file a bee in the bugs hive.
 
 **If you don't have enough info** — comment asking for what's missing. Don't lock
 the issue. It will get picked up again on the next triage cycle when the reporter
@@ -130,7 +131,7 @@ Check whether the requested feature aligns with the project's direction. Look at
 the documentation locations listed in the repo's `CLAUDE.md`, and review any PRD/SRD
 documents attached to Idea bees in the Ideas hive.
 
-**If it aligns** — acknowledge the request with a comment, apply the `type:feature`
+**If it aligns** — acknowledge the request with a comment, apply the `enhancement`
 label, lock the issue, and file a bee in the ideas hive.
 
 **If it doesn't align** — comment explaining why the feature doesn't fit the

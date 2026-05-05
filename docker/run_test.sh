@@ -63,9 +63,28 @@ if [[ -z "${CLAUDE_API_KEY}" ]]; then
   exit 1
 fi
 
+# Detect docker access — use sg docker wrapper if direct access fails (Linux group issue)
+if docker info > /dev/null 2>&1; then
+  DOCKER_CMD="docker"
+elif sg docker -c "docker info" > /dev/null 2>&1; then
+  DOCKER_CMD="sg docker -c docker"
+else
+  echo "ERROR: Docker is not accessible. Start Docker or fix group permissions."
+  exit 1
+fi
+
+# Wrapper function so the rest of the script can just call `_docker ...`
+_docker() {
+  if [[ "${DOCKER_CMD}" == "docker" ]]; then
+    docker "$@"
+  else
+    sg docker -c "docker $*"
+  fi
+}
+
 # Clean up previous runs
 tmux kill-session -t "${SESSION}" 2>/dev/null || true
-docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+_docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
 
 echo ""
 echo "=== bees CI — Phase ${PHASE} ==="
@@ -81,7 +100,7 @@ rsync -aL --exclude '.git' --exclude 'dist' --exclude '__pycache__' \
   "${PROJECT_ROOT}/" "${BUILD_CTX}/"
 
 echo "--- Building image ---"
-docker build \
+_docker build \
   -f "${SCRIPT_DIR}/Dockerfile.test" \
   --build-arg "BEES_VERSION=${BEES_VERSION}" \
   -t bees-test \
@@ -89,7 +108,7 @@ docker build \
 
 echo ""
 echo "--- Starting container (Phase ${PHASE}) ---"
-docker run -d \
+_docker run -d \
   --name "${CONTAINER_NAME}" \
   --add-host host.docker.internal:host-gateway \
   -e "ANTHROPIC_API_KEY=${CLAUDE_API_KEY}" \
@@ -107,7 +126,7 @@ docker run -d \
 # Wait for tmux inside container to be ready
 echo "Waiting for container tmux..."
 for i in $(seq 1 60); do
-  if docker exec -u testuser "${CONTAINER_NAME}" tmux has-session -t ci 2>/dev/null; then
+  if _docker exec -u testuser "${CONTAINER_NAME}" tmux has-session -t ci 2>/dev/null; then
     echo "Ready after ${i}s"
     break
   fi
@@ -115,8 +134,14 @@ for i in $(seq 1 60); do
 done
 
 # Create host tmux session that attaches to the container's tmux
-tmux new-session -d -s "${SESSION}" \
-  "docker exec -it -u testuser ${CONTAINER_NAME} tmux attach -t ci; echo ''; echo '--- Phase ${PHASE} exited. Press Enter to close. ---'; read"
+# Note: tmux itself doesn't need docker group — only the docker exec inside does
+if [[ "${DOCKER_CMD}" == "docker" ]]; then
+  tmux new-session -d -s "${SESSION}" \
+    "docker exec -it -u testuser ${CONTAINER_NAME} tmux attach -t ci; echo ''; echo '--- Phase ${PHASE} exited. Press Enter to close. ---'; read"
+else
+  tmux new-session -d -s "${SESSION}" \
+    "sg docker -c 'docker exec -it -u testuser ${CONTAINER_NAME} tmux attach -t ci'; echo ''; echo '--- Phase ${PHASE} exited. Press Enter to close. ---'; read"
+fi
 
 echo ""
 echo "Attach with:"

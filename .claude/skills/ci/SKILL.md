@@ -53,11 +53,19 @@ When a test number is provided, determine which phase it belongs to by reading t
 
 ## Step 1 — Preflight
 
-1. Docker is running:
+1. Docker is accessible:
    ```bash
-   docker info > /dev/null 2>&1
+   docker info > /dev/null 2>&1 || sg docker -c "docker info" > /dev/null 2>&1
    ```
-   If not: "Docker is not running. Start Docker and re-run `/ci`."
+   The `run_test.sh` script auto-detects whether `sg docker` is needed (Linux group
+   permissions) and wraps its own docker calls accordingly. You do NOT need to prefix
+   script invocations with `sg docker`. Just call the scripts directly.
+   For direct `docker rm -f` or `docker logs` commands in this skill, use:
+   ```bash
+   sg docker -c "docker rm -f ..." 2>/dev/null || docker rm -f ...
+   ```
+   If neither `docker info` nor `sg docker -c "docker info"` works:
+   "Docker is not running. Start Docker and re-run `/ci`."
 
 2. The production bees HTTP server is reachable:
    ```bash
@@ -166,15 +174,15 @@ A running container does NOT mean tests are still in progress.
 3. Kill container: `docker rm -f bees-ci-<N>`
 4. Kill tmux: `tmux kill-session -t bees-ci-<N>`
 5. Show the bug ticket (title + description)
-6. **Stop monitoring all phases.** Kill any still-running containers/sessions.
-7. Report: "Phase N failed. Bug filed as `b.XXXX`. Fix it and re-run `/ci`."
+6. Report: "Phase N failed. Bug filed as `b.XXXX`."
+7. Continue monitoring remaining phases — do NOT stop them.
 
 **Crash / timeout:**
 1. Grab logs: `docker logs bees-ci-<N> --tail 30`
 2. Set epic status to `failed`
 3. Kill container + tmux
-4. **Stop monitoring all phases.** Kill any still-running containers/sessions.
-5. Report: "Phase N crashed. Output above."
+4. Report: "Phase N crashed. Output above."
+5. Continue monitoring remaining phases — do NOT stop them.
 
 ## Step 5 — All phases passed
 
