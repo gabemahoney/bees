@@ -38,7 +38,7 @@ import pytest
 
 from src.constants import BODY_MAX_LENGTH
 from src.paths import compute_ticket_path
-from tests.helpers import make_body_at_cap, make_body_over_cap
+from tests.helpers import make_body_at_cap, make_body_over_cap, run_cli_capture_both
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -217,8 +217,8 @@ def test_append_ticket_body_chunk_file_happy_path_stdin(cli_runner, isolated_bee
 def test_append_ticket_body_chunk_file_at_cap(cli_runner, isolated_bees_env, tmp_path):
     """A file with exactly ``BODY_MAX_LENGTH`` characters appends successfully.
 
-    Mirrors the inline ``test_append_ticket_body_at_cap`` boundary; the cap
-    check uses the same helper but with ``arg_name="--chunk-file"``.
+    File-sourced content has no size cap; this exercises a boundary value that
+    still succeeds (as it always did) and confirms the file read path works.
     """
     ticket_id = _create_bee_with_body(cli_runner, isolated_bees_env, body="")
     file_content = make_body_at_cap()
@@ -274,29 +274,6 @@ def test_append_ticket_body_chunk_file_empty_file_noop(cli_runner, isolated_bees
 # ---------------------------------------------------------------------------
 
 
-def _run_cli_capture_both(argv, capsys):
-    """Invoke src.cli.main() with given argv. Returns (stdout, stderr, exit_code).
-
-    Mirrors the conftest ``cli_runner`` fixture but also returns stderr,
-    which the shared fixture discards. Needed for asserting on rejection
-    messages that the helper writes to stderr.
-    """
-    import sys
-    from unittest.mock import patch
-
-    from src.cli import main
-
-    with patch.object(sys, "argv", ["bees", *argv]):
-        try:
-            main()
-            exit_code = 0
-        except SystemExit as exc:
-            exit_code = exc.code if exc.code is not None else 0
-
-    captured = capsys.readouterr()
-    return captured.out.strip(), captured.err, exit_code
-
-
 def test_append_ticket_body_oversized_chunk_rejected(cli_runner, isolated_bees_env, capsys):
     """A chunk one byte over the cap is rejected before any ticket I/O.
 
@@ -310,7 +287,7 @@ def test_append_ticket_body_oversized_chunk_rejected(cli_runner, isolated_bees_e
     capsys.readouterr()
 
     oversized = "x" * (BODY_MAX_LENGTH + 1)
-    _stdout, stderr, exit_code = _run_cli_capture_both(
+    _stdout, stderr, exit_code = run_cli_capture_both(
         ["append-ticket-body", "--ticket-id", ticket_id, "--chunk", oversized],
         capsys,
     )
@@ -347,8 +324,8 @@ def test_append_ticket_body_missing_required_chunk_or_chunk_file(cli_runner):
     assert result["status"] == "error"
 
 
-def test_append_ticket_body_help_text_mentions_chunk_file_stdin_and_cap(cli_runner):
-    """`bees append-ticket-body --help` advertises --chunk-file with stdin and the cap (AC #8)."""
+def test_append_ticket_body_help_text_mentions_chunk_file_and_stdin(cli_runner):
+    """`bees append-ticket-body --help` advertises --chunk-file with stdin and a no-cap note."""
     import re
 
     stdout, exit_code = cli_runner(["append-ticket-body", "--help"])
@@ -357,7 +334,8 @@ def test_append_ticket_body_help_text_mentions_chunk_file_stdin_and_cap(cli_runn
     flat = " ".join(rejoined.split())
     assert "--chunk-file" in flat
     assert "'-'" in flat
-    assert "10000" in flat
+    # File-sourced chunks have no cap — help text must say so.
+    assert "No size cap" in flat or "no size cap" in flat.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +355,7 @@ def test_append_ticket_body_chunk_file_mutex_with_chunk_rejected(cli_runner, iso
     snapshot = _ticket_path(isolated_bees_env, ticket_id).read_bytes()
     capsys.readouterr()
 
-    _stdout, _stderr, exit_code = _run_cli_capture_both(
+    _stdout, _stderr, exit_code = run_cli_capture_both(
         [
             "append-ticket-body",
             "--ticket-id",
@@ -409,7 +387,7 @@ def test_append_ticket_body_chunk_file_mutex_neither_rejected(cli_runner, isolat
     snapshot = _ticket_path(isolated_bees_env, ticket_id).read_bytes()
     capsys.readouterr()
 
-    stdout, _stderr, exit_code = _run_cli_capture_both(
+    stdout, _stderr, exit_code = run_cli_capture_both(
         ["append-ticket-body", "--ticket-id", ticket_id, "--hive", "test"],
         capsys,
     )
@@ -432,7 +410,7 @@ def test_append_ticket_body_chunk_file_missing_file_rejected(cli_runner, isolate
     capsys.readouterr()
 
     missing = tmp_path / "does_not_exist.txt"
-    _stdout, stderr, exit_code = _run_cli_capture_both(
+    _stdout, stderr, exit_code = run_cli_capture_both(
         [
             "append-ticket-body",
             "--ticket-id",
@@ -462,7 +440,7 @@ def test_append_ticket_body_chunk_file_decode_error_rejected(cli_runner, isolate
     # 0xff is never a valid UTF-8 start byte.
     path.write_bytes(b"\xff\xfe")
 
-    _stdout, stderr, exit_code = _run_cli_capture_both(
+    _stdout, stderr, exit_code = run_cli_capture_both(
         [
             "append-ticket-body",
             "--ticket-id",
@@ -479,41 +457,31 @@ def test_append_ticket_body_chunk_file_decode_error_rejected(cli_runner, isolate
     assert _ticket_path(isolated_bees_env, ticket_id).read_bytes() == snapshot
 
 
-def test_append_ticket_body_chunk_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
-    """An oversized ``--chunk-file`` is rejected with stderr naming the cap,
-    the subcommand, and ``--chunk-file`` as a standalone token.
+def test_append_ticket_body_chunk_file_oversized_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A ``--chunk-file`` larger than BODY_MAX_LENGTH is accepted without error.
 
-    The cap-check ``arg_name`` parameterization is what surfaces
-    ``--chunk-file`` (rather than ``--chunk``) in the error. Asserting the
-    flag as a standalone token (split by whitespace) prevents accidental
-    pass-through of a loose substring match (the existing
-    ``test_append_ticket_body_oversized_chunk_rejected`` exercises the
-    ``--chunk`` path and remains unchanged).
+    The BODY_MAX_LENGTH cap applies only to inline ``--chunk`` values. File-sourced
+    content goes through a direct filesystem read with no size constraint.
     """
     ticket_id = _create_bee_with_body(cli_runner, isolated_bees_env, body="hello")
-    snapshot = _ticket_path(isolated_bees_env, ticket_id).read_bytes()
-    capsys.readouterr()
+    chunk = make_body_over_cap()
 
-    path = tmp_path / "oversized.txt"
-    path.write_text(make_body_over_cap(), encoding="utf-8")
+    path = tmp_path / "big.txt"
+    path.write_text(chunk, encoding="utf-8")
 
-    _stdout, stderr, exit_code = _run_cli_capture_both(
+    stdout, exit_code = cli_runner(
         [
             "append-ticket-body",
             "--ticket-id",
             ticket_id,
             "--chunk-file",
             str(path),
-        ],
-        capsys,
+        ]
     )
 
-    assert exit_code != 0
-    assert "10000" in stderr
-    assert str(BODY_MAX_LENGTH + 1) in stderr
-    assert "append-ticket-body" in stderr
-    assert "--chunk-file" in stderr.split()
-    assert _ticket_path(isolated_bees_env, ticket_id).read_bytes() == snapshot
+    assert exit_code == 0, f"oversized chunk-file append failed: {stdout}"
+    body = _read_body_via_show(cli_runner, ticket_id)
+    assert body == "hello" + chunk
 
 
 # ---------------------------------------------------------------------------

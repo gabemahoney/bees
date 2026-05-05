@@ -2,7 +2,8 @@
 Unit tests for the body_file and chunk_file parameters on MCP tools.
 
 Covers:
-- _read_file_content helper (src/mcp_server.py:94-126)
+- _read_file_content helper: reads UTF-8 files without a size cap (cap applies
+  only to inline body/chunk params via JSON Schema maxLength).
 - create_ticket body_file parameter
 - update_ticket body_file parameter
 - append_ticket_body chunk_file parameter
@@ -16,13 +17,20 @@ from src.constants import BODY_MAX_LENGTH
 from src.mcp_server import (
     _read_file_content,
     _show_ticket,
-    append_ticket_body,
-    create_ticket,
-    update_ticket,
+    append_ticket_body as _append_ticket_body_tool,
+    create_ticket as _create_ticket_tool,
+    update_ticket as _update_ticket_tool,
 )
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee
 from tests.conftest import write_scoped_config
+
+# FastMCP wraps tool functions in FunctionTool objects; .fn exposes the
+# underlying async coroutine so tests can call it directly without going
+# through the MCP transport layer.
+create_ticket = _create_ticket_tool.fn
+update_ticket = _update_ticket_tool.fn
+append_ticket_body = _append_ticket_body_tool.fn
 
 
 _HIVE = "backend"
@@ -103,12 +111,12 @@ class TestReadFileContent:
         f.write_text(body, encoding="utf-8")
         assert _read_file_content("body_file", str(f)) == body
 
-    def test_oversized_raises(self, tmp_path):
-        """BODY_MAX_LENGTH + 1 chars: raises ValueError mentioning the cap."""
+    def test_oversized_succeeds(self, tmp_path):
+        """BODY_MAX_LENGTH + 1 chars from a file: no cap applies, content returned."""
+        content = "a" * (BODY_MAX_LENGTH + 1)
         f = tmp_path / "big.txt"
-        f.write_text("a" * (BODY_MAX_LENGTH + 1), encoding="utf-8")
-        with pytest.raises(ValueError, match=str(BODY_MAX_LENGTH)):
-            _read_file_content("body_file", str(f))
+        f.write_text(content, encoding="utf-8")
+        assert _read_file_content("body_file", str(f)) == content
 
     def test_stdin_rejected(self):
         """path='-' raises ValueError; stdin is not supported in MCP context."""
@@ -167,6 +175,22 @@ class TestCreateTicketBodyFile:
                 body_file=str(tmp_path / "nonexistent.txt"),
             )
 
+    async def test_body_file_oversized_succeeds(self, body_file_hive, tmp_path):
+        """body_file larger than BODY_MAX_LENGTH is accepted (regression guard for b.cit fix).
+
+        Before the fix, _read_file_content applied the 10k cap and this would
+        have raised or truncated. Now it must return the full content.
+        """
+        content = "a" * (BODY_MAX_LENGTH + 1)
+        f = tmp_path / "big.txt"
+        f.write_text(content, encoding="utf-8")
+
+        result = await create_ticket(ticket_type="bee", title="Big Body", hive=_HIVE, body_file=str(f))
+
+        assert result["status"] == "success"
+        shown = await _show_ticket([result["ticket_id"]])
+        assert shown["tickets"][0]["body"] == content
+
 
 # ============================================================================
 # update_ticket — body_file parameter
@@ -196,6 +220,19 @@ class TestUpdateTicketBodyFile:
 
         with pytest.raises(ValueError, match="mutually exclusive"):
             await update_ticket(ticket_ids=ticket_id, body="inline", body_file=str(f))
+
+    async def test_body_file_oversized_succeeds(self, body_file_hive, tmp_path):
+        """update body_file larger than BODY_MAX_LENGTH is accepted (regression guard for b.cit fix)."""
+        ticket_id, _ = create_bee(title="Seed", hive_name=_HIVE, body="seed")
+        content = "a" * (BODY_MAX_LENGTH + 1)
+        f = tmp_path / "big.txt"
+        f.write_text(content, encoding="utf-8")
+
+        result = await update_ticket(ticket_ids=ticket_id, body_file=str(f))
+
+        assert result["status"] == "success"
+        shown = await _show_ticket([ticket_id])
+        assert shown["tickets"][0]["body"] == content
 
 
 # ============================================================================
@@ -232,3 +269,16 @@ class TestAppendTicketBodyChunkFile:
         ticket_id, _ = create_bee(title="Append Target", hive_name=_HIVE, body="seed")
         with pytest.raises(ValueError, match="Either chunk or chunk_file"):
             await append_ticket_body(ticket_id=ticket_id)
+
+    async def test_chunk_file_oversized_succeeds(self, body_file_hive, tmp_path):
+        """chunk_file larger than BODY_MAX_LENGTH is accepted (regression guard for b.cit fix)."""
+        ticket_id, _ = create_bee(title="Append Target", hive_name=_HIVE, body="seed")
+        chunk = "a" * (BODY_MAX_LENGTH + 1)
+        f = tmp_path / "big.txt"
+        f.write_text(chunk, encoding="utf-8")
+
+        result = await append_ticket_body(ticket_id=ticket_id, chunk_file=str(f))
+
+        assert result["status"] == "success"
+        shown = await _show_ticket([ticket_id])
+        assert shown["tickets"][0]["body"] == "seed" + chunk

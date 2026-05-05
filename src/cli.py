@@ -136,8 +136,9 @@ def _read_body_file_arg(arg_name: str, path: str) -> str:
         write a single-line ``Error:`` message to stderr that names
         ``arg_name`` and ``path``, then exit with status 1.
       - Otherwise return the decoded UTF-8 contents verbatim. No length
-        check, trimming, or normalization is performed; callers continue
-        to invoke ``_reject_oversized_body_cli`` on the return value.
+        check, trimming, or normalization is performed. Callers must NOT
+        invoke ``_reject_oversized_body_cli`` on the return value — the
+        BODY_MAX_LENGTH cap does not apply to file-sourced content.
     """
     if path == "-":
         try:
@@ -199,8 +200,8 @@ def handle_create_ticket(args):
         return
     if args.body_file is not None:
         args.body = _read_body_file_arg("--body-file", args.body_file)
-    if args.body is not None:
-        _reject_oversized_body_cli("--body-file" if args.body_file is not None else "--body", args.body)
+    if args.body is not None and args.body_file is None:
+        _reject_oversized_body_cli("--body", args.body)
     result = _run_in_repo(
         _create_ticket(
             ticket_type=args.ticket_type,
@@ -239,8 +240,8 @@ def handle_update_ticket(args):
     if args.body_file is not None:
         args.body = _read_body_file_arg("--body-file", args.body_file)
 
-    if args.body is not _UNSET and args.body is not None:
-        _reject_oversized_body_cli("--body-file" if args.body_file is not None else "--body", args.body)
+    if args.body is not _UNSET and args.body is not None and args.body_file is None:
+        _reject_oversized_body_cli("--body", args.body)
 
     # Build kwargs: only pass fields that were explicitly provided (not _UNSET)
     ticket_ids = args.ids[0] if len(args.ids) == 1 else args.ids
@@ -295,7 +296,8 @@ def handle_append_ticket_body(args):
         return
     if args.chunk_file is not None:
         args.chunk = _read_body_file_arg("--chunk-file", args.chunk_file)
-    _reject_oversized_body_cli("--chunk-file" if args.chunk_file is not None else "--chunk", args.chunk)
+    elif args.chunk is not None:
+        _reject_oversized_body_cli("--chunk", args.chunk)
     result = _run_in_repo(
         _append_ticket_body(
             ticket_id=args.ticket_id,
@@ -823,7 +825,7 @@ def build_parser():
     p_create.add_argument("--hive", required=True, help="Hive to create the ticket in. Run list-hives to see available hives.")  # noqa: E501
     p_create_body = p_create.add_mutually_exclusive_group()
     p_create_body.add_argument("--body", default=None, help="Ticket body (markdown). Capped at 10000 characters; for larger bodies, create the ticket with the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each. Alternative: pass --body-file PATH when shell substitution is awkward.")  # noqa: E501
-    p_create_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read body from a UTF-8 file (use '-' for stdin); same 10000 character cap as --body, with oversized input pointed at 'bees append-ticket-body'.")  # noqa: E501
+    p_create_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read body from a UTF-8 file (use '-' for stdin). No size cap — use this to write bodies larger than 10000 characters without chunking.")  # noqa: E501
     p_create.add_argument("--parent", default=None, help="Parent ticket ID. Required for child-tier tickets; omit for bees. Parent's children field is updated automatically.")  # noqa: E501
     p_create.add_argument("--children", default=None, metavar="JSON", help="JSON array of child IDs to link. Bidirectional — child tickets' parent field is set automatically.")  # noqa: E501
     p_create.add_argument("--up-deps", default=None, dest="up_deps", metavar="JSON", help="JSON array of ticket IDs that must be resolved BEFORE this one.")  # noqa: E501
@@ -852,7 +854,7 @@ def build_parser():
     p_update.add_argument("--title", default=_UNSET, help="New title")
     p_update_body = p_update.add_mutually_exclusive_group()
     p_update_body.add_argument("--body", default=_UNSET, help="New body (markdown). Capped at 10000 characters; for larger bodies, set the body to the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each. Alternative: pass --body-file PATH when shell substitution is awkward.")  # noqa: E501
-    p_update_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read new body from a UTF-8 file (use '-' for stdin); same 10000 character cap as --body, with oversized input pointed at 'bees append-ticket-body'.")  # noqa: E501
+    p_update_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read new body from a UTF-8 file (use '-' for stdin). No size cap — use this to write bodies larger than 10000 characters without chunking.")  # noqa: E501
     p_update.add_argument("--status", default=_UNSET, help="New status")
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
@@ -906,7 +908,7 @@ def build_parser():
         dest="chunk_file",
         default=None,
         metavar="PATH",
-        help="Read the chunk text from a UTF-8 file (use '-' for stdin); same 10000-character per-chunk cap as --chunk. Alternative to --chunk for harnesses where shell substitution / quoting is awkward.",  # noqa: E501
+        help="Read the chunk text from a UTF-8 file (use '-' for stdin). No size cap — use this to append content larger than 10000 characters in a single call. Alternative to --chunk for harnesses where shell substitution / quoting is awkward.",  # noqa: E501
     )
     p_append_body.add_argument(
         "--hive",

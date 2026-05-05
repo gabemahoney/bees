@@ -10,12 +10,18 @@ ID_CHARSET = "123456789abcdefghijkmnopqrstuvwxyz"
 
 GUID_LENGTH = 32
 
-# ── Per-call body size cap ────────────────────────────────────────────────────
+# ── Per-call inline body size cap ────────────────────────────────────────────
 #
 # BODY_MAX_LENGTH is the maximum length (measured in Unicode codepoints, not
-# bytes and not lines) of a single `body` or `chunk` argument accepted by the
-# MCP write surface (`create_ticket.body`, `update_ticket.body`,
-# `append_ticket_body.chunk`) and by the equivalent CLI subcommands.
+# bytes and not lines) of a single *inline* `body` or `chunk` argument
+# accepted by the MCP write surface (`create_ticket.body`,
+# `update_ticket.body`, `append_ticket_body.chunk`) and by the equivalent CLI
+# subcommands.
+#
+# This cap applies ONLY to inline params — i.e. values passed directly in the
+# MCP JSON payload or on the CLI command line.  File-sourced params
+# (`body_file`, `chunk_file`, `--body-file`, `--chunk-file`) go through a
+# pure filesystem read and are NOT subject to this cap.
 #
 # This cap is deliberately measured in characters because JSON Schema
 # `maxLength` counts codepoints natively — the MCP schema constraint and any
@@ -23,10 +29,10 @@ GUID_LENGTH = 32
 # conversion.
 #
 # This constant is the single source of truth for enforcement: every call
-# site that rejects or validates an oversized body must import it (MCP schema
-# `maxLength`, CLI argparse-time checks, tests). Prose sites (docstrings, CLI
-# help text, error messages) may hardcode the literal `10000` since the value
-# is locked and not intended to be tuned further.
+# site that rejects or validates an oversized inline body must import it (MCP
+# schema `maxLength`, CLI argparse-time checks, tests). Prose sites
+# (docstrings, CLI help text, error messages) may hardcode the literal `10000`
+# since the value is locked and not intended to be tuned further.
 #
 # Rationale (SR-1.3): target roughly 60 seconds of streaming time per chunk.
 # Sonnet sustains about 50 output tokens per second, so 60 seconds buys about

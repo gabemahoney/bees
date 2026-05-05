@@ -1,4 +1,4 @@
-"""Integration tests for the symmetric --body cap on create-ticket / update-ticket.
+"""Integration tests for the --body cap on create-ticket / update-ticket.
 
 Covers Epic 5 of the chunked-ticket-body-API plan (Bee b.87r):
 - Oversized --body on create-ticket is rejected by ``_reject_oversized_body_cli``
@@ -14,24 +14,18 @@ Covers Epic 5 of the chunked-ticket-body-API plan (Bee b.87r):
 Also covers Epic 1 / Task 2 of the ``--body-file`` / ``--chunk-file`` feature
 (Bee ``b.jsz``, plan ``t1.jsz.de``):
 - ``create-ticket --body-file PATH`` reads UTF-8 file contents (or stdin when
-  ``PATH == "-"``), routes them through ``_read_body_file_arg`` and the same
-  ``_reject_oversized_body_cli`` cap check as ``--body`` (parameterized to
-  name ``--body-file`` in the rejection message).
+  ``PATH == "-"``). The BODY_MAX_LENGTH cap does NOT apply to file-sourced
+  content — only inline ``--body`` values are capped.
 - ``--body`` and ``--body-file`` are mutually exclusive (argparse mutex group).
-- File-surface error paths (missing file, UTF-8 decode error, oversized file)
-  exit non-zero, write a stderr diagnostic, and write no ticket files.
+- File-surface error paths (missing file, UTF-8 decode error) exit non-zero,
+  write a stderr diagnostic, and write no ticket files. Oversized files succeed.
 
 Also covers Epic 2 of the same feature (Bee ``b.jsz``, plan ``t1.jsz.sh``):
 - ``update-ticket --body-file PATH`` mirrors create-ticket's wiring on the
   update surface: UTF-8 file contents (or stdin when ``PATH == "-"``) are
-  read by ``_read_body_file_arg`` and routed through the parameterized
-  ``_reject_oversized_body_cli`` cap check (which names ``--body-file`` on
-  this surface).
+  read without a size cap.
 - ``--body`` and ``--body-file`` are mutually exclusive on update-ticket
   (argparse mutex group).
-- Every error path (mutex, missing file, UTF-8 decode error, oversized file)
-  exits non-zero AND leaves the target ticket's on-disk ``.md`` byte-identical
-  to its pre-call snapshot.
 - The ``args.body is _UNSET`` sentinel-skip path (no ``--body`` and no
   ``--body-file``) survives the parser restructure into a mutex group: see
   the load-bearing ``test_update_ticket_without_body_does_not_fire_helper``
@@ -239,24 +233,26 @@ def test_update_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
     assert "10000" in flat
 
 
-def test_create_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
-    """`bees create-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+def test_create_ticket_help_text_mentions_body_file_and_stdin(cli_runner):
+    """`bees create-ticket --help` advertises --body-file with stdin and no-cap note."""
     stdout, exit_code = cli_runner(["create-ticket", "--help"])
     assert exit_code == 0
     flat = _normalize_help(stdout)
     assert "--body-file" in flat
     assert "'-'" in flat
-    assert "10000" in flat
+    # File-sourced content has no cap — the help text must NOT claim a 10000 limit
+    # for --body-file (the 10000 mention in the flat output comes only from --body).
+    assert "No size cap" in flat or "no size cap" in flat.lower()
 
 
-def test_update_ticket_help_text_mentions_body_file_stdin_and_cap(cli_runner):
-    """`bees update-ticket --help` advertises --body-file with stdin and the cap (AC #8)."""
+def test_update_ticket_help_text_mentions_body_file_and_stdin(cli_runner):
+    """`bees update-ticket --help` advertises --body-file with stdin and no-cap note."""
     stdout, exit_code = cli_runner(["update-ticket", "--help"])
     assert exit_code == 0
     flat = _normalize_help(stdout)
     assert "--body-file" in flat
     assert "'-'" in flat
-    assert "10000" in flat
+    assert "No size cap" in flat or "no size cap" in flat.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -323,11 +319,7 @@ def test_create_ticket_body_file_at_cap_succeeds(cli_runner, isolated_bees_env, 
 
 
 def test_create_ticket_body_file_empty_succeeds(cli_runner, isolated_bees_env, tmp_path):
-    """An empty --body-file produces a ticket with an empty body.
-
-    Verifies the helper's empty-string return propagates through the cap
-    check (which permits empty bodies) and the ticket persists.
-    """
+    """An empty --body-file produces a ticket with an empty body."""
     path = tmp_path / "empty.md"
     path.write_bytes(b"")
 
@@ -441,49 +433,21 @@ def test_create_ticket_body_file_decode_error_rejected(cli_runner, isolated_bees
     assert md_files == [], f"unexpected ticket files written: {md_files}"
 
 
-def test_create_ticket_body_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
-    """An oversized file rejection names ``--body-file`` (not just ``--body``).
+def test_create_ticket_body_file_oversized_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A file larger than BODY_MAX_LENGTH is accepted via --body-file.
 
-    The cap-check ``arg_name`` parameterization is what surfaces ``--body-file``
-    in the error. Since ``--body-file`` contains the substring ``--body``, a
-    loose ``"--body" in stderr`` would also pass even on the un-parameterized
-    code path. We therefore pin specifically on ``--body-file`` as a
-    whitespace-bounded token to verify the parameterization fired.
+    The BODY_MAX_LENGTH cap applies only to inline --body values. File-sourced
+    content goes through a direct filesystem read with no size constraint.
     """
     _setup_test_hive(isolated_bees_env)
-    capsys.readouterr()
 
-    path = tmp_path / "oversized.md"
-    path.write_text(make_body_over_cap(), encoding="utf-8")
+    body = make_body_over_cap()
+    path = tmp_path / "big.md"
+    path.write_text(body, encoding="utf-8")
 
-    _stdout, stderr, exit_code = run_cli_capture_both(
-        [
-            "create-ticket",
-            "--ticket-type",
-            "bee",
-            "--title",
-            "Should Not Exist",
-            "--hive",
-            "test",
-            "--body-file",
-            str(path),
-        ],
-        capsys,
-    )
+    ticket_id = _create_bee_with_body_file(cli_runner, isolated_bees_env, str(path))
 
-    assert exit_code != 0
-    assert "10000" in stderr
-    assert str(BODY_MAX_LENGTH + 1) in stderr
-    assert "append-ticket-body" in stderr
-
-    # ``--body-file`` as a standalone whitespace-bounded token. Splitting
-    # on any whitespace is robust to argparse's wrapping/normalization.
-    tokens = stderr.split()
-    assert "--body-file" in tokens, f"expected '--body-file' as a standalone token in stderr; got tokens={tokens!r}"
-
-    hive_dir = isolated_bees_env.base_path / "test"
-    md_files = list(hive_dir.rglob("*.md"))
-    assert md_files == [], f"unexpected ticket files written: {md_files}"
+    assert _read_body_via_show(cli_runner, ticket_id) == body
 
 
 # ---------------------------------------------------------------------------
@@ -643,31 +607,17 @@ def test_update_ticket_body_file_decode_error_rejected(cli_runner, isolated_bees
     assert on_disk.read_bytes() == snapshot
 
 
-def test_update_ticket_body_file_oversized_rejected(cli_runner, isolated_bees_env, tmp_path, capsys):
-    """Oversized update --body-file pins ``--body-file`` as a standalone token in stderr.
+def test_update_ticket_body_file_oversized_succeeds(cli_runner, isolated_bees_env, tmp_path):
+    """A file larger than BODY_MAX_LENGTH is accepted via update --body-file.
 
-    Because ``--body-file`` contains the substring ``--body``, a loose
-    ``"--body" in stderr`` would also pass even on the un-parameterized
-    code path. We pin specifically on ``--body-file`` as a whitespace-bounded
-    token to verify the cap-check arg_name parameterization actually flipped
-    from ``"--body"`` to ``"--body-file"`` on this surface.
+    The BODY_MAX_LENGTH cap applies only to inline --body values. File-sourced
+    content goes through a direct filesystem read with no size constraint.
     """
-    ticket_id, on_disk, snapshot = _seed_and_snapshot(cli_runner, isolated_bees_env, capsys)
+    ticket_id = _create_bee(cli_runner, isolated_bees_env, body="seed")
+    new_body = make_body_over_cap()
+    path = tmp_path / "big.md"
+    path.write_text(new_body, encoding="utf-8")
 
-    big = tmp_path / "oversized.md"
-    big.write_text(make_body_over_cap(), encoding="utf-8")
-
-    _stdout, stderr, exit_code = run_cli_capture_both(
-        ["update-ticket", "--ids", ticket_id, "--body-file", str(big)],
-        capsys,
-    )
-
-    assert exit_code != 0
-    assert "10000" in stderr
-    assert str(BODY_MAX_LENGTH + 1) in stderr
-    assert "append-ticket-body" in stderr
-
-    tokens = stderr.split()
-    assert "--body-file" in tokens, f"expected '--body-file' as a standalone token in stderr; got tokens={tokens!r}"
-
-    assert on_disk.read_bytes() == snapshot
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--body-file", str(path)])
+    assert exit_code == 0, f"update --body-file oversized failed: {stdout}"
+    assert _read_body_via_show(cli_runner, ticket_id) == new_body

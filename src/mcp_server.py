@@ -96,13 +96,18 @@ def _guard_queen_write(resolved_root: Path) -> dict | None:
 def _read_file_content(param_name: str, path: str) -> str:
     """Read a file and return its UTF-8 decoded content.
 
+    The BODY_MAX_LENGTH cap does NOT apply here — file-sourced content goes
+    through a direct filesystem read, not the MCP JSON payload, so there is no
+    transport-layer size constraint.  The cap is enforced only on inline
+    ``body`` / ``chunk`` params via the JSON Schema ``maxLength`` annotation.
+
     Args:
         param_name: Name of the parameter (used in error messages, e.g. "body_file").
         path: Absolute or relative path to the file to read.
 
     Raises:
         ValueError: If path is "-", the file is not found, cannot be read, or
-                    is not valid UTF-8, or if the content exceeds BODY_MAX_LENGTH.
+                    is not valid UTF-8.
     """
     if path == "-":
         raise ValueError(
@@ -119,12 +124,6 @@ def _read_file_content(param_name: str, path: str) -> str:
         content = data.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError(f"{param_name} could not decode {path} as UTF-8: {exc}") from exc
-    if len(content) > BODY_MAX_LENGTH:
-        raise ValueError(
-            f"{param_name} is {len(content)} characters, which exceeds the "
-            f"{BODY_MAX_LENGTH} character cap. Use append_ticket_body to write "
-            f"large bodies in chunks of up to {BODY_MAX_LENGTH} characters each."
-        )
     return content
 
 
@@ -228,7 +227,7 @@ async def create_ticket(
               longer bodies use a short stub here and loop `append_ticket_body`.
               Mutually exclusive with body_file.
         body_file: Path to a file whose UTF-8 contents are used as the body.
-                   Mutually exclusive with body. File must be at most 10000 characters.
+                   Mutually exclusive with body. No size cap applies to file-sourced content.
         parent: Parent ticket ID. Required for child-tier tickets; omit for bees.
                 The parent ticket's children field is updated automatically.
         children: Child ticket IDs to link at creation time. Bidirectional relationship
@@ -305,7 +304,7 @@ async def update_ticket(
               Mutually exclusive with body_file.
         body_file: Path to a file whose UTF-8 contents are used as the body
                    (single mode only). Mutually exclusive with body.
-                   File must be at most 10000 characters.
+                   No size cap applies to file-sourced content.
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
         down_deps: Full replacement list of dependent ticket IDs (single mode only).
         tags: Full replacement list of tags (single mode only).
@@ -354,32 +353,31 @@ async def append_ticket_body(
 ) -> dict[str, Any]:
     """Append a chunk of text to the end of an existing ticket's body.
 
-    Bodies larger than 10000 characters (Unicode codepoints, not bytes,
-    not lines) must be split across calls: first create or update the
-    ticket with a short stub body, then loop `append_ticket_body` with
-    chunks each no larger than 10000 characters.
+    Inline ``chunk`` values are capped at 10000 Unicode codepoints (not bytes,
+    not lines) by the input schema.  To exceed this limit, pass a file path via
+    ``chunk_file`` instead — file-sourced content is read directly from the
+    filesystem and is not subject to the MCP payload cap.
 
     Use this tool to build up a ticket body in multiple calls. Call order
     is preserved exactly as submitted from a single caller: chunks are
     concatenated to the end of the current body in the order you invoke
     this tool, with no separator, no newline, and no framing injected by
-    the server. Empty `chunk` is a valid no-op success and is therefore
-    safe inside idempotent retry loops. The cap is measured in characters
-    (Unicode codepoints), not bytes and not lines.
+    the server. Empty ``chunk`` is a valid no-op success and is therefore
+    safe inside idempotent retry loops.
 
-    Workflow: call `create_ticket` (or `update_ticket`) with a short stub
-    body first, then loop `append_ticket_body` with chunks each no larger
-    than 10000 characters. Only the `body` field is touched; every other
-    frontmatter field (tags, status, guid, created_at, parent, children,
-    up_dependencies, down_dependencies, reference_materials) is preserved unchanged.
+    Workflow: call `create_ticket` (or `update_ticket`) first, then loop
+    `append_ticket_body` to add the rest. Only the `body` field is touched;
+    every other frontmatter field (tags, status, guid, created_at, parent,
+    children, up_dependencies, down_dependencies, reference_materials) is
+    preserved unchanged.
 
     Args:
         ticket_id: The ticket whose body is being appended to.
         chunk: The text to append. May be the empty string. Must be at
                most 10000 characters. Mutually exclusive with chunk_file.
         chunk_file: Path to a file whose UTF-8 contents are appended.
-                    Mutually exclusive with chunk. File must be at most
-                    10000 characters.
+                    Mutually exclusive with chunk. No size cap applies to
+                    file-sourced content.
         hive: Optional hive name for faster O(1) lookup.
     """
     if chunk is not None and chunk_file is not None:

@@ -393,9 +393,9 @@ bees set-status-values --scope=global --unset
 
 `create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
 
-`--body`/`--body-file` and `--chunk`/`--chunk-file` are mutually exclusive; the file flags read content from the named path (or stdin when the path is `-`), and the same 10000-character cap applies regardless of input source.
+`--body`/`--body-file` and `--chunk`/`--chunk-file` are mutually exclusive; the file flags read content from the named path (or stdin when the path is `-`). The 10000-character cap applies only to the inline `--body` and `--chunk` flags; `--body-file` and `--chunk-file` have no size limit.
 
-The MCP tools expose equivalent `body_file` and `chunk_file` parameters with the same semantics: `create_ticket` and `update_ticket` accept `body_file` as an alternative to `body`, and `append_ticket_body` accepts `chunk_file` as an alternative to `chunk`. In both cases the parameters are mutually exclusive and the 10000-character cap applies to file-sourced content as well. The one difference from the CLI is that stdin (`"-"`) is not supported in the MCP context — content that would otherwise come from stdin must be passed inline.
+The MCP tools expose equivalent `body_file` and `chunk_file` parameters with the same semantics: `create_ticket` and `update_ticket` accept `body_file` as an alternative to `body`, and `append_ticket_body` accepts `chunk_file` as an alternative to `chunk`. In both cases the parameters are mutually exclusive. The 10000-character cap applies only to the inline `body` and `chunk` parameters; `body_file` and `chunk_file` have no size limit. The one difference from the CLI is that stdin (`"-"`) is not supported in the MCP context — content that would otherwise come from stdin must be passed inline.
 
 ## Query Operations
 

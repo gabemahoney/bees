@@ -58,6 +58,7 @@ bees = "src.cli:main"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+pythonpath = ["."]
 markers = [
     "needs_real_git_check: Tests that require real git repository validation (not mocked)",
     "no_repo_context: Tests that run without repo_root context set",
