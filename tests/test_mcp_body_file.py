@@ -25,12 +25,11 @@ from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee
 from tests.conftest import write_scoped_config
 
-# FastMCP wraps tool functions in FunctionTool objects; .fn exposes the
-# underlying async coroutine so tests can call it directly without going
-# through the MCP transport layer.
-create_ticket = _create_ticket_tool.fn
-update_ticket = _update_ticket_tool.fn
-append_ticket_body = _append_ticket_body_tool.fn
+# In FastMCP 3.x, @mcp.tool() returns the original function unchanged —
+# no FunctionTool wrapper, so use the imports directly.
+create_ticket = _create_ticket_tool
+update_ticket = _update_ticket_tool
+append_ticket_body = _append_ticket_body_tool
 
 
 _HIVE = "backend"
