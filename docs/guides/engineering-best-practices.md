@@ -99,7 +99,29 @@ Always use the correct utility from `src/paths.py` when locating ticket files. N
 - **Use `find_ticket_file(hive_root, ticket_id)` to locate a specific ticket** when you need to search rather than compute. Pass `deep=True` only when looking for misplaced tickets.
 - **Use `get_ticket_path(ticket_id, ticket_type, hive_name)` for existing tickets** when you have the hive name — it calls `compute_ticket_path` internally and raises `FileNotFoundError` if the file is absent.
 
-## 10. Project Conventions
+## 10. Ticket Writes
+
+Always use the canonical write utility. Never write ticket files directly.
+
+- **Always use `write_ticket_file()` from `src/writer.py`.** It performs atomic writes (temp file + rename) and automatically evicts the written ticket from the cache. Direct file writes skip the atomic rename (leaving partially-written files on disk if interrupted) and miss cache eviction (leaving stale data for the rest of the server process).
+- **Never use `Path.write_text()` or `open().write()` on ticket markdown files.** These bypass both atomicity and cache eviction.
+
+## 11. Configuration Loading
+
+Always load config through the canonical loader. Never read config.json directly.
+
+- **Always use `load_bees_config()` or `load_global_config()` from `src/config.py`.** These functions handle scope matching, hive name normalization, and mtime-based caching. Direct `json.load()` reads skip scope matching (leaking out-of-scope hives), miss schema migrations, and re-read the entire config on every call.
+- **Use `resolve_child_tiers_for_hive()` and `resolve_status_values_for_hive()` from `src/config.py`** for per-hive settings. These implement 4-level fallback resolution: (1) hive identity.json, (2) scope config, (3) global config, (4) default. Directly accessing `config["child_tiers"]` skips hive-level overrides from identity.json.
+
+## 12. ID Generation and Validation
+
+Always use the collision-safe generator and strict validator.
+
+- **Always use `generate_unique_ticket_id()` from `src/id_utils.py`** when creating tickets. It checks all hive roots for collisions and has density-aware fallback. Never call `generate_ticket_id()` directly — it skips collision detection and can silently produce duplicate IDs.
+- **Always use `is_valid_ticket_id()` from `src/id_utils.py`** to validate ticket IDs at system boundaries. Ad-hoc regex checks miss format and length constraints.
+- **Always use `normalize_hive_name()` from `src/id_utils.py`** when looking up hives by name. Hive names in config are normalized; ad-hoc `.lower().replace(" ", "_")` misses edge cases like hyphens, multiple spaces, or leading digits.
+
+## 13. Project Conventions
 
 Every project has its own norms. Respect them.
 
@@ -109,7 +131,7 @@ Every project has its own norms. Respect them.
 - Match the commit message format the team uses.
 - When in doubt, look at how existing code handles the same situation.
 
-## 11. Prioritization
+## 14. Prioritization
 
 Not all issues are equal. When reviewing or writing code, focus in this order:
 
