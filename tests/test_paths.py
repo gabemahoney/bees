@@ -15,6 +15,8 @@ from src.paths import (
     ensure_ticket_directory_exists,
     get_ticket_path,
     infer_ticket_type_from_id,
+    iter_ticket_files,
+    iter_ticket_files_deep,
     list_tickets,
 )
 from src.reader import get_ticket_type
@@ -818,3 +820,52 @@ class TestBuildTicketPathMap:
         result = build_ticket_path_map(set())
 
         assert result == {}
+
+
+class TestIterTicketFilesMdSlug:
+    """iter_ticket_files and iter_ticket_files_deep with a subtask whose slug is 'md'.
+
+    Regression test for b.6yv: Path.rglob('*.md') matches directories whose
+    names end in '.md' (e.g. t1.abc.md/). iter_ticket_files uses selective
+    directory traversal and only yields files, never directories.
+    """
+
+    def _setup_hive(self, tmp_path):
+        """Create hive with b.abc bee and t1.abc.md subtask (slug='md')."""
+        hive_dir = tmp_path / "myhive"
+        hive_dir.mkdir()
+
+        # Normal bee: b.abc/b.abc.md
+        bee_dir = hive_dir / "b.abc"
+        bee_dir.mkdir()
+        bee_file = bee_dir / "b.abc.md"
+        bee_file.write_text("---\nid: b.abc\nschema_version: 1.1\ntype: bee\ntitle: Test\n---\n")
+
+        # Subtask with slug 'md': t1.abc.md/t1.abc.md.md
+        subtask_dir = bee_dir / "t1.abc.md"
+        subtask_dir.mkdir()
+        subtask_file = subtask_dir / "t1.abc.md.md"
+        subtask_file.write_text(
+            "---\nid: t1.abc.md\nschema_version: 1.1\ntype: t1\ntitle: MD Slug\n---\n"
+        )
+
+        return hive_dir, bee_file, subtask_file, subtask_dir
+
+    @pytest.mark.parametrize(
+        "fn",
+        [
+            pytest.param(iter_ticket_files, id="iter_ticket_files"),
+            pytest.param(iter_ticket_files_deep, id="iter_ticket_files_deep"),
+        ],
+    )
+    def test_yields_only_files(self, tmp_path, fn):
+        """Both iterators yield the two .md files and never the directory t1.abc.md/."""
+        hive_dir, bee_file, subtask_file, subtask_dir = self._setup_hive(tmp_path)
+
+        results = list(fn(hive_dir))
+
+        assert bee_file in results
+        assert subtask_file in results
+        assert len(results) == 2
+        for p in results:
+            assert p.is_file(), f"Expected file, got directory: {p}"

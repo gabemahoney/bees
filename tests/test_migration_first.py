@@ -475,7 +475,8 @@ def test_ticket_resolver_default_renamed_to_file_path(tmp_path):
     """upgrade() renames resolver: default → resolver: file-path in ticket .md files."""
     hive_dir = tmp_path / "myhive"
     hive_dir.mkdir()
-    md_file = hive_dir / "b.abc.md"
+    (hive_dir / "b.abc").mkdir()
+    md_file = hive_dir / "b.abc" / "b.abc.md"
     md_file.write_text(_make_ticket_md("default"))
 
     config = {"scopes": {str(tmp_path): {"hives": {"myhive": {"path": str(hive_dir)}}}}}
@@ -491,9 +492,11 @@ def test_ticket_non_default_resolver_unchanged(tmp_path):
     hive_dir = tmp_path / "myhive"
     hive_dir.mkdir()
 
-    fp_file = hive_dir / "b.fp.md"
+    (hive_dir / "b.fp").mkdir()
+    fp_file = hive_dir / "b.fp" / "b.fp.md"
     fp_file.write_text(_make_ticket_md("file-path"))
-    gh_file = hive_dir / "b.gh.md"
+    (hive_dir / "b.gh").mkdir()
+    gh_file = hive_dir / "b.gh" / "b.gh.md"
     gh_file.write_text(_make_ticket_md("github"))
 
     config = {"scopes": {str(tmp_path): {"hives": {"myhive": {"path": str(hive_dir)}}}}}
@@ -507,7 +510,8 @@ def test_default_rename_idempotent(tmp_path):
     """Running upgrade twice on a 'default' resolver config is idempotent."""
     hive_dir = tmp_path / "myhive"
     hive_dir.mkdir()
-    md_file = hive_dir / "b.abc.md"
+    (hive_dir / "b.abc").mkdir()
+    md_file = hive_dir / "b.abc" / "b.abc.md"
     md_file.write_text(_make_ticket_md("default"))
 
     config = {
@@ -526,3 +530,42 @@ def test_default_rename_idempotent(tmp_path):
     upgrade(config)
     assert config == config_snap
     assert md_file.read_text() == md_snap
+
+
+# ---------------------------------------------------------------------------
+# Regression: slug 'md' — directory named t1.abc.md/ must not cause IsADirectoryError
+# ---------------------------------------------------------------------------
+
+
+def test_md_slug_subtask_no_is_directory_error(tmp_path):
+    """Migration completes without IsADirectoryError when a subtask slug is 'md'.
+
+    Regression for b.6yv: rglob('*.md') matched directories whose names end
+    in '.md'. The fix routes through iter_ticket_files() which only yields files.
+    """
+    hive_dir = tmp_path / "h"
+    hive_dir.mkdir()
+
+    # Bee: b.abc/b.abc.md (has egg field to trigger ticket migration)
+    md_bee = hive_dir / "b.abc" / "b.abc.md"
+    _write(md_bee, _md("val"))
+
+    # Subtask with slug 'md': b.abc/t1.abc.md/t1.abc.md.md
+    md_subtask = hive_dir / "b.abc" / "t1.abc.md" / "t1.abc.md.md"
+    _write(
+        md_subtask,
+        "---\nid: t1.abc.md\ntype: t1\ntitle: MD Slug\nstatus: open\n---\nBody.\n",
+    )
+
+    config = _hive_config(hive_dir)
+    # Must not raise IsADirectoryError or any other exception
+    upgrade(config)
+
+    # The bee ticket was migrated correctly
+    fm = _frontmatter(md_bee)
+    assert "egg" not in fm
+    assert fm["reference_materials"] == [{"value": "val"}]
+
+    # The subtask file was not corrupted
+    assert md_subtask.exists()
+    assert md_subtask.is_file()

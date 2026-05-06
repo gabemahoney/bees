@@ -58,6 +58,7 @@ from .paths import (
     build_ticket_path_map,
     compute_ticket_path,
     get_ticket_path,
+    iter_ticket_files,
 )
 from .reader import read_ticket
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -1306,11 +1307,7 @@ def _delete_one_core(
     if deletion_ids is not None:
         ids_to_evict = deletion_ids
     else:
-        ids_to_evict = [
-            ticket_file.stem
-            for ticket_file in root_dir.rglob("*.md")
-            if is_valid_ticket_id(ticket_file.stem)
-        ]
+        ids_to_evict = [ticket_file.stem for ticket_file in iter_ticket_files(root_dir)]
 
     try:
         shutil.rmtree(root_dir)

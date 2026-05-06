@@ -87,7 +87,19 @@ The ticket cache is an internal optimization inside `read_ticket()`. All code th
 - **Never populate the cache on the write path.** Write operations must not call `cache.put()`. The cache is populated lazily by `read_ticket()` on the next read. Populating on write bypasses mtime validation and can serve data that is already stale.
 - **Evict related tickets during relationship sync.** Any operation that rewrites a related ticket's frontmatter (parent/child sync, dependency sync) must evict that related ticket after writing. The eviction target is the ticket whose file was written, not the ticket that triggered the sync.
 
-## 9. Project Conventions
+## 9. Ticket File Discovery
+
+Always use the correct utility from `src/paths.py` when locating ticket files. Never use raw glob patterns over hive directories.
+
+- **Always use `iter_ticket_files()` or `iter_ticket_files_deep()`.** Both live in `src/paths.py`. They use `os.walk` with selective directory filtering and correctly handle ticket directories whose names end in `.md` (e.g. slug `md`).
+- **Never use `glob("*.md")` or `rglob("*.md")` over hive directories.** These raw globs match directories whose names end in `.md`, causing `IsADirectoryError` when the caller tries to open them as files.
+- **Use `iter_ticket_files()` for normal operations** on well-structured hives (production code, migrations, indexing).
+- **Use `iter_ticket_files_deep()` for broad scans** (linting, misplaced-file detection) — it enters all non-hidden directories except `evicted/` and `cemetery/`.
+- **Use `compute_ticket_path(ticket_id, hive_root)` to build a ticket's expected path deterministically** without any filesystem scan. Call `.exists()` on the result to check presence. Never construct ticket paths manually via string concatenation or `Path` arithmetic.
+- **Use `find_ticket_file(hive_root, ticket_id)` to locate a specific ticket** when you need to search rather than compute. Pass `deep=True` only when looking for misplaced tickets.
+- **Use `get_ticket_path(ticket_id, ticket_type, hive_name)` for existing tickets** when you have the hive name — it calls `compute_ticket_path` internally and raises `FileNotFoundError` if the file is absent.
+
+## 10. Project Conventions
 
 Every project has its own norms. Respect them.
 
@@ -97,7 +109,7 @@ Every project has its own norms. Respect them.
 - Match the commit message format the team uses.
 - When in doubt, look at how existing code handles the same situation.
 
-## 10. Prioritization
+## 11. Prioritization
 
 Not all issues are equal. When reviewing or writing code, focus in this order:
 
