@@ -43,7 +43,8 @@ The bee `b.qi9` in the `testplans` hive is the source of truth. Its child epics 
 # Usage
 
 ```
-/ci                  # Run all phases from the beginning
+/ci                  # Run all phases (or only failed/not-run phases if a previous run exists)
+/ci full             # Force a full run from scratch, ignoring previous results
 /ci <test-number>    # Skip to a specific test number (auto-detects phase)
 ```
 
@@ -89,14 +90,31 @@ Capture the version from the last line of output. Export it:
 export BEES_VERSION=<captured-version>
 ```
 
-## Step 3 — Read the bee
+## Step 3 — Read the bee and determine which phases to run
 
 Use bees MCP tools:
 1. `show_ticket(ticket_ids=["b.qi9"])` to get the bee
 2. The `children` array contains the epic IDs in order
-3. Reset all epics to status `pupa` (clean slate for this run)
+3. `show_ticket` on all children to read their current statuses
 
 The phase number is derived from the epic's position (1st child = Phase 1, etc.).
+
+**Determine run scope:** Unless the argument is `full`, check epic statuses from
+the previous run:
+- `finished` or `legendary` = previously passed. **Skip these phases.**
+- `failed` or `pupa` = needs to run.
+- `worker` = was in progress when the last run was interrupted. Needs to run.
+
+If ALL phases are already `finished`/`legendary`, treat this as a fresh run
+(reset all to `pupa`). Otherwise, only reset the phases that need to run to `pupa`.
+
+Report which phases will run and which are being skipped:
+```
+Skipping phases 1, 2, 3, 5 (passed in previous run).
+Running phases 4, 6.
+```
+
+If the argument is `full`, reset ALL epics to `pupa` and run everything.
 
 ## Step 4 — Run phases
 
@@ -105,6 +123,9 @@ Each phase uses its own container and tmux session named `bees-ci-<N>` (e.g. `be
 ### Phase 1 — Gatekeeper (sequential)
 
 Run Phase 1 first and wait for it to complete before launching the rest. If Phase 1 tests the install and it fails, there is no point running the other phases.
+
+If Phase 1 was already `finished`/`legendary` from a previous run, skip it and go
+straight to launching the remaining phases that need to run.
 
 1. Set Phase 1 epic status to `worker`
 2. Report: "Starting Phase 1: <epic title>"
