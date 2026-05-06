@@ -265,16 +265,37 @@ Resolved in v<version>: https://github.com/gabemahoney/bees/releases/tag/v<versi
 gh issue close <number> --repo gabemahoney/bees --comment "Resolved in v<version>: https://github.com/gabemahoney/bees/releases/tag/v<version>"
 ```
 
-Use the bees MCP tools to query — something like:
+Use the bees MCP tools. Follow this exact procedure:
 
-```yaml
-stages:
-  - [hive=bees_bugs, status=fixed]
-report: [title, ticket_status]
-```
+1. Query for fixed bugs:
+   ```yaml
+   stages:
+     - [hive=bees_bugs, status=fixed]
+   report: [title, ticket_status]
+   ```
 
-Then call `show_ticket` on each to inspect `reference_materials` for `resolver: "github"`.
-Repeat for the Ideas hive with whatever "done" status it uses.
+2. For each ticket ID in the results, call `show_ticket` with a **single ID** —
+   one call per ticket. **Do NOT batch multiple IDs in one call.** Bulk calls
+   produce responses that exceed the MCP output limit and get truncated,
+   causing you to miss tickets.
+
+3. In each `show_ticket` response, check `reference_materials` for any entry
+   with `"resolver": "github"`. Extract the GitHub issue URL from the `url` field.
+
+4. For each GitHub URL found, check if the issue is still open:
+   ```bash
+   gh issue view <number> --repo gabemahoney/bees --json state --jq '.state'
+   ```
+
+5. If the issue is open, close it. If it's locked, unlock first, then close
+   with comment, then re-lock:
+   ```bash
+   gh api repos/gabemahoney/bees/issues/<number>/lock --method DELETE
+   gh issue close <number> --repo gabemahoney/bees --comment "Resolved in v<version>: https://github.com/gabemahoney/bees/releases/tag/v<version>"
+   gh api repos/gabemahoney/bees/issues/<number>/lock --method PUT --field lock_reason=resolved
+   ```
+
+6. Repeat for the Ideas hive with whatever "done" status it uses.
 
 Report each issue closed:
 ```
