@@ -2160,9 +2160,10 @@ class TestGetStatusValuesGlobScope:
         # Both hives should be present
         assert "shared_hive" in result["hives"]
         assert "local_hive" in result["hives"]
-        # Glob-scope hive should carry its status_values
-        assert result["hives"]["shared_hive"] == ["open", "in-progress", "done"]
-        # Local hive has no explicit status_values
+        # Hive-level values come from identity.json (not scope config).
+        # These mock hives have no on-disk identity.json, so both are None.
+        # The scope-level status_values are reported separately in result["scope"].
+        assert result["hives"]["shared_hive"] is None
         assert result["hives"]["local_hive"] is None
 
     @pytest.mark.asyncio
@@ -2210,8 +2211,9 @@ class TestGetStatusValuesGlobScope:
         result = await _get_status_values(resolved_root=Path("/test/project/main"))
 
         assert result["status"] == "success"
-        # Most-specific scope wins
-        assert result["hives"]["overlap_hive"] == ["exact-val"]
+        # Hive-level values come from identity.json, not scope config.
+        # No on-disk identity.json exists for this mock hive.
+        assert result["hives"]["overlap_hive"] is None
 
 
 class TestSetStatusValuesGlobScope:

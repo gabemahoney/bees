@@ -34,6 +34,8 @@ These constraints trade performance for simplicity and reliability. By eliminati
 
 6. **Explicit Write Operations**: Write operations (create/update/delete) fail fast without recovery attempts. This prevents unintended data mutations and provides clear error messages.
 
+7. **Atomic Primitives Over Compound Workflows**: Bees prefers single-step atomic operations and delegates multi-step workflows to the LLM caller. Non-atomic sequences that could fail partway through are better managed by an intelligent caller that can detect failures at each step and decide how to recover. Bees provides reliable building blocks; the caller provides the orchestration. Where non-atomic operations do exist, bees endeavors to detect incomplete operations after the fact with sanitize-hive — correcting what it can automatically and alerting the LLM about what it cannot. (See [GH#24](https://github.com/gabemahoney/bees/issues/24) for the discussion that prompted this principle.)
+
 ### Trade-offs
 
 These principles prioritize correctness and maintainability over performance. Atomicity adds overhead (temp files), type safety adds validation cost, and fail-fast behavior sacrifices convenience for safety. These trade-offs are acceptable given the scale constraints.

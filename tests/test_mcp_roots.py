@@ -260,7 +260,7 @@ async def test_execute_freeform_query_works_with_context():
     # Simple query that should execute successfully (needs stages key)
     with repo_root_context(test_repo):
         result = await _execute_freeform_query(
-            query_yaml="stages:\n  - [type=epic]",
+            query_yaml="stages:\n  - [type=bee]",
             resolved_root=test_repo,
         )
 
