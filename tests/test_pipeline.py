@@ -28,12 +28,9 @@ RELATED FILES:
 - test_multi_hive_query.py: Multi-hive filtering in pipelines
 """
 
-from unittest.mock import patch
-
 import pytest
 import yaml
 
-from src.fast_parser import fast_parse_frontmatter as real_fast_parse_frontmatter
 from src.pipeline import PipelineEvaluator
 from tests.test_constants import (
     TICKET_ID_EP1,
@@ -489,23 +486,18 @@ class TestHierarchicalStorage:
 
 
 class TestPipelineCacheIntegration:
-    """fast_parse_frontmatter behavior across multiple PipelineEvaluator instances."""
+    """Parser behavior across multiple PipelineEvaluator instances."""
 
     def test_each_instance_independently_parses_all_files(self, isolated_bees_env):
-        """Each PipelineEvaluator instance calls fast_parse_frontmatter for every ticket file."""
+        """Each PipelineEvaluator instance independently loads all ticket files."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("test_hive", "Test Hive")
         helper.write_config()
         helper.create_ticket(hive_dir, "b.ci1", "bee", "Cache Integration 1")
         helper.create_ticket(hive_dir, "b.ci2", "bee", "Cache Integration 2")
 
-        with patch("src.fast_parser.fast_parse_frontmatter", wraps=real_fast_parse_frontmatter) as mock_parse:
-            pipeline1 = PipelineEvaluator()
-            first_count = mock_parse.call_count
-            assert first_count == 2
-
-            pipeline2 = PipelineEvaluator()
-            assert mock_parse.call_count == first_count + 2  # Each instance parses all files fresh
+        pipeline1 = PipelineEvaluator()
+        pipeline2 = PipelineEvaluator()
 
         assert len(pipeline1.tickets) == 2
         assert len(pipeline2.tickets) == 2
@@ -517,39 +509,34 @@ class TestPipelineCacheIntegration:
         helper.write_config()
         helper.create_ticket(hive_dir, "b.ci3", "bee", "Original Title")
 
-        with patch("src.fast_parser.fast_parse_frontmatter", wraps=real_fast_parse_frontmatter) as mock_parse:
-            pipeline1 = PipelineEvaluator()
-            assert mock_parse.call_count == 1
+        pipeline1 = PipelineEvaluator()
 
-            helper.create_ticket(hive_dir, "b.ci3", "bee", "Updated Title")
+        helper.create_ticket(hive_dir, "b.ci3", "bee", "Updated Title")
 
-            pipeline2 = PipelineEvaluator()
-            assert mock_parse.call_count == 2  # Second instance re-parses
+        pipeline2 = PipelineEvaluator()
 
         assert pipeline1.tickets["b.ci3"]["title"] == "Original Title"
         assert pipeline2.tickets["b.ci3"]["title"] == "Updated Title"
 
 
-class TestFastParserIntegration:
-    """Verify fast_parse_frontmatter integration inside _load_tickets()."""
+class TestParserIntegration:
+    """Verify parse_frontmatter integration inside _load_tickets()."""
 
-    def test_fast_parse_frontmatter_invoked_not_yaml(self, isolated_bees_env):
-        """_load_tickets() calls fast_parse_frontmatter for each ticket file."""
+    def test_parse_frontmatter_loads_all_tickets(self, isolated_bees_env):
+        """_load_tickets() loads all ticket files via parse_frontmatter."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("test_hive", "Test Hive")
         helper.write_config()
         helper.create_ticket(hive_dir, "b.fp1", "bee", "Fast Parse One")
         helper.create_ticket(hive_dir, "b.fp2", "bee", "Fast Parse Two")
 
-        with patch("src.fast_parser.fast_parse_frontmatter", wraps=real_fast_parse_frontmatter) as mock_fast:
-            pipeline = PipelineEvaluator()
+        pipeline = PipelineEvaluator()
 
-        assert mock_fast.call_count == 2
         assert "b.fp1" in pipeline.tickets
         assert "b.fp2" in pipeline.tickets
 
-    def test_normalized_fields_from_fast_parsed_data(self, isolated_bees_env):
-        """All normalized pipeline fields are correctly mapped from fast_parse_frontmatter output."""
+    def test_normalized_fields_from_parsed_data(self, isolated_bees_env):
+        """All normalized pipeline fields are correctly mapped from parse_frontmatter output."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("bugs", "Bugs")
         helper.write_config()
@@ -570,7 +557,7 @@ class TestFastParserIntegration:
         assert isinstance(ticket["down_dependencies"], list)
 
     def test_schema_version_absent_excludes_ticket(self, isolated_bees_env):
-        """Files without schema_version are not loaded — fast_parse_frontmatter returns None."""
+        """Files without schema_version are not loaded."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("test_hive", "Test Hive")
         helper.write_config()
@@ -631,6 +618,42 @@ class TestFastParserIntegration:
         pipeline = PipelineEvaluator()
         assert "b.bkd" in pipeline.tickets
         assert "b.bkd" in pipeline.tickets["b.bkr"]["down_dependencies"]
+
+    def test_ticket_body_with_html_loads_correctly(self, isolated_bees_env):
+        """Tickets with HTML in the body are parsed correctly via parse_frontmatter.
+
+        This is a regression test for the fast_parser removal: the old fast_parser
+        (regex/line-scanner) could not handle HTML tags in the body, because HTML
+        angle-bracket content confused its scanning logic. parse_frontmatter uses
+        yaml.safe_load on the delimited frontmatter section and returns the body as
+        a plain string, so HTML in the body is completely transparent to it.
+        """
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        ticket_id = "b.htm"
+        ticket_dir = hive_dir / ticket_id
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        (ticket_dir / f"{ticket_id}.md").write_text(
+            "---\n"
+            "id: b.htm\n"
+            "type: bee\n"
+            "title: HTML Body Ticket\n"
+            "status: open\n"
+            "tags: []\n"
+            "schema_version: '0.1'\n"
+            "guid: htmldef1234567890abcdef1234567890ht\n"
+            "---\n"
+            "<h1>Implementation Notes</h1>\n"
+            "<p>See <a href='https://example.com'>docs</a> for details.</p>\n"
+            "<ul><li>Step 1</li><li>Step 2</li></ul>\n"
+        )
+
+        pipeline = PipelineEvaluator()
+        assert "b.htm" in pipeline.tickets
+        assert pipeline.tickets["b.htm"]["title"] == "HTML Body Ticket"
+        assert pipeline.tickets["b.htm"]["issue_type"] == "bee"
 
 
 class TestPipelineFieldLoading:

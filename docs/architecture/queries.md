@@ -4,7 +4,7 @@
 
 The query system provides a powerful multi-stage pipeline for filtering and traversing tickets. Queries are composed of sequential stages, where each stage either filters tickets using search terms or traverses relationships using graph terms. Results from each stage are passed to the next, enabling complex queries through simple composition.
 
-**Source files**: `src/query_parser.py`, `src/search_executor.py`, `src/graph_executor.py`, `src/pipeline.py`, `src/fast_parser.py`, `src/config.py`, `src/mcp_query_ops.py`
+**Source files**: `src/query_parser.py`, `src/search_executor.py`, `src/graph_executor.py`, `src/pipeline.py`, `src/parser.py`, `src/config.py`, `src/mcp_query_ops.py`
 
 ## Query Parser Architecture
 

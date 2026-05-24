@@ -75,14 +75,13 @@ class PipelineEvaluator:
         - The pipeline holds a read-only in-memory dict; it never writes ticket files.
         - Tickets are loaded once at init and never re-read during a pipeline lifetime.
         - No cache interaction occurs: we neither read from nor populate the mtime cache.
-        - fast_parse_frontmatter() is ~10x faster than yaml.safe_load on ~39k files.
         Files missing schema_version are skipped (not bees tickets). Parse failures
-        (corrupted files) are also silently skipped, matching the schema_version behavior.
+        (corrupted files) are also silently skipped.
 
         Raises:
             FileNotFoundError: If hive directory not found
         """
-        from src.fast_parser import fast_parse_frontmatter
+        from src.parser import parse_frontmatter
 
         # Determine which hives to load from
         if self.hive_collection is not None:
@@ -114,9 +113,12 @@ class PipelineEvaluator:
             from src.paths import iter_ticket_files
 
             for md_file in iter_ticket_files(hive_path):
-                # Returns None for non-ticket files (no schema_version) and parse failures
-                fm = fast_parse_frontmatter(md_file)
-                if fm is None:
+                # Skip non-ticket files (no schema_version) and parse failures
+                try:
+                    fm, _ = parse_frontmatter(md_file)
+                except Exception:
+                    continue
+                if not fm.get("schema_version"):
                     continue
 
                 ticket_id = fm.get("id")
