@@ -93,11 +93,9 @@ class TestCreateTicketCacheEviction:
         assert result["status"] == "success"
         mock_cache.evict.assert_called_with(result["ticket_id"])
 
+    @pytest.mark.parametrize("hive_tier_config", ["two_tier", "three_tier", "four_tier"], indirect=True)
     async def test_create_child_evicts_cache(self, hive_tier_config):
         """Cache is evicted for the new ticket ID after child tier creation."""
-        _, _, child_tiers = hive_tier_config
-        if not child_tiers:
-            pytest.skip("No child tiers configured")
         parent = await _create_ticket(
             ticket_type="bee", title="Parent", hive_name=HIVE_BACKEND,
         )

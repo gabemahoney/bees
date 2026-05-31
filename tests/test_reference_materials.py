@@ -88,12 +88,10 @@ class TestCreateBeeWithReferenceMaterials:
         content = ticket_path.read_text()
         assert "reference_materials: null" in content or "reference_materials: ~" in content
 
+    @pytest.mark.parametrize("hive_tier_config", ["two_tier", "three_tier", "four_tier"], indirect=True)
     async def test_create_t1_ticket_no_reference_materials_in_frontmatter(self, hive_tier_config):
         """Create t1 ticket and verify reference_materials field is NOT in frontmatter."""
         repo_root, hive_path, tier_config = hive_tier_config
-
-        if "t1" not in tier_config:
-            pytest.skip("bees_only config has no t1 tier")
 
         bee_result = await _create_ticket(
             ticket_type="bee",
