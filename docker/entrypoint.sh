@@ -34,11 +34,14 @@ p.write_text(json.dumps(d, indent=2))
 print('Injected MCP allow rules for container server names')
 "
 
-# Build minimal .claude.json — API key auth only, no host OAuth tokens
+# Build minimal .claude.json — embeds the API key when no OAuth token is set.
+# When CLAUDE_CODE_OAUTH_TOKEN is in the env the CLI reads it directly; embedding
+# apiKey in .claude.json alongside would override the OAuth token.
 python3 -c "
 import json, os
 bug_url = os.environ.get('BEES_MCP_URL', 'http://host.docker.internal:8000')
 api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+oauth_token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN', '')
 d = {
     'numStartups': 100,
     'hasCompletedOnboarding': True,
@@ -47,10 +50,10 @@ d = {
         'bees-prod': {'type': 'http', 'url': bug_url + '/mcp'}
     }
 }
-if api_key:
+if api_key and not oauth_token:
     d['apiKey'] = api_key
 json.dump(d, open('${TESTUSER_HOME}/.claude.json', 'w'), indent=2)
-print('Created minimal .claude.json (API key auth)')
+print('Created minimal .claude.json ({})'.format('OAuth env' if oauth_token else 'API key auth'))
 "
 
 chown -R testuser:testuser "${TESTUSER_HOME}/.claude" "${TESTUSER_HOME}/.claude.json" "${TESTUSER_HOME}/.waggle" /test-repo/.claude 2>/dev/null || true

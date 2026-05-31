@@ -34,33 +34,44 @@ if [[ -z "${TESTPLANS_PATH}" ]]; then
   exit 1
 fi
 
-# Pull Claude API key — try secrets file, env var, macOS Keychain, Linux keyring
+# Pull Claude auth — prefer OAuth token (Max subscription), fall back to API key
+CLAUDE_OAUTH_TOKEN=""
+if [[ -r ~/.secrets/claude_oauth_token ]]; then
+  CLAUDE_OAUTH_TOKEN=$(cat ~/.secrets/claude_oauth_token | tr -d '[:space:]')
+fi
+if [[ -z "${CLAUDE_OAUTH_TOKEN}" ]]; then
+  CLAUDE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+fi
+
 CLAUDE_API_KEY=""
-if [[ -r ~/.secrets/anthropic_api_key ]]; then
-  CLAUDE_API_KEY=$(cat ~/.secrets/anthropic_api_key)
-fi
-if [[ -z "${CLAUDE_API_KEY}" ]]; then
-  CLAUDE_API_KEY="${ANTHROPIC_API_KEY:-}"
-fi
-if [[ -z "${CLAUDE_API_KEY}" ]] && command -v security &>/dev/null; then
-  CLAUDE_API_KEY=$(security find-generic-password -s "Claude Code" -w 2>/dev/null || true)
+if [[ -z "${CLAUDE_OAUTH_TOKEN}" ]]; then
+  # Fall back to API key if no OAuth token available
+  if [[ -r ~/.secrets/anthropic_api_key ]]; then
+    CLAUDE_API_KEY=$(cat ~/.secrets/anthropic_api_key)
+  fi
   if [[ -z "${CLAUDE_API_KEY}" ]]; then
-    CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)
-    if [[ -n "${CREDS_JSON}" ]]; then
-      CLAUDE_API_KEY=$(python3 -c "
+    CLAUDE_API_KEY="${ANTHROPIC_API_KEY:-}"
+  fi
+  if [[ -z "${CLAUDE_API_KEY}" ]] && command -v security &>/dev/null; then
+    CLAUDE_API_KEY=$(security find-generic-password -s "Claude Code" -w 2>/dev/null || true)
+    if [[ -z "${CLAUDE_API_KEY}" ]]; then
+      CREDS_JSON=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)
+      if [[ -n "${CREDS_JSON}" ]]; then
+        CLAUDE_API_KEY=$(python3 -c "
 import json, sys
 d = json.loads(sys.argv[1])
 print(d.get('claudeAiOauth', {}).get('accessToken', ''))
 " "${CREDS_JSON}" 2>/dev/null || true)
+      fi
     fi
   fi
-fi
-if [[ -z "${CLAUDE_API_KEY}" ]] && command -v secret-tool &>/dev/null; then
-  CLAUDE_API_KEY=$(secret-tool lookup service "Claude Code" 2>/dev/null || true)
-fi
-if [[ -z "${CLAUDE_API_KEY}" ]]; then
-  echo "ERROR: No Claude API key found. Set ANTHROPIC_API_KEY env var, or run 'claude /login'."
-  exit 1
+  if [[ -z "${CLAUDE_API_KEY}" ]] && command -v secret-tool &>/dev/null; then
+    CLAUDE_API_KEY=$(secret-tool lookup service "Claude Code" 2>/dev/null || true)
+  fi
+  if [[ -z "${CLAUDE_API_KEY}" ]]; then
+    echo "ERROR: No Claude auth found. Set CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY, or run 'claude setup-token'."
+    exit 1
+  fi
 fi
 
 # Detect docker access — use sg docker wrapper if direct access fails (Linux group issue)
@@ -108,10 +119,19 @@ _docker build \
 
 echo ""
 echo "--- Starting container (Phase ${PHASE}) ---"
+AUTH_ENV_ARGS=()
+if [[ -n "${CLAUDE_OAUTH_TOKEN}" ]]; then
+  AUTH_ENV_ARGS+=(-e "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_OAUTH_TOKEN}")
+  echo "Auth: using Claude Max OAuth token"
+elif [[ -n "${CLAUDE_API_KEY}" ]]; then
+  AUTH_ENV_ARGS+=(-e "ANTHROPIC_API_KEY=${CLAUDE_API_KEY}")
+  echo "Auth: using Anthropic API key"
+fi
+
 _docker run -d \
   --name "${CONTAINER_NAME}" \
   --add-host host.docker.internal:host-gateway \
-  -e "ANTHROPIC_API_KEY=${CLAUDE_API_KEY}" \
+  "${AUTH_ENV_ARGS[@]}" \
   -e "BEES_MCP_URL=${BEES_MCP_URL}" \
   -e "BEES_VERSION=${BEES_VERSION}" \
   -e "PHASE=${PHASE}" \

@@ -10,8 +10,10 @@ PHASE="${PHASE:-1}"
 
 echo "=== Phase ${PHASE} setup ==="
 
-# Configure Claude Code API key if available (env var alone doesn't auto-authenticate)
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+# Configure Claude Code API key when not using OAuth.
+# CLAUDE_CODE_OAUTH_TOKEN is read directly from the env by the CLI — skip the
+# apiKey embed when it's present (apiKey would override the OAuth token).
+if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" && -n "${ANTHROPIC_API_KEY:-}" ]]; then
   echo "Configuring Claude API key..."
   python3 -c "
 import json, pathlib, os
@@ -21,6 +23,8 @@ d['apiKey'] = os.environ['ANTHROPIC_API_KEY']
 p.write_text(json.dumps(d, indent=2))
 print('API key written to .claude.json')
 "
+elif [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+  echo "Using CLAUDE_CODE_OAUTH_TOKEN from env (no apiKey embed needed)"
 fi
 
 # Phase 3: register bees-stdio MCP server
