@@ -138,8 +138,6 @@ _docker run -d \
   -e "START_TEST=${START_TEST}" \
   -v "${HOME}/.claude.json:/host-claude.json:ro" \
   -v "${HOME}/.claude/settings.json:/host-claude-settings.json:ro" \
-  -v "${HOME}/.waggle:/host-waggle:ro" \
-  -v "${HOME}/projects/waggle:/opt/waggle:ro" \
   -v "${TESTPLANS_PATH}:/tmp/testplans_host:ro" \
   bees-test
 

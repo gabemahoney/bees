@@ -5,12 +5,6 @@ set -euo pipefail
 
 TESTUSER_HOME=/home/testuser
 
-# Set up waggle for testuser
-mkdir -p "${TESTUSER_HOME}/.waggle/hooks"
-if [[ -d /host-waggle/hooks ]]; then
-  cp -r /host-waggle/hooks/* "${TESTUSER_HOME}/.waggle/hooks/" 2>/dev/null || true
-fi
-
 # Set up Claude CLI config — skip onboarding wizard
 mkdir -p "${TESTUSER_HOME}/.claude"
 if [[ -f /host-claude-settings.json ]]; then
@@ -56,7 +50,7 @@ json.dump(d, open('${TESTUSER_HOME}/.claude.json', 'w'), indent=2)
 print('Created minimal .claude.json ({})'.format('OAuth env' if oauth_token else 'API key auth'))
 "
 
-chown -R testuser:testuser "${TESTUSER_HOME}/.claude" "${TESTUSER_HOME}/.claude.json" "${TESTUSER_HOME}/.waggle" /test-repo/.claude 2>/dev/null || true
+chown -R testuser:testuser "${TESTUSER_HOME}/.claude" "${TESTUSER_HOME}/.claude.json" /test-repo/.claude 2>/dev/null || true
 
 # Launch tmux as testuser with test runner + auto-approver
 exec gosu testuser env PATH="/home/testuser/.local/bin:$PATH" bash -c '
