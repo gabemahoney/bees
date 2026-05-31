@@ -127,15 +127,26 @@ may have replied. Move on.
 
 #### If feature:
 
-Check whether the requested feature aligns with the project's direction. Look at
-the documentation locations listed in the repo's `CLAUDE.md`, and review any PRD/SRD
-documents attached to Idea bees in the Ideas hive.
+Evaluate the feature request against the project's design principles and engineering
+best practices. Read the documentation locations listed in the repo's `CLAUDE.md` —
+specifically the architecture docs (including `docs/architecture/design_principles.md`)
+and engineering best practices guide. Also review any PRD/SRD documents attached to
+Idea bees in the Ideas hive.
 
-**If it aligns** — acknowledge the request with a comment, apply the `enhancement`
-label, lock the issue, and file a bee in the ideas hive.
+Post a comment that includes your honest assessment of how well the request fits the
+project's design philosophy. Be specific — cite which principles apply and whether
+the request aligns or conflicts. Don't just say "Good idea!" — the maintainer wants
+a substantive opinion to inform their own review. Examples:
 
-**If it doesn't align** — comment explaining why the feature doesn't fit the
-project's direction. Close the issue.
+- "This conflicts with design principle 7 (atomic primitives over compound workflows)
+  because it would combine abandon + move + colonize into a single command..."
+- "This aligns with the existing architecture — the query system already supports X
+  and this would be a natural extension..."
+- "This is reasonable but has a tension with the no-external-dependencies constraint..."
+
+**Regardless of your assessment** — apply the `enhancement` label, lock the issue,
+and file a bee in the ideas hive. Do NOT close feature requests based on your
+opinion. The maintainer will make the final call.
 
 #### Filing a bee
 
