@@ -1,0 +1,26 @@
+{
+  "normalized_name": "testplans",
+  "display_name": "Testplans",
+  "created_at": "2026-04-27T08:48:41.849028",
+  "version": "0.1",
+  "child_tiers": {
+    "t1": [
+      "Test Suite",
+      "Test Suites"
+    ],
+    "t2": [
+      "Test Area",
+      "Test Areas"
+    ],
+    "t3": [
+      "Test Case",
+      "Test Cases"
+    ]
+  },
+  "status_values": [
+    "legendary",
+    "pupa",
+    "worker",
+    "finished"
+  ]
+}
