@@ -14,17 +14,17 @@ For CI/Docker testing, the HTTP server can still be started manually:
 poetry run bees serve --http > /tmp/bees_server.log 2>&1 &
 ```
 
-## Documentation locations
-If asked to review best practices for this project use the following documents:
+## Documentation Locations
 
-### Engineering Best Practices
-Architecture docs available at:  [architecture](docs%2Farchitecture)
-Engineering best practices at: [engineering-best-practices.md](docs%2Fguides%2Fengineering-best-practices.md)
+- **Engineering best practices**: docs/guides/engineering-best-practices.md
+- **Internal architecture docs**: docs/architecture/ (start with docs/architecture/design_principles.md)
+- **Customer-facing docs**: README.md (PyPI copy: docs/PYPI_README.md)
+- **Test writing guide**: docs/architecture/testing.md (pytest fixture reference: tests/TESTING.md)
+- **Test review guide**: docs/guides/test_review_guide.md
+- **Doc writing guide**: docs/guides/docs_guide.md
 
-### Testing Best Practices
-Unit test best practices at: [testing.md](docs%2Farchitecture%2Ftesting.md)
-Unit Test review guide at: [test_review_guide.md](docs%2Fguides%2Ftest_review_guide.md)
+## Test Commands
 
-### Documentation Best Practices
-Doc writing and review guide at: [docs_guide.md](docs%2Fguides%2Fdocs_guide.md)
+- **Unit test command**: `poetry run pytest tests/`
+- **Integration test command**: `/ci` (Claude Code skill in .claude/skills/ci). It publishes the current code to test.pypi, then runs `docker/run_test.sh <phase>` per phase in Docker: `tests/integration.sh` for the CLI phases, Claude + `/release-test` for the MCP server phases. Do NOT run `tests/integration.sh` directly on the host: it refuses to run outside the container's `/test-repo` and it overwrites `~/.bees/config.json`.
 
