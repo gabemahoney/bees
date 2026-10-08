@@ -128,6 +128,7 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 | MCP server | `test_mcp_server.py` (~1600 lines), `test_mcp_server_lifecycle.py`, `test_mcp_scan_validate.py` | |
 | Dynamic tiers | `test_tier_hierarchy_validation.py`, `test_dynamic_tier_validation.py`, `test_parent_requirement_logic.py` | |
 | CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py`, `test_integration_phases.py` | See "Integration Testing Deep Dive" |
+| Packaging | `test_package_entry_point.py` | `bees` entry point; `serve` extra caps fastmcp and mcp below their next major and matches the Poetry pins |
 
 **Current**: ~1,578 tests across ~64 files.
 

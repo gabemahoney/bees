@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket operations while maintaining relationship consistency. Built with FastMCP 2.14.4, the server exposes tools that AI agents and clients can use to manipulate tickets and hives safely.
+The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket operations while maintaining relationship consistency. Built with FastMCP 3.x on the MCP Python SDK 1.x, the server exposes tools that AI agents and clients can use to manipulate tickets and hives safely.
 
 ## Design Goals
 
@@ -41,7 +41,9 @@ Stdio transport runs the MCP server as a subprocess communicating over stdin/std
 
 **Deferred import strategy**: `start_server` and `mcp` are imported inside the `serve` command handler rather than at module level. This prevents `fastmcp` from being pulled in on every `bees` invocation, keeping CLI startup fast for users who have not installed the `[serve]` extra.
 
-**`[serve]` extra guard**: The `serve` subcommand opens with `import fastmcp`. If the package is not installed, Python raises `ImportError` and the handler prints a message directing the user to install `bees-cli[serve]`. Users who only need the ticket CLI commands are not required to install FastMCP.
+**`[serve]` extra guard**: The `serve` subcommand opens with `import fastmcp`. If the package is not installed, Python raises `ImportError` and the handler prints a message directing the user to install the `[serve]` extra. Users who only need the ticket CLI commands are not required to install FastMCP.
+
+**`[serve]` version bounds**: The `serve` extra declares `fastmcp` (3.x) and `mcp` (1.x), each capped below its next major version. `mcp` is declared directly, not left to come in through `fastmcp`, because `mcp_roots.py` and `mcp_repo_utils.py` import `McpError` from `mcp.shared.exceptions`. The caps are required: without them, pip resolves fastmcp 4, which pulls in mcp 2, where that import fails and `bees serve` crashes on startup. The PEP 621 extra in `[project.optional-dependencies]` must match the Poetry caret pins; `tests/test_package_entry_point.py` checks both the caps and the match.
 
 **`--http` flag**: Starts the HTTP server via uvicorn. See the HTTP Transport Architecture section for full details.
 
@@ -61,7 +63,7 @@ Repository root resolution follows an adapter pattern. `mcp_server.py` owns this
 **MCP Adapter Layer**:
 - Each tool registered in `mcp_server.py` is a thin adapter: it accepts `ctx` and optional `repo_root` from the MCP client, resolves the repo root, and delegates to a core function
 - Core functions (`_create_ticket`, `_update_ticket`, etc.) are pure business logic with no fastmcp or mcp imports
-- No module other than `mcp_server.py` and `mcp_roots.py` imports from `fastmcp` or `mcp`
+- No module other than `mcp_server.py`, `mcp_roots.py` and `mcp_repo_utils.py` imports from `fastmcp` or `mcp`
 
 **Parameter Design**:
 - MCP adapter functions in `mcp_server.py` accept `ctx: Context | None` and optional `repo_root: str | None`; they handle resolution and inject it via `repo_root_context`
@@ -107,7 +109,7 @@ The `repo_utils` module provides transport-agnostic repository root detection. I
 
 ### mcp_roots Module
 
-The `mcp_roots` module contains all MCP-context-aware repository root detection functions. It is the only non-server module that imports from `fastmcp`/`mcp`.
+The `mcp_roots` module contains all MCP-context-aware repository root detection functions. It and `mcp_repo_utils.py` are the only non-server modules that import from `fastmcp`/`mcp`.
 
 **Functions**:
 - `get_client_repo_root(ctx: Context) -> Path | None`: Extracts repository root from MCP client context using the roots protocol. Returns `None` if the client doesn't support roots or the protocol fails.

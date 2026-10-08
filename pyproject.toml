@@ -23,7 +23,9 @@ Homepage = "https://github.com/gabemahoney/bees"
 Repository = "https://github.com/gabemahoney/bees"
 
 [project.optional-dependencies]
-serve = ["fastmcp>=3.0.2"]
+# Upper bounds are required: fastmcp 4 needs mcp 2, which renamed mcp.shared.exceptions.McpError
+# (imported by src/mcp_roots.py and src/mcp_repo_utils.py). mcp is listed because src imports it directly.
+serve = ["fastmcp>=3.0.2,<4", "mcp>=1.24.0,<2"]
 
 [project.scripts]
 bees = "src.cli:main"
@@ -40,9 +42,10 @@ packages = [{include = "src"}]
 python = "^3.10"
 pyyaml = "^6.0.3"
 fastmcp = {version = "^3.0.2", optional = true}
+mcp = {version = "^1.24.0", optional = true}
 
 [tool.poetry.extras]
-serve = ["fastmcp"]
+serve = ["fastmcp", "mcp"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
