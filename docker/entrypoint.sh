@@ -33,7 +33,7 @@ print('Injected MCP allow rules for container server names')
 # apiKey in .claude.json alongside would override the OAuth token.
 python3 -c "
 import json, os
-bug_url = os.environ.get('BEES_MCP_URL', 'http://host.docker.internal:8000')
+bug_url = os.environ.get('BEES_MCP_URL', 'http://host.docker.internal:8473')
 api_key = os.environ.get('ANTHROPIC_API_KEY', '')
 oauth_token = os.environ.get('CLAUDE_CODE_OAUTH_TOKEN', '')
 d = {

@@ -5,9 +5,14 @@
 #
 # Attach with: tmux attach -t bees-ci-<phase>
 #
-# Environment (required):
-#   BEES_VERSION  Version published to test.pypi (set by /ci skill)
-#   BEES_MCP_URL  Outer bees MCP server URL (default: http://host.docker.internal:8000)
+# Environment:
+#   BEES_VERSION  (required) Version published to test.pypi (set by /ci skill)
+#   BEES_CI_PORT  Host port of the outer bees HTTP server that the containers
+#                 file bugs against (default: 8473)
+#   BEES_MCP_URL  Outer bees server URL as seen from the container
+#                 (default: http://host.docker.internal:${BEES_CI_PORT}).
+#                 When left unset, the script first confirms that the server on
+#                 127.0.0.1:${BEES_CI_PORT} is really bees (not just /health).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,9 +20,19 @@ PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 PHASE="${1:?Usage: run_test.sh <phase> [start-test-number]}"
 START_TEST="${2:-}"
 BEES_VERSION="${BEES_VERSION:?BEES_VERSION must be set}"
-BEES_MCP_URL="${BEES_MCP_URL:-http://host.docker.internal:8000}"
+BEES_CI_PORT="${BEES_CI_PORT:-8473}"
 CONTAINER_NAME="bees-ci-${PHASE}"
 SESSION="bees-ci-${PHASE}"
+
+if [[ -z "${BEES_MCP_URL:-}" ]]; then
+  BEES_MCP_URL="http://host.docker.internal:${BEES_CI_PORT}"
+  # Another service may hold the port and answer /health, so verify the server identity.
+  if ! python3 "${SCRIPT_DIR}/check_bees_server.py" "http://127.0.0.1:${BEES_CI_PORT}"; then
+    echo "ERROR: no bees HTTP server confirmed on port ${BEES_CI_PORT}."
+    echo "Start one with 'bees serve --http --port ${BEES_CI_PORT}', or set BEES_CI_PORT to a free port and start bees there."
+    exit 1
+  fi
+fi
 
 # Find testplans hive path using bees CLI (scoped to this repo)
 TESTPLANS_PATH=$(cd "${PROJECT_ROOT}" && bees list-hives 2>/dev/null | python3 -c "

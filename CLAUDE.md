@@ -9,10 +9,7 @@ Other times they will be asking you to build or debug bees.
 The MCP server runs automatically via stdio — Claude Code manages the lifecycle.
 The globally installed `bees` binary (via pipx) is used: `bees serve --stdio`.
 
-For CI/Docker testing, the HTTP server can still be started manually:
-```bash
-poetry run bees serve --http > /tmp/bees_server.log 2>&1 &
-```
+For CI/Docker testing, `/ci` checks for the host bees HTTP server on `BEES_CI_PORT` (default 8473) and starts it itself if nothing is listening there.
 
 ## Documentation Locations
 

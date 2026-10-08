@@ -5,7 +5,7 @@
 # auto_approve.sh runs in the background (started by entrypoint.sh).
 set -euo pipefail
 
-export BUG_SERVER_URL="${BEES_MCP_URL:-http://host.docker.internal:8000}"
+export BUG_SERVER_URL="${BEES_MCP_URL:-http://host.docker.internal:8473}"
 PHASE="${PHASE:-1}"
 
 echo "=== Phase ${PHASE} setup ==="

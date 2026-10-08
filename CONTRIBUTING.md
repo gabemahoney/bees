@@ -42,6 +42,8 @@ Use the `/ci` skill from Claude Code. It publishes the current code to test.pypi
 /ci
 ```
 
+Test failures are filed as bugs against a bees HTTP server on the host, on port 8473 by default. `/ci` starts that server if nothing is listening there. If another service already uses port 8473, set `BEES_CI_PORT` to a free port in the environment Claude Code runs in.
+
 ### Publish to PyPI
 
 Use the `/publish` skill from Claude Code. It bumps the version, builds, checks, uploads to PyPI, commits, and tags the release.

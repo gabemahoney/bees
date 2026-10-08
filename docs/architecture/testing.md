@@ -144,6 +144,18 @@ Use Plain English, do not list bees commands
 Try to write tests that can be run in isolation
 If you must write tests that depend on previous tests, ensure the ticket dependencies represent this
 
+### CI Bug Server
+
+`/ci` runs each phase in its own Docker container (`docker/run_test.sh`). When a test fails, the container files a bug against a bees HTTP server on the host.
+
+- **Port**: `BEES_CI_PORT`, default 8473. This is CI's own port, separate from the `bees serve --http` default of 8000, which other services on a dev host often hold. `/ci` always starts the server with an explicit `--port`, so `http.port` in the global config cannot move it.
+- **URL**: containers reach the server at `host.docker.internal` on that port. If `BEES_MCP_URL` is set, `run_test.sh` uses that URL as-is and skips its own identity check.
+- **Identity check**: before building, CI confirms that the server on the port is bees (`docker/check_bees_server.py`). It sends an MCP `initialize` request and accepts only a server whose `serverInfo.name` is `bees`. A `/health` check is not enough: another service on the same port may answer it too.
+- **Port conflicts**: if another service holds the port, CI stops and asks for a free port. It never stops, signals or reconfigures the other process.
+- **Container-internal ports** (the phase 4 HTTP server under test, the servers `tests/integration.sh` starts) are separate and do not use `BEES_CI_PORT`.
+
+Unit tests for the identity check and the shared CI default port live in `tests/test_check_bees_server.py`.
+
 ## Bash Integration Test Script
 
 Phases 1 and 2 of the integration test suite run as a standalone bash script (`tests/integration.sh`). These phases exercise the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.

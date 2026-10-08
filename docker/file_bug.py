@@ -62,7 +62,7 @@ def main():
     parser.add_argument("--repo-root", default=None, help="Repo root for the bees server (default: $BEES_REPO_ROOT)")
     args = parser.parse_args()
 
-    url = args.url or os.environ.get("BUG_SERVER_URL", "http://host.docker.internal:8000") + "/mcp"
+    url = args.url or os.environ.get("BUG_SERVER_URL", "http://host.docker.internal:8473") + "/mcp"
     repo_root = args.repo_root or os.environ.get("BEES_REPO_ROOT", "/home/gmahoney/projects/bees_project")
 
     ticket_id = asyncio.run(file_bug(url, args.title, args.description, repo_root))

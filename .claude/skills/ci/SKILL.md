@@ -48,6 +48,10 @@ The bee `b.qi9` in the `testplans` hive is the source of truth. Its child epics 
 /ci <test-number>    # Skip to a specific test number (auto-detects phase)
 ```
 
+**CI port:** the containers file bugs against a bees HTTP server on the host. Its port comes
+from the `BEES_CI_PORT` environment variable (default `8473`). Set it to a free port if
+another service already uses 8473.
+
 When a test number is provided, determine which phase it belongs to by reading the test plan, skip to that phase, and pass the test number to `run_test.sh` as the second argument. Phases before the target phase are marked `finished` without running.
 
 # Behavior
@@ -68,15 +72,44 @@ When a test number is provided, determine which phase it belongs to by reading t
    If neither `docker info` nor `sg docker -c "docker info"` works:
    "Docker is not running. Start Docker and re-run `/ci`."
 
-2. The production bees HTTP server is reachable:
+2. The production bees HTTP server is running on the CI port, and it really is bees.
+
+   Resolve the CI port once (`BEES_CI_PORT`, default `8473`):
    ```bash
-   curl -sf http://127.0.0.1:8000/health
+   echo "${BEES_CI_PORT:-8473}"
    ```
-   If not running, start it:
+   Use that value as `BEES_CI_PORT` in every command below and in every `run_test.sh`
+   launch. Shell variables may not persist between commands, so write the literal port
+   wherever `${BEES_CI_PORT}` appears.
+
+   Check the server identity. Do not rely on `/health`: another service on the same port
+   may answer it too. The check sends an MCP `initialize` request and accepts only a server
+   that names itself `bees`:
    ```bash
-   bees serve --http > /tmp/bees_server.log 2>&1 &
+   python3 docker/check_bees_server.py "http://127.0.0.1:${BEES_CI_PORT}"
    ```
-   Wait up to 10 seconds for it to become healthy.
+   Branch on the exit code:
+   - **0**: bees confirmed. Continue.
+   - **1**: nothing is listening. Start bees on the CI port. Always pass `--port`, so that
+     `http.port` in the global config cannot move the server to another port:
+     ```bash
+     bees serve --http --port "${BEES_CI_PORT}" > /tmp/bees_server.log 2>&1 &
+     ```
+     Then wait up to 10 seconds for it to be confirmed:
+     ```bash
+     python3 docker/check_bees_server.py --wait 10 "http://127.0.0.1:${BEES_CI_PORT}"
+     ```
+     If this does not exit 0, show `tail -20 /tmp/bees_server.log` and the check output, then STOP:
+     "The bees HTTP server did not start on port <port>."
+   - **2**: the connection was not refused, but no bees MCP server answered. Never kill, signal,
+     or reconfigure whatever holds the port. Tell the user, with the one-line reason the check
+     printed on stderr, then STOP:
+     "Whatever is on port <port> did not identify itself as bees: <reason>. Re-run `/ci` with a
+     free port, e.g. with `BEES_CI_PORT=<free-port>` set in the environment. If it is a stuck
+     bees server you own, restart it yourself, then re-run `/ci`."
+   - **3**: usage error. If the resolved port is not an integer from 1 to 65535, STOP and tell
+     the user: "`BEES_CI_PORT` is invalid (<value>): it must be an integer from 1 to 65535."
+     Otherwise fix the check command and re-run the check.
 
 ## Step 2 — Publish to test.pypi
 
@@ -131,7 +164,7 @@ straight to launching the remaining phases that need to run.
 2. Report: "Starting Phase 1: <epic title>"
 3. Run:
    ```bash
-   BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 1 [start-test-number]
+   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 1 [start-test-number]
    ```
    Only pass `start-test-number` if resuming from a specific test in Phase 1.
 4. Tell user: `Attach with: tmux attach -t bees-ci-1`
@@ -149,9 +182,9 @@ Once Phase 1 passes, launch the remaining phases simultaneously:
 2. Report: "Phase 1 passed. Launching Phases 2, 3, 4 in parallel."
 3. Launch each in rapid succession (no waiting between launches):
    ```bash
-   BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 2
-   BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 3
-   BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 4
+   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 2
+   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 3
+   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 4
    ```
    If resuming from a specific test number and it falls in Phase N, pass it only to that phase's launch.
 4. Tell user:

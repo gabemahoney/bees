@@ -13,7 +13,7 @@ START_TEST="${1:-0}"
 cd "$REPO"
 
 # BUG_SERVER_URL for fail_test
-BUG_SERVER_URL="${BUG_SERVER_URL:-http://host.docker.internal:8000}"
+BUG_SERVER_URL="${BUG_SERVER_URL:-http://host.docker.internal:8473}"
 
 # Shared state for capture_cmd
 CMD_OUT=""
