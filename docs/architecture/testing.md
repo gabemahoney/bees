@@ -156,6 +156,12 @@ If you must write tests that depend on previous tests, ensure the ticket depende
 
 Unit tests for the identity check and the shared CI default port live in `tests/test_check_bees_server.py`.
 
+### CI Phase Status
+
+`/ci` records each phase's result as the status of its epic under b.qi9: `pupa` (to run), `worker` (running), `finished` (passed), `failed` (bug filed or crashed), and `legendary` (set on every epic once all phases pass). A plain `/ci` skips `finished` and `legendary` epics, unless every epic has one of those statuses; then it starts a fresh run.
+
+The testplans hive rejects any status not listed in `status_values` in `docker/testplans/.hive/identity.json`, so the skill and that file must agree. If you add a status to the skill, add it there too. `tests/test_ci_skill.py` checks that every status the skill sets or reads is allowed.
+
 ## Bash Integration Test Script
 
 Phases 1 and 2 of the integration test suite run as a standalone bash script (`tests/integration.sh`). These phases exercise the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.

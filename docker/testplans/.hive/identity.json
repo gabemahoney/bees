@@ -21,6 +21,7 @@
     "legendary",
     "pupa",
     "worker",
-    "finished"
+    "finished",
+    "failed"
   ]
 }
