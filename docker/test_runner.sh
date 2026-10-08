@@ -1,13 +1,22 @@
 #!/bin/bash
-# test_runner.sh — Phase-specific setup, then launches the appropriate test runner.
-# Phases 1, 2 & 5: run integration.sh (bash-based CLI tests)
-# Every other phase (3, 4, 6, ...): launch Claude with the release-test skill
+# test_runner.sh — Phase-specific setup, then launches the test runner for the phase in $PHASE.
+# Phases 1, 2, 5 & 6 (CLI tests): run integration.sh, which runs only that phase's sections
+# Every other phase (3, 4 and any phase added to the plan later): launch Claude with the
+#   release-test skill, which reads the phase from the plan
 #   (Phase 3 also registers a stdio MCP server, Phase 4 starts and registers an HTTP one)
 # auto_approve.sh runs in the background (started by entrypoint.sh).
 set -euo pipefail
 
 export BUG_SERVER_URL="${BEES_MCP_URL:-http://host.docker.internal:8473}"
-PHASE="${PHASE:-1}"
+
+# The phase number run_test.sh passes into the container. Never guessed: without it, nothing runs.
+PHASE="${PHASE:-}"
+if [[ ! "$PHASE" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ERROR: PHASE must be a phase number of test plan b.qi9, got '${PHASE}'. docker/run_test.sh <phase> sets it." >&2
+  exit 1
+fi
+# integration.sh and the release-test skill both read it from the environment
+export PHASE
 
 echo "=== Phase ${PHASE} setup ==="
 
@@ -50,14 +59,14 @@ if [[ "$PHASE" == "4" ]]; then
   claude mcp add --transport http bees-http http://127.0.0.1:9000/mcp
 fi
 
-# Phases 1, 2 & 5: run bash integration tests directly
-if [[ "$PHASE" == "1" || "$PHASE" == "2" || "$PHASE" == "5" ]]; then
+# Phases 1, 2, 5 & 6: run bash integration tests directly (keep in step with SCRIPT_PHASES in integration.sh)
+if [[ "$PHASE" == "1" || "$PHASE" == "2" || "$PHASE" == "5" || "$PHASE" == "6" ]]; then
   echo "=== Starting bash integration tests (Phase ${PHASE}) ==="
   cd /test-repo
   exec bash /test-repo/tests/integration.sh ${START_TEST:-}
 fi
 
-# Every other phase (3, 4, 6, ...): set up testplans hive and launch Claude
+# Every other phase (3, 4, ...): set up testplans hive and launch Claude
 echo "=== Setting up testplans hive ==="
 export TESTPLANS_CONFIG=/tmp/testplans-config.json
 mkdir -p /test-repo/tickets/testplans

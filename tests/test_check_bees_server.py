@@ -33,6 +33,7 @@ SCOPE - Tests that DON'T belong here:
 - bees serve flags and HTTP routes -> test_cli_serve.py
 - bugs hive choice and file_bug.py behavior -> test_ci_bug_filing.py
 - how /ci reads the test plan and records phase statuses (ci_plan.py) -> test_ci_skill.py
+- which runner runs each phase, and the sections integration.sh runs per phase -> test_integration_phases.py
 """
 
 import errno

@@ -23,6 +23,7 @@ SCOPE - Tests that DON'T belong here:
 - phase deadline and the result signals /ci polls for -> test_check_bees_server.py
 - scope matching ci_plan.py shares with the bugs hive choice -> test_ci_bug_filing.py
 - status_values validation inside bees -> test_set_status_values.py
+- which runner runs each phase, and the sections integration.sh runs per phase -> test_integration_phases.py
 """
 
 import io

@@ -23,5 +23,5 @@ For CI/Docker testing, `/ci` checks for the host bees HTTP server on `BEES_CI_PO
 ## Test Commands
 
 - **Unit test command**: `poetry run pytest tests/`
-- **Integration test command**: `/ci` (Claude Code skill in .claude/skills/ci). It publishes the current code to test.pypi, then runs `docker/run_test.sh <phase>` per phase in Docker: `tests/integration.sh` for the CLI phases, Claude + `/release-test` for the MCP server phases. Do NOT run `tests/integration.sh` directly on the host: it refuses to run outside the container's `/test-repo` and it overwrites `~/.bees/config.json`.
+- **Integration test command**: `/ci` (Claude Code skill in .claude/skills/ci). It publishes the current code to test.pypi, then runs `docker/run_test.sh <phase>` per phase in Docker, where `docker/test_runner.sh` runs each phase with either `tests/integration.sh` or Claude + `/release-test`. Do NOT run `tests/integration.sh` directly on the host: it refuses to run outside the container's `/test-repo` and it overwrites `~/.bees/config.json`.
 

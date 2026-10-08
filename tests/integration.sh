@@ -4,9 +4,18 @@ set -euo pipefail
 # === CONFIGURATION ===
 REPO=/test-repo
 TEST_NUM=0
+RUN_COUNT=0
 PASS_COUNT=0
 FAIL_COUNT=0
 START_TEST="${1:-0}"
+
+# The phases of test plan b.qi9 this script runs. Each section below belongs to one of them
+# (phase_section), and a run runs only the sections of the phase in $PHASE. Claude runs the
+# other phases with /release-test (docker/test_runner.sh routes them).
+SCRIPT_PHASES=(1 2 5 6)
+PHASE="${PHASE:-}"
+# Phase of the section being declared, set by phase_section
+SECTION_PHASE=""
 
 # Environment guard
 [ -d "$REPO" ] || { echo "Must run inside Docker at /test-repo"; exit 1; }
@@ -39,15 +48,33 @@ fail_test() {
         --title "CI Test $TEST_NUM: $name" \
         --description "$reason" 2>&1) || true
     echo "$bug_out"
+    echo "RELEASE TEST PHASE $PHASE FAILED"
     exit 1
 }
 
+# Succeeds when $1 is one of SCRIPT_PHASES
+is_script_phase() {
+    [[ "$1" =~ ^[0-9]+$ && " ${SCRIPT_PHASES[*]} " == *" $1 "* ]]
+}
+
+# Starts a section: the run_test calls after it belong to phase $1
+phase_section() {
+    if ! is_script_phase "$1"; then
+        echo "ERROR: phase_section $1: not one of the phases this script runs (${SCRIPT_PHASES[*]})" >&2
+        exit 2
+    fi
+    SECTION_PHASE="$1"
+}
+
+# Every test gets a number, whatever its phase, so a test's number is the same in every run.
+# Only the tests of the current phase, numbered START_TEST or above, run.
 run_test() {
     local fn="$1"
     TEST_NUM=$((TEST_NUM + 1))
-    if [ "$TEST_NUM" -lt "$START_TEST" ]; then
+    if [ "$SECTION_PHASE" != "$PHASE" ] || [ "$TEST_NUM" -lt "$START_TEST" ]; then
         return
     fi
+    RUN_COUNT=$((RUN_COUNT + 1))
     "$fn"
 }
 
@@ -102,7 +129,16 @@ capture_cmd() {
     rm -f "$_err_file"
 }
 
+# === PHASE SELECTION ===
+# Stop before any test runs: a run without a valid phase must never run every section.
+if ! is_script_phase "$PHASE"; then
+    echo "ERROR: PHASE must be one of ${SCRIPT_PHASES[*]}, the phases this script runs (got '$PHASE')." >&2
+    echo "Usage: PHASE=<phase> $0 [start-test-number]" >&2
+    exit 2
+fi
+
 # === PHASE 1: INSTALLATION ===
+phase_section 1
 
 test_install_bees() {
     # In Docker CI, bees is pre-installed from test.pypi. Verify it's on PATH.
@@ -150,7 +186,8 @@ run_test test_install_bees
 run_test test_bees_help
 run_test test_config_bootstrap
 
-# === PHASE 2 GROUP A: HIVE MANAGEMENT ===
+# === PHASE 2: HIVE MANAGEMENT ===
+phase_section 2
 
 test_hm_colonize_with_tiers() {
     capture_cmd bees colonize-hive \
@@ -288,7 +325,8 @@ run_test test_hm_rename_back
 run_test test_hm_rename_no_folder
 run_test test_hm_duplicate_name
 
-# === PHASE 2 GROUP A: TIER CONFIGURATION ===
+# === PHASE 2: TIER CONFIGURATION ===
+phase_section 2
 
 TIER_HIVE=""
 
@@ -395,7 +433,8 @@ run_test test_tc_hive_override
 run_test test_tc_unset_hive
 run_test test_tc_restore_unset_global
 
-# === PHASE 2 GROUP A: TICKET CRUD ===
+# === PHASE 2: TICKET CRUD ===
+phase_section 2
 
 BEE1=""
 BEE2=""
@@ -769,7 +808,8 @@ run_test test_crud_cascading_delete
 run_test test_crud_reject_parent_children_update
 run_test test_crud_add_remove_tags
 
-# === PHASE 2 GROUP B: DEPENDENCIES ===
+# === PHASE 2: DEPENDENCIES ===
+phase_section 2
 
 DEP_A=""
 DEP_B=""
@@ -944,7 +984,8 @@ run_test test_dep_default_dangling
 run_test test_dep_bulk_delete_ordering
 run_test test_dep_clean_deps_flag_rejected
 
-# === PHASE 2 GROUP B: ID AND GUID VALIDATION ===
+# === PHASE 2: ID AND GUID VALIDATION ===
+phase_section 2
 
 ID_BEE=""
 ID_TASK=""
@@ -1085,7 +1126,8 @@ run_test test_id_guid_length
 run_test test_id_guid_charset
 run_test test_id_guid_prefix
 
-# === PHASE 2 GROUP B: STATUS BEHAVIOR ===
+# === PHASE 2: STATUS BEHAVIOR ===
+phase_section 2
 
 STATUS_BEE=""
 
@@ -1151,7 +1193,8 @@ run_test test_status_setup
 run_test test_status_freeform
 run_test test_status_linter_flags_invalid
 
-# === PHASE 2 GROUP B: FREEFORM QUERIES ===
+# === PHASE 2: FREEFORM QUERIES ===
+phase_section 2
 
 QB1=""
 QB2=""
@@ -1344,7 +1387,8 @@ run_test test_query_hive_filter
 run_test test_query_up_deps
 run_test test_query_down_deps
 
-# === PHASE 2 GROUP B: NAMED QUERIES ===
+# === PHASE 2: NAMED QUERIES ===
+phase_section 2
 
 NQ_BEE=""
 
@@ -1469,7 +1513,8 @@ run_test test_nq_execute_repo
 run_test test_nq_delete_repo
 run_test test_nq_delete_global
 
-# === REFERENCE MATERIALS ===
+# === PHASE 6: REFERENCE MATERIALS ===
+phase_section 6
 
 REF_BEE1=""
 REF_BEE2=""
@@ -1655,7 +1700,8 @@ run_test test_ref_multi_entry
 run_test test_ref_custom_resolver
 run_test test_ref_resolver_timeout
 
-# === UPDATE CONFIG ===
+# === PHASE 6: UPDATE CONFIG ===
+phase_section 6
 
 test_update_config() {
     capture_cmd bees update-config
@@ -1699,7 +1745,8 @@ test_update_config_details() {
 run_test test_update_config
 run_test test_update_config_details
 
-# === FORMER PHASE 5 GROUP A: INDEX GENERATION ===
+# === PHASE 5: INDEX GENERATION ===
+phase_section 5
 
 IB1=""
 IB2=""
@@ -1753,7 +1800,8 @@ run_test test_index_setup
 run_test test_index_all_hives
 run_test test_index_specific_hive
 
-# === FORMER PHASE 5 GROUP A: UNDERTAKER ===
+# === PHASE 5: UNDERTAKER ===
+phase_section 5
 
 ARCH1=""
 ARCH1_GUID=""
@@ -1865,7 +1913,8 @@ run_test test_undertaker_cemetery_guid_naming
 run_test test_undertaker_excluded_from_queries
 run_test test_undertaker_named_query
 
-# === FORMER PHASE 5 GROUP A: MOVE BEE ===
+# === PHASE 5: MOVE BEE ===
+phase_section 5
 
 MOVEBEE=""
 MOVETASK=""
@@ -2070,7 +2119,8 @@ run_test test_move_blocked_by_status_values
 run_test test_move_blocked_by_tiers
 run_test test_move_force_bypass
 
-# === FORMER PHASE 5 GROUP A: SANITIZER ===
+# === PHASE 5: SANITIZER ===
+phase_section 5
 
 SAN_BEE=""
 SAN_TASK=""
@@ -2414,7 +2464,8 @@ test_sanitizer_nested_hive_no_move() {
 run_test test_sanitizer_nested_hive_setup
 run_test test_sanitizer_nested_hive_no_move
 
-# === FORMER PHASE 5 GROUP A: ERROR HANDLING ===
+# === PHASE 5: ERROR HANDLING ===
+phase_section 5
 
 ERR_BEE=""
 ERR_TASK=""
@@ -2558,7 +2609,8 @@ run_test test_error_invalid_yaml_query
 run_test test_error_wrong_tier_parent
 run_test test_error_missing_required_flags
 
-# === FORMER PHASE 5 GROUP B: TEST CONFIG MODE ===
+# === PHASE 5: TEST CONFIG MODE ===
+phase_section 5
 
 test_testconfig_bare() {
     capture_cmd bees list-hives --test-config
@@ -2625,7 +2677,8 @@ run_test test_testconfig_inline_json
 run_test test_testconfig_file
 run_test test_testconfig_no_disk_write
 
-# === FORMER PHASE 5 GROUP B: SETUP COMMAND ===
+# === PHASE 5: SETUP COMMAND ===
+phase_section 5
 
 test_setup_install_global() {
     capture_cmd bees setup claude cli
@@ -2727,7 +2780,8 @@ run_test test_setup_install_project
 run_test test_setup_remove
 run_test test_setup_remove_idempotent
 
-# === FORMER PHASE 5 GROUP B: STING COMMAND ===
+# === PHASE 5: STING COMMAND ===
+phase_section 5
 
 test_sting_setup() {
     capture_cmd bees colonize-hive \
@@ -2761,7 +2815,8 @@ run_test test_sting_setup
 run_test test_sting_in_scope
 run_test test_sting_outside_scope
 
-# === FORMER PHASE 5 GROUP B: STATUS VALUES ===
+# === PHASE 5: STATUS VALUES ===
+phase_section 5
 
 test_sv_setup() {
     capture_cmd bees colonize-hive \
@@ -2923,10 +2978,11 @@ run_test test_sv_create_required_but_missing
 run_test test_sv_create_no_config_no_status
 run_test test_sv_create_invalid_status
 
-# === GLOB-SCOPE STATUS VALUES (bug b.7qj) ===
+# === PHASE 5: GLOB-SCOPE STATUS VALUES (bug b.7qj) ===
+phase_section 5
 
 test_sv_glob_scope_setup() {
-    # The default exact scope for $REPO already exists from earlier test setup.
+    # The default exact scope for $REPO already exists: the earlier Phase 5 sections colonize hives in it.
     # Create a glob scope matching $REPO via its parent directory.
     # Strip trailing slash from parent_dir so root "/" becomes "" not "/",
     # producing "/**" instead of "//**" when REPO is a top-level directory.
@@ -3008,7 +3064,8 @@ run_test test_sv_glob_set_succeeds
 run_test test_sv_glob_verify_write
 run_test test_sv_glob_cleanup
 
-# === FORMER PHASE 5 GROUP B: UNINSTALL SEQUENCE ===
+# === PHASE 5: UNINSTALL SEQUENCE ===
+phase_section 5
 
 test_uninstall_remove_hooks() {
     # Ensure hooks are installed first
@@ -3050,7 +3107,8 @@ test_uninstall_pipx_cycle() {
 run_test test_uninstall_remove_hooks
 run_test test_uninstall_pipx_cycle
 
-# === FORMER PHASE 5 GROUP B: CLONE BEE ===
+# === PHASE 5: CLONE BEE ===
+phase_section 5
 
 CLONE_BEE=""
 CLONE_TASK1=""
@@ -3229,7 +3287,8 @@ run_test test_clone_cross_hive
 run_test test_clone_incompatible_blocked
 run_test test_clone_force_bypass
 
-# === FORMER PHASE 5 GROUP B: FAST PARSER PIPELINE ===
+# === PHASE 5: FAST PARSER PIPELINE ===
+phase_section 5
 
 test_fast_parser_pipeline() {
     # Self-contained: create hive, tickets, run queries, verify
@@ -3310,7 +3369,8 @@ test_fast_parser_pipeline() {
 
 run_test test_fast_parser_pipeline
 
-# === FORMER PHASE 5 GROUP B: COLONIZE --SCOPE ===
+# === PHASE 5: COLONIZE --SCOPE ===
+phase_section 5
 
 test_colonize_scope_creates_entry() {
     mkdir -p /tmp/scope_test/projects/myrepo
@@ -3342,7 +3402,8 @@ test_colonize_scope_invalid_pattern() {
 run_test test_colonize_scope_creates_entry
 run_test test_colonize_scope_invalid_pattern
 
-# === FORMER PHASE 5 GROUP B: SCOPE-AWARE HIVE REGISTRATION ===
+# === PHASE 5: SCOPE-AWARE HIVE REGISTRATION ===
+phase_section 5
 
 test_scope_specificity() {
     mkdir -p "$REPO/tickets/spec_broad_hive" "$REPO/tickets/spec_narrow_hive"
@@ -3457,7 +3518,8 @@ run_test test_scope_specificity
 run_test test_scope_duplicate_same_scope
 run_test test_scope_shadow_more_specific
 
-# === FORMER PHASE 5 GROUP B: CROSS-SCOPE INHERITANCE ===
+# === PHASE 5: CROSS-SCOPE INHERITANCE ===
+phase_section 5
 # Tests that a repo matching both a narrow and a broad scope sees hives
 # from ALL matching scopes (different-named hives accumulate; same-named
 # hives resolve to the most specific scope).
@@ -3551,7 +3613,8 @@ test_scope_same_name_narrow_wins() {
 run_test test_scope_cross_inherit
 run_test test_scope_same_name_narrow_wins
 
-# === FORMER PHASE 5 GROUP B: ID CHARSET AND HIERARCHICAL IDS ===
+# === PHASE 5: ID CHARSET AND HIERARCHICAL IDS ===
+phase_section 5
 
 test_id_charset_rejected() {
     # b.000 contains '0' which is excluded from ID_CHARSET
@@ -3640,7 +3703,8 @@ run_test test_id_charset_rejected
 run_test test_id_lengths_hierarchy
 run_test test_id_3level_bidir
 
-# === FORMER PHASE 5 GROUP B: SINGLE TESTS ===
+# === PHASE 5: SINGLE TESTS ===
+phase_section 5
 
 test_list_named_queries_works() {
     # Register a query, list, verify
@@ -3732,7 +3796,8 @@ run_test test_list_named_queries_works
 run_test test_t9_cap
 run_test test_http_port_config
 
-# === BODY FILE / CHUNK FILE ===
+# === PHASE 2: BODY FILE / CHUNK FILE ===
+phase_section 2
 
 BODY_FILE_BEE=""
 CHUNK_FILE_BEE=""
@@ -3833,6 +3898,7 @@ run_test test_chunk_file_mutual_exclusion
 run_test test_body_file_not_found
 
 # === PHASE 6: RESOLVER REGISTRY ===
+phase_section 6
 
 test_p6_register_resolver_verify() {
     cat > /tmp/test_resolver_p6.py << 'PYEOF'
@@ -4002,7 +4068,8 @@ run_test test_p6_colonize_allowed_resolvers
 run_test test_p6_reject_unregistered_resolver
 run_test test_p6_reject_unset_referenced_resolver
 
-# === HIVE PORTABILITY: IDENTITY.JSON (b.f6y) ===
+# === PHASE 5: HIVE PORTABILITY: IDENTITY.JSON (b.f6y) ===
+phase_section 5
 
 HP_HIVE_PATH="$REPO/tickets/hp_hive"
 
@@ -4138,8 +4205,13 @@ run_test test_hp_set_types_writes_identity
 run_test test_hp_update_config_no_pending_migrations
 
 # === SUCCESS SIGNAL ===
+# A phase never passes without running a test (e.g. START_TEST past its last test)
+if [ "$RUN_COUNT" -eq 0 ]; then
+    echo "ERROR: no test of phase $PHASE ran: none is numbered $START_TEST or above." >&2
+    exit 1
+fi
 echo ""
 echo "=========================================="
-echo "RELEASE TEST PHASE 2 PASSED"
+echo "RELEASE TEST PHASE $PHASE PASSED"
 echo "=========================================="
-echo "Tests passed: $PASS_COUNT / $TEST_NUM"
+echo "Tests passed: $PASS_COUNT / $RUN_COUNT"

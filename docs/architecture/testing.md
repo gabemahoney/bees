@@ -127,7 +127,7 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 | Queries | `test_query_tools.py`, `test_multi_hive_query.py`, `test_graph_executor.py` | |
 | MCP server | `test_mcp_server.py` (~1600 lines), `test_mcp_server_lifecycle.py`, `test_mcp_scan_validate.py` | |
 | Dynamic tiers | `test_tier_hierarchy_validation.py`, `test_dynamic_tier_validation.py`, `test_parent_requirement_logic.py` | |
-| CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py` | See "Integration Testing Deep Dive" |
+| CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py`, `test_integration_phases.py` | See "Integration Testing Deep Dive" |
 
 **Current**: ~1,578 tests across ~64 files.
 
@@ -152,6 +152,7 @@ If you must write tests that depend on previous tests, ensure the ticket depende
 ### CI Phase Container
 
 - **Test plan**: the phases run `b.qi9` from this checkout's `docker/testplans`, which `run_test.sh` mounts read-only into each phase container. `/ci` reads the same copy, from its files (see "CI Phase Status"). Neither looks the plan up among the host's registered hives: the hive registered as `testplans` there may be another checkout's copy or another repo's hive. If `docker/testplans/b.qi9/b.qi9.md` is missing, `run_test.sh` stops before the image build, a launch failure.
+- **One phase per container**: each phase runs alone in its own fresh container, with bees already installed from test.pypi by `Dockerfile.test`. `run_test.sh <phase>` passes the phase number in as `PHASE`, and `docker/test_runner.sh` runs it with `tests/integration.sh` or Claude + `/release-test` (see "Bash Integration Test Script").
 - **Host Claude config**: `run_test.sh` mounts the host's `~/.claude.json` and `~/.claude/settings.json` read-only, each only if it exists. For a missing file, `docker run` would create a root-owned directory at that host path. `docker/entrypoint.sh` works without them.
 
 ### CI Bug Server
@@ -188,7 +189,7 @@ If you must write tests that depend on previous tests, ensure the ticket depende
 `/ci` reads each phase's result from its tmux pane. It uses the container state only to detect a crash (the container is no longer running).
 
 - **Containers stay up**: in every phase, including the bash phases, the container's tmux session stays open after the test runner exits, with its last output on screen, until `/ci` removes the container. A running container says nothing about progress.
-- **Signals**: the results are `RELEASE TEST PHASE N PASSED` and `BUG FILED:`. `/ci` checks them first, because a crash signal can print below a result. The crash signals are `BUG FILING FAILED:` (from `file_bug.py`), `TEST RUNNER EXITED (status N)` (printed by `docker/entrypoint.sh` when the test runner ends), and `--- Phase N exited` (printed by the host tmux session `run_test.sh` creates when it loses the container's session, for example because the container stopped).
+- **Signals**: the results are `RELEASE TEST PHASE N PASSED` and `BUG FILED:`. `/ci` checks them first, because a crash signal can print below a result. The crash signals are `BUG FILING FAILED:` (from `file_bug.py`), `TEST RUNNER EXITED (status N)` (printed by `docker/entrypoint.sh` when the test runner ends), and `--- Phase N exited` (printed by the host tmux session `run_test.sh` creates when it loses the container's session, for example because the container stopped). After a failed test, `tests/integration.sh` also prints `RELEASE TEST PHASE N FAILED` below the bug filing line. `/ci` does not poll for it: the bug filing line decides. A runner that stops with no result line ends in `TEST RUNNER EXITED`, a crash: for example, a bash phase in which no test ran (the start test number is past the phase's last test), or an invalid `PHASE`.
 - **Phase timeout**: `BEES_CI_PHASE_TIMEOUT_MINUTES`, default 60. `/ci` checks that it is a whole number greater than 0 before anything starts. Each phase's deadline is set when its launch returns. A phase with no signal by its deadline is handled as crashed, so a phase that never reports cannot hang `/ci`.
 - **Crash report**: `/ci` names the cause: the bug could not be filed (with the reason from the `BUG FILING FAILED:` line), the phase timed out, or it crashed.
 
@@ -210,9 +211,24 @@ The testplans hive rejects any status not listed in `status_values` in `docker/t
 
 ## Bash Integration Test Script
 
-In CI, `docker/test_runner.sh` runs Phases 1, 2 and 5 of the integration test suite with a standalone bash script (`tests/integration.sh`). These phases exercise the installation and the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
+In CI, `docker/test_runner.sh` runs Phases 1, 2, 5 and 6 of the integration test suite with a standalone bash script (`tests/integration.sh`). These phases exercise the installation and the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials and resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
 
-For every other phase, it launches Claude with `/release-test`. This routing may change. Phases 3 and 4 validate the full LLM-agent interaction loop against a live MCP server (stdio and HTTP), catching interaction-level bugs that bash cannot. The split gives developers rapid feedback locally while reserving token spend for the tests that genuinely need it.
+For Phases 3 and 4, and any other phase number (for example a phase added to the plan later), it launches Claude with `/release-test`. Phases 3 and 4 validate the full LLM-agent interaction loop against a live MCP server (stdio and HTTP), catching interaction-level bugs that bash cannot. The split gives developers rapid feedback locally while reserving token spend for the tests that genuinely need it.
+
+### Phase Selection
+
+- **`PHASE` is required**: `docker/test_runner.sh` has no default phase. It stops with exit 1 unless `PHASE` is a positive integer, then exports it, since both runners read it from the environment. `tests/integration.sh` runs only the phase in `PHASE`. A missing, empty or non-numeric `PHASE`, or one the script does not run, prints an error to stderr and exits 2 before any test runs. The script never runs every phase.
+- **Bash phases**: `SCRIPT_PHASES` in `tests/integration.sh` lists the phases it runs. The phase condition that sends phases to the script in `docker/test_runner.sh` must list the same phases. To move a phase between bash and Claude, change both.
+- **Sections**: every test section starts with a `# === PHASE N: <NAME> ===` header, followed on the next line by `phase_section N`. Each `run_test` after it belongs to Phase N. Only setup and the end of the script (configuration, helper functions, phase selection, success signal) have untagged headers, and they hold no tests. A new section needs both lines, its name added to that phase in `tests/test_integration_phases.py`, and its area added to the area list in that phase's `b.qi9` epic.
+- **Sections per phase**:
+  - Phase 1: installation
+  - Phase 2: hive management, tier configuration, ticket CRUD, dependencies, ID/GUID validation, status behavior, freeform queries, named queries, body file / chunk file
+  - Phase 5: index generation, undertaker, move bee, sanitizer, error handling, test config mode, setup, sting, status values, glob-scope status values, uninstall, clone, fast parser pipeline, colonize --scope, scope-aware hive registration, cross-scope inheritance, ID charset and hierarchical IDs, single tests, hive portability (`identity.json`)
+  - Phase 6: reference materials, update-config, resolver registry
+- **Test numbers**: global and stable. `run_test` numbers every test, whether or not its phase runs, so a test has the same number in every phase's run. The optional start-test-number argument (`START_TEST` in CI) skips the tests numbered below it.
+- **Results**: when the phase passes, the script prints `RELEASE TEST PHASE N PASSED` with the phase it ran, and the number of tests that ran. On the first failure, `fail_test` prints the `[FAIL]` line, the bug filing output (`BUG FILED:` or `BUG FILING FAILED:`), then `RELEASE TEST PHASE N FAILED`, and exits 1. If no test of the phase ran (for example, the start test number is past the phase's last test), the script prints an error to stderr and exits 1, with no pass line.
+
+`tests/test_integration_phases.py` holds static, text-only checks (plus `bash -n`) that the routing, `SCRIPT_PHASES`, section tags, sections per phase and result lines stay as described above.
 
 ### Prerequisites
 
@@ -223,23 +239,23 @@ For every other phase, it launches Claude with `/release-test`. This routing may
 
 ### Running Locally
 
-All tests:
+All tests of one phase (1, 2, 5 or 6):
 
 ```bash
-bash tests/integration.sh
+PHASE=<phase> bash tests/integration.sh
 ```
 
 Resume from a specific test number:
 
 ```bash
-bash tests/integration.sh <test_number>
+PHASE=<phase> bash tests/integration.sh <test_number>
 ```
 
 For a clean run, remove or back up your global config first:
 
 ```bash
 mv ~/.bees/config.json ~/.bees/config.json.bak
-bash tests/integration.sh
+PHASE=<phase> bash tests/integration.sh
 ```
 
 ## Checklist for New Tests
