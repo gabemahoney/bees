@@ -7,7 +7,11 @@ and decision trees for choosing the right fixture.
 
 import json
 import shutil
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -691,3 +695,68 @@ def cli_runner(capsys):
         return captured.out.strip(), exit_code
 
     return run
+
+
+# ============================================================================
+# LOCAL NETWORK FIXTURES (CI script tests)
+# ============================================================================
+
+
+class _StubHandler(BaseHTTPRequestHandler):
+    """Answers from server.routes: {(method, path): (status, headers, body) | None (drop) | responder}.
+
+    A responder is called with (lowercased headers, body) and returns one of the other two.
+    """
+
+    def _handle(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(length) if length else b""
+        headers = {key.lower(): value for key, value in self.headers.items()}
+        self.server.requests.append(SimpleNamespace(method=self.command, path=self.path, headers=headers))
+        route = self.server.routes.get((self.command, self.path), (404, {}, b"Not Found"))
+        if callable(route):
+            route = route(headers, body)
+        if route is None:
+            self.close_connection = True  # accept the request, then hang up without a response
+            return
+        status, out_headers, payload = route
+        self.send_response(status)
+        for key, value in out_headers.items():
+            self.send_header(key, value)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    do_GET = do_POST = do_DELETE = _handle
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def stub_server():
+    """Factory: start a stub HTTP server on 127.0.0.1 with an OS-assigned port; returns it with .url."""
+    servers = []
+
+    def start(routes):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _StubHandler)
+        server.routes = routes
+        server.requests = []
+        server.url = f"http://127.0.0.1:{server.server_address[1]}"
+        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+        servers.append(server)
+        return server
+
+    yield start
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.fixture
+def closed_port_url():
+    """Base URL of an OS-assigned 127.0.0.1 port that was just released, so nothing listens on it."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    return f"http://127.0.0.1:{port}"

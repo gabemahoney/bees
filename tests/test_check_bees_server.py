@@ -23,65 +23,46 @@ SCOPE - Tests that belong here:
   at the bind host and from a container
 - the /ci skill stops the bees server a /ci run started, and only that one, when the run ends,
   and launches each phase as its own command
+- CI files work on any machine: no machine-specific paths; run_test.sh passes the host's bugs
+  hive and repo root into the container, runs the test plan of this checkout, shows bees' output
+  when `bees list-hives` fails, and mounts host Claude config files only if they exist; the image
+  has what file_bug.py imports
+- the /ci skill gives every phase a deadline, and polls for lines the CI scripts really print
 
 SCOPE - Tests that DON'T belong here:
 - bees serve flags and HTTP routes -> test_cli_serve.py
+- bugs hive choice and file_bug.py behavior -> test_ci_bug_filing.py
+- how /ci reads the test plan and records phase statuses (ci_plan.py) -> test_ci_skill.py
 """
 
 import errno
-import importlib.util
 import json
 import re
 import socket
 import ssl
 import subprocess
 import sys
-import threading
 import time
 import urllib.error
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from src.mcp_server import mcp
+from tests.helpers import load_script, mcp_initialize_response
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "docker" / "check_bees_server.py"
 BIND_HOST_SCRIPT = REPO_ROOT / "docker" / "ci_bind_host.py"
 CI_SKILL = REPO_ROOT / ".claude" / "skills" / "ci" / "SKILL.md"
 
-
-def _load_script(path):
-    """docker/ is not a package, so load its scripts by path."""
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-cbs = _load_script(SCRIPT)
-cbh = _load_script(BIND_HOST_SCRIPT)
+cbs = load_script(SCRIPT)
+cbh = load_script(BIND_HOST_SCRIPT)
 
 # Linux routes all of 127.0.0.0/8 to loopback, so 127.0.0.2 can stand in for a local bridge gateway,
 # and IP_FREEBIND lets a test socket bind an address of another host.
 _LINUX_ONLY = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
-
-
-def _initialize_response(name: str, request_id: int = 1) -> str:
-    """JSON-RPC initialize result for an MCP server called ``name``."""
-    return json.dumps(
-        {
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "result": {
-                "protocolVersion": "2025-06-18",
-                "capabilities": {},
-                "serverInfo": {"name": name, "version": "1.0"},
-            },
-        }
-    )
 
 
 def _bees_like(name="bees", sse=False, session_id=None):
@@ -96,7 +77,7 @@ def _bees_like(name="bees", sse=False, session_id=None):
         request = json.loads(body)
         if request.get("method") != "initialize":
             return 400, {}, b"Bad Request"
-        message = _initialize_response(name, request["id"])
+        message = mcp_initialize_response(name, request["id"])
         out_headers = {"mcp-session-id": session_id} if session_id else {}
         if sse:
             out_headers["Content-Type"] = "text/event-stream"
@@ -109,61 +90,6 @@ def _bees_like(name="bees", sse=False, session_id=None):
 
 # A service that is healthy on /health but has no /mcp endpoint (404).
 _HEALTH_ONLY = {("GET", "/health"): (200, {"Content-Type": "application/json"}, b'{"status":"OK"}')}
-
-
-class _StubHandler(BaseHTTPRequestHandler):
-    """Answers from server.routes: {(method, path): (status, headers, body) | responder | None (drop)}."""
-
-    def _handle(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(length) if length else b""
-        headers = {key.lower(): value for key, value in self.headers.items()}
-        self.server.requests.append(SimpleNamespace(method=self.command, path=self.path, headers=headers))
-        route = self.server.routes.get((self.command, self.path), (404, {}, b"Not Found"))
-        if route is None:
-            self.close_connection = True  # accept the request, then hang up without a response
-            return
-        status, out_headers, payload = route(headers, body) if callable(route) else route
-        self.send_response(status)
-        for key, value in out_headers.items():
-            self.send_header(key, value)
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    do_GET = do_POST = do_DELETE = _handle
-
-    def log_message(self, *args):
-        pass
-
-
-@pytest.fixture
-def stub_server():
-    """Factory: start a stub HTTP server on 127.0.0.1 with an OS-assigned port; returns it with .url."""
-    servers = []
-
-    def start(routes):
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _StubHandler)
-        server.routes = routes
-        server.requests = []
-        server.url = f"http://127.0.0.1:{server.server_address[1]}"
-        threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
-        servers.append(server)
-        return server
-
-    yield start
-    for server in servers:
-        server.shutdown()
-        server.server_close()
-
-
-@pytest.fixture
-def closed_port_url():
-    """Base URL of an OS-assigned 127.0.0.1 port that was just released, so nothing listens on it."""
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port = sock.getsockname()[1]
-    return f"http://127.0.0.1:{port}"
 
 
 @pytest.fixture
@@ -184,7 +110,7 @@ def fake_clock(monkeypatch):
 # parse_server_name
 # ---------------------------------------------------------------------------
 
-_BEES_INIT = _initialize_response("bees")
+_BEES_INIT = mcp_initialize_response("bees")
 
 # Unescaped U+2028, U+2029 and U+0085 are valid inside a JSON string but are not SSE line breaks.
 _BEES_INIT_UNICODE_BREAKS = json.dumps(
@@ -540,6 +466,11 @@ _CI_FILES = [
 ]
 
 
+def _run_test_commands():
+    """docker/run_test.sh, one command per line: backslash-continued lines are joined."""
+    return (REPO_ROOT / "docker" / "run_test.sh").read_text().replace("\\\n", " ").splitlines()
+
+
 def test_ci_files_share_one_default_port_other_than_8000():
     """Regression b.9jp: another service may already be bound to port 8000 on the CI host."""
     texts = {path: (REPO_ROOT / path).read_text() for path in _CI_FILES}
@@ -572,7 +503,7 @@ def test_ci_preflight_checks_identity_at_bind_host(path):
 
 def test_run_test_checks_bees_from_a_container_before_the_phase():
     """Regression b.y8v: the host-side check can pass while the containers reach another service, or nothing."""
-    commands = (REPO_ROOT / "docker" / "run_test.sh").read_text().replace("\\\n", " ").splitlines()
+    commands = _run_test_commands()
     dockerfile = (REPO_ROOT / "docker" / "Dockerfile.test").read_text()
     copied_to = re.search(r"^COPY docker/check_bees_server\.py (\S+)", dockerfile, re.M)
 
@@ -671,3 +602,129 @@ def test_ci_skill_stops_the_bees_server_when_the_run_ends(section):
 
     assert run_end, f"no section starting {section!r}"
     assert stop_heading.lower() in run_end[1].lower()
+
+
+# ---------------------------------------------------------------------------
+# CI bug filing and phase deadline (static regression checks)
+# ---------------------------------------------------------------------------
+
+# The CI scripts and the skills that drive them: they must run unmodified on any machine.
+_PORTABLE_CI_FILES = [
+    *sorted(path.relative_to(REPO_ROOT).as_posix() for path in (REPO_ROOT / "docker").iterdir() if path.is_file()),
+    *(f".claude/skills/{skill}/SKILL.md" for skill in ("ci", "file-bug-http", "release-test", "publish")),
+    "tests/integration.sh",
+]
+# A user's home directory or a Homebrew prefix. /home/testuser is the CI container's own user.
+_MACHINE_SPECIFIC_PATH = re.compile(r"/(?:home/(?!testuser\b)|Users/)[\w.-]+|/opt/homebrew\b")
+
+
+def test_ci_files_have_no_machine_specific_paths():
+    """Regression b.g76: file_bug.py had one developer's repo root built in, the publish skill their pipx path."""
+    found = {path: _MACHINE_SPECIFIC_PATH.findall((REPO_ROOT / path).read_text()) for path in _PORTABLE_CI_FILES}
+
+    assert {path: hits for path, hits in found.items() if hits} == {}
+
+
+def test_run_test_passes_the_hosts_bugs_hive_and_repo_root_into_the_container():
+    """Regression b.g76: the containers filed bugs into a hive and repo root built into file_bug.py."""
+    commands = _run_test_commands()
+    [phase] = [command for command in commands if command.startswith("_docker run -d")]
+    [build] = [i for i, command in enumerate(commands) if command.startswith("_docker build")]
+    [pick] = [i for i, c in enumerate(commands) if "ci_bugs_hive.py" in c and not c.lstrip().startswith("#")]
+    pick_end = next(i for i in range(pick, len(commands)) if commands[i].strip() == "fi")
+
+    assert all(f'-e "{var}=${{{var}}}"' in phase for var in ("BEES_BUGS_HIVE", "BEES_REPO_ROOT"))
+    # With no bugs hive found, the script stops before the build: no phase runs without one.
+    assert pick < build
+    assert any(re.fullmatch(r"\s*exit [1-9]\d*", command) for command in commands[pick:pick_end])
+
+
+def test_run_test_runs_the_test_plan_of_this_checkout():
+    """Regression b.g76: run_test.sh mounted the host's hive named testplans: maybe another checkout's or repo's."""
+    commands = _run_test_commands()
+    [phase] = [command for command in commands if command.startswith("_docker run -d")]
+    mount = re.search(r'-v "\$\{(\w+)\}:/tmp/testplans_host:ro"', phase)
+    [plan] = [m[1] for command in commands if (m := re.fullmatch(r'TEST_PLAN_ID="([^"]+)"', command))]
+    unset_hive = commands.index('if [[ -z "${BEES_BUGS_HIVE:-}" ]]; then')
+    unset_hive_end = commands.index("fi", unset_hive)
+    list_hives = [i for i, c in enumerate(commands) if "bees list-hives" in c and not re.match(r"\s*(#|echo\b)", c)]
+
+    assert mount, "the phase container must get the testplans hive"
+    assert [c for c in commands if c.startswith(f"{mount[1]}=")] == [f'{mount[1]}="${{PROJECT_ROOT}}/docker/testplans"']
+    assert (REPO_ROOT / "docker" / "testplans" / plan / f"{plan}.md").is_file()
+    # The host's hives serve only to find the bugs hive, so they are listed only when BEES_BUGS_HIVE is not set.
+    assert list_hives and all(unset_hive < i < unset_hive_end for i in list_hives)
+
+
+def test_run_test_shows_what_bees_said_when_list_hives_fails():
+    """bees reports its errors (e.g. a config conflict) as JSON on stdout: without it the stop says not why."""
+    commands = _run_test_commands()
+    [listing] = [i for i, command in enumerate(commands) if re.search(r"HIVES_JSON=\$\(.*bees list-hives", command)]
+    stop = next(i for i in range(listing, len(commands)) if re.fullmatch(r"\s*exit [1-9]\d*", commands[i]))
+
+    assert commands[listing].lstrip().startswith("if ! "), "the failure branch must follow the listing"
+    assert any(re.match(r"\s*echo\b.*\$\{HIVES_JSON\}", command) for command in commands[listing + 1 : stop])
+
+
+def test_run_test_mounts_host_claude_config_files_only_if_they_exist():
+    """Regression b.g76: for a missing ~/.claude.json, docker run made a root-owned directory at that path."""
+    commands = _run_test_commands()
+    [phase] = [command for command in commands if command.startswith("_docker run -d")]
+    mounts = [(i, m) for i, c in enumerate(commands) if (m := re.search(r'(\w+)\+=\(-v "([^":]+):/host-claude', c))]
+    arrays = {mount[1] for _, mount in mounts}
+
+    assert len(mounts) == 2 and len(arrays) == 1, "~/.claude.json and ~/.claude/settings.json, added to one array"
+    assert all(commands[i - 1].strip() == f'if [[ -f "{mount[2]}" ]]; then' for i, mount in mounts)
+    assert "/host-claude" not in phase
+    # The array may be empty: expanded in the form that set -u accepts on bash before 4.4 too (macOS ships 3.2).
+    [array] = arrays
+    assert f'${{{array}[@]+"${{{array}[@]}}"}}' in phase
+
+
+def test_dockerfile_installs_file_bugs_imports_next_to_it():
+    """file_bug.py imports its docker/ neighbours, which Python finds only in the script's own directory."""
+    file_bug = REPO_ROOT / "docker" / "file_bug.py"
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.test").read_text()
+    copies = re.findall(r"^COPY docker/(\S+) (\S+)$", dockerfile, re.M)
+    installed = {source: Path(target).parent for source, target in copies}
+    imported = re.findall(r"^(?:from|import) (\w+)", file_bug.read_text(), re.M)
+    neighbours = [f"{name}.py" for name in imported if (file_bug.parent / f"{name}.py").is_file()]
+
+    assert neighbours, "file_bug.py must share the bugs hive rule with run_test.sh (ci_bugs_hive.py)"
+    assert {name: installed.get(name) for name in neighbours} == dict.fromkeys(neighbours, installed["file_bug.py"])
+
+
+def test_ci_skill_times_out_a_phase_that_never_reports():
+    """Regression b.g76: /ci waited forever for a phase that never printed a result, e.g. after a failed filing."""
+    timeout = re.search(
+        r"\$\{BEES_CI_PHASE_TIMEOUT_MINUTES:-([1-9]\d*)\}", "\n".join(_bash_lines(_skill_section("Step 1")[1]))
+    )
+    polls = [
+        block
+        for section in ("Phase 1", "Phases 2, 3, 4")
+        for block in _bash_blocks(_skill_section(section)[1])
+        if "tmux capture-pane" in block
+    ]
+
+    assert timeout, "Step 1 must resolve the phase timeout, with a default of at least one minute"
+    assert len(polls) == 2 and all("date +%s" in poll for poll in polls), "every poll must check the phase deadline"
+    assert "deadline" in _skill_section("Monitor signals")[1]
+
+
+def test_ci_skill_monitor_signals_are_lines_the_ci_scripts_print():
+    """A signal that nothing prints never shows up: /ci would see the phase only at its deadline."""
+    signals = re.findall(r"^- \*\*`([^`]+)`\*\*", _skill_section("Monitor signals")[1], re.M)
+    output_lines = [
+        line
+        for path in ("tests/integration.sh", "docker/entrypoint.sh", "docker/run_test.sh", "docker/file_bug.py")
+        for line in (REPO_ROOT / path).read_text().splitlines()
+        if re.search(r"\b(echo|print)\b", line) and not line.lstrip().startswith("#")
+    ]
+
+    def printed(signal):
+        # N stands for the phase number: a number or a shell variable in the scripts.
+        pattern = r"(?:\d+|\$\{?\w+\}?)".join(re.escape(part) for part in re.split(r"\bN\b", signal))
+        return any(re.search(pattern, line) for line in output_lines)
+
+    assert {"BUG FILED:", "BUG FILING FAILED:", "TEST RUNNER EXITED"} <= set(signals)
+    assert [signal for signal in signals if not printed(signal)] == []

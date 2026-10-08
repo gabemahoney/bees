@@ -80,6 +80,19 @@ These fixtures create pre-configured test scenarios:
 - Returns `(repo_root, hive_path, ticket_ids_dict)`
 - Automatically tests common ticket relationship scenarios
 
+### Local Network Fixtures (CI Script Tests)
+
+For tests of the `docker/` CI scripts that talk HTTP, without a real server or network:
+
+#### 11. stub_server
+- Factory: starts a stub HTTP server on `127.0.0.1` with an OS-assigned port
+- Answers from a routes map; returns the server with `.url` and the `.requests` it received
+- Shut down after the test
+
+#### 12. closed_port_url
+- URL of a `127.0.0.1` port that nothing listens on
+- Use to test a connection failure
+
 ### Removed Deprecated Fixtures
 The following fixtures were removed from conftest.py and migrated to parameterized alternatives:
 - `single_hive` -> `hive_tier_config`
@@ -383,6 +396,11 @@ def test_repo_validation():
   - → Use: `isolated_bees_env` (for complex scenarios)
 - Simple test?
   - → Use: `tmp_path + monkeypatch.chdir` (autouse handles rest)
+
+**CI script in `docker/` (file_bug.py, check_bees_server.py, etc.)**
+- → Load it with `load_script()` from `tests/helpers.py`
+- Needs an HTTP server to talk to?
+  - → Use: `stub_server`, or `closed_port_url` for nothing listening
 
 **Testing ticket operations/queries?**
 - Need pre-existing tickets?
@@ -803,6 +821,48 @@ def test_parent_query(ticket_hierarchy):
         task = show_ticket(task_id)
         assert task["parent"] == bee_id
 ```
+
+---
+
+### stub_server
+
+**Scope:** Function
+
+Factory fixture for a stub HTTP server, for tests of the `docker/` CI scripts.
+
+**What It Provides:**
+Returns a factory function: `start(routes)`. Each call starts a server on `127.0.0.1` with an OS-assigned port, in a background thread, and returns it. All servers are shut down after the test.
+- `routes`: maps `(method, path)` to one of:
+  - `(status, headers, body)`: the response (`body` is bytes)
+  - `None`: accept the request, then hang up without a response
+  - a responder: called with `(headers, body)` (header names lowercased), returns one of the two above
+- Unknown routes answer `404`. Handles `GET`, `POST` and `DELETE`.
+- `server.url`: base URL, e.g. `http://127.0.0.1:<port>`
+- `server.requests`: requests received, each with `.method`, `.path` and `.headers`
+
+**Usage Example:**
+```python
+cbs = load_script(DOCKER_DIR / "check_bees_server.py")
+
+def test_other_mcp_server_is_not_bees(stub_server):
+    body = mcp_initialize_response("other-server").encode()
+    server = stub_server({("POST", "/mcp"): (200, {"Content-Type": "application/json"}, body)})
+
+    code, reason = cbs.check_bees_server(server.url, timeout=2)
+
+    assert code == 2, reason
+    assert server.requests[0].path == "/mcp"
+```
+
+`mcp_initialize_response(name)` in `tests/helpers.py` builds the body of an MCP `initialize` answer.
+
+---
+
+### closed_port_url
+
+**Scope:** Function
+
+Base URL (`http://127.0.0.1:<port>`) of an OS-assigned port that was just released, so nothing listens on it. Use it to test how a CI script reports a server it cannot connect to.
 
 ---
 

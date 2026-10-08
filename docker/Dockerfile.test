@@ -62,6 +62,8 @@ RUN chmod +x /test-repo/tests/integration.sh
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/test_runner.sh /usr/local/bin/test_runner.sh
 COPY docker/file_bug.py /usr/local/bin/file_bug.py
+# file_bug.py imports it to pick the bugs hive when BEES_BUGS_HIVE is not set
+COPY docker/ci_bugs_hive.py /usr/local/bin/ci_bugs_hive.py
 # Bees server identity check; run_test.sh runs it in a throwaway container before each phase
 COPY docker/check_bees_server.py /usr/local/bin/check_bees_server.py
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/test_runner.sh

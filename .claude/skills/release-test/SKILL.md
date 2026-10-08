@@ -97,5 +97,10 @@ If any test fails, do the following **immediately**:
 
    Context: ANY_RELEVANT_DIAGNOSTIC_INFO"
    ```
+   The script files into the host's bugs hive for this repo, named by `$BEES_BUGS_HIVE` under
+   the host repo root `$BEES_REPO_ROOT` (both set before you started). Do not pass a hive or a
+   path yourself.
 3. The script prints `BUG FILED: b.XXXX` on success. Report that ticket ID.
+   If it prints `BUG FILING FAILED: <reason>` instead, print that line exactly as your final
+   output. Do NOT retry with another hive or path.
 4. Exit immediately — do NOT continue testing. Do NOT debug or work around the failure.

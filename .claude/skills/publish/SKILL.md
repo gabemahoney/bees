@@ -269,9 +269,12 @@ Use the bees MCP tools to query — something like:
 
 ```yaml
 stages:
-  - [hive=bees_bugs, status=fixed]
+  - [hive=<bugs-hive>, status=fixed]
 report: [title, ticket_status]
 ```
+
+where `<bugs-hive>` is the normalized name of this repo's bugs hive, as `list_hives` reports it
+(hive names differ between machines), and `fixed` stands for whatever "done" status that hive uses.
 
 Then call `show_ticket` on each to inspect `reference_materials` for `resolver: "github"`.
 Repeat for the Ideas hive with whatever "done" status it uses.
@@ -292,7 +295,7 @@ On failure to close an individual issue, warn but continue with the rest.
 Reinstall the newly published version via pipx:
 
 ```bash
-/opt/homebrew/bin/pipx install bees-md=={version} --force
+pipx install bees-md=={version} --force
 ```
 
 On failure, stop: "Local install failed. Output above."

@@ -1,6 +1,6 @@
 ---
 name: ci
-description: Run Docker-based end-to-end CI test against a bees worktree. Spawns one container per epic. On failure, inner Claude files a bug bee in the Bugs hive automatically.
+description: Run Docker-based end-to-end CI test against a bees worktree. Spawns one container per epic. On failure, the container files a bug bee in this repo's bugs hive automatically.
 ---
 
 # One-Time Setup
@@ -32,9 +32,12 @@ description: Run Docker-based end-to-end CI test against a bees worktree. Spawns
 Runs the bees release test suite inside Docker containers, one per epic (phase).
 Before building, publishes the current code to test.pypi with a dev version.
 Each phase gets a fresh container with phase-specific setup (stdio/HTTP server registration).
-On failure, Claude inside the container files a bug bee against the production bees server.
+On failure, the container files a bug bee into this repo's bugs hive, through the production bees
+server (see "Bugs hive" below).
 
-The bee `b.qi9` in the `testplans` hive is the source of truth. Its child epics map to test phases:
+The bee `b.qi9` in the `testplans` hive is the source of truth. The containers run the copy of it
+in this checkout's `docker/testplans`, and `/ci` reads and records phase statuses in that same
+copy only (see Step 3). Its child epics map to test phases:
 - Phase 1: Installation & Environment
 - Phase 2: CLI Exhaustive Tests — bash integration.sh run (covers all CLI tests including hive mgmt, CRUD, dependencies, queries, egg resolver, index, undertaker, move, sanitizer, etc.)
 - Phase 3: Stdio Server Tests
@@ -43,7 +46,7 @@ The bee `b.qi9` in the `testplans` hive is the source of truth. Its child epics 
 # Usage
 
 ```
-/ci                  # Run all phases (or only failed/not-run phases if a previous run exists)
+/ci                  # Run all phases; when phase statuses are recorded (status hive, Step 3), only failed/not-run phases if a previous run exists
 /ci full             # Force a full run from scratch, ignoring previous results
 /ci <test-number>    # Skip to a specific test number (auto-detects phase)
 ```
@@ -52,7 +55,29 @@ The bee `b.qi9` in the `testplans` hive is the source of truth. Its child epics 
 from the `BEES_CI_PORT` environment variable (default `8473`). Set it to a free port if
 another service already uses 8473.
 
-When a test number is provided, determine which phase it belongs to by reading the test plan, skip to that phase, and pass the test number to `run_test.sh` as the second argument. Phases before the target phase are marked `finished` without running.
+**Bugs hive:** a failing test files its bug into this repo's bugs hive on the host, through the
+bees server on the CI port. Hive names and paths differ between machines, so nothing is built
+in: `run_test.sh` finds both values below on the host and passes them into the container.
+- `BEES_REPO_ROOT`: the host directory the bees server picks this repo's hives by (default:
+  this checkout).
+- `BEES_BUGS_HIVE`: the hive to file into (default: from `bees list-hives` run in
+  `BEES_REPO_ROOT`, in the most specific scope matching it that has one, the hive named `bugs`,
+  else the only hive whose name contains `bugs`; inherited scopes count only after this repo's own).
+
+Set either one in the environment to override it. If no bugs hive is found, `run_test.sh`
+stops before the phase starts (see "Launch failure").
+
+**Phase timeout:** a phase that shows no result within `BEES_CI_PHASE_TIMEOUT_MINUTES` minutes
+of its launch (default `60`) is handled as crashed (see "Crash / timeout"), so a phase that
+never reports cannot hang `/ci`. Raise it if a phase legitimately runs longer.
+
+When a test number is provided, determine which phase it belongs to by reading this checkout's
+plan files (see Step 3), skip to that phase, and pass the test number to `run_test.sh` as the
+second argument. Phases before the target phase do not run; with a status hive (Step 3), they are
+marked `finished`.
+
+Run every command in this skill from this checkout's root, the directory holding `docker/`: the
+`bees` commands pick hives by the directory they run in.
 
 # Behavior
 
@@ -72,7 +97,15 @@ When a test number is provided, determine which phase it belongs to by reading t
    If neither `docker info` nor `sg docker -c "docker info"` works:
    "Docker is not running. Start Docker and re-run `/ci`."
 
-2. The production bees HTTP server is running on the CI port, at the address the containers
+2. Resolve the phase timeout once (`BEES_CI_PHASE_TIMEOUT_MINUTES`, default `60`):
+   ```bash
+   echo "${BEES_CI_PHASE_TIMEOUT_MINUTES:-60}"
+   ```
+   If it is not a whole number greater than 0, STOP and tell the user:
+   "`BEES_CI_PHASE_TIMEOUT_MINUTES` is invalid (<value>): it must be a whole number of minutes greater than 0."
+   Use the value as `<timeout-minutes>` below.
+
+3. The production bees HTTP server is running on the CI port, at the address the containers
    reach, and it really is bees.
 
    Resolve the CI port once (`BEES_CI_PORT`, default `8473`):
@@ -164,17 +197,67 @@ Capture the version from the last line of output. Export it:
 export BEES_VERSION=<captured-version>
 ```
 
-## Step 3 — Read the bee and determine which phases to run
+## Step 3 — Read the test plan and determine which phases to run
 
-Use bees MCP tools:
-1. `show_ticket(ticket_ids=["b.qi9"])` to get the bee
-2. The `children` array contains the epic IDs in order
-3. `show_ticket` on all children to read their current statuses
+The containers run the plan in this checkout's `docker/testplans` (`run_test.sh` mounts it), so
+`/ci` reads that same copy, from its files. Never read or update the plan through the bees MCP
+tools, or through a bees command other than the status write under "Phase statuses": the host's
+registered `testplans` hive may be another copy (in a worktree, usually the main checkout's), and
+on another machine `docker/testplans` may not be registered at all.
 
-The phase number is derived from the epic's position (1st child = Phase 1, etc.).
+Read the plan:
+```bash
+bees list-hives | python3 docker/ci_plan.py
+```
+If it exits non-zero, show its error, stop the bees server /ci started, then STOP:
+"Cannot read the test plan: <the error ci_plan.py printed>."
 
-**Determine run scope:** Unless the argument is `full`, check epic statuses from
-the previous run:
+It prints JSON:
+- `phases`: the epics of `b.qi9` in order, each with `phase` (1st child = Phase 1, etc.), `id`,
+  `title` and `status`.
+- `status_hive`: the hive `/ci` records phase statuses through, or `null`. `status_hive_reason`
+  says why.
+
+To find the phase of a test number `<N>`, search the same files:
+```bash
+grep -rlE "^title: '?Test <N>:" docker/testplans/b.qi9
+```
+The epic is the directory right below `docker/testplans/b.qi9/` in the path it prints. If it prints
+nothing, the phase is the one whose epic body says `Tests in this phase: <first>-<last>` (or
+`<first>–<last>`) with `<N>` in that range (read `docker/testplans/b.qi9/<epic-id>/<epic-id>.md`).
+
+### Phase statuses
+
+With a status hive, `/ci` records each phase's progress and result as its epic's status, and the
+next run reads them to skip the phases that passed. It writes them through bees, and only into
+this checkout's copy: `status_hive` is a hive that bees, run from this checkout's root, resolves
+to this checkout's `docker/testplans`. `ci_plan.py` matches the hives by path, never by name.
+
+- **`status_hive` set:** every step in this skill that sets or resets epic statuses means, with
+  the epic IDs from `phases`:
+  ```bash
+  bees update-ticket --ids <epic-id> [<epic-id> ...] --status <status> --hive <status_hive>
+  ```
+  If its output does not have `"status": "success"`, or lists an ID under `not_found` or `failed`,
+  tell the user "Could not record `<status>` for Phase N: <error>." and continue: the status is a
+  record, not a test result.
+- **`status_hive` null:** `/ci` records nothing. Skip every step that sets or resets epic statuses,
+  and never write the epics through another hive or the bees MCP tools: that would change a copy
+  the containers do not run. Tell the user once:
+  "Phase statuses will not be recorded: <status_hive_reason>. Running all phases."
+  Run every phase, as with `full`: no run can update the statuses in these files, so skipping by
+  them would skip the same phases every time. A test number still applies: the phases before its
+  phase do not run.
+
+**Determine run scope:** the run scope is the set of phases this run runs. Step 4 runs exactly
+those and skips the rest. It never skips a phase for the status its plan file shows: without a
+status hive, nothing updates those statuses, so they can be left from any earlier run or commit.
+A test number leaves the phases before its phase out of the run scope (see "Usage").
+
+Without a status hive, the run scope is every phase that a test number does not leave out: no
+phase is skipped for its status (see "Phase statuses" above).
+
+With a status hive, unless the argument is `full`, check epic statuses from the previous run:
 - `finished` or `legendary` = previously passed. **Skip these phases.**
 - `failed` or `pupa` = needs to run.
 - `worker` = was in progress when the last run was interrupted. Needs to run.
@@ -198,8 +281,8 @@ Each phase uses its own container and tmux session named `bees-ci-<N>` (e.g. `be
 
 Run Phase 1 first and wait for it to complete before launching the rest. If Phase 1 tests the install and it fails, there is no point running the other phases.
 
-If Phase 1 was already `finished`/`legendary` from a previous run, skip it and go
-straight to launching the remaining phases that need to run.
+If Step 3 left Phase 1 out of the run scope, skip it and go straight to launching the remaining
+phases in the run scope. Otherwise run it, whatever status its plan file shows.
 
 1. Set Phase 1 epic status to `worker`
 2. Report: "Starting Phase 1: <epic title>"
@@ -210,17 +293,24 @@ straight to launching the remaining phases that need to run.
    Only pass `start-test-number` if resuming from a specific test in Phase 1.
    If it exits non-zero, handle it as a launch failure (see "Launch failure" below) and skip
    the remaining steps.
-4. Tell user: `Attach with: tmux attach -t bees-ci-1`
-5. Poll every 30 seconds:
+4. Record the phase's deadline. Once the launch returns, run:
+   ```bash
+   date +%s
+   ```
+   The deadline is that number plus `<timeout-minutes>` × 60.
+5. Tell user: `Attach with: tmux attach -t bees-ci-1`
+6. Poll every 30 seconds, comparing the time with the deadline (see "Monitor signals"):
    ```bash
    tmux capture-pane -t bees-ci-1 -p -S -30
+   date +%s
    ```
-6. Handle result per the rules below, then continue to parallel launch only if Phase 1 passed.
+7. Handle result per the rules below, then continue to parallel launch only if Phase 1 passed.
    If Phase 1 did not pass, the run ends here: stop the bees server /ci started.
 
 ### Phases 2, 3, 4 — Parallel launch
 
-Once Phase 1 passes, launch the remaining phases simultaneously:
+Once Phase 1 passes (or Step 3 left it out of the run scope), launch the remaining phases in the
+run scope simultaneously. Leave every phase outside the run scope out of the steps below:
 
 1. Set all remaining epic statuses to `worker`
 2. Report: "Phase 1 passed. Launching Phases 2, 3, 4 in parallel."
@@ -241,6 +331,8 @@ Once Phase 1 passes, launch the remaining phases simultaneously:
    If resuming from a specific test number and it falls in Phase N, pass it only to that phase's launch.
    If a launch exits non-zero, do not start the launches that remain. Handle it as a launch
    failure (see "Launch failure" below) and skip the remaining steps.
+   Record each phase's deadline as soon as its launch returns, before the next launch: run
+   `date +%s`. The deadline is that number plus `<timeout-minutes>` × 60.
 4. Tell user:
    ```
    Attach with:
@@ -248,20 +340,23 @@ Once Phase 1 passes, launch the remaining phases simultaneously:
      tmux attach -t bees-ci-3
      tmux attach -t bees-ci-4
    ```
-5. Poll all three sessions every 30 seconds until each finishes:
+5. Poll all three sessions every 30 seconds until each finishes, comparing the time with each
+   phase's deadline (see "Monitor signals"):
    ```bash
    tmux capture-pane -t bees-ci-2 -p -S -30
    tmux capture-pane -t bees-ci-3 -p -S -30
    tmux capture-pane -t bees-ci-4 -p -S -30
+   date +%s
    ```
 6. Once every phase has a result: if all passed, go to Step 5. Otherwise the run ends here:
    stop the bees server /ci started.
 
 ### Launch failure
 
-`run_test.sh` exits non-zero when a pre-flight check fails (for example: no Claude auth, Docker
-not accessible, no bees server confirmed at the bind host or from inside a container) or when
-the image build or container start fails. The phase did not start, so there is nothing to poll.
+`run_test.sh` exits non-zero when a pre-flight check fails (for example: test plan `b.qi9`
+missing from this checkout's `docker/testplans`, no bugs hive found, no Claude auth, Docker not
+accessible, no bees server confirmed at the bind host or from inside a container) or when the
+image build or container start fails. The phase did not start, so there is nothing to poll.
 All phases share the one bees server and image, so the failure would repeat in every phase:
 
 1. Show the full `run_test.sh` output to the user.
@@ -280,14 +375,23 @@ All phases share the one bees server and image, so the failure would repeat in e
 ### Monitor signals
 
 **CRITICAL: Do NOT use `docker inspect` to detect test completion.** Containers stay running
-after tests finish because the entrypoint keeps `auto_approve.sh` alive in the background.
+after tests finish: the test session in the container stays open, with its last output on
+screen, until `/ci` removes the container.
 The only reliable way to detect completion is by reading the tmux pane content.
 
-Poll using `tmux capture-pane -t bees-ci-<N> -p -S -50` and grep for these signals:
+Poll using `tmux capture-pane -t bees-ci-<N> -p -S -50` and grep for these signals. The first
+two are results: check them first, since the others can appear below them.
 - **`RELEASE TEST PHASE N PASSED`** — phase passed
 - **`BUG FILED:`** — a test failed and a bug was filed
+- **`BUG FILING FAILED:`** — a test failed, but its bug could not be filed (the line says why): crash
+- **`TEST RUNNER EXITED`** — the test runner ended without either result: crash
+- **`--- Phase N exited`** — the host session lost the container's session (for example the
+  container stopped): crash
 
-Only use `docker inspect` to detect container **crashes** (status=exited with non-zero exit code).
+Then compare the time (`date +%s`) with the phase's deadline. A phase with none of these
+signals at or past its deadline has timed out: crash.
+
+Only use `docker inspect` to detect container **crashes** (the container is no longer running).
 A running container does NOT mean tests are still in progress.
 
 ### Handle Result (applies to any phase)
@@ -307,16 +411,21 @@ A running container does NOT mean tests are still in progress.
 6. Report: "Phase N failed. Bug filed as `b.XXXX`."
 7. Continue monitoring remaining phases — do NOT stop them.
 
-**Crash / timeout:**
-1. Grab logs: `docker logs bees-ci-<N> --tail 30`
+**Crash / timeout** (`BUG FILING FAILED:`, `TEST RUNNER EXITED`, `--- Phase N exited`, a
+stopped container, or the deadline passed with no result):
+1. Grab output: `tmux capture-pane -t bees-ci-<N> -p -S -50` and `docker logs bees-ci-<N> --tail 30`
 2. Set epic status to `failed`
 3. Kill container + tmux
-4. Report: "Phase N crashed. Output above."
+4. Report by cause:
+   - Bug filing failed: "Phase N failed, but its bug could not be filed: <the reason on the
+     `BUG FILING FAILED:` line>. Output above."
+   - Timeout: "Phase N timed out: no result after <timeout-minutes> minutes. Output above."
+   - Otherwise: "Phase N crashed. Output above."
 5. Continue monitoring remaining phases — do NOT stop them.
 
 ## Step 5 — All phases passed
 
-If all epics complete successfully:
+If every phase in the run scope (Step 3) passed:
 1. Set ALL epic statuses to `legendary`
 2. Stop the bees server /ci started.
 3. Report: "All phases passed. Full regression suite green."

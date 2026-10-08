@@ -52,10 +52,13 @@ print('Created minimal .claude.json ({})'.format('OAuth env' if oauth_token else
 
 chown -R testuser:testuser "${TESTUSER_HOME}/.claude" "${TESTUSER_HOME}/.claude.json" /test-repo/.claude 2>/dev/null || true
 
-# Launch tmux as testuser with test runner + auto-approver
+# Launch tmux as testuser with test runner + auto-approver.
+# The session stays open after the test runner exits, so its last output (the PASSED or
+# BUG FILED line /ci polls for) stays on screen. TEST RUNNER EXITED marks a runner that ended:
+# without one of those lines above it, /ci treats the phase as crashed instead of waiting.
 exec gosu testuser env PATH="/home/testuser/.local/bin:$PATH" bash -c '
   auto_approve.sh ci > /tmp/auto_approve.log 2>&1 &
   sleep 1
-  tmux new-session -d -s ci /usr/local/bin/test_runner.sh
+  tmux new-session -d -s ci "/usr/local/bin/test_runner.sh; echo \"TEST RUNNER EXITED (status \$?)\"; exec sleep infinity"
   tmux wait-for ci-done 2>/dev/null || while tmux has-session -t ci 2>/dev/null; do sleep 5; done
 '

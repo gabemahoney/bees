@@ -9,6 +9,9 @@ Usage:
     from tests.helpers import setup_child_tiers, make_ticket, write_ticket_file
 """
 
+import importlib.util
+import json
+import sys
 from pathlib import Path
 
 from src.config import ChildTierConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
@@ -175,6 +178,36 @@ def setup_child_tiers(tier_config: dict[str, tuple[str, str]]) -> None:
     save_bees_config(config, scope_pattern)
 
 
+# ============================================================================
+# CI SCRIPTS (docker/)
+# ============================================================================
+
+
+def load_script(path: Path):
+    """Load a docker/ script by path (docker/ is no package); it imports its neighbours as in the container."""
+    sys.path.insert(0, str(path.parent))
+    try:
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(path.parent))
+    return module
+
+
+def mcp_initialize_response(name: str, request_id: int = 1) -> str:
+    """JSON-RPC initialize result for an MCP server called ``name``."""
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "serverInfo": {"name": name, "version": "1.0"},
+            },
+        }
+    )
 
 
 # ============================================================================

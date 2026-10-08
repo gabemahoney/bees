@@ -44,6 +44,10 @@ Use the `/ci` skill from Claude Code. It publishes the current code to test.pypi
 
 Test failures are filed as bugs against a bees HTTP server on the host, on port 8473 by default. `/ci` starts that server if nothing is listening there. It binds the address the containers reach the host at: the Docker bridge gateway on Linux Docker Engine, `127.0.0.1` on Docker Desktop. The server has no authentication, so when the run ends, `/ci` stops a server that `/ci` started, including one an interrupted earlier run left running. A server you started yourself keeps running. If another service already uses port 8473, set `BEES_CI_PORT` to a free port in the environment Claude Code runs in. If a host firewall blocks traffic from containers to the host on that port, `/ci` stops before the tests start and says so.
 
+The containers run the test plan `b.qi9` from this checkout's `docker/testplans`. `/ci` records each phase's result there, as its epic's status, so a later `/ci` runs only the phases that did not pass; `/ci full` runs them all. It records them only through a hive, under any name, that bees resolves for this checkout to its `docker/testplans`. Without one, for example in a worktree whose `docker/testplans` is not registered, `/ci` records nothing and runs every phase each time, so it cannot resume a run. It says so when it starts.
+
+Bugs go into this repo's bugs hive: the hive named `bugs`, else the only hive whose name contains `bugs`. A bugs hive in this repo's own scope wins over one in a broader scope it inherits from. If no hive fits, or several do, set `BEES_BUGS_HIVE` to the hive's name. Hives are looked up for this checkout; set `BEES_REPO_ROOT` to look them up for another path. A phase with no result after 60 minutes is reported as timed out; set `BEES_CI_PHASE_TIMEOUT_MINUTES` to change the limit.
+
 ### Publish to PyPI
 
 Use the `/publish` skill from Claude Code. It bumps the version, builds, checks, uploads to PyPI, commits, and tags the release.

@@ -13,6 +13,21 @@
 #                 (default: http://host.docker.internal:${BEES_CI_PORT}).
 #                 An override must include an explicit port (e.g. http://myhost:8473):
 #                 the identity check below always probes it and rejects a URL without one.
+#   BEES_REPO_ROOT  Host directory the outer bees server picks this repo's hives by
+#                 (default: this checkout). Passed on with symlinks resolved: the
+#                 bees CLI run from there lists the same hives the server sees for it.
+#   BEES_BUGS_HIVE  Hive the containers file bugs into (default: picked from
+#                 'bees list-hives' run from BEES_REPO_ROOT by docker/ci_bugs_hive.py:
+#                 in the most specific scope matching BEES_REPO_ROOT that has one, the
+#                 hive named "bugs", else the only hive whose name contains "bugs").
+#                 With no such hive, the script stops before the phase starts.
+#   BEES_REPO_ROOT and BEES_BUGS_HIVE reach the container as env vars, where
+#   docker/file_bug.py files bugs with them.
+#
+# Test plan: the phases run plan b.qi9 from this checkout's testplans hive copy
+# (docker/testplans), mounted into the container. It is not looked up among the host's
+# registered hives, whose "testplans" may be another checkout's copy or another repo's hive.
+# /ci reads the same copy (docker/ci_plan.py), and records phase statuses only into it.
 #
 # Server identity checks (docker/check_bees_server.py: an MCP initialize that must
 # report serverInfo.name "bees"; /health is not enough, another service may answer it):
@@ -43,19 +58,38 @@ if [[ -z "${BEES_MCP_URL:-}" ]]; then
   USING_DEFAULT_MCP_URL=1
 fi
 
-# Find testplans hive path using bees CLI (scoped to this repo)
-TESTPLANS_PATH=$(cd "${PROJECT_ROOT}" && bees list-hives 2>/dev/null | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-for h in d.get('hives', []):
-    if h['normalized_name'] == 'testplans':
-        print(h['path'])
-        sys.exit(0)
-sys.exit(1)
-")
-if [[ -z "${TESTPLANS_PATH}" ]]; then
-  echo "ERROR: testplans hive not found in ~/.bees/config.json"
+# The test plan the phases run: this checkout's copy of the testplans hive
+TEST_PLAN_ID="b.qi9"
+TESTPLANS_PATH="${PROJECT_ROOT}/docker/testplans"
+if [[ ! -f "${TESTPLANS_PATH}/${TEST_PLAN_ID}/${TEST_PLAN_ID}.md" ]]; then
+  echo "ERROR: test plan ${TEST_PLAN_ID} not found in ${TESTPLANS_PATH} (no ${TEST_PLAN_ID}/${TEST_PLAN_ID}.md there)."
+  echo "The phases run the plan from this checkout's docker/testplans: restore it there."
   exit 1
+fi
+
+# The repo root the host's bees server picks this repo's hives by. The bees CLI resolves symlinks
+# in its working directory, so the root is passed on resolved: the server then sees the same hives.
+REPO_ROOT_SETTING="${BEES_REPO_ROOT:-${PROJECT_ROOT}}"
+if ! BEES_REPO_ROOT=$(cd "${REPO_ROOT_SETTING}" && pwd -P); then
+  echo "ERROR: BEES_REPO_ROOT is not a directory on this host: ${REPO_ROOT_SETTING}"
+  exit 1
+fi
+
+# Find the bugs hive that failing tests file into, among the host's hives for the repo root
+if [[ -z "${BEES_BUGS_HIVE:-}" ]]; then
+  if ! HIVES_JSON=$(cd "${BEES_REPO_ROOT}" && bees list-hives 2>/dev/null); then
+    echo "ERROR: 'bees list-hives' failed in ${BEES_REPO_ROOT}. Install bees on the host, fix BEES_REPO_ROOT, or set BEES_BUGS_HIVE."
+    # bees reports its errors as JSON on stdout
+    if [[ -n "${HIVES_JSON}" ]]; then
+      echo "bees list-hives output: ${HIVES_JSON}"
+    fi
+    exit 1
+  fi
+  if ! BEES_BUGS_HIVE=$(python3 "${SCRIPT_DIR}/ci_bugs_hive.py" --repo-root "${BEES_REPO_ROOT}" <<< "${HIVES_JSON}"); then
+    echo "ERROR: no bugs hive found for ${BEES_REPO_ROOT} (reason above)."
+    echo "Set BEES_BUGS_HIVE to the hive the CI containers should file bugs into."
+    exit 1
+  fi
 fi
 
 # Pull Claude auth — prefer OAuth token (Max subscription), fall back to API key
@@ -137,6 +171,8 @@ echo ""
 echo "=== bees CI — Phase ${PHASE} ==="
 echo "Version:      ${BEES_VERSION}"
 echo "Bugs server:  ${BEES_MCP_URL}"
+echo "Bugs hive:    ${BEES_BUGS_HIVE}"
+echo "Repo root:    ${BEES_REPO_ROOT}"
 echo ""
 
 echo "--- Preparing build context ---"
@@ -196,16 +232,29 @@ elif [[ -n "${CLAUDE_API_KEY}" ]]; then
   echo "Auth: using Anthropic API key"
 fi
 
+# Host Claude config files, each mounted only if it exists: for a missing file, docker run would
+# create a root-owned directory at that host path. entrypoint.sh copes with their absence.
+# Expanded below as ${CLAUDE_CONFIG_MOUNTS[@]+...}: before bash 4.4 (macOS ships 3.2), set -u
+# rejects "${CLAUDE_CONFIG_MOUNTS[@]}" when the array is empty.
+CLAUDE_CONFIG_MOUNTS=()
+if [[ -f "${HOME}/.claude.json" ]]; then
+  CLAUDE_CONFIG_MOUNTS+=(-v "${HOME}/.claude.json:/host-claude.json:ro")
+fi
+if [[ -f "${HOME}/.claude/settings.json" ]]; then
+  CLAUDE_CONFIG_MOUNTS+=(-v "${HOME}/.claude/settings.json:/host-claude-settings.json:ro")
+fi
+
 _docker run -d \
   --name "${CONTAINER_NAME}" \
   "${ADD_HOST_ARGS[@]}" \
   "${AUTH_ENV_ARGS[@]}" \
   -e "BEES_MCP_URL=${BEES_MCP_URL}" \
+  -e "BEES_BUGS_HIVE=${BEES_BUGS_HIVE}" \
+  -e "BEES_REPO_ROOT=${BEES_REPO_ROOT}" \
   -e "BEES_VERSION=${BEES_VERSION}" \
   -e "PHASE=${PHASE}" \
   -e "START_TEST=${START_TEST}" \
-  -v "${HOME}/.claude.json:/host-claude.json:ro" \
-  -v "${HOME}/.claude/settings.json:/host-claude-settings.json:ro" \
+  ${CLAUDE_CONFIG_MOUNTS[@]+"${CLAUDE_CONFIG_MOUNTS[@]}"} \
   -v "${TESTPLANS_PATH}:/tmp/testplans_host:ro" \
   bees-test
 
