@@ -1,10 +1,12 @@
 """
-Tests for the CI pre-flight identity check (docker/check_bees_server.py).
+Tests for the CI pre-flight identity check (docker/check_bees_server.py) and the
+CI bees server bind host (docker/ci_bind_host.py).
 
 PURPOSE:
 The /ci pre-flight must confirm that the HTTP server on the CI port really is
-bees, not just any service that answers /health. These tests run the check
-against in-process stub HTTP servers on OS-assigned ports.
+bees, not just any service that answers /health, at the address the CI
+containers reach. These tests run the check against in-process stub HTTP
+servers on OS-assigned ports.
 
 SCOPE - Tests that belong here:
 - parse_server_name over plain JSON and SSE initialize responses
@@ -14,7 +16,13 @@ SCOPE - Tests that belong here:
 - MCP session cleanup (DELETE with the session header)
 - wait_for_bees_server retry policy (retries only while nothing listens)
 - main() argument handling and exit codes, including usage errors (3)
-- CI scripts use one configurable port and the identity check, not /health
+- ci_bind_host: the bind host chosen from `docker network inspect bridge` output
+  (the bridge gateway if it is a host address, else 127.0.0.1, never 0.0.0.0)
+  and the host-address test, also where any address can be bound
+- CI scripts use one configurable port and the identity check, not /health,
+  at the bind host and from a container
+- the /ci skill stops the bees server a /ci run started, and only that one, when the run ends,
+  and launches each phase as its own command
 
 SCOPE - Tests that DON'T belong here:
 - bees serve flags and HTTP routes -> test_cli_serve.py
@@ -29,6 +37,7 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -40,11 +49,24 @@ from src.mcp_server import mcp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "docker" / "check_bees_server.py"
+BIND_HOST_SCRIPT = REPO_ROOT / "docker" / "ci_bind_host.py"
+CI_SKILL = REPO_ROOT / ".claude" / "skills" / "ci" / "SKILL.md"
 
-# docker/ is not a package, so load the script by path.
-_spec = importlib.util.spec_from_file_location("check_bees_server", SCRIPT)
-cbs = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(cbs)
+
+def _load_script(path):
+    """docker/ is not a package, so load its scripts by path."""
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+cbs = _load_script(SCRIPT)
+cbh = _load_script(BIND_HOST_SCRIPT)
+
+# Linux routes all of 127.0.0.0/8 to loopback, so 127.0.0.2 can stand in for a local bridge gateway,
+# and IP_FREEBIND lets a test socket bind an address of another host.
+_LINUX_ONLY = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
 
 
 def _initialize_response(name: str, request_id: int = 1) -> str:
@@ -410,6 +432,101 @@ def test_script_exit_status_from_command_line(stub_server):
 
 
 # ---------------------------------------------------------------------------
+# ci_bind_host
+# ---------------------------------------------------------------------------
+
+
+def _bridge_inspect(*gateways):
+    """`docker network inspect bridge` output with one IPAM config per gateway (None: no Gateway key)."""
+    configs = [{"Subnet": "172.17.0.0/16", **({"Gateway": g} if g else {})} for g in gateways]
+    return json.dumps([{"Name": "bridge", "IPAM": {"Driver": "default", "Config": configs or None}}])
+
+
+@pytest.mark.parametrize(
+    "inspect_output, local_addresses, expected",
+    [
+        pytest.param(_bridge_inspect("172.17.0.1"), {"172.17.0.1"}, "172.17.0.1", id="linux_docker_engine"),
+        # Docker Desktop: the bridge lives in a VM and host.docker.internal leads to the host's loopback.
+        pytest.param(_bridge_inspect("172.17.0.1"), set(), "127.0.0.1", id="gateway_not_a_host_address"),
+        pytest.param(_bridge_inspect("fd00::1", "172.18.0.1"), {"fd00::1", "172.18.0.1"}, "172.18.0.1", id="ipv6_skip"),
+        pytest.param(_bridge_inspect("172.17.0.1/16"), {"172.17.0.1"}, "172.17.0.1", id="gateway_with_prefix"),
+        pytest.param(_bridge_inspect(None), set(), "127.0.0.1", id="no_gateway"),
+        pytest.param(_bridge_inspect(), set(), "127.0.0.1", id="null_ipam_config"),
+        pytest.param("Error: network bridge not found", set(), "127.0.0.1", id="unreadable_output"),
+        # Never the wildcard (exposes the server on every network) or a non-unicast address, even if bindable.
+        pytest.param(_bridge_inspect("0.0.0.0"), {"0.0.0.0"}, "127.0.0.1", id="wildcard_gateway"),
+        pytest.param(_bridge_inspect("255.255.255.255"), {"255.255.255.255"}, "127.0.0.1", id="broadcast_gateway"),
+    ],
+)
+def test_bind_host_is_bridge_gateway_only_if_host_address(monkeypatch, inspect_output, local_addresses, expected):
+    monkeypatch.setattr(
+        cbh,
+        "local_address_error",
+        lambda address: None if address in local_addresses else "Cannot assign requested address",
+    )
+
+    bind_host, reason = cbh.choose_bind_host(cbh.bridge_gateways(inspect_output))
+
+    assert bind_host == expected, reason
+
+
+@pytest.mark.parametrize(
+    "stdin, expected",
+    [
+        pytest.param(_bridge_inspect("127.0.0.2"), "127.0.0.2", marks=_LINUX_ONLY, id="gateway_is_host_address"),
+        pytest.param(_bridge_inspect("192.0.2.1"), "127.0.0.1", id="gateway_not_host_address"),  # TEST-NET-1
+        pytest.param("", "127.0.0.1", id="docker_inspect_failed"),
+    ],
+)
+def test_bind_host_script_prints_only_the_host_and_exits_0(stdin, expected):
+    """run_test.sh runs it under `set -e` and uses all of its stdout as the bind host."""
+    result = subprocess.run(
+        [sys.executable, str(BIND_HOST_SCRIPT)], input=stdin, capture_output=True, text=True, timeout=30
+    )
+
+    assert (result.returncode, result.stdout) == (0, f"{expected}\n"), result.stderr
+
+
+@pytest.fixture
+def nonlocal_bind(request, monkeypatch):
+    """If the param is true, ci_bind_host's sockets bind any address, as with net.ipv4.ip_nonlocal_bind=1."""
+    if not request.param:
+        return
+    ip_freebind = 15  # Linux <linux/in.h>; the socket module names it only from Python 3.12
+
+    class FreebindSocket(socket.socket):
+        def bind(self, address):
+            self.setsockopt(socket.SOL_IP, ip_freebind, 1)
+            super().bind(address)
+
+    try:
+        with socket.socket() as sock:
+            sock.setsockopt(socket.SOL_IP, ip_freebind, 1)
+    except OSError as exc:
+        pytest.skip(f"cannot set IP_FREEBIND: {exc}")
+    monkeypatch.setattr(cbh, "socket", SimpleNamespace(**{**vars(socket), "socket": FreebindSocket}))
+
+
+@pytest.mark.parametrize(
+    "nonlocal_bind, address, is_local",
+    [
+        pytest.param(False, "127.0.0.1", True, id="loopback"),
+        pytest.param(True, "127.0.0.1", True, marks=_LINUX_ONLY, id="loopback_any_address_binds"),
+        # Regression b.y8v: where any address binds, a bind-only check took a remote gateway for a host address.
+        pytest.param(True, "192.0.2.1", False, marks=_LINUX_ONLY, id="remote_address_binds"),  # TEST-NET-1
+    ],
+    indirect=["nonlocal_bind"],
+)
+def test_local_address_error_accepts_only_host_addresses(nonlocal_bind, address, is_local):
+    start = time.monotonic()
+
+    error = cbh.local_address_error(address)
+
+    assert (error is None) == is_local, error
+    assert time.monotonic() - start < 2, "a remote address must not stall the CI pre-flight"
+
+
+# ---------------------------------------------------------------------------
 # CI scripts (static regression checks)
 # ---------------------------------------------------------------------------
 
@@ -437,8 +554,120 @@ def test_ci_files_share_one_default_port_other_than_8000():
 
 
 @pytest.mark.parametrize("path", [".claude/skills/ci/SKILL.md", "docker/run_test.sh"])
-def test_ci_preflight_checks_identity_not_health(path):
+def test_ci_preflight_checks_identity_at_bind_host(path):
+    """Regressions b.9jp (/health passed any service) and b.y8v (containers cannot reach loopback on Linux)."""
     text = (REPO_ROOT / path).read_text()
+    check_hosts = re.findall(r'check_bees_server\.py[^\n]*?"https?://([^:/"]+)', text)
+    serve_commands = re.findall(r"bees serve --http\b[^\n]*", text)
+    serve_hosts = [re.search(r"--host\s+(\S+)", command) for command in serve_commands]
 
     assert "check_bees_server.py" in text
     assert not re.search(r"curl[^\n]*/health", text)
+    assert check_hosts and serve_commands
+    assert all(serve_hosts), f"bees serve without --host: {serve_commands}"
+    fixed_hosts = {"127.0.0.1", "localhost", "0.0.0.0"} & {*check_hosts, *(m[1] for m in serve_hosts)}
+    assert not fixed_hosts, f"use the bind host, not {sorted(fixed_hosts)}"
+    assert "ci_bind_host.py" in text
+
+
+def test_run_test_checks_bees_from_a_container_before_the_phase():
+    """Regression b.y8v: the host-side check can pass while the containers reach another service, or nothing."""
+    commands = (REPO_ROOT / "docker" / "run_test.sh").read_text().replace("\\\n", " ").splitlines()
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.test").read_text()
+    copied_to = re.search(r"^COPY docker/check_bees_server\.py (\S+)", dockerfile, re.M)
+
+    def lines_starting(prefix):
+        return [i for i, command in enumerate(commands) if command.startswith(prefix)]
+
+    # Unindented, so it always runs: also when BEES_MCP_URL is set.
+    probes = [i for i in lines_starting("_docker run --rm") if "check_bees_server.py" in commands[i]]
+    [build], [phase] = lines_starting("_docker build"), lines_starting("_docker run -d")
+
+    assert copied_to, "Dockerfile.test must copy check_bees_server.py into the image"
+    assert len(probes) == 1, "run_test.sh must run check_bees_server.py in a container"
+    assert build < probes[0] < phase
+    assert f'{copied_to[1]} "${{BEES_MCP_URL}}"' in commands[probes[0]]
+    # A failed probe stops the script before the phase starts.
+    assert not re.search(r"\|\|\s*(true|:)\s*$", commands[probes[0]]), "the probe's exit status must not be swallowed"
+    assert any(re.fullmatch(r"\s*exit [1-9]\d*", command) for command in commands[probes[0] + 1 : phase])
+    # The probe sees the host the way the phase container does: one shared --add-host mapping.
+    assert all('"${ADD_HOST_ARGS[@]}"' in commands[i] for i in (probes[0], phase))
+    assert sum(command.count("--add-host") for command in commands) == 1
+
+
+def _skill_section(heading_prefix):
+    """(heading, body) of the first /ci skill section whose heading starts with ``heading_prefix`` (None if none).
+
+    The body runs to the next heading. A `#` line inside a code block (a bash comment) is not a heading.
+    """
+    sections, in_code = [], False
+    for line in CI_SKILL.read_text().splitlines(keepends=True):
+        in_code ^= line.lstrip().startswith("```")
+        heading = not in_code and re.match(r"#+ (.*)", line)
+        if heading:
+            sections.append((heading[1], []))
+        elif sections:
+            sections[-1][1].append(line)
+    return next(((heading, "".join(body)) for heading, body in sections if heading.startswith(heading_prefix)), None)
+
+
+def _bash_blocks(markdown):
+    return re.findall(r"```bash\n(.*?)```", markdown, re.S)
+
+
+def _bash_lines(markdown):
+    return [line.strip() for block in _bash_blocks(markdown) for line in block.splitlines()]
+
+
+def _ci_server_pid_file():
+    """The file the command that starts the CI bees server records its PID in (None if it records none)."""
+    [start] = [command for command in _bash_lines(CI_SKILL.read_text()) if command.startswith("bees serve")]
+    pid_file = re.search(r"echo \$! > (\S+)$", start)
+    return pid_file and pid_file[1]
+
+
+def _ps_guard(markdown, pid_file, action):
+    """Text from a `ps -p` look at the recorded PID's command line to the next ``action`` line (None if none)."""
+    guard = re.search(rf"ps -p\b[^\n]*{re.escape(pid_file)}[^\n]*args=(.*?)^\s*{action}", markdown, re.M | re.S)
+    return guard and guard[1]
+
+
+def test_ci_skill_kills_only_the_bees_server_it_started():
+    """Regression b.y8v: the server /ci starts has no auth and every container reaches it, so /ci stops it."""
+    skill_commands = _bash_lines(CI_SKILL.read_text())
+    pid_file = _ci_server_pid_file()
+    stop = _skill_section("Stop the bees server")
+    kills = [command for command in skill_commands if re.match(r"(kill|pkill|killall)\b", command)]
+
+    assert pid_file, "the command that starts bees must record the server's PID"
+    assert stop, "the skill must say how to stop the bees server it started"
+    # Guard: kill the recorded PID only if its command line is still that bees server (the PID may be reused).
+    guard = _ps_guard(stop[1], pid_file, r"kill\s")
+    assert guard and "bees serve" in guard
+    assert kills and kills == [c for c in _bash_lines(stop[1]) if c.startswith("kill")], "every kill must be guarded"
+
+
+def test_ci_skill_keeps_the_pid_record_of_a_server_an_interrupted_run_started():
+    """Regression b.y8v: deleting the record whenever bees already runs left an interrupted run's server up for good."""
+    pid_file = _ci_server_pid_file()
+
+    # Delete the record only after `ps` shows the recorded PID is not the bees server a /ci run started.
+    guard = _ps_guard(_skill_section("Step 1")[1], pid_file, rf"rm\b[^\n]*{re.escape(pid_file)}")
+    assert guard and "bees serve" in guard
+
+
+def test_ci_skill_launches_each_phase_in_its_own_command():
+    """Regression b.y8v: one command running several launches reports only the last launch's exit status."""
+    launches = [block.count("run_test.sh") for block in _bash_blocks(CI_SKILL.read_text())]
+
+    assert {count for count in launches if count} == {1}
+
+
+@pytest.mark.parametrize("section", ["Step 2", "Phase 1", "Phases 2, 3, 4", "Launch failure", "Step 5"])
+def test_ci_skill_stops_the_bees_server_when_the_run_ends(section):
+    """Regression b.y8v: a run that ends without stopping it leaves an unauthenticated server on the bridge address."""
+    stop_heading = _skill_section("Stop the bees server")[0]
+    run_end = _skill_section(section)
+
+    assert run_end, f"no section starting {section!r}"
+    assert stop_heading.lower() in run_end[1].lower()

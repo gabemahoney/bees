@@ -11,8 +11,18 @@
 #                 file bugs against (default: 8473)
 #   BEES_MCP_URL  Outer bees server URL as seen from the container
 #                 (default: http://host.docker.internal:${BEES_CI_PORT}).
-#                 When left unset, the script first confirms that the server on
-#                 127.0.0.1:${BEES_CI_PORT} is really bees (not just /health).
+#                 An override must include an explicit port (e.g. http://myhost:8473):
+#                 the identity check below always probes it and rejects a URL without one.
+#
+# Server identity checks (docker/check_bees_server.py: an MCP initialize that must
+# report serverInfo.name "bees"; /health is not enough, another service may answer it):
+#   1. Host side, only with the default BEES_MCP_URL, before the image build so it
+#      fails fast. It probes the address bees must listen on, printed by
+#      docker/ci_bind_host.py: the Docker bridge gateway on Linux Docker Engine,
+#      127.0.0.1 on Docker Desktop.
+#   2. From a container, always (also when BEES_MCP_URL is set). After the build, a
+#      throwaway container with the phase container's host mapping probes BEES_MCP_URL,
+#      so the check sees the exact server the tests will use. This one is definitive.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,14 +34,13 @@ BEES_CI_PORT="${BEES_CI_PORT:-8473}"
 CONTAINER_NAME="bees-ci-${PHASE}"
 SESSION="bees-ci-${PHASE}"
 
+# How containers reach the host. The phase container and the identity probe share it.
+ADD_HOST_ARGS=(--add-host host.docker.internal:host-gateway)
+
+USING_DEFAULT_MCP_URL=""
 if [[ -z "${BEES_MCP_URL:-}" ]]; then
   BEES_MCP_URL="http://host.docker.internal:${BEES_CI_PORT}"
-  # Another service may hold the port and answer /health, so verify the server identity.
-  if ! python3 "${SCRIPT_DIR}/check_bees_server.py" "http://127.0.0.1:${BEES_CI_PORT}"; then
-    echo "ERROR: no bees HTTP server confirmed on port ${BEES_CI_PORT}."
-    echo "Start one with 'bees serve --http --port ${BEES_CI_PORT}', or set BEES_CI_PORT to a free port and start bees there."
-    exit 1
-  fi
+  USING_DEFAULT_MCP_URL=1
 fi
 
 # Find testplans hive path using bees CLI (scoped to this repo)
@@ -108,6 +117,18 @@ _docker() {
   fi
 }
 
+# Check 1 (host side, default BEES_MCP_URL only): bees must listen where host.docker.internal leads.
+BIND_HOST=""
+if [[ -n "${USING_DEFAULT_MCP_URL}" ]]; then
+  BRIDGE_JSON=$(_docker network inspect bridge 2>/dev/null || true)
+  BIND_HOST=$(python3 "${SCRIPT_DIR}/ci_bind_host.py" <<< "${BRIDGE_JSON}")
+  if ! python3 "${SCRIPT_DIR}/check_bees_server.py" "http://${BIND_HOST}:${BEES_CI_PORT}"; then
+    echo "ERROR: no bees HTTP server confirmed at ${BIND_HOST}:${BEES_CI_PORT}, the address the containers reach."
+    echo "Start one with 'bees serve --http --host ${BIND_HOST} --port ${BEES_CI_PORT}', or set BEES_CI_PORT to a free port and start bees there."
+    exit 1
+  fi
+fi
+
 # Clean up previous runs
 tmux kill-session -t "${SESSION}" 2>/dev/null || true
 _docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
@@ -133,6 +154,38 @@ _docker build \
   "${BUILD_CTX}"
 
 echo ""
+echo "--- Checking the bees server from a container ---"
+# Check 2 (definitive): a host-side check can pass while the containers reach another service, or
+# nothing, at BEES_MCP_URL. Exit codes are those of check_bees_server.py; others come from docker.
+PROBE_STATUS=0
+_docker run --rm "${ADD_HOST_ARGS[@]}" --entrypoint python3 bees-test \
+  /usr/local/bin/check_bees_server.py "${BEES_MCP_URL}" || PROBE_STATUS=$?
+if [[ "${PROBE_STATUS}" -ne 0 ]]; then
+  echo "ERROR: no bees HTTP server confirmed at ${BEES_MCP_URL} from inside a container."
+  case "${PROBE_STATUS}" in
+    1)
+      if [[ -n "${BIND_HOST}" ]]; then
+        echo "bees answers on the host at ${BIND_HOST}:${BEES_CI_PORT}, but the containers cannot reach it."
+        echo "A host firewall may be blocking container-to-host traffic on port ${BEES_CI_PORT}, or host.docker.internal does not lead to ${BIND_HOST} on this host (see the bind host line above)."
+      else
+        echo "Nothing is listening there as seen from a container. Start bees where BEES_MCP_URL leads, or fix BEES_MCP_URL."
+      fi
+      ;;
+    2)
+      echo "The connection was not refused, but no bees MCP server answered (reason above)."
+      echo "On a timeout, a host firewall may be dropping container-to-host traffic on that port. Otherwise another service answers there: start bees on a free BEES_CI_PORT, or fix BEES_MCP_URL."
+      ;;
+    3)
+      echo "BEES_MCP_URL must be an http:// or https:// URL with a host and a port from 1 to 65535."
+      ;;
+    *)
+      echo "The check container failed to run (docker exit ${PROBE_STATUS})."
+      ;;
+  esac
+  exit 1
+fi
+
+echo ""
 echo "--- Starting container (Phase ${PHASE}) ---"
 AUTH_ENV_ARGS=()
 if [[ -n "${CLAUDE_OAUTH_TOKEN}" ]]; then
@@ -145,7 +198,7 @@ fi
 
 _docker run -d \
   --name "${CONTAINER_NAME}" \
-  --add-host host.docker.internal:host-gateway \
+  "${ADD_HOST_ARGS[@]}" \
   "${AUTH_ENV_ARGS[@]}" \
   -e "BEES_MCP_URL=${BEES_MCP_URL}" \
   -e "BEES_VERSION=${BEES_VERSION}" \

@@ -42,7 +42,7 @@ Use the `/ci` skill from Claude Code. It publishes the current code to test.pypi
 /ci
 ```
 
-Test failures are filed as bugs against a bees HTTP server on the host, on port 8473 by default. `/ci` starts that server if nothing is listening there. If another service already uses port 8473, set `BEES_CI_PORT` to a free port in the environment Claude Code runs in.
+Test failures are filed as bugs against a bees HTTP server on the host, on port 8473 by default. `/ci` starts that server if nothing is listening there. It binds the address the containers reach the host at: the Docker bridge gateway on Linux Docker Engine, `127.0.0.1` on Docker Desktop. The server has no authentication, so when the run ends, `/ci` stops a server that `/ci` started, including one an interrupted earlier run left running. A server you started yourself keeps running. If another service already uses port 8473, set `BEES_CI_PORT` to a free port in the environment Claude Code runs in. If a host firewall blocks traffic from containers to the host on that port, `/ci` stops before the tests start and says so.
 
 ### Publish to PyPI
 
