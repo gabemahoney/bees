@@ -29,6 +29,8 @@ poetry run bees serve --http    # MCP server (requires -E serve)
 
 Any capability added via CLI flags must have a corresponding MCP tool parameter, and vice versa. When adding a new CLI flag that accepts a file path (e.g. `--body-file`), add the equivalent `_file` parameter to the corresponding MCP tool (e.g. `body_file`). The one permitted asymmetry is stdin (`"-"`): CLI file flags may accept `-` as a path to read from stdin; MCP tool file parameters must not (stdin is not available in the MCP context — raise `ValueError` when the path is `"-"`).
 
+File-sourced content is stored as written, on both surfaces. Inline body text has literal `\n` / `\t` expanded into a newline / tab (to undo LLM JSON double-escaping), but file content must not be: a new body or chunk file flag or parameter must pass `unescape_body=False` / `unescape_chunk=False` to the core function.
+
 ## Testing and Publishing
 
 Package name: `bees-md`

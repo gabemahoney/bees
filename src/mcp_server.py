@@ -225,8 +225,10 @@ async def create_ticket(
         hive: Hive to create the ticket in. Use list_hives to see available hives.
         body: Optional markdown body. Must be at most 10000 characters; for
               longer bodies use a short stub here and loop `append_ticket_body`.
+              Literal \\n and \\t sequences are expanded to a newline and tab.
               Mutually exclusive with body_file.
         body_file: Path to a file whose UTF-8 contents are used as the body.
+                   Stored verbatim: escape sequences such as \\n are not interpreted.
                    Mutually exclusive with body. No size cap applies to file-sourced content.
         parent: Parent ticket ID. Required for child-tier tickets; omit for bees.
                 The parent ticket's children field is updated automatically.
@@ -265,6 +267,7 @@ async def create_ticket(
             status=status,
             reference_materials=reference_materials,
             resolved_root=resolved_root,
+            unescape_body=body_file is None,
         )
 
 
@@ -301,9 +304,11 @@ async def update_ticket(
         body: New markdown body (single mode only). Must be at most 10000
               characters when provided as a string; for longer bodies use a
               short stub here and loop `append_ticket_body`.
+              Literal \\n and \\t sequences are expanded to a newline and tab.
               Mutually exclusive with body_file.
         body_file: Path to a file whose UTF-8 contents are used as the body
                    (single mode only). Mutually exclusive with body.
+                   Stored verbatim: escape sequences such as \\n are not interpreted.
                    No size cap applies to file-sourced content.
         up_deps: Full replacement list of blocking ticket IDs (single mode only).
         down_deps: Full replacement list of dependent ticket IDs (single mode only).
@@ -339,6 +344,7 @@ async def update_ticket(
             reference_materials=reference_materials,
             hive_name=hive,
             resolved_root=resolved_root,
+            unescape_body=body_file is None,
         )
 
 
@@ -374,8 +380,10 @@ async def append_ticket_body(
     Args:
         ticket_id: The ticket whose body is being appended to.
         chunk: The text to append. May be the empty string. Must be at
-               most 10000 characters. Mutually exclusive with chunk_file.
-        chunk_file: Path to a file whose UTF-8 contents are appended.
+               most 10000 characters. Literal \\n and \\t sequences are
+               expanded to a newline and tab. Mutually exclusive with chunk_file.
+        chunk_file: Path to a file whose UTF-8 contents are appended verbatim
+                    (escape sequences such as \\n are not interpreted).
                     Mutually exclusive with chunk. No size cap applies to
                     file-sourced content.
         hive: Optional hive name for faster O(1) lookup.
@@ -398,6 +406,7 @@ async def append_ticket_body(
             chunk=chunk,
             hive_name=hive,
             resolved_root=resolved_root,
+            unescape_chunk=chunk_file is None,
         )
 
 

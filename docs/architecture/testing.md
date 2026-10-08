@@ -122,6 +122,7 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 |------|-------|-------|
 | Hive management | `test_colonize_hive.py`, `test_mcp_rename_hive.py`, `test_hive_utils.py` | |
 | Ticket lifecycle | `test_create_ticket.py`, `test_ticket_factory.py`, `test_delete_ticket.py` | |
+| Ticket body input | `test_body_file_verbatim.py`, `test_mcp_body_file.py`, `test_cli_read_body_file_arg.py`, `test_cli_append_ticket_body.py`, `test_cli_body_cap_on_create_update.py` | `test_body_file_verbatim.py`: file-sourced body/chunk (CLI file and stdin, MCP file; create, update, append) round-trips literal backslash sequences exactly, and inline body/chunk still expands literal `\n` / `\t` |
 | Path & ID | `test_paths.py`, `test_id_utils.py` | |
 | Config | `test_config.py`, `test_config_registration.py` | |
 | Queries | `test_query_tools.py`, `test_multi_hive_query.py`, `test_graph_executor.py` | |

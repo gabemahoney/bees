@@ -74,7 +74,13 @@ _UNSET: Literal["__UNSET__"] = "__UNSET__"
 
 
 def _sanitize_escape_sequences(text: str) -> str:
-    """Replace literal escape sequences (from LLM JSON output) with real characters."""
+    """Replace literal ``\\n`` / ``\\t`` sequences with a real newline / tab.
+
+    Undoes double-escaping in inline body/chunk text (e.g. LLM JSON output).
+    Apply only to inline content: file-sourced content (``--body-file``,
+    ``--chunk-file``, ``body_file``, ``chunk_file``) is stored verbatim, so
+    callers pass ``unescape_body=False`` / ``unescape_chunk=False`` to skip it.
+    """
     return text.replace("\\n", "\n").replace("\\t", "\t")
 
 
@@ -279,6 +285,8 @@ async def _create_ticket(
     status: str | None = None,
     reference_materials: list[dict] | None = None,
     resolved_root: Path | None = None,
+    *,
+    unescape_body: bool = True,
 ) -> dict[str, Any]:
     """
     Create a new ticket (bee or dynamic tier type).
@@ -296,6 +304,9 @@ async def _create_ticket(
         status: Status of the ticket (e.g., 'open', 'in_progress', 'completed')
         reference_materials: Optional reference materials data
         resolved_root: Pre-resolved repo root path (injected by adapter)
+        unescape_body: When True (inline body), expand literal ``\\n`` / ``\\t``
+            sequences in ``body``. Pass False for file-sourced bodies, which are
+            stored verbatim.
 
     Returns:
         dict: Created ticket information including ticket_id
@@ -321,7 +332,8 @@ async def _create_ticket(
         logger.error(error_msg)
         return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
 
-    body = _sanitize_escape_sequences(body)
+    if unescape_body:
+        body = _sanitize_escape_sequences(body)
 
     # Check for config conflicts before proceeding
     conflict_error = check_for_config_conflicts(resolved_root)
@@ -723,8 +735,14 @@ async def _update_ticket_single(
     reference_materials: list[dict] | None,
     hive_name: str | None,
     resolved_root: Path | None,
+    *,
+    unescape_body: bool = True,
 ) -> dict[str, Any]:
-    """Update a single ticket with any combination of fields."""
+    """Update a single ticket with any combination of fields.
+
+    ``unescape_body`` expands literal ``\\n`` / ``\\t`` sequences in ``body``
+    when True (inline body); pass False to store a file-sourced body verbatim.
+    """
     # Resolve hive and validate ticket existence with a single config load.
     ticket_type = ticket_type_from_prefix(ticket_id)
     if hive_name:
@@ -803,7 +821,9 @@ async def _update_ticket_single(
 
     if body is not _UNSET:
         # body can be None or empty string
-        ticket.body = _sanitize_escape_sequences(body) if body else ""
+        if body and unescape_body:
+            body = _sanitize_escape_sequences(body)
+        ticket.body = body or ""
 
     if tags is not _UNSET:
         # tags can be None (which means empty list)
@@ -905,14 +925,20 @@ async def _append_ticket_body(
     chunk: str,
     hive_name: str | None = None,
     resolved_root: Path | None = None,  # noqa: ARG001 - accepted for adapter symmetry with _update_ticket_single
+    *,
+    unescape_chunk: bool = True,
 ) -> dict[str, Any]:
     """Append a chunk to an existing ticket's body.
 
     Hand-rolled append core: resolves the ticket via ``hive_name`` hint (or
     ``find_hive_for_ticket`` fallback), reads the existing ticket, concatenates
-    ``existing_body + sanitized_chunk`` exactly (no separator, no newline, no
+    ``existing_body + chunk`` exactly (no separator, no newline, no
     framing), persists via ``write_ticket_file`` (atomic temp + rename),
     and evicts the cache. Every frontmatter field is preserved unchanged.
+
+    ``unescape_chunk`` expands literal ``\\n`` / ``\\t`` sequences in ``chunk``
+    when True (inline chunk); pass False to append a file-sourced chunk
+    verbatim.
 
     Never creates a new ticket, never modifies any field other than ``body``,
     and never touches bidirectional relationships.
@@ -967,8 +993,9 @@ async def _append_ticket_body(
     # is byte-identical before and after the call. Existence checks above
     # already ran, so a not-found ticket with an empty chunk still returns
     # the ticket_not_found error per SR-7.3.
-    sanitized_chunk = _sanitize_escape_sequences(chunk)
-    if sanitized_chunk == "":
+    if unescape_chunk:
+        chunk = _sanitize_escape_sequences(chunk)
+    if chunk == "":
         logger.info(f"Empty-chunk no-op append: {ticket_id}")
         return {
             "status": "success",
@@ -991,7 +1018,7 @@ async def _append_ticket_body(
         return {"status": "error", "error_type": "read_error", "message": error_msg}
 
     # Exact concatenation — no separator, no newline, no framing.
-    new_body = (ticket.body or "") + sanitized_chunk
+    new_body = (ticket.body or "") + chunk
     ticket.body = new_body
 
     # Preserve frontmatter exactly by serializing the same ticket dataclass.
@@ -1044,6 +1071,8 @@ async def _update_ticket(
     reference_materials: list[dict] | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel
     hive_name: str | None = None,
     resolved_root: Path | None = None,
+    *,
+    unescape_body: bool = True,
 ) -> dict[str, Any]:
     """
     Update one or more existing tickets.
@@ -1074,6 +1103,9 @@ async def _update_ticket(
         reference_materials: New reference_materials data (arbitrary structured data, single mode only)
         hive_name: Optional hive name for O(1) lookup. If not provided, scans all hives.
         resolved_root: Pre-resolved repo root path (injected by adapter)
+        unescape_body: When True (inline body), expand literal ``\\n`` / ``\\t``
+            sequences in ``body``. Pass False for file-sourced bodies, which are
+            stored verbatim. Only meaningful in single mode (batch mode rejects ``body``).
 
     Returns:
         dict: ``{"status": "success", "updated": [...], "not_found": [...], "failed": [...]}``
@@ -1118,6 +1150,7 @@ async def _update_ticket(
         reference_materials=reference_materials,
         hive_name=hive_name,
         resolved_root=resolved_root,
+        unescape_body=unescape_body,
     )
 
 
