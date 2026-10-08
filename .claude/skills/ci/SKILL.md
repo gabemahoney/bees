@@ -37,11 +37,12 @@ server (see "Bugs hive" below).
 
 The bee `b.qi9` in the `testplans` hive is the source of truth. The containers run the copy of it
 in this checkout's `docker/testplans`, and `/ci` reads and records phase statuses in that same
-copy only (see Step 3). Its child epics map to test phases:
-- Phase 1: Installation & Environment
-- Phase 2: CLI Exhaustive Tests — bash integration.sh run (covers all CLI tests including hive mgmt, CRUD, dependencies, queries, egg resolver, index, undertaker, move, sanitizer, etc.)
-- Phase 3: Stdio Server Tests
-- Phase 4: HTTP Server Tests
+copy only (see Step 3). Its child epics are the test phases, in order: the 1st child is Phase 1,
+the 2nd is Phase 2, and so on. The plan can have any number of phases, so this skill never
+assumes a count: the phase list comes from `docker/ci_plan.py` (Step 3), which reads b.qi9's
+children, and `/ci` runs every phase in it. Phase 1, the first phase, is the gatekeeper (Step 4).
+For example, Phase 1 tests installation and the environment, and later phases include CLI tests
+run by `tests/integration.sh` and MCP server tests run by Claude; `ci_plan.py` lists them all.
 
 # Usage
 
@@ -214,7 +215,8 @@ If it exits non-zero, show its error, stop the bees server /ci started, then STO
 
 It prints JSON:
 - `phases`: the epics of `b.qi9` in order, each with `phase` (1st child = Phase 1, etc.), `id`,
-  `title` and `status`.
+  `title` and `status`. This is the complete list of phases, however many there are: the run
+  scope (below) and Step 4 work from it, never from a fixed phase count.
 - `status_hive`: the hive `/ci` records phase statuses through, or `null`. `status_hive_reason`
   says why.
 
@@ -275,11 +277,18 @@ If the argument is `full`, reset ALL epics to `pupa` and run everything.
 
 ## Step 4 — Run phases
 
-Each phase uses its own container and tmux session named `bees-ci-<N>` (e.g. `bees-ci-1`, `bees-ci-2`).
+Run the phases in the run scope (Step 3), by their `phase` numbers in the `phases` list that
+`ci_plan.py` printed. Never assume how many phases there are: every phase in that list that is in
+the run scope runs. Each phase `<N>` uses its own container and tmux session named `bees-ci-<N>`
+(e.g. `bees-ci-1`, `bees-ci-2`).
+
+The gatekeeper is the first phase, Phase 1: it runs alone, first. Then every other phase in the
+run scope is launched in parallel.
 
 ### Phase 1 — Gatekeeper (sequential)
 
-Run Phase 1 first and wait for it to complete before launching the rest. If Phase 1 tests the install and it fails, there is no point running the other phases.
+Run Phase 1, the plan's first phase, first and wait for it to complete before launching the rest.
+If Phase 1 tests the install and it fails, there is no point running the other phases.
 
 If Step 3 left Phase 1 out of the run scope, skip it and go straight to launching the remaining
 phases in the run scope. Otherwise run it, whatever status its plan file shows.
@@ -304,52 +313,49 @@ phases in the run scope. Otherwise run it, whatever status its plan file shows.
    tmux capture-pane -t bees-ci-1 -p -S -30
    date +%s
    ```
-7. Handle result per the rules below, then continue to parallel launch only if Phase 1 passed.
+7. Handle result per the rules below, then continue to the parallel launch only if Phase 1
+   passed. If Phase 1 passed and no other phase is in the run scope, go to Step 5.
    If Phase 1 did not pass, the run ends here: stop the bees server /ci started.
 
-### Phases 2, 3, 4 — Parallel launch
+### Remaining phases — Parallel launch
 
-Once Phase 1 passes (or Step 3 left it out of the run scope), launch the remaining phases in the
-run scope simultaneously. Leave every phase outside the run scope out of the steps below:
+Once Phase 1 passes (or Step 3 left it out of the run scope), launch every remaining phase in the
+run scope simultaneously: all phases after Phase 1 in the `phases` list, however many there are.
+Leave every phase outside the run scope out of the steps below:
 
 1. Set all remaining epic statuses to `worker`
-2. Report: "Phase 1 passed. Launching Phases 2, 3, 4 in parallel."
-3. Launch the phases one after another, each as its own command. Never combine the launches
+2. Report: "Phase 1 passed. Launching Phases <list> in parallel.", where `<list>` is the phase
+   numbers being launched (e.g. "Launching Phases 2, 3, 4, 5, 6 in parallel."). If Step 3 left
+   Phase 1 out of the run scope, leave out "Phase 1 passed."
+3. Launch the phases one after another, in phase order, each as its own command: run the
+   command below once per phase, with that phase's number as `<N>`. Never combine the launches
    into one command: it reports only the exit status of the last launch. Each launch returns
    once its container and tmux session are up, without waiting for the tests, so the phases
    still run in parallel. Wait only for the launch command to return, then check its exit
    status before starting the next launch.
    ```bash
-   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 2
+   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh <N>
    ```
-   ```bash
-   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 3
-   ```
-   ```bash
-   BEES_CI_PORT=${BEES_CI_PORT} BEES_VERSION=${BEES_VERSION} ./docker/run_test.sh 4
-   ```
-   If resuming from a specific test number and it falls in Phase N, pass it only to that phase's launch.
+   If resuming from a specific test number and it falls in Phase N, pass it only to that phase's
+   launch, as the second argument.
    If a launch exits non-zero, do not start the launches that remain. Handle it as a launch
    failure (see "Launch failure" below) and skip the remaining steps.
    Record each phase's deadline as soon as its launch returns, before the next launch: run
    `date +%s`. The deadline is that number plus `<timeout-minutes>` × 60.
-4. Tell user:
+4. Tell user, with one `tmux attach` line per launched phase:
    ```
    Attach with:
-     tmux attach -t bees-ci-2
-     tmux attach -t bees-ci-3
-     tmux attach -t bees-ci-4
+     tmux attach -t bees-ci-<N>
    ```
-5. Poll all three sessions every 30 seconds until each finishes, comparing the time with each
-   phase's deadline (see "Monitor signals"):
+5. Poll every launched session every 30 seconds until each finishes, comparing the time with
+   each phase's deadline (see "Monitor signals"). Use one `tmux capture-pane` line per launched
+   phase, then one `date +%s`:
    ```bash
-   tmux capture-pane -t bees-ci-2 -p -S -30
-   tmux capture-pane -t bees-ci-3 -p -S -30
-   tmux capture-pane -t bees-ci-4 -p -S -30
+   tmux capture-pane -t bees-ci-<N> -p -S -30
    date +%s
    ```
-6. Once every phase has a result: if all passed, go to Step 5. Otherwise the run ends here:
-   stop the bees server /ci started.
+6. Once every launched phase has a result: if all passed, go to Step 5. Otherwise the run ends
+   here: stop the bees server /ci started.
 
 ### Launch failure
 

@@ -594,7 +594,7 @@ def test_ci_skill_launches_each_phase_in_its_own_command():
     assert {count for count in launches if count} == {1}
 
 
-@pytest.mark.parametrize("section", ["Step 2", "Phase 1", "Phases 2, 3, 4", "Launch failure", "Step 5"])
+@pytest.mark.parametrize("section", ["Step 2", "Phase 1", "Remaining phases", "Launch failure", "Step 5"])
 def test_ci_skill_stops_the_bees_server_when_the_run_ends(section):
     """Regression b.y8v: a run that ends without stopping it leaves an unauthenticated server on the bridge address."""
     stop_heading = _skill_section("Stop the bees server")[0]
@@ -701,7 +701,7 @@ def test_ci_skill_times_out_a_phase_that_never_reports():
     )
     polls = [
         block
-        for section in ("Phase 1", "Phases 2, 3, 4")
+        for section in ("Phase 1", "Remaining phases")
         for block in _bash_blocks(_skill_section(section)[1])
         if "tmux capture-pane" in block
     ]

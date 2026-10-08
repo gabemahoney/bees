@@ -1,7 +1,8 @@
 #!/bin/bash
 # test_runner.sh — Phase-specific setup, then launches the appropriate test runner.
-# Phases 1 & 2: run integration.sh (bash-based tests)
-# Phases 3 & 4: launch Claude with release-test skill (MCP server tests)
+# Phases 1, 2 & 5: run integration.sh (bash-based CLI tests)
+# Every other phase (3, 4, 6, ...): launch Claude with the release-test skill
+#   (Phase 3 also registers a stdio MCP server, Phase 4 starts and registers an HTTP one)
 # auto_approve.sh runs in the background (started by entrypoint.sh).
 set -euo pipefail
 
@@ -56,7 +57,7 @@ if [[ "$PHASE" == "1" || "$PHASE" == "2" || "$PHASE" == "5" ]]; then
   exec bash /test-repo/tests/integration.sh ${START_TEST:-}
 fi
 
-# Phases 3 & 4: set up testplans hive and launch Claude
+# Every other phase (3, 4, 6, ...): set up testplans hive and launch Claude
 echo "=== Setting up testplans hive ==="
 export TESTPLANS_CONFIG=/tmp/testplans-config.json
 mkdir -p /test-repo/tickets/testplans

@@ -15,6 +15,8 @@ SCOPE - Tests that belong here:
 - the skill reads the plan through ci_plan.py and writes statuses only with `bees update-ticket --hive`
 - statuses the /ci skill sets or reads on testplans epics are allowed by the testplans hive
 - the skill's run-scope rules cover every status it sets
+- the /ci and release-test skills run every phase of the plan, however many: neither builds in a
+  fixed set of phase numbers (only /ci's gatekeeper, Phase 1, is named)
 
 SCOPE - Tests that DON'T belong here:
 - CI port and bees server identity check -> test_check_bees_server.py
@@ -42,6 +44,7 @@ from tests.helpers import load_script, write_ticket_file
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CI_SKILL = REPO_ROOT / ".claude" / "skills" / "ci" / "SKILL.md"
+RELEASE_TEST_SKILL = REPO_ROOT / ".claude" / "skills" / "release-test" / "SKILL.md"
 TESTPLANS = REPO_ROOT / "docker" / "testplans"
 TESTPLANS_IDENTITY = TESTPLANS / ".hive" / "identity.json"
 CI_PLAN = REPO_ROOT / "docker" / "ci_plan.py"
@@ -55,6 +58,13 @@ _CODE_WORDS = r"(`[\w-]+`(?:\s*(?:,|/|or)\s*`[\w-]+`)*)"
 _SETS_STATUS = re.compile(r"\b(?:(?:status(?:es)?|reset)\b[^`\n]*?\bto|marked)\s+" + _CODE_WORDS, re.IGNORECASE)
 # Run-scope list: "- `failed` or `pupa` = needs to run."
 _RUN_SCOPE_ITEM = re.compile(r"^\s*[-*]\s+" + _CODE_WORDS + r"\s*=", re.MULTILINE)
+# Phase numbers listed together or as a range: "phase to run (1, 2, 3, or 4)", "Phase 3/4", "Phases 1 & 2",
+# "phases 3 and 4", "Phase 3 and Phase 4", "phases (1-4)", "Phases 1–4", "phases 2 through 6"
+_PHASE_LIST = re.compile(
+    r"\bphases?\b[^.\n]{0,40}?\b\d+"
+    r"(?:(?:\s*[-–—,/&]\s*(?:(?:or|and)\s+)?|\s+(?:or|and|to|through)\s+)(?:phases?\s+)?\d+\b)+",
+    re.IGNORECASE,
+)
 
 
 def _statuses(pattern, text):
@@ -366,3 +376,26 @@ def test_ci_skill_statuses_are_allowed_by_testplans_hive():
     )
     used = set_statuses | read_statuses
     assert used <= allowed, f"/ci uses statuses the testplans hive rejects: {sorted(used - allowed)}"
+
+
+@pytest.mark.parametrize(
+    "named",
+    [
+        pytest.param(r"run_test\.sh(?:[ \t]|\\\n)+(\S+)", id="launched_phase"),
+        pytest.param(r"\bbees-ci-(\S+)", id="session"),
+    ],
+)
+def test_ci_skill_names_no_phase_but_the_gatekeeper(named):
+    """Regression b.f1z: /ci launched and polled Phases 2, 3 and 4 by number, so phases 5 and 6 never ran."""
+    code = "".join(re.findall(r"```[^\n]*\n(.*?)```", CI_SKILL.read_text(), re.S))
+    # A word with a number in it names that phase, however quoted or punctuated ("2", 3;); one without is the
+    # placeholder (<N>, $N, ${N})
+    phases = {phase for word in re.findall(named, code) for phase in re.findall(r"\d+", word) or ["<N>"]}
+
+    # Phase 1 runs alone, first; every later phase, however many, runs the same command with its number filled in
+    assert {"<N>"} <= phases <= {"1", "<N>"}, f"phases named in {CI_SKILL.name} commands: {sorted(phases)}"
+
+
+def test_release_test_skill_lists_no_fixed_phases():
+    """Regression b.f1z: the skill said the phase was 1, 2, 3, or 4, and the serve extra was for Phase 3/4."""
+    assert _PHASE_LIST.findall(RELEASE_TEST_SKILL.read_text()) == []

@@ -10,7 +10,7 @@ IMPORTANT: Never try to fix problems or work around issues. If something is brok
 
 ## Phase
 
-Check the `$PHASE` environment variable to determine which phase to run (1, 2, 3, or 4).
+Check the `$PHASE` environment variable to determine which phase to run. It is a phase number: the phase's position among the children of `b.qi9` (see below), however many phases the plan has.
 
 ## Fetching the Test Plan
 
@@ -64,7 +64,7 @@ If invoked as `/release-test N` (where N is a test number), skip to test N using
   ```bash
   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bees-md==${BEES_VERSION}
   ```
-- When tests need the serve extra (Phase 3/4), install with:
+- When tests need the serve extra (the phases that test a bees MCP server, such as the stdio and HTTP server phases), install with:
   ```bash
   pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ 'bees-md[serve]==${BEES_VERSION}'
   ```
