@@ -404,13 +404,15 @@ async def _execute_freeform_query(
                 "ticket_ids": list[str],
                 "stages_executed": int
             }
+            When the query has a "report" key, "tickets" (list of dicts holding
+            ticket_id plus the reported fields) replaces "ticket_ids".
 
     Raises:
         ValueError: If query structure is invalid or execution fails
 
     Example:
-        execute_freeform_query("- ['type=bee']\\n- ['children']")
-        execute_freeform_query("- ['type=t1', 'status=open', 'hive=backend']")
+        _execute_freeform_query("{stages: [[type=bee], [children]]}")
+        _execute_freeform_query("{stages: [[type=t1, status=open, hive=backend]], report: [title]}")
     """
     # Check for config conflicts before proceeding
     conflict_error = check_for_config_conflicts(resolved_root)

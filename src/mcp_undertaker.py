@@ -12,7 +12,7 @@ MANUAL USE
 ----------
 Call the `undertaker` MCP tool directly to archive bees matching a query:
 
-    undertaker(hive_name="bugs", query_yaml="- ['status=finished']")
+    undertaker(hive_name="bugs", query_yaml="{stages: [[status=finished]]}")
     undertaker(hive_name="bugs", query_name="finished_bugs")
 
 Exactly one of query_yaml or query_name must be provided.
@@ -28,7 +28,7 @@ To automatically archive bees on a recurring schedule, add an
           "path": "/path/to/hive",
           "undertaker_schedule": {
             "interval_seconds": 3600,
-            "query_yaml": "- ['status=finished']",
+            "query_yaml": "{stages: [[status=finished]]}",
             "log_path": "/tmp/undertaker-bugs.log"
           }
         }

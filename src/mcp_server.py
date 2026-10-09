@@ -776,15 +776,23 @@ async def add_named_query(
     """Register a named query for reuse. See execute_freeform_query for query syntax.
 
     The query YAML may include an optional "report" key (list of field names).
-    When present, execute_named_query will return "tickets" (list of dicts)
-    instead of "ticket_ids" (list of strings). See execute_freeform_query for
-    valid report fields and excluded fields.
+    When present, execute_named_query will return "tickets" (list of dicts, one
+    per match, holding ticket_id plus the listed fields) instead of "ticket_ids"
+    (list of strings). ticket_id is always included and should not be listed.
+
+    Reportable fields: children, created_at, down_dependencies, guid, hive,
+        parent, schema_version, tags, ticket_status, ticket_type, title,
+        up_dependencies
+
+    Not reportable: body, reference_materials — not available in query
+        results; use show_ticket.
 
     Args:
         name: Name for the query (used to execute it later).
-        query_yaml: YAML dict with a "stages" key and optional "report" key.
-                    Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"
-                    With report: "stages:\\n  - [status=worker]\\nreport: [title, ticket_status]"
+        query_yaml: YAML dict with a "stages" key and optional "report" key,
+                    written on one line in YAML flow style.
+                    Example: "{stages: [[type=bee, status=pupa], [children]]}"
+                    With report: "{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}"
         scope: Where to store the query — "global" (all repos) or "repo" (current repo only).
                Defaults to "global".
     """
@@ -834,16 +842,18 @@ async def execute_freeform_query(
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
-    """Execute a YAML query pipeline without saving it.
+    r"""Execute a YAML query pipeline without saving it.
 
-    The query must be a YAML dict with a "stages" key. Each stage is a list of
-    terms. Stages execute sequentially — results from stage N are passed into
-    stage N+1 as the working set to filter or traverse.
+    The query must be a YAML dict with a "stages" key and an optional "report"
+    key. Each stage is a list of terms. Stages execute sequentially — results
+    from stage N are passed into stage N+1 as the working set to filter or
+    traverse.
 
-    Example:
-        stages:
-          - [type=bee, status=pupa]
-          - [children]
+    Example (one line, YAML flow style):
+        {stages: [[type=bee, status=pupa], [children]]}
+
+    Double-quote a term that contains , [ ] { } : or #, e.g. ["title~p[0-4]"].
+    Inside double quotes, write each regex backslash twice: ["title~\\[bug\\]"].
 
     Search stages — filter tickets (AND logic within stage):
         type=bee | type=t1 | type=t2 ...   exact match on ticket type
@@ -867,25 +877,26 @@ async def execute_freeform_query(
         ticket data instead of a plain ID list. ticket_id is always included
         automatically and should not be listed.
 
-        Valid fields: ticket_type, ticket_status, title, tags, parent,
-            children, up_dependencies, down_dependencies, created_at,
-            schema_version, guid, hive
+        Reportable fields: children, created_at, down_dependencies, guid, hive,
+            parent, schema_version, tags, ticket_status, ticket_type, title,
+            up_dependencies
 
-        Excluded fields:
-            body, reference_materials    — not available in query results; use show_ticket
+        Not reportable: body, reference_materials — not available in query
+            results; use show_ticket.
 
         Example:
-            stages:
-              - [status=worker]
-            report: [title, ticket_status]
+            {stages: [[type=bee, status=pupa]], report: [title, ticket_status]}
 
         Without report → response includes "ticket_ids" (list of strings).
         With report    → response includes "tickets" (list of dicts, one per
-                         match, sorted by ticket_id, null values included).
+                         match, sorted by ticket_id). Unset fields come back
+                         empty ([] or "") or null.
 
     Args:
-        query_yaml: YAML dict with a "stages" key containing a list of stages.
-                    Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"
+        query_yaml: YAML dict with a "stages" key and optional "report" key,
+                    written on one line in YAML flow style.
+                    Example: "{stages: [[type=bee, status=pupa], [children]]}"
+                    With report: "{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}"
     """
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
@@ -979,7 +990,7 @@ async def undertaker(
                 "example_hive": {
                     "undertaker_schedule": {
                         "interval_seconds": 60,
-                        "query_yaml": "stages:\\n  - ['status=finished']"
+                        "query_yaml": "{stages: [[status=finished]]}"
                     }
                 }
             }

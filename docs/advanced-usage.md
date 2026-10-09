@@ -304,7 +304,7 @@ HTTP mode supports scheduled auto-archival. Add an `undertaker_schedule` block t
           "path": "...",
           "undertaker_schedule": {
             "interval_seconds": 3600,
-            "query_yaml": "- ['status=finished']"
+            "query_yaml": "{stages: [[status=finished]]}"
           }
         }
       }
@@ -402,12 +402,16 @@ The MCP tools expose equivalent `body_file` and `chunk_file` parameters with the
 ## Query Operations
 
 ```bash
-bees add-named-query open-bees --yaml "- ['type=bee', 'status=open']" [--scope {global,repo}]
-bees execute-named-query open-bees [--hives backend,frontend]
-bees delete-named-query open-bees --scope global
-bees list-named-queries [--all]
-bees execute-freeform-query --yaml "- ['type=bee']" [--hives backend]
+bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa], [children]]}'
+bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
+bees add-named-query --query-name open-bees --query-yaml '{stages: [[type=bee, status=open]]}'
+bees add-named-query --query-name repo-open-titles --query-yaml '{stages: [[type=bee, status=open]], report: [title]}' --scope repo
+bees execute-named-query --query-name open-bees
+bees delete-named-query --query-name open-bees
+bees list-named-queries
 ```
+
+Pass `--query-yaml` as one single-quoted argument written in YAML flow style, as above. See [YAML Query Syntax](#yaml-query-syntax).
 
 ## Hive Management
 
@@ -436,7 +440,7 @@ bees clone b.amx --hive other-hive
 bees clone b.amx --hive other-hive --force
 bees move-bee b.amx b.x4f --destination backlog
 bees move-bee b.amx b.x4f --destination backlog --force
-bees undertaker --hive backend --yaml "- ['status=finished']"
+bees undertaker --hive backend --query-yaml '{stages: [[status=finished]]}'
 ```
 
 ### Move Bee
@@ -459,6 +463,14 @@ The undertaker archives bee tickets by moving them into a `/cemetery` directory 
 
 Queries are pipelines of filter stages. Each stage narrows the result set from the previous stage. Terms within a stage are ANDed. A stage can contain only search terms OR only graph terms, never both.
 
+A query is a YAML dict with a `stages` key (a list of stages, each a list of terms) and an optional `report` key. Write it on one line in YAML flow style and pass it as one single-quoted argument:
+
+```bash
+bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa], [children]]}'
+```
+
+Double-quote a term that contains `,` `[` `]` `{` `}` `:` or `#`, e.g. `'{stages: [["title~p[0-4]"]]}'`. Inside double quotes, write each regex backslash twice, e.g. `'{stages: [["title~\\[bug\\]"]]}'` matches titles containing a literal `[bug]`.
+
 ### Search Terms
 
 | Term | Match |
@@ -467,8 +479,11 @@ Queries are pipelines of filter stages. Each stage narrows the result set from t
 | `id=VALUE` | Exact match on ticket ID |
 | `status=VALUE` | Exact match on status |
 | `parent=VALUE` | Exact match on parent ticket ID |
+| `guid=VALUE` | Exact match on ticket GUID |
+| `hive=VALUE` | Exact match on hive name |
 | `title~REGEX` | Regex match on title |
 | `tag~REGEX` | Regex match on any tag |
+| `hive~REGEX` | Regex match on hive name |
 
 ### Graph Terms
 
@@ -479,47 +494,58 @@ Queries are pipelines of filter stages. Each stage narrows the result set from t
 | `up_dependencies` | Traverse to blocking tickets |
 | `down_dependencies` | Traverse to blocked tickets |
 
+### Report
+
+Without `report`, a query returns `ticket_ids`: a sorted list of matching ticket IDs. With `report`, it returns `tickets`: one dict per match, sorted by `ticket_id`, holding `ticket_id` plus each listed field. Unset fields come back empty (`[]` or `""`) or `null`.
+
+```bash
+bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
+```
+
+Reportable fields: `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies`.
+
+`ticket_id` is always included, so don't list it. `body` and `reference_materials` are not reportable; read them with `bees show-ticket`.
+
 ### Examples
 
 Filter by type and status:
 ```yaml
-- ['type=bee', 'status=larva']
+{stages: [[type=bee, status=larva]]}
 ```
 
 AND logic — multiple filters in one stage:
 ```yaml
-- ['type=bee', 'status=larva', 'tag~urgent']
+{stages: [[type=bee, status=larva, tag~urgent]]}
 ```
 
 Get children of a specific ticket:
 ```yaml
-- ['id=b.amx']
-- ['children']
+{stages: [[id=b.amx], [children]]}
 ```
 
-Find open bees then get their children:
+Find larva bees then get their children:
 ```yaml
-- ['type=bee', 'status=larva']
-- ['children']
+{stages: [[type=bee, status=larva], [children]]}
 ```
 
 Find siblings (go up then down):
 ```yaml
-- ['id=t1.amx.12']
-- ['parent']
-- ['children']
+{stages: [[id=t1.amx.12], [parent], [children]]}
 ```
 
 Two-hop dependency chain:
 ```yaml
-- ['id=b.amx']
-- ['up_dependencies']
-- ['up_dependencies']
+{stages: [[id=b.amx], [up_dependencies], [up_dependencies]]}
+```
+
+Titles and tags of urgent bees in the backend hive:
+```yaml
+{stages: [[type=bee, hive=backend, tag~urgent]], report: [title, tags]}
 ```
 
 ### Named Queries
 
-Named queries are stored in `~/.bees/config.json` alongside other bees configuration. Queries can be registered at two levels: **global** (accessible from any repo) or **repo scope** (accessible only from repos matching that scope). Repo-scoped queries shadow global queries of the same name.
+Named queries are stored in `~/.bees/config.json` alongside other bees configuration. Queries can be registered at two levels: **global** (accessible from any repo) or **repo scope** (accessible only from repos matching that scope). Repo-scoped queries shadow global queries of the same name. A named query keeps its `report` list, so running it returns the same fields.
 
 ### Mermaid Charts
 

@@ -616,14 +616,15 @@ Named queries allow reusable query pipelines to be stored in config and executed
 
 ### Data Structure
 
-The `queries` key is a dictionary mapping query name strings to query dicts. Each query dict has a `stages` key containing a list of stages (list of lists of strings), matching the output of `QueryParser.parse_and_validate()`.
+The `queries` key is a dictionary mapping query name strings to query dicts. Each query dict has a `stages` key containing a list of stages (list of lists of strings) and, when the registered query had one, a `report` key containing the list of report field names, matching the output of `QueryParser.parse_and_validate()`.
 
 **Global Level** (top-level in `~/.bees/config.json`):
 ```json
 {
   "queries": {
     "open_bees": {"stages": [["type=bee", "status=open"]]},
-    "bees_with_children": {"stages": [["type=bee"], ["children"]]}
+    "bees_with_children": {"stages": [["type=bee"], ["children"]]},
+    "pupa_titles": {"stages": [["type=bee", "status=pupa"]], "report": ["title", "ticket_status"]}
   },
   "scopes": { ... }
 }
@@ -667,7 +668,7 @@ If a conflict is detected, the operation returns a `query_name_conflict` error w
 
 ### Validation
 
-Queries are validated at registration time via `QueryParser.parse_and_validate()`. Only structurally valid query pipelines can be stored. The validated query is persisted as a dict with a `stages` key — `{"stages": [...]}`. The original YAML string is not retained.
+Queries are validated at registration time via `QueryParser.parse_and_validate()`. Only structurally valid query pipelines can be stored. The validated query is persisted as a dict with a `stages` key, plus a `report` key when present — `{"stages": [...], "report": [...]}`. The original YAML string is not retained.
 
 ### Implementation
 

@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from .config import find_matching_scope, load_global_config
+from .query_parser import NON_REPORTABLE_FIELDS, QUERY_YAML_EXAMPLE, REPORT_QUERY_YAML_EXAMPLE, VALID_REPORT_FIELDS
 from .repo_utils import get_repo_root_from_path
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Matches "bees", "bees-mcp", "my_bees", but NOT "frisbees"
 _BEES_PATTERN = re.compile(r"(?i)(?:^|[-_])bees(?:$|[-_])")
 
-_CLI_REFERENCE = """\
+_CLI_REFERENCE = f"""\
 You are in a bees-managed project; bees is a ticket management system.
 Tickets are called bees. They are stored in directories called hives.
 Bees support a tier hierarchy: bees are top-level tickets; child tiers (t1, t2, etc.)
@@ -51,7 +52,16 @@ Run bees <command> -h for full usage on any command.
   generate-index          Generate index.md files for hives
   undertaker              Archive bee tickets to /cemetery
   move-bee                Move bee tickets to a different hive
-  update-config           Apply pending schema migrations to global config (--details for preview)"""
+  update-config           Apply pending schema migrations to global config (--details for preview)
+
+Queries: pass --query-yaml as one single-quoted YAML flow-style argument, e.g.
+  bees execute-freeform-query --query-yaml '{QUERY_YAML_EXAMPLE}'
+  bees execute-freeform-query --query-yaml '{REPORT_QUERY_YAML_EXAMPLE}'
+Without report, a query returns "ticket_ids". With report, it returns "tickets": one dict
+per match with ticket_id plus the listed fields.
+Reportable fields: {", ".join(sorted(VALID_REPORT_FIELDS))}
+Not reportable: {", ".join(sorted(NON_REPORTABLE_FIELDS))}. Read them with show-ticket.
+Run bees execute-freeform-query -h for every search and graph term."""
 
 
 def _key_matches_bees(key: str) -> bool:

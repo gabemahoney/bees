@@ -324,6 +324,8 @@ For complete details, see `relationships.md`.
 
 ## Query System Integration
 
-The MCP server exposes query operations through `execute_named_query()` and `execute_freeform_query()` tools. The query system implements a multi-stage pipeline for filtering and traversing tickets using search terms (type=, id=, title~, tag~, parent=) and graph terms (parent, children, up_dependencies, down_dependencies).
+The MCP server exposes query operations through `execute_named_query()` and `execute_freeform_query()` tools. The query system implements a multi-stage pipeline for filtering and traversing tickets using search terms (type=, id=, status=, title~, tag~, parent=, guid=, hive=, hive~) and graph terms (parent, children, up_dependencies, down_dependencies). An optional `report` key in the query returns chosen ticket fields instead of bare IDs.
+
+The `execute_freeform_query` and `add_named_query` tool descriptions document the `report` fields and one-line flow-style example queries. They are static docstrings that repeat the values in `src/query_parser.py`; keep them in sync with the CLI help (see "Query Help Surfaces" in `queries.md`).
 
 For complete architecture details, see `queries.md`.

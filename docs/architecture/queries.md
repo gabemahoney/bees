@@ -13,11 +13,32 @@ The query system provides a powerful multi-stage pipeline for filtering and trav
 The Query Parser (`src/query_parser.py`) validates dict-based query structures before execution, enforcing strict rules to ensure well-formed queries and providing clear error messages.
 
 **Responsibilities**:
-- Parse dict query structure (`{"stages": [...]}`) into validated stages
-- Validate search terms (type=, id=, title~, tag~, parent=)
+- Parse dict query structure (`{"stages": [...], "report": [...]}`) into validated stages and an optional report list
+- Validate search terms (type=, id=, status=, title~, tag~, parent=, guid=, hive=, hive~)
 - Validate graph terms (children, parent, up_dependencies, down_dependencies)
 - Enforce stage purity (no mixing search and graph terms)
 - Validate regex patterns are compilable
+- Validate the optional `report` list (see Report Field Projection)
+
+### Query Format
+
+A query is a YAML dict with a required `stages` key (a list of stages, each a list of terms) and an optional `report` key (a list of field names). Every surface that accepts a query (`--query-yaml` on the CLI, `query_yaml` on MCP tools, `undertaker_schedule.query_yaml` in config) passes the string to `yaml.safe_load` unchanged. No escape sequences are interpreted, so a literal `\n` typed in a shell stays a backslash and an `n`, and block-style YAML written that way parses as a plain string and is rejected.
+
+The documented way to pass a query is one line of YAML flow style, single-quoted on the shell:
+- `{stages: [[type=bee, status=pupa], [children]]}`
+- `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`
+
+A term that contains `,` `[` `]` `{` `}` `:` or `#` must be double-quoted inside the flow sequence, e.g. `["title~p[0-4]"]`. YAML double quotes treat a backslash as an escape, so each regex backslash inside them is written twice: `["title~\\[bug\\]"]` becomes the regex `\[bug\]` (literal brackets), while `["title~\[bug\]"]` is a YAML parse error.
+
+### Query Help Surfaces
+
+Callers learn the query language from five places: `bees execute-freeform-query -h`, `bees add-named-query -h`, `bees sting`, and the MCP `execute_freeform_query` and `add_named_query` tool descriptions. Each one documents `report`, lists the reportable and non-reportable fields, and shows both example queries above.
+
+`src/query_parser.py` is the single source for that content: `VALID_REPORT_FIELDS`, `NON_REPORTABLE_FIELDS`, `QUERY_YAML_EXAMPLE` and `REPORT_QUERY_YAML_EXAMPLE`. The CLI help and the `sting` reference build their text from these constants. The MCP tool descriptions are static docstrings, so they repeat the values by hand. `tests/test_query_help.py` checks all five surfaces against the constants and runs every CLI example as written. When adding or removing a reportable field or changing an example, change the constants and the MCP docstrings together.
+
+Two pieces of query help are not built from the constants and are checked separately by the same test file:
+- The doubled-backslash regex example (`["title~\\[bug\\]"]`) is written by hand in the `execute-freeform-query` help and the MCP `execute_freeform_query` description (both raw strings, so the two backslashes reach the reader). The test runs it as written on an isolated hive and checks it matches literal brackets only.
+- The undertaker `query_yaml` examples in the `src/mcp_undertaker.py` module docstring and the MCP `undertaker` description must parse with `QueryParser.parse_and_validate`.
 
 ### Pipeline Execution Model
 
@@ -33,9 +54,13 @@ The Query Parser (`src/query_parser.py`) validates dict-based query structures b
 **Search Terms** (filtering):
 - `type=` - Exact match on ticket type (bee, t1, t2, etc.)
 - `id=` - Exact match on ticket ID (e.g., `id=b.amx` or `id=t1.amx.12`)
+- `status=` - Exact match on ticket status
 - `title~` - Regex match on title field
 - `tag~` - Regex match on any tag
 - `parent=` - Exact match on parent field
+- `guid=` - Exact match on ticket GUID
+- `hive=` - Exact match on the hive's normalized name
+- `hive~` - Regex match on the hive's normalized name
 
 **Graph Terms** (traversal):
 - `parent` - Traverse to parent ticket
@@ -62,7 +87,7 @@ The Query Parser (`src/query_parser.py`) validates dict-based query structures b
 **Across stages** (sequential filtering):
 - Stage 2 operates on stage 1 results
 - Each stage narrows or traverses the result set
-- Example: `[[type=bee], [children]]` finds bees, then gets their children
+- Example: `{stages: [[type=bee], [children]]}` finds bees, then gets their children
 
 ## Search Executor Architecture
 
@@ -74,12 +99,12 @@ The Search Executor (`src/search_executor.py`) implements in-memory filtering of
 
 **Key Principle**: All search terms in a stage are ANDed together - a ticket must match ALL terms to be included in results.
 
-**Integration**: Called by PipelineEvaluator when executing search stages (stages containing type=, id=, title~, tag~, parent= terms).
+**Integration**: Called by PipelineEvaluator when executing search stages (stages containing only search terms).
 
 ### Architecture
 
 **SearchExecutor Class**:
-- Five filter methods (one per search term type)
+- One filter method per search term type
 - One execute method (orchestrates AND logic)
 - Stateless design (no instance state)
 - Pure functions (no side effects)
@@ -92,10 +117,14 @@ The Search Executor (`src/search_executor.py`) implements in-memory filtering of
 ### Filter Methods
 
 1. **filter_by_type(tickets, type_value)** - Exact match on `issue_type` field
-2. **filter_by_id(tickets, id_value)** - Exact match on ticket ID
-3. **filter_by_title_regex(tickets, regex_pattern)** - Regex match on `title` field
-4. **filter_by_tag_regex(tickets, regex_pattern)** - Regex match on ANY tag in `tags` array
-5. **filter_by_parent(tickets, parent_value)** - Exact match on `parent` field
+2. **filter_by_status(tickets, status_value)** - Exact match on `status` field
+3. **filter_by_id(tickets, id_value)** - Exact match on ticket ID
+4. **filter_by_parent(tickets, parent_value)** - Exact match on `parent` field
+5. **filter_by_guid(tickets, guid_value)** - Exact match on `guid` field
+6. **filter_by_hive(tickets, hive_value)** - Exact match on `hive` field
+7. **filter_by_hive_regex(tickets, regex_pattern)** - Case-insensitive regex match on `hive` field
+8. **filter_by_title_regex(tickets, regex_pattern)** - Case-insensitive regex match on `title` field
+9. **filter_by_tag_regex(tickets, regex_pattern)** - Case-insensitive regex match on ANY tag in `tags` array
 
 ### Execute Method AND Logic
 
@@ -160,12 +189,13 @@ Named queries are persisted in config-backed storage within `~/.bees/config.json
 - **Global queries**: Stored under the top-level `queries` dictionary. Accessible from any repo.
 - **Repo-scoped queries**: Stored under a scope's `queries` dictionary. Accessible only from repos matching that scope pattern.
 
-Repo scope queries shadow global queries of the same name. Validated queries are persisted as dicts with a `stages` key — `{"stages": [...]}`. The original YAML string is not retained.
+Repo scope queries shadow global queries of the same name. Validated queries are persisted as dicts with a `stages` key, plus a `report` key when the query had one — `{"stages": [...], "report": [...]}`. The original YAML string is not retained.
 
 ### MCP Tools
 
 **add_named_query** — Register a new named query for reuse.
-- Parameters: `name` (str, required), `query_yaml` (str, required — YAML dict with a `stages` key, e.g. `"stages:\n  - [type=bee, status=pupa]"`), `scope` (str, "global" or "repo", default: "global")
+- Parameters: `name` (str, required), `query_yaml` (str, required — YAML dict with a `stages` key and optional `report` key, e.g. `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`), `scope` (str, "global" or "repo", default: "global")
+- A `report` list is validated and stored with the stages, so `execute_named_query` returns those fields
 - Returns on success: `{status: "success", query_name, scope, message}`
 - Returns on error: `{status: "error", error_type, message}` (see Error Types below)
 
@@ -189,25 +219,29 @@ Repo scope queries shadow global queries of the same name. Validated queries are
 - Returns: `{status: "success", queries: [{name, definition, scope, repo_root}, ...], count}`
 
 **execute_freeform_query** — One-step ad-hoc query execution without persistence.
-- Parameters: `query_yaml` (str, required — YAML dict with a `stages` key and optional `report` key, e.g. `"stages:\n  - [type=bee, status=pupa]\nreport: [title, ticket_status]"`)
+- Parameters: `query_yaml` (str, required — YAML dict with a `stages` key and optional `report` key, e.g. `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`)
 - Returns on success (no report): `{status: "success", result_count, ticket_ids, stages_executed}`
 - Returns on success (with report): `{status: "success", result_count, tickets, stages_executed}` where `tickets` is a list of field dicts
 - Performs pre-flight hive integrity check before execution
 
 ### Report Field Projection
 
-The `report` parameter enables field projection on query results. When omitted, queries return a flat list of ticket IDs. When provided, queries return a list of ticket dicts containing only the requested fields.
+The `report` key enables field projection on query results. When omitted, queries return a sorted list of ticket IDs. When provided, queries return a list of ticket dicts containing `ticket_id` plus the requested fields.
 
 **The `report` key**:
-- Accepted by `execute_named_query` and `execute_freeform_query`
-- Value is a list of field name strings, e.g. `["title", "ticket_status"]`
-- An empty list is treated the same as omitting the parameter (returns `ticket_ids`)
+- Part of the query YAML, alongside `stages`. Honored by `execute_freeform_query` and by `execute_named_query` (stored at `add_named_query` time)
+- The undertaker accepts the same query format; a `report` key is validated there but has no effect on archival
+- Value is a list of field name strings, e.g. `[title, ticket_status]`
+- `ticket_id` is silently removed from the list. A list that is empty after that (`[]` or `[ticket_id]`) is rejected with `parse_error`: `report list cannot be empty`
+- A non-list value is rejected (`"report" must be a list`)
+- `body` or `reference_materials` is rejected with `report field "<name>" is not available in query results; use show_ticket to retrieve it`
+- Any other field not in the table below is rejected with `report field "<name>" is not recognized`
 
 **Response format**:
-- Without `report`: response contains `ticket_ids` (list of ID strings)
-- With `report`: response contains `tickets` (list of dicts, one per result ticket)
+- Without `report`: response contains `ticket_ids` (list of ID strings, sorted)
+- With `report`: response contains `tickets` (list of dicts, one per result ticket, sorted by `ticket_id`). Each dict holds `ticket_id` plus every listed field. Unset fields come back empty or `null`: the pipeline's ticket load defaults the list fields to `[]` and `ticket_status` / `ticket_type` to `""`; other unset fields, such as `parent` on a bee, are `null`
 
-**Output field names**: The response always uses the external/output names, not internal model field names.
+**Output field names**: The response always uses the external/output names, not internal model field names. The reportable fields are exactly `VALID_REPORT_FIELDS` in `src/query_parser.py`.
 
 | Output name | Notes |
 |---|---|
@@ -225,12 +259,14 @@ The `report` parameter enables field projection on query results. When omitted, 
 | `guid` | Globally unique ticket identifier |
 | `hive` | The hive's normalized name (the hive directory name) |
 
-**Excluded fields**:
-- `body` / `reference_materials` — Excluded from projection because they can be arbitrarily large. Use `show_ticket` to fetch full ticket content.
+**Excluded fields** (`NON_REPORTABLE_FIELDS` in `src/query_parser.py`):
+- `body` / `reference_materials` — Not reportable because they can be arbitrarily large. Use `show_ticket` (`bees show-ticket`) to fetch full ticket content.
 
 ### CLI Commands
 
-**bees add-named-query --query-name NAME --query-yaml YAML [--scope {global,repo}]** — Register a named query. Scope defaults to "global". YAML must be a dict with a `stages` key and optional `report` key.
+All `--query-yaml` values follow the Query Format above: one single-quoted argument in YAML flow style.
+
+**bees add-named-query --query-name NAME --query-yaml YAML [--scope {global,repo}]** — Register a named query. Scope defaults to "global". YAML must be a dict with a `stages` key and optional `report` key, e.g. `bees add-named-query --query-name pupa-titles --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'`.
 
 **bees execute-named-query --query-name NAME** — Execute a previously registered named query. Report behavior is determined by the stored query definition.
 
@@ -238,7 +274,7 @@ The `report` parameter enables field projection on query results. When omitted, 
 
 **bees list-named-queries** — List accessible named queries from current repo scope and global.
 
-**bees execute-freeform-query --query-yaml YAML** — Execute an ad-hoc YAML query without persistence. YAML must be a dict with a `stages` key and optional `report` key for field projection.
+**bees execute-freeform-query --query-yaml YAML** — Execute an ad-hoc YAML query without persistence. YAML must be a dict with a `stages` key and optional `report` key for field projection, e.g. `bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa], [children]]}'`.
 
 ### Error Types
 
@@ -254,21 +290,18 @@ The `report` parameter enables field projection on query results. When omitted, 
 
 Queries are validated at registration time to provide immediate feedback on structural errors:
 - YAML syntax validation
+- Query structure validation (a dict with a `stages` key)
 - Stage structure validation
 - Search term syntax validation
 - Graph term validation
 - Regex pattern compilation
+- `report` list validation
 
-### Multi-Hive Filtering
+`add_named_query` and `execute_freeform_query` return validation failures with `error_type: "parse_error"`.
 
-**Hive Parameter**: Both `execute_named_query` and `execute_freeform_query` accept optional `hive_names` parameter to filter results by hive.
+### Hive Filtering
 
-**Filter Behavior**:
-- `hive_names=None` - Include all tickets from all hives (default)
-- `hive_names=["backend"]` - Only tickets from backend hive
-- `hive_names=["backend", "frontend"]` - Tickets from multiple hives
-
-**Implementation**: Filter applied at pipeline entry point before stage execution. Tickets filtered by hive membership (determined by ticket file location in hive directory).
+The query tools take no hive filter parameter. To limit a query to certain hives, put a `hive=` or `hive~` term in a search stage, e.g. `{stages: [[type=bee, hive=backend]]}` or `{stages: [[type=bee, hive~^(backend|frontend)$]]}`.
 
 ### Named vs Freeform Queries
 
@@ -286,13 +319,13 @@ Queries are validated at registration time to provide immediate feedback on stru
 ## Pipeline Execution Flow
 
 1. **Load tickets once** - PipelineEvaluator loads all tickets into memory at initialization
-2. **Apply hive filter** - If hive_names specified, filter initial set by hive prefix
-3. **Execute stages sequentially** - For each stage:
+2. **Execute stages sequentially** - For each stage:
    - Detect stage type (search or graph)
    - Route to appropriate executor (SearchExecutor or GraphExecutor)
    - Pass results to next stage
    - Short-circuit if results empty
-4. **Deduplicate and return** - Return final set of matching ticket IDs
+3. **Deduplicate and return** - Return final set of matching ticket IDs
+4. **Shape the response** - The query tool returns the IDs sorted as `ticket_ids`, or, when the query has a `report` list, projects them into `tickets` (see Report Field Projection)
 
 ### Optimization Strategies
 

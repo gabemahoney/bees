@@ -286,7 +286,7 @@ On failure, the temp file must be cleaned up. The config file (`~/.bees/config.j
           "allowed_resolvers": ["guid_resolver", "default"],
           "undertaker_schedule": {
             "interval_seconds": 3600,
-            "query_yaml": "- ['status=finished']",
+            "query_yaml": "{stages: [[status=finished]]}",
             "log_path": "/path/to/log"
           }
         }
@@ -729,13 +729,15 @@ Error: `no_matching_scope` when called from outside any registered repo
 
 ### 12.1 Query Format
 
-Queries are YAML lists of stages. Each stage is a list of terms. Stages execute sequentially — results from stage N feed into stage N+1.
+A query is a YAML dict with a required `stages` key and an optional `report` key (§12.7). `stages` is a list of stages; each stage is a list of terms. Stages execute sequentially — results from stage N feed into stage N+1.
 
 ```yaml
-- [type=bee, status=pupa]      # Stage 1: search
-- [children]                    # Stage 2: graph traversal
-- [status=worker]               # Stage 3: filter children
+{stages: [[type=bee, status=pupa], [children], [status=worker]]}
 ```
+
+Stage 1 searches, stage 2 traverses to children, stage 3 filters the children.
+
+Queries are passed as a single string (`--query-yaml` on the CLI, `query_yaml` on MCP tools and in `undertaker_schedule`) and parsed with `yaml.safe_load` as-is; escape sequences such as a literal `\n` are not interpreted. Documentation and help show queries on one line in YAML flow style so they work as one single-quoted shell argument. A term containing `,` `[` `]` `{` `}` `:` or `#` must be double-quoted, e.g. `["title~p[0-4]"]`. YAML double quotes treat a backslash as an escape, so each regex backslash inside them is written twice: `["title~\\[bug\\]"]` is the regex `\[bug\]` (literal brackets); the single-backslash form `["title~\[bug\]"]` is a YAML parse error.
 
 ### 12.2 Search Terms
 
@@ -771,11 +773,12 @@ Queries are YAML lists of stages. Each stage is a list of terms. Stages execute 
 ### 12.5 Pipeline Execution
 
 1. Load ALL tickets from all hives into memory (fresh load, bypasses cache)
-2. Apply hive filter (if `hive_names` specified)
-3. Execute stages sequentially (search stages filter, graph stages traverse)
-4. Short-circuit on empty results
-5. Deduplicate results
-6. Return list of full ticket objects
+2. Execute stages sequentially (search stages filter, graph stages traverse)
+3. Short-circuit on empty results
+4. Deduplicate results
+5. Return the sorted ticket IDs, or, when the query has `report`, one dict per ticket with the reported fields (§12.7)
+
+There is no hive filter parameter; use `hive=` or `hive~` terms to limit a query to certain hives.
 
 ### 12.6 Regex Support
 
@@ -784,6 +787,26 @@ Queries are YAML lists of stages. Each stage is a list of terms. Stages execute 
 - Negative lookahead
 - Character classes
 - Anchors (`^`, `$`)
+
+### 12.7 Report Fields
+
+The optional `report` key is a list of field names. Without it, a query returns `ticket_ids` (sorted list of IDs). With it, a query returns `tickets`: one dict per match, sorted by `ticket_id`, holding `ticket_id` plus each listed field. Unset fields come back empty (`[]` or `""`) or `null`.
+
+```yaml
+{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}
+```
+
+| Field group | Fields |
+|-------------|--------|
+| Reportable | `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies` |
+| Not reportable | `body`, `reference_materials` — read with `show_ticket` |
+
+Validation (`parse_error` on failure):
+- `report` must be a list
+- `ticket_id` is always returned; if listed it is silently dropped
+- A list that is empty after dropping `ticket_id` → `report list cannot be empty`
+- `body` / `reference_materials` → `report field "<name>" is not available in query results; use show_ticket to retrieve it`
+- Any other unknown field → `report field "<name>" is not recognized`
 
 ---
 
@@ -795,7 +818,7 @@ Named queries are stored in `~/.bees/config.json`:
 - `scope="global"`: in top-level `"queries"` key
 - `scope="repo"`: in `scopes[repo_path].queries`
 
-The YAML string is parsed and validated at registration time; only the parsed stage list is persisted (not the original YAML string).
+The YAML string is parsed and validated at registration time; only the parsed stage list (and the `report` list, if given) is persisted, not the original YAML string: `{"stages": [...], "report": [...]}`.
 
 ### 13.2 Resolution
 
@@ -821,14 +844,27 @@ Returns all accessible queries (repo scope + global).
 
 ### 13.6 execute_named_query / execute_freeform_query
 
-Returns:
+Returns, without `report`:
 ```json
 {
   "status": "success",
-  "tickets": [{...}],
+  "result_count": 1,
+  "ticket_ids": ["b.abc"],
   "stages_executed": 2
 }
 ```
+
+With `report` (§12.7), `tickets` replaces `ticket_ids`:
+```json
+{
+  "status": "success",
+  "result_count": 1,
+  "tickets": [{"ticket_id": "b.abc", "title": "...", "ticket_status": "pupa"}],
+  "stages_executed": 1
+}
+```
+
+`execute_named_query` returns `query_name` in place of `stages_executed`. A named query uses the `report` list stored with it.
 
 Errors: `query_not_found` (includes `available_queries` list), `query_out_of_scope`, `parse_error`
 
@@ -980,7 +1016,7 @@ Per-hive configuration in `undertaker_schedule`:
 ```json
 {
   "interval_seconds": 3600,
-  "query_yaml": "- ['status=finished']",
+  "query_yaml": "{stages: [[status=finished]]}",
   "query_name": null,
   "log_path": "/path/to/log"
 }
@@ -1334,6 +1370,8 @@ Logic:
 2. Scan Claude config locations for bees MCP server entry → if found, exit 0 silently
 3. If no MCP detected: print CLI reference to stdout and exit 0
 
+The CLI reference lists the commands and a query quick reference: both one-line flow-style `--query-yaml` examples, what `report` changes in the result, the reportable fields, and the non-reportable fields (`body`, `reference_materials`, read with `show-ticket`). The examples and field lists come from the same constants as `execute-freeform-query -h`.
+
 MCP entry detection regex: `(?i)(?:^|[-_])bees(?:$|[-_])` (matches `bees`, `bees-mcp` but not `frisbees`)
 
 Claude config scan locations:
@@ -1407,7 +1445,7 @@ Installs hook entries:
 | `invalid_scope` | Scope not `global`, `repo_scope`, or `repo` |
 | `scope_not_found` | No matching scope for repo |
 | `invalid_query` | Empty query name |
-| `parse_error` | Invalid YAML or query structure |
+| `parse_error` | Invalid YAML, query structure, or `report` list (§12.7) |
 
 ### 25.4 Config Operations
 
@@ -1657,21 +1695,32 @@ Args:
 ### `add_named_query`
 Register a named query for reuse. See execute_freeform_query for query syntax.
 
+The query YAML may include an optional "report" key (list of field names). When present, execute_named_query returns "tickets" (list of dicts, one per match, holding ticket_id plus the listed fields) instead of "ticket_ids" (list of strings). ticket_id is always included and should not be listed.
+
+Reportable fields: children, created_at, down_dependencies, guid, hive, parent, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
+
+Not reportable: body, reference_materials — not available in query results; use show_ticket.
+
 Args:
 - `name`: Name for the query (used to execute it later).
-- `query_yaml`: YAML string representing the query pipeline.
+- `query_yaml`: YAML dict with a "stages" key and optional "report" key, written on one line in YAML flow style. Example: `{stages: [[type=bee, status=pupa], [children]]}`. With report: `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`
 - `scope`: Where to store the query — "global" (all repos) or "repo" (current repo only). Defaults to "global".
 
 ### `execute_named_query`
-Execute a registered named query.
+Execute a registered named query by name. If the query was registered with a "report" key, the response includes "tickets" (list of dicts); otherwise "ticket_ids" (list of strings).
 
 Args:
 - `query_name`: Name of the query to execute.
 
 ### `execute_freeform_query`
-Execute a YAML query pipeline.
+Execute a YAML query pipeline without saving it.
 
-Each stage is a list of terms. Stages execute sequentially — results from stage N are passed into stage N+1 as the working set to filter or traverse.
+The query must be a YAML dict with a "stages" key and an optional "report" key. Each stage is a list of terms. Stages execute sequentially — results from stage N are passed into stage N+1 as the working set to filter or traverse.
+
+Example (one line, YAML flow style): `{stages: [[type=bee, status=pupa], [children]]}`
+
+Double-quote a term that contains , [ ] { } : or #, e.g. `["title~p[0-4]"]`.
+Inside double quotes, write each regex backslash twice: `["title~\\[bug\\]"]`.
 
 Search stages — filter tickets (AND logic within stage):
 - `type=bee | type=t1 | type=t2 ...` — exact match on ticket type
@@ -1690,8 +1739,14 @@ Graph stages — traverse relationships from current result set:
 - `up_dependencies` — get upstream blockers of each ticket
 - `down_dependencies` — get downstream dependents of each ticket
 
+Report projection (optional): add a "report" key with a list of field names to return structured ticket data instead of a plain ID list. ticket_id is always included automatically and should not be listed.
+- Reportable fields: children, created_at, down_dependencies, guid, hive, parent, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
+- Not reportable: body, reference_materials — not available in query results; use show_ticket.
+- Example: `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`
+- Without report → response includes "ticket_ids" (list of strings). With report → response includes "tickets" (list of dicts, one per match, sorted by ticket_id). Unset fields come back empty ([] or "") or null.
+
 Args:
-- `query_yaml`: YAML string — a list of stages, each stage a list of terms. Example: `"- [type=bee, status=open]\n- [children]"`
+- `query_yaml`: YAML dict with a "stages" key and optional "report" key, written on one line in YAML flow style. Example: `{stages: [[type=bee, status=pupa], [children]]}`. With report: `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`
 
 ### `delete_named_query`
 Delete a named query by name. Searches all scopes (global first, then repo).
@@ -1721,7 +1776,7 @@ To schedule automatic archiving, add an `undertaker_schedule` block to the hive 
 {
   "undertaker_schedule": {
     "interval_seconds": 60,
-    "query_yaml": "- ['status=finished']"
+    "query_yaml": "{stages: [[status=finished]]}"
   }
 }
 ```
@@ -1945,8 +2000,23 @@ Show configured status values at all scope levels. No arguments required.
 usage: bees add-named-query --query-name NAME --query-yaml YAML
                             [--scope {global,repo}]
 
+Save a query for reuse; run it later with execute-named-query.
+
+The query is a YAML dict with a 'stages' key and an optional 'report' key,
+written the same way as for execute-freeform-query (run
+execute-freeform-query -h for every search and graph term). Example:
+  bees add-named-query --query-name pupa-titles --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
+
+In the report notes below, "the result" is what execute-named-query returns
+when it runs the saved query; add-named-query itself only confirms the save.
+
+Report (optional) — same section as execute-freeform-query (below)
+
   --query-name NAME     Name for the query (used to execute it later)
-  --query-yaml YAML     YAML query pipeline string
+  --query-yaml YAML     YAML dict with a "stages" key and an optional "report" key.
+                        Pass it as one single-quoted argument in YAML flow style, e.g.:
+                          '{stages: [[type=bee, status=pupa], [children]]}'
+                          '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
   --scope {global,repo} Where to store: "global" (all repos) or "repo". Default: global
 ```
 
@@ -1963,8 +2033,32 @@ usage: bees execute-named-query --query-name NAME
 ```
 usage: bees execute-freeform-query --query-yaml YAML
 
-  --query-yaml YAML     YAML string — a list of stages, each stage a list of terms.
-                        Example: "- [type=bee, status=pupa]\n- [children]"
+Execute a YAML query pipeline against tickets.
+
+The query must be a YAML dict with a 'stages' key and an optional 'report' key.
+Pass the query as one single-quoted argument in YAML flow style:
+  bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa], [children]]}'
+  bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
+Double-quote a term that contains , [ ] { } : or #, e.g. ["title~p[0-4]"].
+Inside double quotes, write each regex backslash twice: ["title~\\[bug\\]"].
+
+Search stages / Graph stages — term lists as in execute_freeform_query (Appendix E)
+
+Report (optional) — return ticket fields instead of bare IDs:
+  Without "report", the result has "ticket_ids": a sorted list of ticket IDs.
+  With "report", the result has "tickets": one dict per match, sorted by
+  ticket_id, holding ticket_id plus each listed field. Unset fields come back
+  empty ([] or "") or null.
+  ticket_id is always included; don't list it.
+  Reportable fields:
+    children, created_at, down_dependencies, guid, hive, parent, schema_version,
+    tags, ticket_status, ticket_type, title, up_dependencies
+  Not reportable: body, reference_materials. Read them with show-ticket.
+
+  --query-yaml YAML     YAML dict with a "stages" key and an optional "report" key.
+                        Pass it as one single-quoted argument in YAML flow style, e.g.:
+                          '{stages: [[type=bee, status=pupa], [children]]}'
+                          '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
 ```
 
 ### `bees delete-named-query`

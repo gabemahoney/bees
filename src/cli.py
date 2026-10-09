@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import sys
+import textwrap
 from pathlib import Path
 
 from .config import GLOBAL_SCHEMA_VERSION, check_queen_write_access, load_global_config, set_config_path, set_test_config_override
@@ -40,6 +41,7 @@ from .mcp_ticket_ops import (
 )
 from .mcp_undertaker import _undertaker
 from .migrations.runner import preview_pending_migrations, run_pending_migrations
+from .query_parser import NON_REPORTABLE_FIELDS, QUERY_YAML_EXAMPLE, REPORT_QUERY_YAML_EXAMPLE, VALID_REPORT_FIELDS
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
@@ -831,6 +833,32 @@ def handle_serve(args):
 # Parser construction
 # ---------------------------------------------------------------------------
 
+# --query-yaml help shared by execute-freeform-query and add-named-query.
+# Shown with RawTextHelpFormatter so each example stays on one copyable line.
+_QUERY_YAML_HELP = (
+    'YAML dict with a "stages" key and an optional "report" key.\n'
+    "Pass it as one single-quoted argument in YAML flow style, e.g.:\n"
+    f"  '{QUERY_YAML_EXAMPLE}'\n"
+    f"  '{REPORT_QUERY_YAML_EXAMPLE}'"
+)
+
+# The "report" section of the query help. Field lists come from query_parser so they can't drift.
+_QUERY_REPORT_HELP = (
+    "Report (optional) — return ticket fields instead of bare IDs:\n"
+    '  Without "report", the result has "ticket_ids": a sorted list of ticket IDs.\n'
+    '  With "report", the result has "tickets": one dict per match, sorted by\n'
+    "  ticket_id, holding ticket_id plus each listed field. Unset fields come back\n"
+    '  empty ([] or "") or null.\n'
+    "  ticket_id is always included; don't list it.\n"
+    "  Reportable fields:\n"
+    + textwrap.fill(
+        ", ".join(sorted(VALID_REPORT_FIELDS)), width=80, initial_indent="    ", subsequent_indent="    "
+    )
+    + "\n"
+    f"  Not reportable: {', '.join(sorted(NON_REPORTABLE_FIELDS))}. Read them with show-ticket."
+)
+
+
 def build_parser():
     parser = BeesArgumentParser(
         prog="bees",
@@ -1014,11 +1042,21 @@ def build_parser():
     p_anq = subparsers.add_parser(
         "add-named-query",
         help="Register a named query",
-        description="Save a query for reuse. Accepts a YAML dict with a 'stages' key.",  # noqa: E501
+        description=(
+            "Save a query for reuse; run it later with execute-named-query.\n\n"
+            "The query is a YAML dict with a 'stages' key and an optional 'report' key,\n"
+            "written the same way as for execute-freeform-query (run\n"
+            "execute-freeform-query -h for every search and graph term). Example:\n"
+            f"  bees add-named-query --query-name pupa-titles --query-yaml '{REPORT_QUERY_YAML_EXAMPLE}'\n\n"
+            'In the report notes below, "the result" is what execute-named-query returns\n'
+            "when it runs the saved query; add-named-query itself only confirms the save.\n\n"
+            + _QUERY_REPORT_HELP
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     p_anq.add_argument("--query-name", required=True, metavar="NAME", help="Name for the query (used to execute it later)")  # noqa: E501
-    p_anq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML dict with a "stages" key. Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"')  # noqa: E501
-    p_anq.add_argument("--scope", choices=["global", "repo"], default="global", help='Where to store the query: "global" (all repos) or "repo" (repo scope). Default: global')  # noqa: E501
+    p_anq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help=_QUERY_YAML_HELP)
+    p_anq.add_argument("--scope", choices=["global", "repo"], default="global", help='Where to store the query: "global" (all repos) or\n"repo" (repo scope). Default: global')  # noqa: E501
     p_anq.set_defaults(func=handle_add_named_query)
 
     # --- execute-named-query ---
@@ -1036,13 +1074,16 @@ def build_parser():
         help="Execute an ad-hoc YAML query",
         description=(
             "Execute a YAML query pipeline against tickets.\n\n"
-            "The query must be a YAML dict with a 'stages' key. Each stage is a list of\n"
-            "terms. Stages execute sequentially — results from stage N are passed into\n"
-            "stage N+1 as the working set to filter or traverse.\n\n"
-            "Example:\n"
-            "  stages:\n"
-            "    - [type=bee, status=pupa]\n"
-            "    - [children]\n\n"
+            "The query must be a YAML dict with a 'stages' key and an optional 'report' key.\n"
+            "Each stage is a list of terms. Stages execute sequentially — results from\n"
+            "stage N are passed into stage N+1 as the working set to filter or traverse.\n\n"
+            "Pass the query as one single-quoted argument in YAML flow style:\n"
+            f"  bees execute-freeform-query --query-yaml '{QUERY_YAML_EXAMPLE}'\n"
+            f"  bees execute-freeform-query --query-yaml '{REPORT_QUERY_YAML_EXAMPLE}'\n"
+            'Double-quote a term that contains , [ ] { } : or #, e.g. ["title~p[0-4]"].\n'
+            # Raw string: the help must show two backslashes, which YAML double quotes read as one.
+            r'Inside double quotes, write each regex backslash twice: ["title~\\[bug\\]"].'
+            "\n\n"
             "Search stages — filter tickets (AND logic within stage):\n"
             "  type=bee | type=t1 | type=t2 ...   exact match on ticket type\n"
             "  status=<value>                      exact match on status\n"
@@ -1057,11 +1098,12 @@ def build_parser():
             "  parent              get parent of each ticket\n"
             "  children            get children of each ticket\n"
             "  up_dependencies     get upstream blockers of each ticket\n"
-            "  down_dependencies   get downstream dependents of each ticket"
+            "  down_dependencies   get downstream dependents of each ticket\n\n"
+            + _QUERY_REPORT_HELP
         ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    p_efq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help='YAML dict with a "stages" key. Example: "stages:\\n  - [type=bee, status=pupa]\\n  - [children]"')  # noqa: E501
+    p_efq.add_argument("--query-yaml", required=True, dest="query_yaml", metavar="YAML", help=_QUERY_YAML_HELP)
     p_efq.set_defaults(func=handle_execute_freeform_query)
 
     # --- delete-named-query ---

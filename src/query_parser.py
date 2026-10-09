@@ -6,7 +6,15 @@ Parses and validates YAML query structures for the multi-stage pipeline system.
 import re
 from dataclasses import dataclass
 
-__all__ = ["ParsedQuery", "QueryParser", "QueryValidationError", "VALID_REPORT_FIELDS"]
+__all__ = [
+    "NON_REPORTABLE_FIELDS",
+    "QUERY_YAML_EXAMPLE",
+    "REPORT_QUERY_YAML_EXAMPLE",
+    "ParsedQuery",
+    "QueryParser",
+    "QueryValidationError",
+    "VALID_REPORT_FIELDS",
+]
 
 VALID_REPORT_FIELDS: frozenset[str] = frozenset({
     "ticket_type",
@@ -22,6 +30,14 @@ VALID_REPORT_FIELDS: frozenset[str] = frozenset({
     "guid",
     "hive",
 })
+
+# Ticket fields that "report" rejects: query results omit them, so callers use show_ticket.
+NON_REPORTABLE_FIELDS: frozenset[str] = frozenset({"body", "reference_materials"})
+
+# Single-line YAML flow-style queries shown in CLI help and the sting reference.
+# They work typed into a shell inside single quotes, with no newline escapes.
+QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa], [children]]}"
+REPORT_QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}"
 
 
 @dataclass
@@ -326,7 +342,7 @@ class QueryParser:
                 raise QueryValidationError("report list cannot be empty")
 
             for field in report:
-                if field in ("body", "reference_materials"):
+                if field in NON_REPORTABLE_FIELDS:
                     raise QueryValidationError(
                         f'report field "{field}" is not available in query results; use show_ticket to retrieve it'
                     )
