@@ -234,6 +234,7 @@ The `report` key enables field projection on query results. When omitted, querie
 - Value is a list of field name strings, e.g. `[title, ticket_status]`
 - `ticket_id` is silently removed from the list. A list that is empty after that (`[]` or `[ticket_id]`) is rejected with `parse_error`: `report list cannot be empty`
 - A non-list value is rejected (`"report" must be a list`)
+- An entry that is not a string (a nested list, number, `null` or dict) is rejected with `each "report" entry must be a field name (a string), got <type> at index <i>`
 - `body` or `reference_materials` is rejected with `report field "<name>" is not available in query results; use show_ticket to retrieve it`
 - Any other field not in the table below is rejected with `report field "<name>" is not recognized`
 
@@ -297,7 +298,7 @@ Queries are validated at registration time to provide immediate feedback on stru
 - Regex pattern compilation
 - `report` list validation
 
-`add_named_query` and `execute_freeform_query` return validation failures with `error_type: "parse_error"`.
+`add_named_query` and `execute_freeform_query` return validation failures with `error_type: "parse_error"` and a message starting `Invalid query structure:`. Any other error raised while parsing is also returned as `parse_error`, with a message starting `Failed to parse query:`, so neither tool raises on bad input.
 
 ### Hive Filtering
 

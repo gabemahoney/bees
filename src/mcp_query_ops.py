@@ -144,6 +144,10 @@ def _add_named_query(name: str, query_yaml: str, scope: str, resolved_root: Path
         error_msg = f"Invalid query structure: {e}"
         logger.error(error_msg)
         return {"status": "error", "error_type": "parse_error", "message": error_msg}
+    except Exception as e:
+        error_msg = f"Failed to parse query: {e}"
+        logger.error(error_msg)
+        return {"status": "error", "error_type": "parse_error", "message": error_msg}
 
     # Build stored query dict
     stored_query: dict = {"stages": parsed.stages}

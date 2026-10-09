@@ -11,6 +11,7 @@ SCOPE - Tests that belong here:
 - Stage type detection (search vs graph)
 - Term parsing (type=, id=, title~, tag~, parent, children, etc.)
 - QueryValidationError: Query validation error handling
+- Report field validation (non-string, empty, unknown and non-reportable entries)
 - Stage purity enforcement (no mixing search and graph in one stage)
 - Multi-stage pipeline parsing
 
@@ -351,6 +352,24 @@ class TestReportFieldValidation:
             parser.parse_and_validate(
                 {"stages": [["type=t1"]], "report": ["title", "banana", "tags"]}
             )
+
+    @pytest.mark.parametrize(
+        "report, type_name, index",
+        [
+            pytest.param([["title"]], "list", 0, id="nested_list"),
+            pytest.param([1], "int", 0, id="int"),
+            pytest.param([1.5], "float", 0, id="float"),
+            pytest.param([True], "bool", 0, id="bool"),
+            pytest.param([None], "NoneType", 0, id="null"),
+            pytest.param([{"title": "x"}], "dict", 0, id="dict"),
+            pytest.param(["title", ["ticket_id"]], "list", 1, id="after_valid_field"),
+        ],
+    )
+    def test_non_string_entry_rejected(self, report, type_name, index):
+        """A non-string report entry raises QueryValidationError naming its type and index (b.hmr)."""
+        parser = QueryParser()
+        with pytest.raises(QueryValidationError, match=rf"a string\), got {type_name} at index {index}"):
+            parser.parse_and_validate({"stages": [["type=t1"]], "report": report})
 
 
 class TestErrorMessages:

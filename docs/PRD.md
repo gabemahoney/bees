@@ -803,6 +803,7 @@ The optional `report` key is a list of field names. Without it, a query returns 
 
 Validation (`parse_error` on failure):
 - `report` must be a list
+- Each entry must be a string (a nested list, number, `null` or dict is rejected) → `each "report" entry must be a field name (a string), got <type> at index <i>`
 - `ticket_id` is always returned; if listed it is silently dropped
 - A list that is empty after dropping `ticket_id` → `report list cannot be empty`
 - `body` / `reference_materials` → `report field "<name>" is not available in query results; use show_ticket to retrieve it`

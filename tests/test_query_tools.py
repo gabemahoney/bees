@@ -46,6 +46,15 @@ from tests.test_constants import (
     RESULT_STATUS_SUCCESS,
 )
 
+# Report values with one non-string entry each (b.hmr), as YAML flow lists
+NON_STRING_REPORTS = [
+    pytest.param("[[title]]", id="nested_list"),
+    pytest.param("[1]", id="number"),
+    pytest.param("[null]", id="null"),
+    pytest.param("[{title: x}]", id="dict"),
+    pytest.param("[title, [ticket_id]]", id="after_valid_field"),
+]
+
 
 class TestAddNamedQueryTool:
     """Tests for add_named_query MCP tool with config-backed storage."""
@@ -165,6 +174,40 @@ class TestAddNamedQueryTool:
         assert stored["stages"] == [["type=t1"]]
         assert stored["report"] == ["title", "ticket_status"]
 
+    @pytest.mark.parametrize("report_yaml", NON_STRING_REPORTS)
+    def test_non_string_report_entry_rejected_and_not_saved(self, tmp_path, mock_global_bees_dir, report_yaml):
+        """A non-string report entry returns parse_error and leaves the config untouched (b.hmr)."""
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+        config_path = mock_global_bees_dir / "config.json"
+        config_before = config_path.read_text()
+
+        result = _add_named_query(
+            "q", f"{{stages: [[type=bee]], report: {report_yaml}}}", scope="global", resolved_root=tmp_path
+        )
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "parse_error"
+        assert 'Invalid query structure: each "report" entry must be a field name (a string)' in result["message"]
+        assert config_path.read_text() == config_before
+
+    def test_unexpected_parse_exception_returns_parse_error(self, tmp_path, mock_global_bees_dir, monkeypatch):
+        """An unexpected exception while parsing is returned as parse_error, not raised, and saves nothing."""
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+        config_path = mock_global_bees_dir / "config.json"
+        config_before = config_path.read_text()
+
+        def raise_unexpected(self, query_input):
+            raise RuntimeError("unexpected parser failure")
+
+        monkeypatch.setattr("src.mcp_query_ops.QueryParser.parse_and_validate", raise_unexpected)
+
+        result = _add_named_query("q", "stages:\n- [type=t1]", scope="global", resolved_root=tmp_path)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "parse_error"
+        assert "unexpected parser failure" in result["message"]
+        assert config_path.read_text() == config_before
+
 
 class TestExecuteNamedQueryTool:
     """Tests for execute_named_query MCP tool with config-backed resolution."""
@@ -278,6 +321,17 @@ class TestExecuteFreeformQuery:
         assert result["status"] == "error"
         assert result["error_type"] == "parse_error"
         assert error_match in result["message"]
+
+    @pytest.mark.parametrize("report_yaml", NON_STRING_REPORTS)
+    async def test_execute_freeform_query_rejects_non_string_report_entry(self, isolated_bees_env, report_yaml):
+        """A non-string report entry returns a parse_error saying entries must be field names (b.hmr)."""
+        isolated_bees_env.create_hive("test_hive", "Test Hive")
+        isolated_bees_env.write_config()
+
+        result = await _execute_freeform_query(f"{{stages: [[type=t1]], report: {report_yaml}}}")
+        assert result["status"] == "error"
+        assert result["error_type"] == "parse_error"
+        assert 'Invalid query structure: each "report" entry must be a field name (a string)' in result["message"]
 
     async def test_execute_freeform_query_with_hive_filter(self, isolated_bees_env):
         """Test executing freeform query with hive= search term."""

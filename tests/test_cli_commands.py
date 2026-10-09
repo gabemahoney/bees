@@ -510,6 +510,33 @@ class TestQueryCommands:
 
         assert exit_code == 2  # argparse usage error
 
+    @pytest.mark.parametrize("command", ["execute-freeform-query", "add-named-query"])
+    @pytest.mark.parametrize(
+        "report_yaml",
+        [
+            pytest.param("[[title]]", id="nested_list"),
+            pytest.param("[1]", id="number"),
+            pytest.param("[null]", id="null"),
+            pytest.param("[{title: x}]", id="dict"),
+        ],
+    )
+    def test_non_string_report_entry_rejected(self, cli_runner, isolated_bees_env, command, report_yaml):
+        """A non-string report entry exits 1 with a parse_error, and no query is saved (b.hmr)."""
+        isolated_bees_env.create_hive("test", "Test")
+        isolated_bees_env.write_config()
+        argv = [command, "--query-yaml", f"{{stages: [[type=bee]], report: {report_yaml}}}"]
+        if command == "add-named-query":
+            argv += ["--query-name", "bad-report"]
+
+        stdout, exit_code = cli_runner(argv)
+
+        assert exit_code == 1
+        result = json.loads(stdout)
+        assert result["error_type"] == "parse_error"
+        assert 'each "report" entry must be a field name (a string)' in result["message"]
+        listed, _ = cli_runner(["list-named-queries"])
+        assert json.loads(listed)["queries"] == []
+
 
 # ---------------------------------------------------------------------------
 # Hive commands

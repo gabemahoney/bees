@@ -335,6 +335,13 @@ class QueryParser:
                     f'"report" must be a list, got {type(report).__name__}'
                 )
 
+            for entry_idx, entry in enumerate(report):
+                if not isinstance(entry, str):
+                    raise QueryValidationError(
+                        f'each "report" entry must be a field name (a string), '
+                        f"got {type(entry).__name__} at index {entry_idx}"
+                    )
+
             # Silently strip ticket_id
             report = [f for f in report if f != "ticket_id"]
 
