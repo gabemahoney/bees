@@ -5,27 +5,34 @@ description: Run Docker-based end-to-end CI test against a bees worktree. Spawns
 
 # One-Time Setup
 
-1. **Install Docker**: Install Docker Engine for your platform
-2. **Start Docker**: Ensure the Docker daemon is running (`docker info` to verify)
-3. **Store Anthropic API key** for Docker CI containers (they can't use OAuth):
+Set up the machine as described in
+[CI prerequisites](../../../docs/architecture/testing.md#ci-prerequisites)
+(`docs/architecture/testing.md`, section "CI prerequisites"). In short:
+
+1. **Docker** installed, with the daemon running (`docker info` to verify).
+2. **Claude auth for the CI containers**: run `claude setup-token`, sign in, and save the printed
+   token to `~/.secrets/claude_oauth_token` (directory mode 700, file mode 600) without putting it
+   on a command line:
    ```bash
-   mkdir -p ~/.secrets && chmod 700 ~/.secrets
-   echo -n "sk-ant-..." > ~/.secrets/anthropic_api_key
-   chmod 600 ~/.secrets/anthropic_api_key
+   mkdir -p -m 700 ~/.secrets
+   touch ~/.secrets/claude_oauth_token
+   chmod 600 ~/.secrets/claude_oauth_token
    ```
-4. **Configure TestPyPI credentials** — either:
-   - **~/.pypirc** (works everywhere):
-     ```ini
-     [testpypi]
-     repository = https://test.pypi.org/legacy/
-     username = __token__
-     password = pypi-<your-test-pypi-token>
-     ```
-   - **macOS Keychain**:
-     ```bash
-     security add-generic-password -s "TestPyPI Token" -a testpypi -w "<your-test-pypi-token>"
-     ```
-5. **Install publish deps** (host-side): `pip install twine` (poetry is already available)
+   then paste the token into the file with an editor or `cat >`.
+   `run_test.sh` checks, in order: `~/.secrets/claude_oauth_token`, `CLAUDE_CODE_OAUTH_TOKEN`,
+   `~/.secrets/anthropic_api_key`, `ANTHROPIC_API_KEY`. An API key is used only when no OAuth
+   token is found.
+3. **TestPyPI token** (test.pypi.org, Account settings → API tokens, scoped to `bees-md`) in
+   `~/.pypirc`, mode 600:
+   ```ini
+   [testpypi]
+   username = __token__
+   password = pypi-<your-test-pypi-token>
+   ```
+4. **Host tools**: tmux, rsync, curl, python3, poetry, twine (not a project dependency, e.g.
+   `pipx install twine`), and bees with the `serve` extra (`pipx install 'bees-md[serve]'`, or
+   `poetry install -E serve` with that environment's `bees` on `PATH`).
+5. **A bugs hive** for this checkout, or `BEES_BUGS_HIVE` set (see "Bugs hive" below).
 
 # Overview
 
