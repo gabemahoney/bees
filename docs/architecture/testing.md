@@ -6,6 +6,7 @@ Unit tests:
 
 Integration tests:
 - In a Bee in the Testplans hive called b.qi9
+- Run only in Docker: through `/ci`, or for one phase, `docker/run_test.sh <phase>`; never through `tests/integration.sh` on a host (see [Running the Integration Suite](#running-the-integration-suite)). A new machine needs the [CI prerequisites](#ci-prerequisites) first
 - Use for high level end-to-end test of an actual instance of Bees, used by an LLM
 - Use Plain English, do not list bees commands
 - Try to write tests that can be run in isolation
@@ -132,13 +133,14 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 | Config | `test_config.py`, `test_config_registration.py` | |
 | Queries | `test_query_tools.py`, `test_multi_hive_query.py`, `test_graph_executor.py`, `test_query_help.py` | `test_query_help.py`: the `execute-freeform-query` and `add-named-query` CLI help, `bees sting`, and the MCP `execute_freeform_query` / `add_named_query` descriptions each list exactly the reportable and non-reportable fields from `src/query_parser.py`, show both example queries, and contain no literal `\n`; every query example in the CLI help and `sting` output, tokenized as a shell would, runs as written against an isolated hive; the doubled-backslash regex example in the `execute-freeform-query` help and MCP `execute_freeform_query` description matches only the literal-bracket title on an isolated hive; the undertaker `query_yaml` examples (MCP `undertaker` description, `src/mcp_undertaker.py` module docstring) parse |
 | MCP server | `test_mcp_server.py` (~1600 lines), `test_mcp_server_lifecycle.py`, `test_mcp_scan_validate.py` | |
+| Integration test docs | `test_integration_docs.py` | Static, text-only checks of the docs; it never runs a script. No developer doc (`README.md`, `CONTRIBUTING.md`, `CLAUDE.md`, `docs/**/*.md`, `tests/TESTING.md`, the `/ci` skill) gives a shell command that runs `tests/integration.sh`, in fenced code blocks (backslash-continued lines joined) or inline code spans; prose, an inline span that only names the script, or `bash -n` (parse only) is fine. The `## CI prerequisites` section below names every home file and credential env var that `docker/run_test.sh` and `docker/publish_test_pypi.sh` read (found by parsing the scripts) and how to get the tokens, lists the tools CI runs in its `### Tools` table (first column), and names no machine-specific path (`/home/`, `/Users/`); `CONTRIBUTING.md` links to it |
 | Doc examples | `test_docs_cli_examples.py` | Every `bees <subcommand> ...` command in `README.md` and `docs/**/*.md`, in fenced code blocks (backslash-continued lines joined) and inline code spans, parses as written against the parser `src/cli.py` builds: real subcommand and flags, required flags present, no abbreviated flags, valid JSON and choice values (`<placeholder>` and METAVAR words stand for any value; `[optional]` synopsis groups count as given; an inline span that only names a command need not parse). CLI references, which omit metavars, are checked only for a real subcommand and real flags, not fully parsed: rows of a markdown table with a column headed command or CLI (that column's code span plus the code spans of any argument, flag or option column), `usage: bees ...` lines (wrapped lines joined; a `{a,b}` subcommand list must name real subcommands) and bold `**bees ...**` synopses. Guards fail the test if extraction finds no command in `README.md` or `docs/advanced-usage.md`, no fenced command in `docs/advanced-usage.md`, no table, usage or bold reference, or no table reference with a flag. The wrong commands and references the docs used to show are rejected and their fixes accepted. Each PRD Appendix E tool exists, lists only its real MCP parameters, and lists every required one; the `undertaker(...)` calls in the `src/mcp_undertaker.py` module docstring pass only real parameters |
 | Dynamic tiers | `test_tier_hierarchy_validation.py`, `test_dynamic_tier_validation.py`, `test_parent_requirement_logic.py` | |
 | CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py`, `test_integration_phases.py` | See "Integration Testing Deep Dive" |
 | Packaging | `test_package_entry_point.py` | `bees` entry point; `serve` extra caps fastmcp and mcp below their next major and matches the Poetry pins |
 | Test isolation | `test_conftest.py` | `TestRealHomeIsolation`: runs an inner pytest session on this conftest with `HOME` set to a stand-in real home. A concurrent change to its `~/.bees/config.json` is kept; a write into it (swallowed, at import, or relative to a cwd in that home) is blocked and fails the run, keeping a worse exit status; a leaked `HOME` fails the test; child processes keep the original user base; the temp home is deleted, also after `pytest --version` |
 
-**Current**: ~1,578 tests across ~64 files.
+**Current**: ~3,120 tests across 78 files.
 
 ### Test Execution
 
@@ -166,7 +168,7 @@ If you must write tests that depend on previous tests, ensure the ticket depende
 
 ### CI Bug Server
 
-`/ci` runs each phase in its own Docker container (`docker/run_test.sh`). When a test fails, the container files a bug into this repo's bugs hive, through a bees HTTP server on the host.
+`/ci` runs each phase in its own Docker container (`docker/run_test.sh`). When a test fails, the container files a bug into this repo's bugs hive, through a bees HTTP server on the host. What the host needs for this (the bees install, a bugs hive, the port) is listed under [CI prerequisites](#ci-prerequisites).
 
 - **Port**: `BEES_CI_PORT`, default 8473. This is CI's own port, separate from the `bees serve --http` default of 8000, which other services on a dev host often hold. `/ci` always starts the server with an explicit `--port`, so `http.port` in the global config cannot move it.
 - **URL**: containers reach the server at `http://host.docker.internal:<port>`. Every container gets the same `--add-host host.docker.internal:host-gateway` mapping. If `BEES_MCP_URL` is set, `run_test.sh` uses that URL as-is. It must include an explicit port (e.g. `http://myhost:8473`): the in-container identity check rejects a URL without one.
@@ -222,7 +224,7 @@ The testplans hive rejects any status not listed in `status_values` in `docker/t
 
 In CI, `docker/test_runner.sh` runs Phases 1, 2, 5 and 6 of the integration test suite with a standalone bash script (`tests/integration.sh`). These phases exercise the installation and the CLI end-to-end — hive management, ticket CRUD, queries, dependencies, reference materials and resolvers, and more — without requiring an API token or LLM session. They are fast, deterministic, and safe to run on every change.
 
-For Phases 3 and 4, and any other phase number (for example a phase added to the plan later), it launches Claude with `/release-test`. Phases 3 and 4 validate the full LLM-agent interaction loop against a live MCP server (stdio and HTTP), catching interaction-level bugs that bash cannot. The split gives developers rapid feedback locally while reserving token spend for the tests that genuinely need it.
+For Phases 3 and 4, and any other phase number (for example a phase added to the plan later), it launches Claude with `/release-test`. Phases 3 and 4 validate the full LLM-agent interaction loop against a live MCP server (stdio and HTTP), catching interaction-level bugs that bash cannot. The split keeps the CLI phases fast while reserving token spend for the tests that genuinely need it.
 
 ### Phase Selection
 
@@ -239,33 +241,88 @@ For Phases 3 and 4, and any other phase number (for example a phase added to the
 
 `tests/test_integration_phases.py` holds static, text-only checks (plus `bash -n`) that the routing, `SCRIPT_PHASES`, section tags, sections per phase and result lines stay as described above.
 
-### Prerequisites
+### Where It Runs
 
-- `bees` installed — either via the dev path (`poetry install -E serve`) or the user path (`pipx install bees-md[serve]`)
-- A writable working directory (the script creates hives, tickets, and config during execution)
-- No pre-existing `~/.bees/config.json` — the script overwrites global config and is destructive to any existing setup. Back up or remove the file before running.
-- Claude-run phases only: a Claude Code session with a configured MCP server
+`tests/integration.sh` runs only inside a CI phase container, where `docker/test_runner.sh` starts it with `PHASE` and the optional start test number. The container gives it what it needs: bees installed from test.pypi with the `serve` extra, the `/test-repo` directory it works in, and a throwaway home whose `~/.bees/config.json` it overwrites.
 
-### Running Locally
+**Never run `tests/integration.sh` on a host.** It stops at once where there is no `/test-repo` directory, as on a host, and wherever it does run, it overwrites `~/.bees/config.json`, the global config that registers every hive on the machine. Run the suite in Docker (below).
 
-All tests of one phase (1, 2, 5 or 6):
+## Running the Integration Suite
 
-```bash
-PHASE=<phase> bash tests/integration.sh
-```
+The integration suite runs only in Docker: through `/ci`, a Claude Code skill, or for one phase, `docker/run_test.sh <phase>` (below); never through `tests/integration.sh` on a host. Run `/ci` from this checkout's root. It publishes the current code to test.pypi (`docker/publish_test_pypi.sh`), starts each phase in its own container with `docker/run_test.sh <phase> [start-test-number]`, and reads each phase's result (see "CI Phase Monitoring"). Set up a new machine first: see [CI prerequisites](#ci-prerequisites).
 
-Resume from a specific test number:
+- **The suite**: `/ci`. With a status hive, it skips the phases that passed in the last run; `/ci full` runs every phase (see "CI Phase Status").
+- **From a test number**: `/ci <test-number>` finds the test's phase in the plan and leaves out the phases before it. It passes the number to that phase's `run_test.sh` as the second argument, which reaches the container as `START_TEST`: that phase skips its tests numbered below it, and every later phase in the run scope runs all its tests.
+- **One phase**: `/ci` has no option for this. Run `docker/run_test.sh` yourself, from the checkout root, once the setup `/ci` does in its first two steps is in place:
 
 ```bash
-PHASE=<phase> bash tests/integration.sh <test_number>
+BEES_VERSION=<version> ./docker/run_test.sh <phase> [start-test-number]
 ```
 
-For a clean run, remove or back up your global config first:
+`BEES_VERSION` must be a version already on test.pypi: `docker/publish_test_pypi.sh` publishes the current code and prints its version on its last line. A bees HTTP server must be running on `BEES_CI_PORT` at the bind host (see "CI Bug Server"); if none is, `run_test.sh` stops and prints the `bees serve` command that starts one. `run_test.sh` returns once the container is up: attach with `tmux attach -t bees-ci-<phase>`. When the phase is done, remove its container and session (`docker rm -f bees-ci-<phase>`, `tmux kill-session -t bees-ci-<phase>`), and stop any bees server you started for it, since that server has no authentication. A phase run this way records no phase status.
 
-```bash
-mv ~/.bees/config.json ~/.bees/config.json.bak
-PHASE=<phase> bash tests/integration.sh
-```
+## CI prerequisites
+
+What a machine needs before its first `/ci` run. All of it is on the host, where `/ci` and the scripts it runs (`docker/publish_test_pypi.sh`, `docker/run_test.sh`) use it. Set the env vars named here in the environment Claude Code runs in: `/ci` runs the scripts from there.
+
+### Tools
+
+| Tool | Used for |
+|------|----------|
+| Claude Code (`claude`) | Runs the `/ci` skill. `claude setup-token` makes the token for the CI containers (below) |
+| Docker | `run_test.sh` builds the `bees-test` image and runs each phase in its own container. The daemon must be running and your user able to use it (`docker info` succeeds). If your user is in the `docker` group but the login session predates that, `run_test.sh` and `/ci` fall back to `sg docker` |
+| tmux | `run_test.sh` opens a host session `bees-ci-<N>` attached to each phase container's session, and `/ci` reads each phase's result from it |
+| rsync | `run_test.sh` copies the checkout into a temporary Docker build context, with symlinks dereferenced |
+| curl | `publish_test_pypi.sh` polls the TestPyPI index until the new version shows up |
+| python3 | The stdlib-only helpers in `docker/` that run on the host: `check_bees_server.py`, `ci_bind_host.py`, `ci_bugs_hive.py` and `ci_plan.py` |
+| poetry | `publish_test_pypi.sh` builds the package (`poetry build`) |
+| twine | `publish_test_pypi.sh` uploads the build to TestPyPI. It is not a dependency of this project: install it on your `PATH`, for example with `pipx install twine` |
+| bees, with the `serve` extra | The host's own bees. `/ci` starts `bees serve --http` on the CI port, the server the containers file bugs through; `run_test.sh` and `/ci` run `bees list-hives`; `/ci` records phase statuses with `bees update-ticket`. Install it with `pipx install 'bees-md[serve]'`, or from this checkout with `poetry install -E serve` and that environment's `bees` on your `PATH` |
+
+**Network**: outbound access to test.pypi.org and pypi.org; Docker Hub, where the image build pulls `ubuntu:22.04`; the Ubuntu, Node.js and npm package sources the image build installs from; and the Anthropic API, which the Claude-run phases call from inside the containers.
+
+### Claude auth for the CI containers
+
+`run_test.sh` passes one Claude credential into each phase container, and stops before the image build if it finds no credential. Every phase needs one, though only the Claude-run phases use it. `run_test.sh` checks these sources in this order, and uses the first credential it finds:
+
+1. `~/.secrets/claude_oauth_token`: an OAuth token (whitespace removed)
+2. `CLAUDE_CODE_OAUTH_TOKEN`
+3. `~/.secrets/anthropic_api_key`: an Anthropic API key
+4. `ANTHROPIC_API_KEY`
+
+So an OAuth token, from either place, wins over an API key, and a file wins over its env var: a stale token file hides a newer `CLAUDE_CODE_OAUTH_TOKEN`. A file that is missing, unreadable or empty is skipped. The container gets an OAuth token as `CLAUDE_CODE_OAUTH_TOKEN`, an API key as `ANTHROPIC_API_KEY` (see "CI Phase Container"), where anyone with Docker access on the host can read it. Prefer the files, since the host's Claude Code also logs in with these env vars.
+
+- **OAuth token** (tried first): needs a Claude Pro, Max, Team or Enterprise plan. Run `claude setup-token` and sign in in the browser when it asks. It prints a token valid for one year (`sk-ant-oat01-…`) and saves it nowhere. Create a private file for it, then paste the token into the file with an editor or `cat >`. Don't put the token on a command line, which leaves it in your shell history.
+
+  ```bash
+  mkdir -p -m 700 ~/.secrets
+  touch ~/.secrets/claude_oauth_token
+  chmod 600 ~/.secrets/claude_oauth_token
+  ```
+
+- **API key** (used only when no OAuth token is found): an Anthropic API key, billed per use, created under API keys in the Claude Console (platform.claude.com). Store it the same way in `~/.secrets/anthropic_api_key`, or set `ANTHROPIC_API_KEY`.
+
+### TestPyPI token
+
+`/ci` first publishes the current code to TestPyPI with `publish_test_pypi.sh`, and the phase images install it from there. Only twine, on the host, uses the token.
+
+1. Get the Owner or Maintainer role on the `bees-md` project on test.pypi.org, which uploading needs: ask a project owner to add your account. TestPyPI accounts are separate from pypi.org accounts.
+2. On test.pypi.org, under Account settings → API tokens, add a token scoped to the `bees-md` project. Copy it (`pypi-…`): it is shown only once.
+3. Put it in `~/.pypirc` with an editor, in a `[testpypi]` section, then make the file private with `chmod 600 ~/.pypirc`:
+
+   ```ini
+   [testpypi]
+   username = __token__
+   password = pypi-<your TestPyPI token>
+   ```
+
+`publish_test_pypi.sh` needs a `[testpypi]` section in `~/.pypirc`, and stops before building without one. It uploads with `twine upload --repository testpypi --non-interactive`, so twine reads the username and password from that section and never prompts. Twine knows the TestPyPI upload URL, so a `repository =` line is optional. If the file has a `[distutils]` section, its `index-servers` must list `testpypi`, or twine ignores the `[testpypi]` section.
+
+### Hives and port
+
+- **Bugs hive**: the host's bees must list a bugs hive for this checkout (see "Bugs hive rule" under "CI Bug Server"), or `BEES_BUGS_HIVE` must name one; otherwise `run_test.sh` stops before the image build. To create one, run `bees colonize-hive --name bugs --path <absolute path>` from the checkout root.
+- **Status hive** (optional): for `/ci` to record phase statuses and resume a run, register this checkout's `docker/testplans` as a hive (see "CI Phase Status"), for example with `bees colonize-hive --path <absolute path of docker/testplans>` from the checkout root, which takes the name from the hive's marker.
+- **`BEES_CI_PORT`** (default 8473): the host port of the bees server the containers file bugs through. Set it to a free port if another service holds 8473. A host firewall must let the containers reach the host on that port.
 
 ## Checklist for New Tests
 

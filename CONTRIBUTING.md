@@ -44,6 +44,10 @@ Use the `/ci` skill from Claude Code. It publishes the current code to test.pypi
 /ci
 ```
 
+The integration tests run only in Docker: through `/ci`, or for one phase, `docker/run_test.sh <phase>` (see [Running the Integration Suite](docs/architecture/testing.md#running-the-integration-suite)). Never run `tests/integration.sh` on your machine: it runs only inside a CI container, and it overwrites `~/.bees/config.json`. To start from a test number, run `/ci <test-number>`.
+
+Before the first run on a machine, set up the [CI prerequisites](docs/architecture/testing.md#ci-prerequisites): Claude auth for the CI containers, a TestPyPI token, the tools CI runs, and a bugs hive.
+
 Test failures are filed as bugs against a bees HTTP server on the host, on port 8473 by default. `/ci` starts that server if nothing is listening there. It binds the address the containers reach the host at: the Docker bridge gateway on Linux Docker Engine, `127.0.0.1` on Docker Desktop. The server has no authentication, so when the run ends, `/ci` stops a server that `/ci` started, including one an interrupted earlier run left running. A server you started yourself keeps running. If another service already uses port 8473, set `BEES_CI_PORT` to a free port in the environment Claude Code runs in. If a host firewall blocks traffic from containers to the host on that port, `/ci` stops before the tests start and says so.
 
 The containers run the test plan `b.qi9` from this checkout's `docker/testplans`. `/ci` records each phase's result there, as its epic's status, so a later `/ci` runs only the phases that did not pass; `/ci full` runs them all. It records them only through a hive, under any name, that bees resolves for this checkout to its `docker/testplans`. Without one, for example in a worktree whose `docker/testplans` is not registered, `/ci` records nothing and runs every phase each time, so it cannot resume a run. It says so when it starts.

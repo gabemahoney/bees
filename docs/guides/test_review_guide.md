@@ -3,7 +3,7 @@
 ## Purpose
 
 This guide provides guidance for writing integration and unit tests.
-Writing Integration tests is covered in docs/testing.md
+Writing Integration tests is covered in docs/architecture/testing.md
 
 ## Integration Test Guide
 Integration test cases are described in plain English in a bee called b.qi9 in the `testplans` hive.
