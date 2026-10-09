@@ -4,12 +4,23 @@ Unit tests for MCP reference_materials resolution operations.
 PURPOSE:
 Tests the _resolve_references pipeline and helper functions in mcp_reference_ops:
   - resolve_file_path(): default resolver for file-path entries
-  - _invoke_custom_resolver(): custom subprocess resolver
+  - _invoke_custom_resolver(): custom subprocess resolver, including timeout and
+    cancellation killing the resolver's child processes
   - _resolve_references(): orchestrates resolution for a full reference_materials list
 """
 
+import asyncio
+import gc
 import json
+import logging
+import os
+import signal
 import sys
+import threading
+import time
+from collections.abc import Coroutine
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -223,20 +234,6 @@ class TestInvokeCustomResolver:
                 timeout=5,
             )
 
-    async def test_custom_resolver_timeout(self, tmp_path):
-        """Custom resolver timeout kills process and raises RuntimeError."""
-        resolver_script = tmp_path / "resolver_hang.sh"
-        resolver_script.write_text("#!/bin/bash\nsleep 10\necho '[\"done\"]'\n")
-        resolver_script.chmod(0o755)
-
-        with pytest.raises(RuntimeError, match=r"Resolver timed out after 0.5 seconds"):
-            await _invoke_custom_resolver(
-                command=str(resolver_script),
-                value="test-value",
-                repo_root=tmp_path,
-                timeout=0.5,
-            )
-
     async def test_custom_resolver_receives_value_arg(self, tmp_path):
         """Custom resolver is invoked with --repo-root and --value args."""
         output_file = tmp_path / "resolver_output.txt"
@@ -442,6 +439,269 @@ echo '["verified"]'
         args = captured_args[0]
         # Direct invocation: first arg is the script path itself
         assert args[0] == str(nonexistent)
+
+
+# ============================================================================
+# _invoke_custom_resolver — timeout and cancellation kill the resolver's children
+# ============================================================================
+
+# A child left running holds the resolver's stdout/stderr pipes open, so a call
+# that does not kill it blocks until this sleep ends.
+_CHILD_SLEEP_SECONDS = 10
+_RESOLVER_TIMEOUT = 1
+# Upper bound for a timed-out call: the timeout, the 1 s post-kill drain, slack.
+_TIMEOUT_BOUND = _RESOLVER_TIMEOUT + 3
+
+# Starts a `sleep` child (in the resolver's process group, or in its own session),
+# records the PIDs atomically, then waits for the child or exits leaving it behind.
+_SPAWNING_RESOLVER = """\
+import json, os, subprocess
+child = subprocess.Popen(["sleep", "{sleep}"], start_new_session={own_session})
+with open({tmp!r}, "w") as f:
+    json.dump({{"resolver": os.getpid(), "pgid": os.getpgid(0), "child": child.pid}}, f)
+os.replace({tmp!r}, {pid_file!r})
+if {wait}:
+    child.wait()
+"""
+
+
+def _is_running(pid: int) -> bool:
+    """True while pid is a live process; a zombie (exited, not yet reaped) counts as gone."""
+    if Path("/proc/self/stat").exists():
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except OSError:
+            return False
+        return state not in ("Z", "X")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass  # Exists, owned by another user
+    return True
+
+
+def _runs_resolver_or_child(pid: int, script: Path) -> bool:
+    """True if pid still runs `script` or a `sleep`, so a reused PID is never killed; without /proc, if it runs."""
+    if not _is_running(pid):
+        return False
+    if not Path("/proc").exists():
+        return True  # No procfs (e.g. macOS) to read the command line from
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    return argv[0] == b"sleep" or os.fsencode(script) in argv
+
+
+def _gone_within(pid: int, seconds: float = 3.0) -> bool:
+    """Poll until pid is no longer running; False if it still runs after `seconds`."""
+    deadline = time.monotonic() + seconds
+    while _is_running(pid):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+@pytest.fixture
+def run_cleanly(caplog, capfd):
+    """Run a coroutine with asyncio.run, as `bees show-ticket` does; return elapsed seconds.
+
+    Then asserts the run left nothing that prints a traceback: no asyncio error log, no exception in a __del__.
+    """
+
+    def _run(main: Coroutine[Any, Any, None]) -> float:
+        # Collect an earlier test's garbage first, outside this run's checks, so this test is not blamed for it.
+        gc.collect()
+        logged_before = len(caplog.records)
+        # Catch exceptions raised in a __del__ here; pytest's own hook only warns, and maybe in another test.
+        unraisable: list = []
+        pytest_hook = sys.unraisablehook
+        sys.unraisablehook = unraisable.append
+        try:
+            threads_before = set(threading.enumerate())
+            started = time.monotonic()
+            asyncio.run(main)
+            elapsed = time.monotonic() - started
+            # asyncio's child watcher threads hold the subprocess transports until they finish; collect after them.
+            for thread in set(threading.enumerate()) - threads_before:
+                thread.join(timeout=5)
+                # Still running, it frees its transport in a later test; fail this one instead.
+                assert not thread.is_alive(), f"{thread.name} still running 5 s after the event loop closed"
+            gc.collect()  # A leaked future or transport reports itself when collected
+        finally:
+            # Restore here, not at teardown: whatever is raised after this run must not land in an unchecked list.
+            sys.unraisablehook = pytest_hook
+
+        logged = caplog.records[logged_before:]
+        assert [r.getMessage() for r in logged if r.name == "asyncio" and r.levelno >= logging.ERROR] == []
+        assert [f"{u.object!r}: {u.exc_value!r}" for u in unraisable] == []
+        err = capfd.readouterr().err
+        for leak_sign in ("Traceback", "never retrieved", "Event loop is closed"):
+            assert leak_sign not in err
+        return elapsed
+
+    return _run
+
+
+@pytest.fixture
+def run_to_timeout(tmp_path, run_cleanly):
+    """Run a resolver until the call reports its timeout, via `run_cleanly`; return elapsed seconds."""
+
+    async def _call(script: Path) -> None:
+        with pytest.raises(RuntimeError, match=rf"^Resolver timed out after {_RESOLVER_TIMEOUT} seconds$"):
+            await _invoke_custom_resolver(command=str(script), value="v", repo_root=tmp_path, timeout=_RESOLVER_TIMEOUT)
+
+    def _run(script: Path) -> float:
+        return run_cleanly(_call(script))
+
+    return _run
+
+
+@pytest.fixture
+def run_to_cancel(tmp_path, run_cleanly):
+    """Cancel the call (the caller gives up, e.g. Ctrl-C) once the resolver has started its child, via `run_cleanly`."""
+
+    async def _call(script: Path, pid_file: Path) -> None:
+        task = asyncio.create_task(
+            _invoke_custom_resolver(command=str(script), value="v", repo_root=tmp_path, timeout=None)
+        )
+        while not pid_file.exists() and not task.done():
+            await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    def _run(script: Path, pid_file: Path) -> None:
+        run_cleanly(asyncio.wait_for(_call(script, pid_file), timeout=10))
+
+    return _run
+
+
+@pytest.fixture
+def spawning_resolver(tmp_path):
+    """Factory for a .py resolver that starts a `sleep` child; kills those still running on teardown."""
+    made: list[tuple[Path, Path]] = []
+
+    def _make(*, wait: bool = True, own_session: bool = False) -> tuple[Path, Path]:
+        script = tmp_path / f"spawning_resolver_{len(made)}.py"
+        pid_file = tmp_path / f"spawning_resolver_{len(made)}.json"
+        script.write_text(
+            _SPAWNING_RESOLVER.format(
+                sleep=_CHILD_SLEEP_SECONDS,
+                own_session=own_session,
+                wait=wait,
+                tmp=f"{pid_file}.tmp",
+                pid_file=str(pid_file),
+            )
+        )
+        made.append((script, pid_file))
+        return script, pid_file
+
+    yield _make
+
+    for script, pid_file in made:
+        if not pid_file.exists():
+            continue
+        pids = json.loads(pid_file.read_text())
+        for pid in (pids["resolver"], pids["child"]):
+            if _runs_resolver_or_child(pid, script):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass  # Exited since the check
+
+
+@pytest.mark.skipif(os.name != "posix", reason="process groups and `sleep` are POSIX-only")
+class TestCustomResolverKillsChildren:
+    """A timed-out or cancelled resolver's children must not outlive the call or block it (b.bh8)."""
+
+    @pytest.mark.parametrize(
+        "wait",
+        [
+            pytest.param(True, id="resolver_waits_on_child"),
+            pytest.param(False, id="resolver_exits_leaving_child"),
+        ],
+    )
+    def test_timeout_kills_children_and_returns_within_bound(self, spawning_resolver, run_to_timeout, wait):
+        """On timeout the resolver and its child are killed and the call returns promptly, with no traceback."""
+        script, pid_file = spawning_resolver(wait=wait)
+
+        assert run_to_timeout(script) < _TIMEOUT_BOUND
+        pids = json.loads(pid_file.read_text())
+        assert _gone_within(pids["resolver"])
+        assert _gone_within(pids["child"])
+
+    @pytest.mark.parametrize(
+        "wait, kill_errors",
+        [
+            pytest.param(True, [], id="resolver_waits_on_child"),
+            pytest.param(False, [ProcessLookupError], id="resolver_exited_and_reaped"),
+        ],
+    )
+    def test_child_outside_group_cannot_block_past_bound(
+        self, spawning_resolver, run_to_timeout, monkeypatch, wait, kill_errors
+    ):
+        """A child in its own session escapes the kill but holds the pipes; the call still returns within the bound.
+
+        A resolver already exited and reaped leaves its group empty, so killing the group raises ProcessLookupError.
+        """
+        real_killpg = os.killpg
+        raised: list[type[OSError]] = []
+
+        def _recording_killpg(pgid: int, sig: int) -> None:
+            try:
+                real_killpg(pgid, sig)
+            except OSError as e:
+                raised.append(type(e))
+                raise
+
+        monkeypatch.setattr("src.mcp_reference_ops.os.killpg", _recording_killpg)
+        script, pid_file = spawning_resolver(own_session=True, wait=wait)
+
+        assert run_to_timeout(script) < _TIMEOUT_BOUND
+        assert raised == kill_errors
+        assert _gone_within(json.loads(pid_file.read_text())["resolver"])
+
+    def test_without_process_groups_kills_resolver_only(self, spawning_resolver, run_to_timeout, monkeypatch):
+        """Without process groups the resolver shares the caller's group, is killed itself, and the call is bounded."""
+        monkeypatch.setattr("src.mcp_reference_ops._KILL_PROCESS_GROUP", False)
+        script, pid_file = spawning_resolver()
+
+        assert run_to_timeout(script) < _TIMEOUT_BOUND
+        pids = json.loads(pid_file.read_text())
+        assert pids["pgid"] == os.getpgid(0)  # not started in a new session
+        assert _gone_within(pids["resolver"])
+
+    def test_cancelled_call_kills_resolver_and_children(self, spawning_resolver, run_to_cancel):
+        """Cancelling the call kills and reaps the resolver and its child, with no traceback once the loop closes."""
+        script, pid_file = spawning_resolver()
+
+        run_to_cancel(script, pid_file)
+
+        pids = json.loads(pid_file.read_text())
+        assert _gone_within(pids["resolver"])
+        assert _gone_within(pids["child"])
+
+    @pytest.mark.parametrize("ending", ["timeout", "cancel"])
+    def test_kill_refused_still_ends_call(self, spawning_resolver, run_to_timeout, run_to_cancel, monkeypatch, ending):
+        """PermissionError from killing the group (macOS, only zombies left) is ignored; the call ends as usual."""
+
+        def _refuse(pgid: int, sig: int) -> None:
+            raise PermissionError
+
+        monkeypatch.setattr("src.mcp_reference_ops.os.killpg", _refuse)
+        # As where EPERM really happens, the resolver itself has exited; here its child still holds the pipes.
+        script, pid_file = spawning_resolver(wait=False)
+
+        if ending == "timeout":
+            assert run_to_timeout(script) < _TIMEOUT_BOUND  # the timeout error, not "Failed to invoke resolver"
+        else:
+            run_to_cancel(script, pid_file)  # CancelledError still propagates
+        # The refused kill left the child running; spawning_resolver kills it on teardown.
+        assert _is_running(json.loads(pid_file.read_text())["child"])
 
 
 # ============================================================================

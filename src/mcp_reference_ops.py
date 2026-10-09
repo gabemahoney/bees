@@ -8,7 +8,9 @@ using configured resolvers (default file-path resolver or registered custom comm
 import asyncio
 import json
 import logging
+import os
 import shlex
+import signal
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,15 @@ DEFAULT_RESOLVER_CONVENTION = (
     'Returns {"status": "success", "resolved_path": str} on success, '
     'or {"status": "error", "raw_value": value, "error": str} on failure.'
 )
+
+# Process groups are POSIX-only. Where they exist, each custom resolver runs in
+# its own session (and so its own process group) so that a timeout kills every
+# process the resolver started, not just the resolver itself.
+_KILL_PROCESS_GROUP = os.name == "posix" and hasattr(os, "killpg")
+
+# After killing a timed-out resolver, how long to wait for its pipes to reach
+# EOF before closing them ourselves.
+_POST_KILL_DRAIN_TIMEOUT = 1.0
 
 
 def resolve_file_path(value: Any, repo_root: Path | None = None) -> dict:
@@ -137,6 +148,70 @@ async def _resolve_references(
     return results
 
 
+def _kill_resolver(proc: asyncio.subprocess.Process) -> None:
+    """
+    Kill a custom resolver and, on POSIX, every process in its process group.
+
+    Killing only the resolver would leave its children running, still holding
+    the resolver's stdout/stderr pipes open.
+
+    Args:
+        proc: The resolver process, started with ``start_new_session=True``
+            when ``_KILL_PROCESS_GROUP`` is set
+    """
+    if _KILL_PROCESS_GROUP:
+        try:
+            # The resolver leads its own session, so its PID is its group ID.
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            # The group has no live members left. Some platforms (macOS)
+            # report EPERM rather than ESRCH when only unreaped zombies remain.
+            pass
+        return
+
+    try:
+        proc.kill()
+    except (ProcessLookupError, PermissionError):
+        pass  # The resolver has already exited
+
+
+async def _reap_killed_resolver(proc: asyncio.subprocess.Process) -> None:
+    """
+    Wait, for a bounded time, for a killed resolver to exit and its pipes to close.
+
+    Draining stdout/stderr to EOF lets the pipe transports close cleanly.
+    Without it, asyncio logs "Future exception was never retrieved" tracebacks
+    to stderr when the event loop cleans up the still-active pipe transports.
+    The wait is bounded because a process outside the killed group (one that
+    started its own session, or any child on platforms without process groups)
+    can hold the pipes open indefinitely. When the bound expires, the pipe
+    transports are closed instead, so the readers see EOF and nothing is left
+    for the event loop to clean up.
+
+    Args:
+        proc: The resolver process, already killed via ``_kill_resolver()``
+    """
+
+    async def _drain(stream: asyncio.StreamReader | None) -> None:
+        if stream:
+            try:
+                await stream.read()
+            except Exception:
+                pass
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(_drain(proc.stdout), _drain(proc.stderr), proc.wait()),
+            timeout=_POST_KILL_DRAIN_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        # asyncio.subprocess.Process has no public close(); closing its
+        # transport closes both pipe transports while the event loop still runs.
+        transport = getattr(proc, "_transport", None)
+        if transport is not None:
+            transport.close()
+
+
 async def _invoke_custom_resolver(
     command: str,
     value: Any,
@@ -158,7 +233,9 @@ async def _invoke_custom_resolver(
         command: The resolver command to invoke
         value: The reference_materials entry value to pass to the resolver
         repo_root: The repository root path
-        timeout: Timeout in seconds (None for no timeout)
+        timeout: Timeout in seconds (None for no timeout). On timeout the
+            resolver's whole process group is killed (POSIX; elsewhere only
+            the resolver itself).
 
     Returns:
         Any: Parsed JSON output from resolver (any JSON-compatible value or null)
@@ -196,39 +273,39 @@ async def _invoke_custom_resolver(
 
     logger.info(f"Invoking custom resolver: {args}")
 
+    # Run the resolver in its own session where supported, so a timeout can
+    # kill its whole process group (see _KILL_PROCESS_GROUP).
+    spawn_kwargs: dict[str, Any] = {"start_new_session": True} if _KILL_PROCESS_GROUP else {}
+
     try:
         # Invoke subprocess with timeout
         proc = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            **spawn_kwargs,
         )
 
         # Wait for completion with timeout
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except asyncio.TimeoutError:
-            # Kill process on timeout, then drain stdout/stderr to EOF so
-            # the pipe transports close cleanly.  Without this, asyncio logs
-            # "Future exception was never retrieved" tracebacks to stderr when
-            # the event loop cleans up the still-active pipe transports.
-            proc.kill()
-
-            async def _drain(stream: asyncio.StreamReader | None) -> None:
-                if stream:
-                    try:
-                        await stream.read()
-                    except Exception:
-                        pass
-
-            await asyncio.gather(
-                _drain(proc.stdout),
-                _drain(proc.stderr),
-                proc.wait(),
-            )
+            # Kill the resolver's whole process group, not just the resolver:
+            # a surviving child keeps the pipes open, and the call would then
+            # block until that child exits. Then reap with a bounded wait.
+            _kill_resolver(proc)
+            await _reap_killed_resolver(proc)
             timeout_msg = f"Resolver timed out after {timeout} seconds"
             logger.error(timeout_msg)
             raise RuntimeError(timeout_msg) from None
+        except asyncio.CancelledError:
+            # In its own session, the resolver no longer receives the
+            # terminal's Ctrl-C, so kill its group when the caller gives up.
+            # Reap it too: an unreaped subprocess transport is left for the
+            # event loop's teardown, which then warns that the loop is closed.
+            _kill_resolver(proc)
+            await _reap_killed_resolver(proc)
+            raise
 
         # Check exit code
         if proc.returncode != 0:

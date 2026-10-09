@@ -53,6 +53,8 @@ A custom resolver is a script that implements this interface:
 
 String values arrive as plain text (e.g., `abc-123-def-456`). Non-string types arrive as JSON (e.g., `{"key": "value"}`).
 
+Resolvers must not prompt for interactive input. On POSIX systems they run without a controlling terminal, so a prompt that needs one (such as a password prompt) fails instead of waiting for an answer.
+
 ### Output (stdout)
 
 Your resolver must write valid JSON to stdout. The output can be any JSON-compatible value:
@@ -150,7 +152,7 @@ bees set-resolver --name <name> --path <absolute-path-to-script> [--timeout <sec
 
 - `--name`: Resolver name. Cannot be `file-path`, `github`, `bees`, or `default` (all reserved for built-ins).
 - `--path`: Absolute path to the resolver script. Must exist on disk.
-- `--timeout`: Optional execution timeout in seconds.
+- `--timeout`: Optional execution timeout in seconds. A resolver still running at the timeout is killed, together with the child processes it started (on POSIX systems), and the entry's `resolved` value reports the timeout error.
 
 When registered, bees reads the script's module docstring and extracts the `## RESOLVER CONVENTION` block automatically, storing it alongside the path.
 

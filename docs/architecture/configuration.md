@@ -436,7 +436,11 @@ Custom resolvers are invoked as subprocesses with two arguments:
 
 **Timeout Handling**:
 - Configured per resolver in the global `resolvers` registry via the `timeout` field
-- Process killed if execution exceeds configured timeout
+- On POSIX, each custom resolver runs in its own session, and so its own process group. On timeout, bees sends SIGKILL to the whole group, so the resolver's child processes die with it.
+- Where process groups are unavailable, only the resolver process is killed.
+- After the kill, bees waits at most about 1 second for the pipes to reach EOF and the resolver to exit, then closes the pipes itself. A timed-out call therefore returns within about the timeout plus 1 second, even if a process outside the killed group still holds the pipes (a child that started its own session, or any child where process groups are unavailable). Such a process is not killed.
+- The timeout surfaces as a `Resolver timed out after N seconds` error in that entry's `resolved` value. Other entries are unaffected.
+- Cancelling the call (e.g. a cancelled request, or Ctrl-C) kills the resolver the same way, group included where available, with the same bounded cleanup. A resolver in its own session does not receive the terminal's Ctrl-C itself.
 
 ### Implementation
 
