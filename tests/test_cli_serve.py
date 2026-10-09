@@ -65,6 +65,21 @@ def _serve_subparser():
     raise RuntimeError("serve subparser not found")
 
 
+@pytest.fixture(autouse=True)
+def serve_log_path(monkeypatch, tmp_path):
+    """Send `bees serve` file logging (~/.bees/mcp.log) to tmp_path; restore the root logger after."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    root_logger = logging.getLogger()
+    original_handlers, original_level = root_logger.handlers[:], root_logger.level
+    yield tmp_path / ".bees" / "mcp.log"
+    for handler in root_logger.handlers[:]:
+        if handler not in original_handlers:
+            handler.close()
+    root_logger.handlers[:] = original_handlers
+    root_logger.setLevel(original_level)
+
+
 # ---------------------------------------------------------------------------
 # TestServeFlagValidation
 # ---------------------------------------------------------------------------
@@ -191,33 +206,19 @@ class TestStdioTransport:
                         handle_serve(args)
                         mock_sched.assert_not_called()
 
-    def test_stdio_logging_to_file(self):
-        """Root logger handlers are replaced with a single FileHandler after --stdio."""
-        root_logger = logging.getLogger()
-        original_handlers = root_logger.handlers[:]
-        original_level = root_logger.level
-        stream_handler = logging.StreamHandler()
-        root_logger.addHandler(stream_handler)
+    def test_stdio_logging_to_file(self, serve_log_path):
+        """Root logger handlers are replaced with a single FileHandler to ~/.bees/mcp.log after --stdio."""
+        logging.getLogger().addHandler(logging.StreamHandler())
 
-        try:
-            self._run_stdio()
+        self._run_stdio()
 
-            handlers = logging.getLogger().handlers
-            assert len(handlers) >= 1
-            assert not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
-                           for h in handlers), (
-                "StreamHandler should have been removed from root logger"
-            )
-            assert any(isinstance(h, logging.FileHandler) for h in handlers)
-        finally:
-            # Close any FileHandlers added by the stdio path to avoid ResourceWarning
-            for h in root_logger.handlers[:]:
-                if isinstance(h, logging.FileHandler) and h not in original_handlers:
-                    h.close()
-            root_logger.handlers.clear()
-            for h in original_handlers:
-                root_logger.addHandler(h)
-            root_logger.setLevel(original_level)
+        handlers = logging.getLogger().handlers
+        assert not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)
+                       for h in handlers), (
+            "StreamHandler should have been removed from root logger"
+        )
+        assert [h.baseFilename for h in handlers if isinstance(h, logging.FileHandler)] == [str(serve_log_path)]
+        assert serve_log_path.exists()
 
 
 # ---------------------------------------------------------------------------

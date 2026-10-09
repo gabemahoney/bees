@@ -5,9 +5,15 @@ See tests/TESTING.md for complete documentation on fixtures, mock patching strat
 and decision trees for choosing the right fixture.
 """
 
+import atexit
 import json
+import logging
+import os
 import shutil
+import site
 import socket
+import sys
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,7 +21,148 @@ from types import SimpleNamespace
 
 import pytest
 
+# ============================================================================
+# HOME ISOLATION (must run before any `src` import)
+# ============================================================================
+# The suite never reads or writes the real home directory. HOME (USERPROFILE on
+# Windows) points at a temp dir for the whole session, so ~/.bees/, its config
+# and mcp.log, and ~/.claude/ resolve there, in this process and in every
+# subprocess, which inherits os.environ. This runs at conftest import, not in a
+# fixture or pytest_configure: those run after the `src` imports below, and
+# importing src.mcp_server creates ~/.bees/ and sets up logging into it.
+# pytest imports this file before any test module; each pytest-xdist worker
+# imports it on its own and gets its own temp home.
+
+_REAL_HOMES = {os.path.expanduser("~")}
+try:
+    import pwd
+
+    _REAL_HOMES.add(pwd.getpwuid(os.getuid()).pw_dir)  # used when HOME is unset
+except (ImportError, KeyError):
+    pass
+
+ISOLATED_HOME = Path(tempfile.mkdtemp(prefix="bees-test-home-")).resolve()
+# Also deleted when pytest_unconfigure never runs (failed import below, --version, usage error)
+atexit.register(shutil.rmtree, ISOLATED_HOME, ignore_errors=True)
+_SAVED_HOME_ENV = {var: os.environ.get(var) for var in ("HOME", "USERPROFILE", "PYTHONUSERBASE")}
+# Subprocesses outside a virtualenv keep finding packages installed with `pip install --user`
+os.environ.setdefault("PYTHONUSERBASE", site.getuserbase())
+os.environ["HOME"] = os.environ["USERPROFILE"] = str(ISOLATED_HOME)
+
+# Only the paths bees uses under a home are guarded: the checkout, the virtualenv
+# and tool caches may live under the real home and are read legitimately.
+_REAL_HOME_KEYS = {
+    os.path.normcase(resolve(home)) for home in _REAL_HOMES for resolve in (os.path.abspath, os.path.realpath)
+}
+_GUARDED_PATHS = tuple(
+    os.path.join(home, entry) for home in _REAL_HOME_KEYS for entry in (".bees", ".claude", ".claude.json")
+)
+# Audit event -> (index of a path argument, index of its dir_fd argument or None if it has none), per path.
+_PATH_EVENTS = {
+    **dict.fromkeys(("open", "os.listdir", "os.scandir", "os.truncate"), ((0, None),)),
+    **dict.fromkeys(("os.remove", "os.rmdir", "shutil.rmtree"), ((0, 1),)),
+    **dict.fromkeys(("os.mkdir", "os.chmod"), ((0, 2),)),
+    "os.utime": ((0, 3),),
+    **dict.fromkeys(("os.rename", "os.link"), ((0, 2), (1, 3))),
+    "os.symlink": ((0, None), (1, 2)),
+    **dict.fromkeys(("shutil.copyfile", "shutil.copytree", "shutil.move"), ((0, None), (1, None))),
+}
+_real_home_access: list[str] = []
+_guard_active = True
+
+
+class RealHomeAccessError(RuntimeError):
+    """A test touched a guarded path under the real home. Not an OSError, which callers may swallow."""
+
+
+def _guarded_path(path) -> str | None:
+    """The absolute form of `path` if it is a guarded real-home path, else None."""
+    try:
+        path = os.path.abspath(os.fsdecode(path))
+    except (TypeError, ValueError, OSError):
+        return None
+    key = os.path.normcase(path)
+    return path if any(key == guarded or key.startswith(guarded + os.sep) for guarded in _GUARDED_PATHS) else None
+
+
+def _relative_to_cwd(event: str, args: tuple, index: int, dir_fd_index: int | None) -> bool:
+    """Whether a relative path argument of an audit event resolves against the cwd.
+
+    It doesn't when it is relative to a dir_fd (shutil.rmtree and os.fwalk work on bare entry names
+    that way) or to an unknown base: os.open() reports no dir_fd, a relative link target is
+    relative to the link. Those relative paths are not checked; absolute ones always are.
+    """
+    if event == "open":
+        return isinstance(args[1], str)  # open() reports its mode; os.open() reports None
+    if event == "os.symlink" and index == 0:
+        return False
+    dir_fd = args[dir_fd_index] if dir_fd_index is not None and dir_fd_index < len(args) else None
+    return dir_fd in (None, -1)  # -1 (or None) is "no dir_fd given"
+
+
+def _real_home_audit_hook(event: str, args: tuple) -> None:
+    """Block and record file operations on guarded real-home paths, before they happen."""
+    if not _guard_active:
+        return
+    for index, dir_fd_index in _PATH_EVENTS.get(event, ()):
+        path = args[index]
+        if not isinstance(path, (str, bytes, os.PathLike)):
+            continue  # a file descriptor
+        if not os.path.isabs(path) and not _relative_to_cwd(event, args, index, dir_fd_index):
+            continue
+        guarded = _guarded_path(path)
+        if guarded:
+            message = f"{event} on {guarded}: tests must not touch the real home directory"
+            _real_home_access.append(message)
+            raise RealHomeAccessError(message)
+
+
+sys.addaudithook(_real_home_audit_hook)
+
+
+def _home_resolution_problems() -> list[str]:
+    resolved = {
+        "Path.home()": Path.home(),
+        "os.path.expanduser('~')": Path(os.path.expanduser("~")),
+        "src.config.get_global_bees_dir()": _unpatched_get_global_bees_dir(),
+    }
+    return [
+        f"{name} resolves to {path}, in the real home directory"
+        for name, path in resolved.items()
+        if os.path.normcase(os.path.abspath(path)) in _REAL_HOME_KEYS or _guarded_path(path)
+    ]
+
+
+def pytest_sessionfinish(session):
+    """Fail the run if anything touched the real home, also outside a test (imports, collection)."""
+    if _real_home_access:
+        if session.exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED  # keep a worse status (interrupted, internal error)
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_sep("=", "real home directory touched", red=True)
+            reporter.write_line("\n".join(_real_home_access), red=True)
+
+
+def pytest_unconfigure(config):
+    """Close log files in the temp home, restore HOME/USERPROFILE/PYTHONUSERBASE and delete the temp home."""
+    global _guard_active
+    _guard_active = False
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, logging.FileHandler) and Path(handler.baseFilename).is_relative_to(ISOLATED_HOME):
+            root_logger.removeHandler(handler)
+            handler.close()
+    for var, value in _SAVED_HOME_ENV.items():
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+    shutil.rmtree(ISOLATED_HOME, ignore_errors=True)
+
+
 from src.config import GLOBAL_SCHEMA_VERSION
+from src.config import get_global_bees_dir as _unpatched_get_global_bees_dir
 from src.id_utils import generate_guid
 from src.mcp_hive_ops import write_identity
 from src.repo_context import repo_root_context
@@ -179,33 +326,28 @@ def write_queen_repos_config(global_bees_dir: Path, entries: list[tuple[str, boo
     config_path.write_text(json.dumps(config, indent=2))
 
 
-@pytest.fixture(scope="session", autouse=True)
-def backup_global_config():
-    """Backup and restore real ~/.bees/config.json to prevent test pollution."""
-    real_config_path = Path.home() / ".bees" / "config.json"
-    backup_path = Path.home() / ".bees" / "config.json.test_backup"
-
-    if real_config_path.exists():
-        shutil.copy2(real_config_path, backup_path)
-
+@pytest.fixture(autouse=True)
+def guard_real_home():
+    """Fail a test that resolves the home dir to, or touches bees/Claude files under, the real home."""
+    problems = _home_resolution_problems()
+    if problems:
+        pytest.fail("\n".join(problems), pytrace=False)
+    seen = len(_real_home_access)
     yield
-
-    if backup_path.exists():
-        shutil.copy2(backup_path, real_config_path)
-        backup_path.unlink()
+    problems = _real_home_access[seen:] + _home_resolution_problems()
+    if problems:
+        pytest.fail("\n".join(problems), pytrace=False)
 
 
 @pytest.fixture(autouse=True)
 def mock_global_bees_dir(request, tmp_path, monkeypatch):
-    """Redirect ~/.bees/ to tmp_path/global_bees/ so tests never touch real config.
+    """Redirect ~/.bees/ to tmp_path/global_bees/ so each test gets its own global config.
 
-    This is the critical isolation fixture. All config operations go through
-    the mocked path instead of the real ~/.bees/ directory.
-
-    Opt-out: @pytest.mark.needs_real_config
+    Opt-out: @pytest.mark.needs_real_config uses the unpatched ~/.bees/, which is in the
+    session's temp home (ISOLATED_HOME, shared by all such tests), never the real home.
     """
     if "needs_real_config" in request.keywords:
-        # Don't mock - use real config directory
+        # Don't mock - use the unpatched ~/.bees/ in the session's temp home
         import src.config
         src.config._SCOPE_PATTERN_CACHE.clear()
         src.config._GLOBAL_CONFIG_CACHE = None

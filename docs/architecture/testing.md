@@ -21,7 +21,7 @@ Integration tests:
 2. **Integration over isolation** - Bees is filesystem-based; real operations catch real bugs
 3. **Parametrize over duplication** - 3+ similar tests → `@pytest.mark.parametrize`
 4. **DRY with fixtures and factories** - No copy-paste setup
-5. **No meta-tests** - Don't test fixtures/helpers; real tests validate them
+5. **No meta-tests** - Don't test fixtures/helpers; real tests validate them. Exception: the real-home isolation guard tests (`TestRealHomeIsolation` in `tests/test_conftest.py`), since a broken guard fails no other test
 6. **Coverage through cases, not count** - 10 parametrized tests > 50 same-path tests
 
 ### Standards
@@ -35,9 +35,12 @@ Integration tests:
 
 ### Fixtures Summary
 
+#### Session temp home (always active)
+`tests/conftest.py` points `HOME` at a temp dir for the whole session, so tests never read or write the real `~/.bees/` or `~/.claude/`, and a guard fails any test or run that touches them. Details: `guard_real_home` in `tests/TESTING.md`.
+
 #### Autouse (always active)
-- `backup_global_config`: Backs up/restores `~/.bees/config.json` (session-scoped)
-- `mock_global_bees_dir`: Redirects `~/.bees/` to `tmp_path/global_bees/` for isolation
+- `guard_real_home`: Fails a test if `Path.home()`, `~` or the unpatched `get_global_bees_dir()` resolves into the real home, or if the guard recorded real-home access during the test
+- `mock_global_bees_dir`: Redirects `~/.bees/` to `tmp_path/global_bees/`, a global config per test (opt-out: `@pytest.mark.needs_real_config` uses the unpatched `~/.bees/`, which is in the session temp home and shared by all such tests, never the real one)
 - `mock_git_repo_check`: Mocks git repo validation (opt-out: `@pytest.mark.needs_real_git_check`)
 - `set_repo_root_context`: Sets repo context to `Path.cwd()` (opt-out: `@pytest.mark.no_repo_context`)
 
@@ -130,6 +133,7 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 | Dynamic tiers | `test_tier_hierarchy_validation.py`, `test_dynamic_tier_validation.py`, `test_parent_requirement_logic.py` | |
 | CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py`, `test_integration_phases.py` | See "Integration Testing Deep Dive" |
 | Packaging | `test_package_entry_point.py` | `bees` entry point; `serve` extra caps fastmcp and mcp below their next major and matches the Poetry pins |
+| Test isolation | `test_conftest.py` | `TestRealHomeIsolation`: runs an inner pytest session on this conftest with `HOME` set to a stand-in real home. A concurrent change to its `~/.bees/config.json` is kept; a write into it (swallowed, at import, or relative to a cwd in that home) is blocked and fails the run, keeping a worse exit status; a leaked `HOME` fails the test; child processes keep the original user base; the temp home is deleted, also after `pytest --version` |
 
 **Current**: ~1,578 tests across ~64 files.
 
@@ -266,7 +270,7 @@ PHASE=<phase> bash tests/integration.sh
 2. Can I use a shared fixture instead of copy-paste setup?
 3. Am I testing behavior or implementation?
 4. Does this constant wrap a simple string? (inline it)
-5. Is this a meta-test? (delete it)
+5. Is this a meta-test? (delete it, unless it is a real-home isolation guard test in `tests/test_conftest.py`)
 6. Did I read the target file's docstring?
 7. Is a similar test already written?
 8. Have you added some tests to the Integration test bee?

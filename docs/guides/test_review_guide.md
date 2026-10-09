@@ -35,7 +35,7 @@ testing coverage about 80%.
 - [ ] **No unused imports** - Run `ruff check tests/ --select F401` shows zero unused imports
 - [ ] **No trivial constants** - Simple strings like "open", "completed" are inlined, not wrapped in constants
 - [ ] **Tests behavior** - Minimal mocking (< 3 mocks per test), tests what functions produce, not how
-- [ ] **No meta-tests** - Doesn't test test infrastructure (fixtures, helpers, conftest.py)
+- [ ] **No meta-tests** - Doesn't test test infrastructure (fixtures, helpers, conftest.py). Exception: the real-home isolation guard tests (`TestRealHomeIsolation` in `tests/test_conftest.py`), since a broken guard fails no other test
 - [ ] **Concise docstrings** - Fixture docstrings are 1-2 lines; detailed docs go in tests/TESTING.md
 - [ ] **Follows patterns** - New test files follow structure of existing test suite
 
@@ -84,7 +84,7 @@ def test_writes_with_utf8_encoding(mock_open):
 def test_hive_env_fixture_creates_git_dir(hive_env):
     assert (hive_env / ".git").exists()
 ```
-- **Fix:** Delete meta-tests; trust that real tests validate fixtures
+- **Fix:** Delete meta-tests; trust that real tests validate fixtures (exception: the real-home isolation guard tests, see the checklist)
 
 **Verbose inline test data:**
 ```python

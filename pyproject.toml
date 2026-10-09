@@ -66,7 +66,7 @@ markers = [
     "needs_real_git_check: Tests that require real git repository validation (not mocked)",
     "no_repo_context: Tests that run without repo_root context set",
     "integration: Integration tests that perform full filesystem round-trips",
-    "needs_real_config: Tests that need real ~/.bees/config.json (opt out of config mocking)"
+    "needs_real_config: Tests that use the unpatched ~/.bees/ (opt out of config mocking); it is in the session's temp home, never the real one"
 ]
 
 [tool.ruff]

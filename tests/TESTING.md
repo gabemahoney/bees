@@ -20,17 +20,20 @@ Fixtures are organized into three categories: **autouse**, **opt-in context**, a
 
 These fixtures run automatically for every test unless explicitly opted out:
 
-#### 1. backup_project_config (session scope)
-- Backs up `.bees/config.json` before tests, restores after
-- Prevents test pollution of development environment
-- Session-scoped: runs once per pytest session
+#### 1. guard_real_home (function scope)
+- The whole session runs with `HOME` (and `USERPROFILE`) pointing at a temp dir, set when `conftest.py` is imported, before any `src` import. `~/.bees/` and `~/.claude/` resolve there, also in subprocesses. The temp home is deleted at session end, or at interpreter exit if the session never gets there.
+- Fails a test that resolves the home dir into the real home, or touches `.bees`, `.claude` or `.claude.json` under it
 
-#### 2. mock_git_repo_check (function scope)
+#### 2. mock_global_bees_dir (function scope)
+- Gives each test its own global config: patches `get_global_bees_dir()` and `get_global_config_path()` to `tmp_path/global_bees/`
+- Opt-out: `@pytest.mark.needs_real_config` uses the unpatched `~/.bees/`, which is in the session temp home (shared by all such tests), never the real one
+
+#### 3. mock_git_repo_check (function scope)
 - Mocks git repo validation to accept tmp_path directories
 - Patches `get_repo_root_from_path()` and config functions
 - Opt-out: `@pytest.mark.needs_real_git_check`
 
-#### 3. set_repo_root_context (function scope)
+#### 4. set_repo_root_context (function scope)
 - Sets repo_root context to `Path.cwd()` for all tests
 - Enables `get_repo_root()` calls in production code
 - Opt-out: `@pytest.mark.no_repo_context`
@@ -39,17 +42,17 @@ These fixtures run automatically for every test unless explicitly opted out:
 
 Use these when you need explicit control over context or MCP mocking:
 
-#### 4. repo_root_ctx
+#### 5. repo_root_ctx
 - Sets context to tmp_path (not `Path.cwd()`)
 - Use when you need specific path without chdir
 - Creates `.bees` directory automatically
 
-#### 5. mock_mcp_context
+#### 6. mock_mcp_context
 - Factory for creating mock MCP Context objects
 - Returns `create_mock_context(repo_path=None)` function
 - Use for testing MCP tool functions (`_create_ticket`, etc.)
 
-#### 6. isolated_bees_env
+#### 7. isolated_bees_env
 - Complete isolated environment with BeesTestHelper
 - Changes to tmp_path, creates `.bees`, returns helper
 - Helper methods: `create_hive()`, `write_config()`, `create_ticket()`
@@ -59,22 +62,22 @@ Use these when you need explicit control over context or MCP mocking:
 
 These fixtures create pre-configured test scenarios:
 
-#### 7. bees_repo
+#### 8. bees_repo
 - Minimal setup: tmp_path with `.bees` directory
 - Foundation for parameterized fixtures
 
-#### 8. hive_tier_config (PARAMETERIZED)
+#### 9. hive_tier_config (PARAMETERIZED)
 - Tests different tier structures: bees-only, 2-tier, 3-tier, 4-tier
 - Returns `(repo_root, hive_path, tier_config_dict)`
 - Automatically runs tests with all tier configurations
 
-#### 9. multi_hive_config (PARAMETERIZED)
+#### 10. multi_hive_config (PARAMETERIZED)
 - Tests multi-hive scenarios with different hive configurations
 - Params: isolated (2 hives), connected (2 hives), mixed (3 hives)
 - Returns `(repo_root, hive_paths_list, config_dict)`
 - Automatically tests multi-hive interactions (cross-hive relationships are always supported)
 
-#### 10. ticket_hierarchy (PARAMETERIZED)
+#### 11. ticket_hierarchy (PARAMETERIZED)
 - Tests different ticket structures: single bee, bee+task, full hierarchy, siblings, dependencies
 - Creates actual ticket files with proper relationships
 - Returns `(repo_root, hive_path, ticket_ids_dict)`
@@ -84,12 +87,12 @@ These fixtures create pre-configured test scenarios:
 
 For tests of the `docker/` CI scripts that talk HTTP, without a real server or network:
 
-#### 11. stub_server
+#### 12. stub_server
 - Factory: starts a stub HTTP server on `127.0.0.1` with an OS-assigned port
 - Answers from a routes map; returns the server with `.url` and the `.requests` it received
 - Shut down after the test
 
-#### 12. closed_port_url
+#### 13. closed_port_url
 - URL of a `127.0.0.1` port that nothing listens on
 - Use to test a connection failure
 
@@ -438,29 +441,41 @@ Always prefer simpler fixtures:
 
 ## Fixture Reference
 
-### backup_project_config
+### guard_real_home
 
-**Scope:** Session
+**Scope:** Function
 **Autouse:** Yes
 
-Backup and restore the project's `.bees/config.json` to prevent test pollution.
+Fails a test that resolves the home directory to, or touches bees/Claude files under, the real home.
 
-**Purpose:**
-Ensures the actual project's config.json is preserved during test runs. Without this, tests that modify config (e.g., colonize_hive tests) would corrupt the development environment's hive registry.
+**Session temp home:**
+The suite never reads or writes the real home directory, so a change another tool makes to the real `~/.bees/config.json` during a run is kept. At import, before any `src` import, `conftest.py` creates a temp dir (`bees-test-home-*`) and points `HOME` and `USERPROFILE` at it for the whole session. This runs at import, not in a fixture, because importing `src.mcp_server` creates `~/.bees/` and sets up logging into `~/.bees/mcp.log`. `~/.bees/` (config and `mcp.log`) and `~/.claude/` then resolve to the temp home, in the test process and in subprocesses that inherit its environment.
+- Before `HOME` moves, `PYTHONUSERBASE` is pinned to the original user base (unless already set), so child Python processes still find packages installed with `pip install --user`.
+- At session end (`pytest_unconfigure`), file log handlers in the temp home are closed, `HOME`, `USERPROFILE` and `PYTHONUSERBASE` are restored, and the temp home is deleted.
+- An `atexit` hook also deletes the temp home when the session never reaches `pytest_unconfigure` (e.g. `pytest --version`, an import error while loading `conftest.py`). Neither runs on SIGKILL or an unhandled SIGTERM, which leave the temp dir behind.
 
-**Scope & Behavior:**
-- Session-scoped: Runs once at test session start/end
-- Autouse: Applies to all tests automatically (no explicit declaration needed)
-- Backs up `.bees/config.json` before any tests run
-- Restores original config after all tests complete
+**Guard:**
+- An audit hook blocks file operations (open, create, delete, list, rename, copy, ...) on `.bees`, `.claude` and `.claude.json` under the real home, before they happen. It raises `RealHomeAccessError`, deliberately not an `OSError`, and records the access.
+- Absolute paths are always checked. A relative path is resolved against the cwd for builtin `open()` (so also `Path.read_text`/`write_text`) and for calls without a `dir_fd`. A relative path given with a real `dir_fd` is skipped: that is how `shutil.rmtree` and `os.fwalk` walk a tree, by bare entry names.
+- Known gaps, with the cwd in the real home: relative `os.open()` paths and relative symlink targets are not caught.
+- Before and after each test, this fixture fails the test if `Path.home()`, `os.path.expanduser("~")` or the unpatched `src.config.get_global_bees_dir()` resolves into the real home, or if the hook recorded access during the test, even when the error was swallowed.
+- At session end, the run fails and lists every recorded access, also from imports or collection. Only an otherwise-passing exit status (tests passed, or none collected) becomes a failure; a worse one (interrupted, internal or usage error) is kept.
+- Other paths under the real home (the checkout, the virtualenv, tool caches) are not guarded.
 
-**When This Matters:**
-- Tests that call `colonize_hive()` or modify `.bees/config.json`
-- Running pytest from within the actual bees project directory
-- Development workflow where you're actively using bees to track tasks
+**A test that needs its own home:**
+Set `HOME` and `USERPROFILE` to `tmp_path` with `monkeypatch`. `test_cli_serve.py` does this for every test in the file with its autouse `serve_log_path` fixture, so `bees serve` file logging writes `tmp_path/.bees/mcp.log`; the fixture also restores the root logger's handlers and level.
 
-**Note:**
-Most tests run in isolated tmp_path environments and won't affect the project config. This is a safety net for integration tests or accidental mutations to the real project state.
+---
+
+### mock_global_bees_dir
+
+**Scope:** Function
+**Autouse:** Yes
+**Opt-out:** `@pytest.mark.needs_real_config`
+
+Gives each test its own global config: patches `src.config.get_global_bees_dir()` and `get_global_config_path()` to `tmp_path/global_bees/` (created empty), clears the `src.config` caches and any in-memory config override, and returns that directory. Request it by name to write the global config, e.g. with `write_scoped_config()`.
+
+A test marked `@pytest.mark.needs_real_config` keeps the unpatched `~/.bees/`, which is in the session temp home (shared by all such tests), never the real one. The fixture then returns `None`; the caches are still cleared.
 
 ---
 
