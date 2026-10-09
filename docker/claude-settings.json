@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read(//tmp/**)",
+      "Edit(//tmp/**)",
+      "Skill(file-bug-http *)",
+      "mcp__bees__*",
+      "mcp__bees-stdio__*",
+      "mcp__bees-http__*",
+      "mcp__bees-prod__*"
+    ],
+    "deny": [
+      "AskUserQuestion"
+    ]
+  }
+}

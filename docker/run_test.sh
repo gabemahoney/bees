@@ -232,18 +232,9 @@ elif [[ -n "${CLAUDE_API_KEY}" ]]; then
   echo "Auth: using Anthropic API key"
 fi
 
-# Host Claude config files, each mounted only if it exists: for a missing file, docker run would
-# create a root-owned directory at that host path. entrypoint.sh copes with their absence.
-# Expanded below as ${CLAUDE_CONFIG_MOUNTS[@]+...}: before bash 4.4 (macOS ships 3.2), set -u
-# rejects "${CLAUDE_CONFIG_MOUNTS[@]}" when the array is empty.
-CLAUDE_CONFIG_MOUNTS=()
-if [[ -f "${HOME}/.claude.json" ]]; then
-  CLAUDE_CONFIG_MOUNTS+=(-v "${HOME}/.claude.json:/host-claude.json:ro")
-fi
-if [[ -f "${HOME}/.claude/settings.json" ]]; then
-  CLAUDE_CONFIG_MOUNTS+=(-v "${HOME}/.claude/settings.json:/host-claude-settings.json:ro")
-fi
-
+# No host Claude config file is mounted: the container gets only the auth env vars above.
+# entrypoint.sh builds the container's .claude.json from them, and installs the Claude settings
+# copied into the image (docker/claude-settings.json).
 _docker run -d \
   --name "${CONTAINER_NAME}" \
   "${ADD_HOST_ARGS[@]}" \
@@ -254,7 +245,6 @@ _docker run -d \
   -e "BEES_VERSION=${BEES_VERSION}" \
   -e "PHASE=${PHASE}" \
   -e "START_TEST=${START_TEST}" \
-  ${CLAUDE_CONFIG_MOUNTS[@]+"${CLAUDE_CONFIG_MOUNTS[@]}"} \
   -v "${TESTPLANS_PATH}:/tmp/testplans_host:ro" \
   bees-test
 

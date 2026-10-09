@@ -5,31 +5,14 @@ set -euo pipefail
 
 TESTUSER_HOME=/home/testuser
 
-# Set up Claude CLI config — skip onboarding wizard
+# Claude CLI settings: the container's own (docker/claude-settings.json, copied into the image),
+# never the host's. Only the permission rules the release-test phases need to run unattended,
+# including the MCP servers registered in the container: bees, bees-stdio, bees-http and bees-prod.
 mkdir -p "${TESTUSER_HOME}/.claude"
-if [[ -f /host-claude-settings.json ]]; then
-  cp /host-claude-settings.json "${TESTUSER_HOME}/.claude/settings.json"
-fi
+cp /usr/local/share/bees-ci/claude-settings.json "${TESTUSER_HOME}/.claude/settings.json"
 
-# Inject MCP tool allow rules for container-local server names.
-# The host settings only allow 'mcp__bees__*'; inside the container
-# MCP servers are registered as bees-stdio, bees-http, bees-prod, and bees.
-python3 -c "
-import json, pathlib
-p = pathlib.Path('${TESTUSER_HOME}/.claude/settings.json')
-d = json.loads(p.read_text()) if p.exists() else {}
-perms = d.setdefault('permissions', {})
-allow = perms.setdefault('allow', [])
-for name in ['bees-stdio', 'bees-http', 'bees-prod', 'bees']:
-    rule = f'mcp__{name}__*'
-    if rule not in allow:
-        allow.append(rule)
-p.write_text(json.dumps(d, indent=2))
-print('Injected MCP allow rules for container server names')
-"
-
-# Build minimal .claude.json — embeds the API key when no OAuth token is set.
-# When CLAUDE_CODE_OAUTH_TOKEN is in the env the CLI reads it directly; embedding
+# Build minimal .claude.json — skips the onboarding wizard, embeds the API key when no OAuth token
+# is set. When CLAUDE_CODE_OAUTH_TOKEN is in the env the CLI reads it directly; embedding
 # apiKey in .claude.json alongside would override the OAuth token.
 python3 -c "
 import json, os

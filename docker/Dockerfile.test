@@ -66,6 +66,8 @@ COPY docker/file_bug.py /usr/local/bin/file_bug.py
 COPY docker/ci_bugs_hive.py /usr/local/bin/ci_bugs_hive.py
 # Bees server identity check; run_test.sh runs it in a throwaway container before each phase
 COPY docker/check_bees_server.py /usr/local/bin/check_bees_server.py
+# The in-container Claude's settings; entrypoint.sh installs it as testuser's ~/.claude/settings.json
+COPY docker/claude-settings.json /usr/local/share/bees-ci/claude-settings.json
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/test_runner.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

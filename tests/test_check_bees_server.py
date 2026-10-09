@@ -25,8 +25,8 @@ SCOPE - Tests that belong here:
   and launches each phase as its own command
 - CI files work on any machine: no machine-specific paths; run_test.sh passes the host's bugs
   hive and repo root into the container, runs the test plan of this checkout, shows bees' output
-  when `bees list-hives` fails, and mounts host Claude config files only if they exist; the image
-  has what file_bug.py imports
+  when `bees list-hives` fails, and mounts no host Claude config; the image has what file_bug.py
+  imports, and the container's own Claude settings (allowing its MCP servers, no hooks)
 - the /ci skill gives every phase a deadline, and polls for lines the CI scripts really print
 
 SCOPE - Tests that DON'T belong here:
@@ -667,19 +667,53 @@ def test_run_test_shows_what_bees_said_when_list_hives_fails():
     assert any(re.match(r"\s*echo\b.*\$\{HIVES_JSON\}", command) for command in commands[listing + 1 : stop])
 
 
-def test_run_test_mounts_host_claude_config_files_only_if_they_exist():
-    """Regression b.g76: for a missing ~/.claude.json, docker run made a root-owned directory at that path."""
-    commands = _run_test_commands()
-    [phase] = [command for command in commands if command.startswith("_docker run -d")]
-    mounts = [(i, m) for i, c in enumerate(commands) if (m := re.search(r'(\w+)\+=\(-v "([^":]+):/host-claude', c))]
-    arrays = {mount[1] for _, mount in mounts}
+def test_run_test_mounts_no_host_claude_config():
+    """Regression b.8bi: run_test.sh mounted the host's ~/.claude.json (keys) and ~/.claude/settings.json (hooks)."""
+    commands = [command for command in _run_test_commands() if not command.lstrip().startswith("#")]
+    # ~/.claude.json or anything under ~/.claude, on any line: however an array or variable carries it to docker run
+    host_claude_config = re.compile(r'(?:~|\$HOME\b|\$\{HOME\})"?/\.claude|/host-claude')
+    # -v/--volume/--mount arguments of the docker runs, and of the arrays they may expand
+    volume = re.compile(r'(?:^|[\s(])(?:-v|--volume|--mount)(?:\s+|=)("[^"]*"|[^\s)]+)')
+    mounts = [
+        match[1].strip('"')
+        for command in commands
+        if "docker run" in command or re.search(r"\b\w+\+?=\(", command)
+        for match in volume.finditer(command)
+    ]
 
-    assert len(mounts) == 2 and len(arrays) == 1, "~/.claude.json and ~/.claude/settings.json, added to one array"
-    assert all(commands[i - 1].strip() == f'if [[ -f "{mount[2]}" ]]; then' for i, mount in mounts)
-    assert "/host-claude" not in phase
-    # The array may be empty: expanded in the form that set -u accepts on bash before 4.4 too (macOS ships 3.2).
-    [array] = arrays
-    assert f'${{{array}[@]+"${{{array}[@]}}"}}' in phase
+    assert [command for command in commands if host_claude_config.search(command)] == []
+    # The container gets Claude auth only through env vars: its one mount is the test plan.
+    assert len(mounts) == 1 and ":/tmp/testplans_host:" in mounts[0], mounts
+    assert [path for path in _PORTABLE_CI_FILES if "/host-claude" in (REPO_ROOT / path).read_text()] == []
+
+
+def test_ci_container_installs_the_repos_claude_settings():
+    """Regression b.8bi: the container's Claude settings were the host's, copied from a mount."""
+    dockerfile = (REPO_ROOT / "docker" / "Dockerfile.test").read_text()
+    entrypoint = (REPO_ROOT / "docker" / "entrypoint.sh").read_text()
+    copied_to = re.search(r"^COPY docker/claude-settings\.json (\S+)$", dockerfile, re.M)
+    # Unindented, so it always runs.
+    installed = copied_to and re.search(rf'^cp "?{re.escape(copied_to[1])}"? "?([^"\s]+)"?$', entrypoint, re.M)
+    [testuser_home] = re.findall(r"^TESTUSER_HOME=(\S+)$", entrypoint, re.M)
+
+    assert copied_to, "Dockerfile.test must copy docker/claude-settings.json into the image"
+    assert installed, "entrypoint.sh must install the image's copy"
+    assert installed[1].replace("${TESTUSER_HOME}", testuser_home) == "/home/testuser/.claude/settings.json"
+
+
+def test_ci_container_claude_settings_allow_its_mcp_servers_and_add_no_hooks():
+    """The phases run unattended: no prompt for the container's MCP servers, no question. Hooks are host-only."""
+    settings = json.loads((REPO_ROOT / "docker" / "claude-settings.json").read_text())
+    # The servers test_runner.sh registers with `claude mcp add`, and the one in the .claude.json entrypoint.sh writes
+    registered = {
+        *re.findall(r"claude mcp add (?:--\S+ \S+ )*([\w-]+)", (REPO_ROOT / "docker" / "test_runner.sh").read_text()),
+        *re.findall(r"'([\w-]+)': \{'type'", (REPO_ROOT / "docker" / "entrypoint.sh").read_text()),
+    }
+
+    assert "hooks" not in settings
+    assert {"bees", "bees-stdio", "bees-http", "bees-prod"} <= registered
+    assert {f"mcp__{name}__*" for name in registered} <= set(settings["permissions"]["allow"])
+    assert "AskUserQuestion" in settings["permissions"]["deny"]
 
 
 def test_dockerfile_installs_file_bugs_imports_next_to_it():
