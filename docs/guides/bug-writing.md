@@ -21,7 +21,7 @@ Numbered steps, exact commands included. Be specific — every flag, every argum
 
 ### Environment
 Where and how this happened:
-- bees version (`bees --version`)
+- bees version: the version of the installed `bees-md` package (`pip show bees-md` if bees was installed with pip, `pipx list` if it was installed with pipx)
 - Transport: CLI / stdio / HTTP
 - OS and Python version if relevant
 - Any relevant prior state (existing hives, config, ticket counts)

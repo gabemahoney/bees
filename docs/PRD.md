@@ -419,7 +419,7 @@ Creates a new hive:
 6. Register in `~/.bees/config.json` under the matching scope
 7. If no matching scope exists, create exact-path scope entry
 
-Parameters: `name` (display name), `path` (absolute), optional `child_tiers`, `allowed_resolvers`
+Parameters: `name` (display name), `path` (absolute), optional `child_tiers`, `scope`, `description`, `allowed_resolvers`
 
 Returns: `{status: "success", normalized_name, display_name, path}`
 
@@ -451,7 +451,7 @@ Error: `hive_not_found`
 
 Updates the hive's display name, normalized name (config key), and optionally renames the directory on disk.
 
-Parameters: `old_name`, `new_name`, `rename_folder` (default `true`)
+Parameters: `old_name`, `new_name`, `rename_folder` (default `true`), optional `description`
 
 Behavior:
 - Updates config key from old normalized to new normalized
@@ -485,18 +485,19 @@ Searches recursively for `.hive/identity.json` matching a normalized name. Depth
 Parameters:
 - `ticket_type` (required): `"bee"`, `"t1"`, `"t2"`, ..., or friendly name (`"Task"`, `"Subtask"`)
 - `title` (required): non-empty string
-- `hive_name` (required): display name or normalized name
-- `description`: optional markdown body
+- `hive` (required): display name or normalized name
+- `body`: optional markdown body
+- `body_file`: optional path to a UTF-8 file whose contents become the body; mutually exclusive with `body`
 - `parent`: required for child tiers; forbidden for bees
 - `children`: optional list of child ticket IDs to link
-- `up_dependencies`: optional list of blocking ticket IDs
-- `down_dependencies`: optional list of dependent ticket IDs
+- `up_deps`: optional list of blocking ticket IDs (stored as `up_dependencies`)
+- `down_deps`: optional list of dependent ticket IDs (stored as `down_dependencies`)
 - `tags`: optional list of strings
 - `status`: optional; validated against `status_values` if configured
 - `reference_materials`: optional; bee tickets only; list of `{value, resolver?}` dicts
 
 Process:
-1. Resolve `hive_name` (accepts display name or normalized name)
+1. Resolve `hive` (accepts display name or normalized name)
 2. Validate `ticket_type` against hive's tier config (friendly names resolved to canonical)
 3. If child tier: validate parent exists and is correct tier (t1 needs bee parent, t2 needs t1, etc.)
 4. If `status_values` configured: validate status is in allowed list
@@ -520,7 +521,7 @@ Returns:
 ```json
 {
   "status": "success",
-  "tickets": [{...ticket fields including description...}],
+  "tickets": [{"ticket_id": "b.abc", "title": "...", "body": "...", ...other ticket fields...}],
   "not_found": ["b.zzz"],
   "errors": []
 }
@@ -534,19 +535,20 @@ Returns:
 ### 8.3 Update Ticket
 
 Parameters:
-- `ticket_id` (required): single ID or list of IDs
+- `ticket_ids` (required): single ID or list of IDs
 - `title`: new title (single mode only)
-- `description`: new body text (single mode only)
+- `body`: new body text (single mode only)
+- `body_file`: path to a UTF-8 file whose contents become the new body (single mode only); mutually exclusive with `body`
 - `status`: new status value (single and batch)
 - `tags`: full replacement list (single mode only)
 - `add_tags`: tags to add incrementally (single and batch)
 - `remove_tags`: tags to remove incrementally (single and batch)
-- `up_dependencies`: full replacement list (single mode only)
-- `down_dependencies`: full replacement list (single mode only)
+- `up_deps`: full replacement list of `up_dependencies` (single mode only)
+- `down_deps`: full replacement list of `down_dependencies` (single mode only)
 - `reference_materials`: new reference_materials value (single mode only, bee tickets only)
-- `hive_name`: optional, speeds up ticket lookup by narrowing the search to one hive
+- `hive`: optional, speeds up ticket lookup by narrowing the search to one hive
 
-**Batch mode**: when `ticket_id` is a list, only `status`, `add_tags`, `remove_tags` are allowed.
+**Batch mode**: when `ticket_ids` is a list, only `status`, `add_tags`, `remove_tags` are allowed.
 
 **Immutable fields**: `parent` and `children` cannot be set via update — attempting to pass these returns an error.
 
@@ -561,7 +563,7 @@ Errors: `ticket_not_found`, `invalid_title` (empty), `invalid_dependency`, `circ
 
 ### 8.4 Delete Ticket
 
-Parameters: `ticket_ids` (list of IDs), optional `hive_name`
+Parameters: `ticket_ids` (single ID or list of IDs), optional `hive`
 
 Behavior:
 1. **Cascading delete**: deletes the entire subtree (all children recursively)
@@ -671,7 +673,7 @@ Returns tier configuration at all scope levels:
 
 ### 10.5 set_types
 
-Parameters: `scope` (`"global"`, `"repo_scope"`, `"hive"`), optional `hive_name`, optional `child_tiers`, optional `unset`
+Parameters: `scope` (`"global"`, `"repo_scope"`, `"hive"`), optional `hive` (required when `scope="hive"`), optional `child_tiers`, optional `unset`
 
 Errors: `invalid_scope`, `missing_hive_name`, `invalid_child_tiers`, `missing_child_tiers`, `conflicting_params`, `hive_not_found`, `no_matching_scope`
 
@@ -702,7 +704,7 @@ Special cases:
 
 ### 11.3 set_status_values
 
-Parameters: `scope` (`"global"`, `"repo_scope"`, `"hive"`), optional `hive_name`, optional `status_values` (list), optional `unset`
+Parameters: `scope` (`"global"`, `"repo_scope"`, `"hive"`), optional `hive` (required when `scope="hive"`), optional `status_values` (list), optional `unset`
 
 Errors: `invalid_scope`, `missing_hive_name`, `missing_status_values`, `conflicting_params`, `invalid_status_values` (empty string in list), `hive_not_found`, `no_matching_scope`
 
@@ -981,12 +983,12 @@ An index is stale when any ticket file's modification time is newer than the `in
 
 ### 15.7 generate_index
 
-Parameters: optional `hive_name`
+Parameters: optional `hive`
 
-- With `hive_name`: generates for that hive only
+- With `hive`: generates for that hive only
 - Without: generates for ALL hives
 
-Returns: `{status: "success", markdown, skipped_hives}`
+Returns: `{status: "success", skipped_hives}` (the markdown is written to each hive's `index.md`, not returned)
 
 ---
 
@@ -994,7 +996,7 @@ Returns: `{status: "success", markdown, skipped_hives}`
 
 ### 16.1 Manual Archival
 
-Parameters: `hive_name` (required), exactly one of `query_yaml` or `query_name`
+Parameters: `hive` (required), exactly one of `query_yaml` or `query_name`
 
 Process:
 1. Execute query to get candidate tickets
@@ -1013,7 +1015,7 @@ Errors:
 
 ### 16.2 Scheduled Archival (HTTP Mode Only)
 
-Per-hive configuration in `undertaker_schedule`:
+Per-hive configuration in `undertaker_schedule`, inside the hive's entry under `scopes` → `<scope pattern>` → `hives` → `<hive>` (see §6.2):
 ```json
 {
   "interval_seconds": 3600,
@@ -1027,7 +1029,7 @@ Per-hive configuration in `undertaker_schedule`:
 - `query_yaml` OR `query_name` required (not both)
 - Background daemon thread
 - After each successful run: regenerates index for the hive
-- **Only active in HTTP mode** (not stdio, not CLI)
+- **Only active in HTTP mode** (not stdio, not CLI): `bees serve --http` starts it for the hives in the scopes matching the directory the server is launched from
 
 ### 16.3 Archived Ticket Exclusion
 
@@ -1040,7 +1042,7 @@ Cemetery contents are excluded from all normal operations via positive-match tra
 ### 17.1 Parameters
 
 - `bee_ids`: list of bee ticket IDs to move
-- `destination_hive`: display name or normalized name
+- `hive`: destination hive, display name or normalized name
 - `force`: boolean (default false)
 
 ### 17.2 Behavior
@@ -1086,7 +1088,7 @@ Errors: `hive_not_found`, `cemetery_destination`, `compatibility_error`
 ### 18.1 Parameters
 
 - `bee_id`: single bee ticket ID to clone
-- `destination_hive`: optional (default: same hive)
+- `hive`: optional destination hive (default: same hive)
 - `force`: boolean (default false)
 
 ### 18.2 Behavior
@@ -1205,9 +1207,9 @@ Frontmatter (`parent`, `children`) is authoritative; filesystem structure is der
 
 ### 20.2 Activation
 
-- `bees serve --watch` (CLI)
-- Always runs in HTTP mode
-- Not available in stdio mode
+- No CLI command or flag starts the watcher: `bees serve` has no watcher flag, and neither `bees serve --stdio` nor `bees serve --http` runs it
+- The only entry point is `start_watcher()` in `src/watcher.py`, which nothing in the CLI or MCP server calls; when called, it runs in the foreground until interrupted
+- Without the watcher, lint with `sanitize_hive` (`bees sanitize-hive`) and regenerate indexes with `generate_index` (`bees generate-index`); HTTP mode also regenerates a hive's index after each scheduled undertaker run (§16.2)
 
 ### 20.3 Error Handling
 
@@ -1249,7 +1251,7 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 - Exit codes: 0 = success, 1 = error, 2 = usage/argument error
 - Errors are JSON to stdout (never to stderr, never tracebacks)
 - All commands resolve repo root from CWD
-- Global flags: `--config <path>`, `--test-config [<json|path>]`
+- Flags on every subcommand, given after the subcommand name: `--config <path>`, `--test-config [<json|path>]`
 
 ### 22.2 Error Response Format
 
@@ -1262,29 +1264,29 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 | Command | Key Arguments |
 |---------|--------------|
 | `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --reference-materials]` |
-| `show-ticket` | `ID [ID ...]` |
+| `show-ticket` | `--ids ID [ID ...]` |
 | `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --tags --up-deps --down-deps --reference-materials --add-tags --remove-tags --hive]` |
 | `append-ticket-body` | `--ticket-id (--chunk \| --chunk-file) [--hive]` |
-| `delete-ticket` | `ID [ID ...] [--hive]` |
+| `delete-ticket` | `--ids ID [ID ...] [--hive]` |
 | `get-types` | (none) |
 | `set-types` | `--scope [--hive] [--child-tiers JSON] [--unset]` |
 | `get-status-values` | (none) |
-| `set-status-values` | `--scope [--hive] [--values JSON] [--unset]` |
+| `set-status-values` | `--scope [--hive] [--status-values JSON] [--unset]` |
 | `add-named-query` | `--query-name --query-yaml [--scope global\|repo]` |
 | `execute-named-query` | `--query-name` |
 | `execute-freeform-query` | `--query-yaml` |
 | `list-named-queries` | (none) |
 | `delete-named-query` | `--query-name` |
-| `colonize-hive` | `--name --path [--child-tiers JSON] [--allowed-resolvers JSON]` |
+| `colonize-hive` | `[--name] --path [--child-tiers JSON] [--scope PATTERN] [--description TEXT] [--status-values JSON] [--allowed-resolvers JSON]` |
 | `list-hives` | (none) |
 | `abandon-hive` | `--hive` |
-| `rename-hive` | `--old-name --new-name [--no-rename-folder]` |
+| `rename-hive` | `--old-name --new-name [--no-rename-folder] [--description TEXT]` |
 | `sanitize-hive` | `--hive` |
 | `generate-index` | `[--hive]` |
 | `undertaker` | `--hive [--query-yaml \| --query-name]` |
-| `move-bee` | `--hive DEST ID [ID ...] [--force]` |
-| `clone-bee` | `ID [--hive DEST] [--force]` |
-| `serve` | `[--stdio \| --http] [--host] [--port] [--config] [--test-config] [--watch]` |
+| `move-bee` | `--ids ID [ID ...] --hive DEST [--force]` |
+| `clone` | `--bee-id ID [--hive DEST] [--force]` |
+| `serve` | `[--stdio \| --http] [--host] [--port] [--config] [--test-config]` |
 | `sting` | (none) |
 | `setup claude cli` | `[--project] [--remove]` |
 
@@ -1304,9 +1306,9 @@ bees create-ticket --ticket-type bee --title "My Bee" --hive "Test Hive" \
 
 - Server name: `"bees"`
 - Protocol: MCP (Model Context Protocol)
-- Transports: stdio (default) or HTTP
+- Transports: stdio (`bees serve --stdio`) or HTTP (`bees serve --http`); `bees serve` with neither flag prints usage and exits 2
 - HTTP default: `127.0.0.1:8000` (configurable via `http.port` in config or `--port` flag)
-- All tools accept optional `repo_root` parameter
+- Every tool except `health_check`, `set_resolver`, `get_resolvers` and `update_config` accepts an optional `repo_root` parameter. Those four take no `repo_root`: they act only on the server's own state or the global config (`~/.bees/config.json`)
 - MCP server dependencies should not be required for CLI-only usage
 
 ### 23.2 Repo Root Resolution (MCP)
@@ -1314,7 +1316,7 @@ bees create-ticket --ticket-type bee --title "My Bee" --hive "Test Hive" \
 The MCP server needs to know which repository the caller is working in, so it can find the right scope and hives.
 
 1. **Roots-enabled clients** (e.g., Claude Desktop, Claude Code, OpenCode): The client automatically sends its working directory via the MCP Roots Protocol. The server reads the first root URI, strips the `file://` prefix, and uses that as the repo root. No `repo_root` parameter is needed.
-2. **Basic MCP clients** (no Roots Protocol support): The caller must pass `repo_root` explicitly on every tool call. If omitted, the server returns an error instructing the client to supply `repo_root`.
+2. **Basic MCP clients** (no Roots Protocol support): The caller must pass `repo_root` explicitly on every tool call that accepts it. If omitted, the server returns an error instructing the client to supply `repo_root`.
 
 ### 23.3 Complete MCP Tool List
 
@@ -1339,23 +1341,21 @@ The MCP server needs to know which repository the caller is working in, so it ca
 | `execute_freeform_query` | `execute-freeform-query` | |
 | `delete_named_query` | `delete-named-query` | |
 | `list_named_queries` | `list-named-queries` | |
-| `generate_index` | `generate-index` | Returns `{status, markdown, skipped_hives}` |
+| `generate_index` | `generate-index` | Returns `{status, skipped_hives}` |
 | `undertaker` | `undertaker` | |
 | `move_bee` | `move-bee` | `force: bool = False` |
-| `clone_bee` | `clone-bee` | `hive: str|None`, `force: bool = False` |
+| `clone_bee` | `clone` | `hive: str|None`, `force: bool = False` |
 
 ### 23.4 HTTP-Specific Features
 
 - Health check endpoint: `GET /health`
 - Undertaker scheduler (background thread)
-- Filesystem watcher (auto-linting and index regeneration)
 - Port: defaults to `config["http"]["port"]` or 8000; `--port` flag overrides
 
 ### 23.5 Stdio-Specific Behavior
 
 - All logs redirected to `~/.bees/mcp.log` (stdout reserved for JSON-RPC)
 - No undertaker scheduling
-- No filesystem watcher
 - `--config` flag for custom config path
 
 ---
@@ -1580,12 +1580,13 @@ Create a new ticket in a hive.
 Args:
 - `ticket_type`: Tier type — "bee" (top-level) or a child tier by ID ("t1", "t2") or friendly name ("Task", "Epic"). Use get_types to see configured tiers.
 - `title`: Short title for the ticket.
-- `hive_name`: Hive to create the ticket in. Use list_hives to see available hives.
-- `description`: Optional markdown body.
+- `hive`: Hive to create the ticket in. Use list_hives to see available hives.
+- `body`: Optional markdown body. Must be at most 10000 characters; for longer bodies use a short stub here and loop `append_ticket_body`. Literal \n and \t sequences are expanded to a newline and tab. Mutually exclusive with body_file.
+- `body_file`: Path to a file whose UTF-8 contents are used as the body. Stored verbatim: escape sequences such as \n are not interpreted. Mutually exclusive with body. No size cap applies to file-sourced content.
 - `parent`: Parent ticket ID. Required for child-tier tickets; omit for bees. The parent ticket's children field is updated automatically.
 - `children`: Child ticket IDs to link at creation time. Bidirectional relationship is updated automatically — the child tickets' parent field will be set.
-- `up_dependencies`: Ticket IDs that must be resolved before this one.
-- `down_dependencies`: Ticket IDs that this one must be resolved before.
+- `up_deps`: Ticket IDs that must be resolved before this one.
+- `down_deps`: Ticket IDs that this one must be resolved before.
 - `tags`: List of string tags.
 - `status`: Freeform if no status_values are configured for the hive; otherwise must be one of the hive's configured values. Required when status_values are configured.
 - `reference_materials`: Tracks external resources related to the ticket. A list of `{value, resolver?}` dicts. Only supported on bee (t0) tickets.
@@ -1593,20 +1594,21 @@ Args:
 ### `update_ticket`
 Update one or more existing tickets.
 
-Supports single update (ticket_id as str) or batch update (ticket_id as list[str]). Batch mode only allows status, add_tags, and remove_tags — other fields are rejected.
+Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]). Batch mode only allows status, add_tags, and remove_tags — other fields are rejected.
 
 Args:
-- `ticket_id`: Ticket ID to update, or list of IDs for batch update.
+- `ticket_ids`: Ticket ID to update, or list of IDs for batch update.
 - `title`: New title (single mode only).
-- `description`: New markdown body (single mode only).
-- `up_dependencies`: Full replacement list of blocking ticket IDs (single mode only).
-- `down_dependencies`: Full replacement list of dependent ticket IDs (single mode only).
+- `body`: New markdown body (single mode only). Must be at most 10000 characters when provided as a string; for longer bodies use a short stub here and loop `append_ticket_body`. Literal \n and \t sequences are expanded to a newline and tab. Mutually exclusive with body_file.
+- `body_file`: Path to a file whose UTF-8 contents are used as the body (single mode only). Mutually exclusive with body. Stored verbatim: escape sequences such as \n are not interpreted. No size cap applies to file-sourced content.
+- `up_deps`: Full replacement list of blocking ticket IDs (single mode only).
+- `down_deps`: Full replacement list of dependent ticket IDs (single mode only).
 - `tags`: Full replacement list of tags (single mode only).
 - `add_tags`: Tags to add (single and batch).
 - `remove_tags`: Tags to remove (single and batch).
 - `status`: New status value (single and batch).
 - `reference_materials`: New reference materials data (single mode only). Only supported on bee tickets.
-- `hive_name`: Optional hive name for faster lookup.
+- `hive`: Optional hive name for faster lookup.
 
 ### `delete_ticket`
 Delete one or more tickets and their child subtrees.
@@ -1617,13 +1619,13 @@ Dependency cleanup is controlled by the global config key `delete_with_dependenc
 
 Args:
 - `ticket_ids`: Ticket ID to delete, or list of IDs for bulk delete.
-- `hive_name`: Optional hive name for faster lookup.
+- `hive`: Optional hive name for faster lookup.
 
 ### `show_ticket`
 Retrieve one or more tickets by ID.
 
 Args:
-- `ticket_ids`: List of ticket IDs to retrieve (e.g., ["b.Amx", "b.Xyz"]).
+- `ticket_ids`: List of ticket IDs to retrieve (e.g., ["b.amx", "b.xyz"]).
 
 ### `get_types`
 Shows allowed ticket types for all available hives.
@@ -1635,7 +1637,7 @@ Configures the tier hierarchy (e.g., t1 → t2 → t3) at global, repo_scope, or
 
 Args:
 - `scope`: Target scope — "global", "repo_scope", or "hive".
-- `hive_name`: Required when scope="hive".
+- `hive`: Required when scope="hive".
 - `child_tiers`: Dict mapping tier keys to [singular, plural] names. e.g. {"t1": ["t1", "t1s"], "t2": ["t2", "t2s"]}. Pass {} for bees-only (no child tiers). Required unless unset=True.
 - `unset`: If True, removes child_tiers from the target scope.
 
@@ -1651,7 +1653,7 @@ Configures which status strings are valid for tickets at global, repo_scope, or 
 
 Args:
 - `scope`: Target scope — "global", "repo_scope", or "hive".
-- `hive_name`: Required when scope="hive".
+- `hive`: Required when scope="hive".
 - `status_values`: List of allowed status strings (e.g., ["open", "in_progress", "closed"]). Required unless unset=True.
 - `unset`: If True, removes status_values from the target scope.
 
@@ -1664,6 +1666,8 @@ Args:
 - `name`: Display name for the hive (e.g., "Back End"). Normalized internally.
 - `path`: Absolute path where the hive will be created. Does not need to exist.
 - `child_tiers`: Optional per-hive tier config. Inherits from scope/global if omitted. Pass {} for bees-only.
+- `scope`: Optional scope pattern to register the hive under (e.g. /projects/**). When provided, the hive is placed under this explicit scope instead of the auto-detected scope for the repo root.
+- `description`: Optional short description of the hive's purpose.
 - `allowed_resolvers`: Optional list of resolver names permitted for this hive (e.g., `["guid_resolver", "default"]`).
 
 ### `list_hives`
@@ -1675,7 +1679,7 @@ Stop tracking a hive without deleting its ticket files.
 Removes the hive from the registry but leaves all files intact on disk. The hive can be re-registered later with colonize_hive.
 
 Args:
-- `hive_name`: Display name or normalized name of the hive to abandon.
+- `hive`: Display name or normalized name of the hive to abandon.
 
 ### `rename_hive`
 Rename a hive and optionally its folder on disk. Ticket IDs are not affected.
@@ -1684,6 +1688,7 @@ Args:
 - `old_name`: Current hive name.
 - `new_name`: New hive name.
 - `rename_folder`: If True (default), also renames the folder on disk to match the new normalized hive name.
+- `description`: Optional new description for the hive.
 
 ### `sanitize_hive`
 Validate and auto-fix malformed tickets in a hive.
@@ -1691,7 +1696,7 @@ Validate and auto-fix malformed tickets in a hive.
 Returns a list of errors it cannot fix automatically — these will need to be resolved by you or the user.
 
 Args:
-- `hive_name`: Display name or normalized name of the hive to sanitize.
+- `hive`: Display name or normalized name of the hive to sanitize.
 
 ### `add_named_query`
 Register a named query for reuse. See execute_freeform_query for query syntax.
@@ -1762,25 +1767,35 @@ List named queries accessible from the current repo scope and global.
 Generate index.md pages for hives.
 
 Args:
-- `hive_name`: Optional hive name. If omitted, generates for all hives.
+- `hive`: Optional hive name. If omitted, generates for all hives.
 
 ### `undertaker`
 Archive bee tickets matching a query into the hive's /cemetery directory.
 
 Args:
-- `hive_name`: Hive to operate on (required).
+- `hive`: Hive to operate on (required).
 - `query_yaml`: YAML string for freeform query (mutually exclusive with query_name).
 - `query_name`: Name of a registered query (mutually exclusive with query_yaml).
 
-To schedule automatic archiving, add an `undertaker_schedule` block to the hive in `~/.bees/config.json`:
+To schedule automatic archiving (runs only under `bees serve --http`), add an `undertaker_schedule` block to the hive's entry in `~/.bees/config.json`. Hives are nested under "scopes" -> <scope pattern> -> "hives":
 ```json
 {
-  "undertaker_schedule": {
-    "interval_seconds": 60,
-    "query_yaml": "{stages: [[status=finished]]}"
+  "scopes": {
+    "/path/to/repo": {
+      "hives": {
+        "example_hive": {
+          "path": "/path/to/hive",
+          "undertaker_schedule": {
+            "interval_seconds": 60,
+            "query_yaml": "{stages: [[status=finished]]}"
+          }
+        }
+      }
+    }
   }
 }
 ```
+Use query_name instead of query_yaml to reference a named query.
 
 ### `move_bee`
 Move bee tickets to a different hive.
@@ -1788,17 +1803,19 @@ Move bee tickets to a different hive.
 Only bee tickets (b. prefix) can be moved. Cemetery is never a valid destination — use undertaker instead.
 
 Args:
-- `bee_ids`: Bee ticket IDs to move (e.g., ["b.Amx", "b.X4F"]).
-- `destination_hive`: Friendly or normalized name of the destination hive (e.g., "Back End" or "back_end").
-- `force`: When True, skip cross-hive compatibility checks.
+- `bee_ids`: Bee ticket IDs to move (e.g., ["b.amx", "b.x4f"]).
+- `hive`: Friendly or normalized name of the destination hive (e.g., "Back End" or "back_end").
+- `force`: When True, skip cross-hive compatibility checks (bypass status/tier mismatch errors).
 
 ### `clone_bee`
-Clone a bee ticket and its entire subtree within the same hive.
+Clone a bee ticket and its entire subtree.
 
 Creates a deep copy with fresh IDs and GUIDs. Internal cross-references (parent, children, dependencies) are remapped to the new IDs. External references are preserved unchanged.
 
 Args:
-- `bee_id`: The bee ticket ID to clone (e.g., "b.Amx"). Must be a bee ticket (b. prefix).
+- `bee_id`: The bee ticket ID to clone (e.g., "b.amx"). Must be a bee ticket (b. prefix).
+- `hive`: Destination hive name. Defaults to source hive.
+- `force`: Skip compatibility check for cross-hive clones.
 
 Returns: `{"status": "success", "ticket_id": "<new-bee-id>", "written": N, "failed": [...]}`
 
@@ -2081,12 +2098,19 @@ List all saved named queries accessible from this repo. No arguments required.
 ### `bees colonize-hive`
 
 ```
-usage: bees colonize-hive --name NAME --path PATH [--child-tiers JSON]
-                          [--allowed-resolvers JSON]
+usage: bees colonize-hive [--name NAME] --path PATH [--child-tiers JSON]
+                          [--scope PATTERN] [--description TEXT]
+                          [--status-values JSON] [--allowed-resolvers JSON]
 
-  --name NAME           Display name for the hive (e.g. "Back End")
+  --name NAME           Display name for the hive (e.g. "Back End"). Optional
+                        when a .hive/identity.json marker exists at the target path.
   --path PATH           Absolute path where the hive will be created
   --child-tiers JSON    Optional per-hive tier config as JSON dict
+  --scope PATTERN       Register this hive under the given scope pattern (e.g.
+                        /projects/**) instead of the repo root
+  --description TEXT    Optional short description of the hive's purpose
+  --status-values JSON  Optional JSON array of allowed status strings; "null"
+                        explicitly disables status enforcement for this hive
   --allowed-resolvers JSON
                         Optional JSON array of resolver names permitted for this hive
 ```
@@ -2111,10 +2135,12 @@ usage: bees abandon-hive --hive NAME
 
 ```
 usage: bees rename-hive --old-name NAME --new-name NAME [--no-rename-folder]
+                        [--description TEXT]
 
   --old-name NAME       Current hive name
   --new-name NAME       New hive name
   --no-rename-folder    Skip renaming the folder on disk
+  --description TEXT    Optional new description for the hive
 ```
 
 ### `bees sanitize-hive`

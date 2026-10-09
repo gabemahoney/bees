@@ -12,24 +12,29 @@ MANUAL USE
 ----------
 Call the `undertaker` MCP tool directly to archive bees matching a query:
 
-    undertaker(hive_name="bugs", query_yaml="{stages: [[status=finished]]}")
-    undertaker(hive_name="bugs", query_name="finished_bugs")
+    undertaker(hive="bugs", query_yaml="{stages: [[status=finished]]}")
+    undertaker(hive="bugs", query_name="finished_bugs")
 
 Exactly one of query_yaml or query_name must be provided.
 
 SCHEDULED USE
 -------------
 To automatically archive bees on a recurring schedule, add an
-`undertaker_schedule` block to the hive in ~/.bees/config.json:
+`undertaker_schedule` block to the hive's entry in ~/.bees/config.json.
+Hives are nested under "scopes" -> <scope pattern> -> "hives":
 
     {
-      "hives": {
-        "bugs": {
-          "path": "/path/to/hive",
-          "undertaker_schedule": {
-            "interval_seconds": 3600,
-            "query_yaml": "{stages: [[status=finished]]}",
-            "log_path": "/tmp/undertaker-bugs.log"
+      "scopes": {
+        "/path/to/repo": {
+          "hives": {
+            "bugs": {
+              "path": "/path/to/hive",
+              "undertaker_schedule": {
+                "interval_seconds": 3600,
+                "query_yaml": "{stages: [[status=finished]]}",
+                "log_path": "/tmp/undertaker-bugs.log"
+              }
+            }
           }
         }
       }
@@ -41,8 +46,11 @@ Config fields:
   query_name        (required if no query_yaml) — name of a saved named query
   log_path          (optional) — append each run result to this file
 
-The scheduler starts automatically with the MCP server and runs in a
-background daemon thread. Restart the server after changing this config.
+The scheduler runs only under `bees serve --http`; `bees serve --stdio` does
+not start it. On HTTP server startup it reads the undertaker_schedule blocks
+of hives in the scopes matching the repo the server was launched from, and
+runs in a background daemon thread. Restart the server after changing this
+config.
 """
 
 import logging

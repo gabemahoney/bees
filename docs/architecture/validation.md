@@ -283,7 +283,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - **Auto-correction behavior**: Automatically moves misplaced ticket directories to correct location
 - Uses `shutil.move()` to relocate entire directory subtree (preserves all children)
 - Reports fixes via `LinterReport.add_fix()` with type `"move_directory"`
-- Triggered on every linter run (part of watcher loop and manual `sanitize_hive`)
+- Triggered on every linter run (manual `sanitize_hive`, and the watcher loop when `start_watcher()` is running)
 
 **Directory Enforcement Rules**:
 - **Source of truth**: Frontmatter `parent` field is authoritative, not filesystem location
@@ -322,7 +322,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 
 ## Watcher-Linter Integration Pipeline
 
-The watcher automatically triggers linter validation and index regeneration when ticket files change, maintaining data integrity through a debounced pipeline. Implementation in `src/watcher.py`.
+While running, the watcher automatically triggers linter validation and index regeneration when ticket files change, maintaining data integrity through a debounced pipeline. Implementation in `src/watcher.py`. Nothing in the CLI or MCP server starts it (see Watcher Lifecycle below).
 
 ### Pipeline Flow
 
@@ -386,7 +386,7 @@ Debounced normally → cycle repeats until stable
 
 **sanitize_hive MCP tool**:
 - Remains independent manual trigger for linter validation
-- Accepts `hive_name` parameter to target specific hive
+- Accepts `hive` parameter to target specific hive
 - Runs linter with `auto_fix=True` on specified hive only
 - Returns structured report with fixes applied and remaining errors
 - Does not trigger watcher pipeline (synchronous operation)
@@ -394,6 +394,7 @@ Debounced normally → cycle repeats until stable
 ### Watcher Lifecycle
 
 **Start watcher** (`start_watcher()` in `src/watcher.py`):
+- Not wired into the CLI or MCP server: no `bees` subcommand or flag calls `start_watcher()`, and neither `bees serve --stdio` nor `bees serve --http` starts it. Run `sanitize_hive` and `generate_index` to lint and re-index.
 - Loads config and schedules recursive observer on each hive directory
 - Runs in foreground loop until interrupted (Ctrl+C)
 - Validates at least one hive is configured before starting
@@ -536,7 +537,7 @@ Write to {hive_path}/index.md
 ### Core Functions
 
 **generate_index()** (`src/index_generator.py`):
-- Signature: `generate_index(status_filter, type_filter, hive_name) -> str`
+- Signature: `generate_index(hive_name=None) -> str` (no status or type filters)
 - With `hive_name` provided: generates index only for specified hive, writes to `{hive_path}/index.md`
 - With `hive_name` omitted: iterates all registered hives from `~/.bees/config.json`, generates separate index.md for each
 - Returns markdown content as string
@@ -577,13 +578,12 @@ Staleness detection scans each hive directory recursively and compares ticket fi
 
 ### MCP Integration
 
-The index generation MCP tool accepts an optional `hive_name` parameter, enabling per-hive or all-hive index regeneration via the MCP protocol.
+The `generate_index` MCP tool accepts an optional `hive` parameter, enabling per-hive or all-hive index regeneration via the MCP protocol.
 
 ### Use Cases
 
-- Regenerate index for specific hive: `generate_index(hive_name="backend")`
+- Regenerate index for specific hive: `generate_index(hive="backend")`
 - Regenerate all hive indexes: `generate_index()`
-- Generate filtered index: `generate_index(hive_name="backend", status="open")`
 
 ## Corruption Detection
 

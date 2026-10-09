@@ -76,7 +76,7 @@ When running bees as an HTTP server, the undertaker can also be scheduled to run
 
 ## Named Queries
 
-Queries can be saved by name and reused across sessions. Tell your LLM to create a named query with a name and a YAML query pipeline. Once registered, you can ask your LLM to run it by name, optionally scoped to specific hives.
+Queries can be saved by name and reused across sessions. Tell your LLM to create a named query with a name and a YAML query pipeline. Once registered, you can ask your LLM to run it by name. To limit a query to certain hives, put a `hive=` or `hive~` term in it.
 
 ## Configuration
 
@@ -115,7 +115,7 @@ Scope patterns have three canonical forms:
 
 When multiple scope patterns match a repository root, `list_hives` returns hives from **all** matching scopes, merging them into a single list. Each hive entry includes a `scope` field indicating which scope owns it. If the same normalized hive name appears in more than one matching scope, the most-specific scope's definition wins. Specificity is ranked by depth first (more path segments wins), then by wildcard tier (exact = tier 0, `/*` = tier 1, `/**` = tier 2; lower tier is more specific at the same depth). If two overlapping scopes at equal specificity define the same hive name, the system enters a degraded state and returns a configuration conflict error instead of ambiguous results.
 
-To register a hive under a shared scope instead of the default exact-path scope, pass `--scope <pattern>` to `colonize_hive`:
+To register a hive under a shared scope instead of the default exact-path scope, pass `--scope <pattern>` to `bees colonize-hive` (or `scope` to the `colonize_hive` MCP tool):
 
 ```
 bees colonize-hive --name Shared --path /projects/shared/tickets --scope "/projects/**"
@@ -263,9 +263,9 @@ Lock down allowed status values per-scope or per-hive:
 Set allowed values at global, repo scope, or hive level:
 
 ```bash
-bees set-status-values --scope=global --values '["pupa","larva","worker","finished"]'
-bees set-status-values --scope=repo_scope --values '["todo","in_progress","done"]'
-bees set-status-values --scope=hive --hive backend --values '["open","closed"]'
+bees set-status-values --scope=global --status-values '["pupa","larva","worker","finished"]'
+bees set-status-values --scope=repo_scope --status-values '["todo","in_progress","done"]'
+bees set-status-values --scope=hive --hive backend --status-values '["open","closed"]'
 bees set-status-values --scope=global --unset
 ```
 
@@ -313,7 +313,7 @@ HTTP mode supports scheduled auto-archival. Add an `undertaker_schedule` block t
 }
 ```
 
-The scheduler starts automatically when `bees serve --http` starts. Use `query_name` instead of `query_yaml` to reference a named query.
+The scheduler starts automatically when `bees serve --http` starts, for the hives in the scopes that match the directory the server is started from. `bees serve --stdio` does not run it. Use `query_name` instead of `query_yaml` to reference a named query.
 
 ### delete_with_dependencies
 
@@ -370,22 +370,22 @@ Child IDs embed the parent's short ID as a prefix (hierarchical): bee `b.amx` �
 bees create-ticket --ticket-type bee --title "Bug fix" --hive backend
 bees create-ticket --ticket-type bee --title "Long writeup" --hive backend --body "stub - see appended chunks"
 bees create-ticket --ticket-type bee --title "From file" --hive backend --body-file ./writeup.md
-bees show-ticket b.amx t1.amx.12
+bees show-ticket --ids b.amx t1.amx.12
 bees update-ticket --ids b.amx --status worker --tags '["urgent"]'
 bees update-ticket --ids b.amx --add-tags '["reviewed"]' --remove-tags '["urgent"]'
 bees update-ticket --ids b.amx b.x4f --status worker
 bees update-ticket --ids b.amx --body-file -    # read new body from stdin
 bees append-ticket-body --ticket-id b.amx --chunk "more body text up to 10000 characters"
 bees append-ticket-body --ticket-id b.amx --chunk-file ./next-chunk.md
-bees delete-ticket b.amx
+bees delete-ticket --ids b.amx
 bees get-types
-bees set-types --scope global --tiers '{"t1":["Epic","Epics"]}'
-bees set-types --scope repo_scope --tiers '{"t1":["Task","Tasks"]}'
-bees set-types --scope hive --hive backend --tiers '{}'
+bees set-types --scope global --child-tiers '{"t1":["Epic","Epics"]}'
+bees set-types --scope repo_scope --child-tiers '{"t1":["Task","Tasks"]}'
+bees set-types --scope hive --hive backend --child-tiers '{}'
 bees set-types --scope global --unset
 bees get-status-values
-bees set-status-values --scope=global --values '["pupa","worker","finished"]'
-bees set-status-values --scope=hive --hive features --values '["pupa","worker"]'
+bees set-status-values --scope=global --status-values '["pupa","worker","finished"]'
+bees set-status-values --scope=hive --hive features --status-values '["pupa","worker"]'
 bees set-status-values --scope=global --unset
 ```
 
@@ -418,9 +418,9 @@ Pass `--query-yaml` as one single-quoted argument written in YAML flow style, as
 ```bash
 bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}'] [--allowed-resolvers '["guid_resolver","default"]']
 bees list-hives
-bees abandon-hive backend
-bees rename-hive old_name new_name
-bees sanitize-hive backend
+bees abandon-hive --hive backend
+bees rename-hive --old-name old_name --new-name new_name
+bees sanitize-hive --hive backend
 ```
 
 ## Resolver Registry
@@ -434,24 +434,24 @@ bees get-resolvers
 ## Utilities
 
 ```bash
-bees generate-index [--status open] [--type bee] [--hive backend]
-bees clone b.amx
-bees clone b.amx --hive other-hive
-bees clone b.amx --hive other-hive --force
-bees move-bee b.amx b.x4f --destination backlog
-bees move-bee b.amx b.x4f --destination backlog --force
+bees generate-index [--hive backend]
+bees clone --bee-id b.amx
+bees clone --bee-id b.amx --hive other-hive
+bees clone --bee-id b.amx --hive other-hive --force
+bees move-bee --ids b.amx b.x4f --hive backlog
+bees move-bee --ids b.amx b.x4f --hive backlog --force
 bees undertaker --hive backend --query-yaml '{stages: [[status=finished]]}'
 ```
 
 ### Move Bee
 
-`bees move-bee <bee-ids> --destination <hive>` moves one or more bee tickets to a different hive within the same scope. Bee IDs are preserved — only the directory location changes.
+`bees move-bee --ids <bee-ids> --hive <hive>` moves one or more bee tickets to a different hive within the same scope. Bee IDs are preserved — only the directory location changes.
 
 Cross-hive moves check that the source tree's status values and tier types are compatible with the destination hive's configuration. If incompatibilities are found, the move is rejected with a `compatibility_error` and no bees are moved. Pass `--force` to skip the compatibility check and move regardless.
 
 ### Clone
 
-`bees clone <bee-id>` creates a deep copy of a bee and its full child-tier subtree, assigning fresh IDs, GUIDs, and timestamps. Internal cross-references are remapped to the new IDs; external references are preserved.
+`bees clone --bee-id <bee-id>` creates a deep copy of a bee and its full child-tier subtree, assigning fresh IDs, GUIDs, and timestamps. Internal cross-references are remapped to the new IDs; external references are preserved.
 
 By default the clone lands in the source bee's own hive. Use `--hive <hive-name>` to clone into a different hive — source and destination must be in the same scope. Before writing, bees checks that the source tree's status values and tier types are compatible with the destination hive's configuration. If incompatibilities are found, the clone is rejected with a `compatibility_error` listing the offending values. Pass `--force` to skip that check and clone regardless.
 

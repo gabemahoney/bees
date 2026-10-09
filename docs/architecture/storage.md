@@ -354,11 +354,11 @@ The linter's `enforce_directory_structure()` method ensures filesystem matches f
 
 **Auto-correction flow**:
 1. User accidentally moves `t1.amx.12/` directory to wrong location via file manager
-2. Watcher detects file change and triggers linter
+2. `sanitize_hive` runs the linter (the watcher in `src/watcher.py` would also trigger it, but nothing in the CLI or MCP server starts the watcher)
 3. Linter reads `parent` field from `t1.amx.12.md` frontmatter
 4. Linter verifies `t1.amx.12/` directory is under parent's directory
 5. If misplaced, linter moves `t1.amx.12/` directory to correct location under parent
-6. File move triggers new watch event, which regenerates index
+6. `generate_index` brings `index.md` up to date
 
 ## Immutable Parent Relationships
 
@@ -484,9 +484,9 @@ Read ticket type from YAML frontmatter, not from filesystem location. Frontmatte
 ### Directory Structure Enforcement
 
 Trust the linter to maintain correct directory structure. Do not manually move ticket directories. If a ticket is misplaced:
-- Linter will auto-detect on next run (triggered by watcher or manual `sanitize_hive`)
+- Linter will auto-detect on next run (`sanitize_hive`; the watcher is not started by the CLI or MCP server)
 - Linter will move ticket directory (and all children) to correct location
-- Directory moves trigger new watch events, maintaining consistency
+- Run `generate_index` afterwards to refresh `index.md`
 
 ### Hive Recovery
 

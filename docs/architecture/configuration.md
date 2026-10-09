@@ -300,14 +300,14 @@ The `set_types` MCP tool (and `bees set-types` CLI command) writes or removes th
 
 **Parameters**:
 - `scope` (required): `"global"`, `"repo_scope"`, or `"hive"`
-- `hive_name`: Required when `scope="hive"`; normalized before lookup
-- `child_tiers`: The value to write. `{}` is valid (bees-only). Required unless `unset=True`.
+- `hive` (CLI `--hive`): Required when `scope="hive"`; normalized before lookup
+- `child_tiers` (CLI `--child-tiers`): The value to write. `{}` is valid (bees-only). Required unless `unset=True`.
 - `unset`: Remove the `child_tiers` key from the target level (idempotent)
 
 **Scope targets**:
 - `global`: Reads/writes the top-level `child_tiers` key in `~/.bees/config.json`
 - `repo_scope`: Uses `find_matching_scope()` to locate the matching scope block; returns `no_matching_scope` if none matches
-- `hive`: Normalizes `hive_name`, searches all scope blocks for the hive entry; returns `hive_not_found` if absent
+- `hive`: Normalizes the `hive` parameter, searches all scope blocks for the hive entry; returns `hive_not_found` if absent
 
 **Write path**: All writes go through `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation.
 
@@ -540,14 +540,14 @@ The `set_status_values` MCP tool (and `bees set-status-values` CLI command) writ
 
 **Parameters**:
 - `scope` (required): `"global"`, `"repo_scope"`, or `"hive"`
-- `hive_name`: Required when `scope="hive"`; normalized before lookup
-- `status_values`: List of allowed status strings to write (e.g., `["open", "worker", "finished"]`). Required unless `unset=True`. Empty list `[]` is treated identically to `unset=True`.
+- `hive` (CLI `--hive`): Required when `scope="hive"`; normalized before lookup
+- `status_values` (CLI `--status-values`): List of allowed status strings to write (e.g., `["open", "worker", "finished"]`). Required unless `unset=True`. Empty list `[]` is treated identically to `unset=True`.
 - `unset`: If True, remove `status_values` from the target level (idempotent)
 
 **Scope targets**:
 - `global`: Reads/writes the top-level `status_values` key in `~/.bees/config.json`
 - `repo_scope`: Uses `find_matching_scope()` to locate the matching scope block; returns `no_matching_scope` if none matches
-- `hive`: Normalizes `hive_name`, searches the matched scope's hive entries; returns `hive_not_found` if absent
+- `hive`: Normalizes the `hive` parameter, searches the matched scope's hive entries; returns `hive_not_found` if absent
 
 **Write path**: All writes go through `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation.
 
@@ -566,12 +566,12 @@ The `set_status_values` MCP tool (and `bees set-status-values` CLI command) writ
 
 Global set:
 ```
-bees set-status-values --scope=global --values '["pupa","worker","finished"]'
+bees set-status-values --scope=global --status-values '["pupa","worker","finished"]'
 ```
 
 Hive set:
 ```
-bees set-status-values --scope=hive --hive features --values '["pupa","worker"]'
+bees set-status-values --scope=hive --hive features --status-values '["pupa","worker"]'
 ```
 
 Global unset:
@@ -760,16 +760,6 @@ The `colonize_hive` MCP tool creates and registers new hives with optional per-h
 
 ### colonize_hive Parameters
 
-```python
-colonize_hive(
-    name: str,
-    path: str,
-    child_tiers: dict[str, list] | None = None,
-    scope: str | None = None,
-    allowed_resolvers: list[str] | None = None,
-)
-```
-
 **Required Parameters**:
 - `name`: Display name for the hive (e.g., "Back End", "Frontend")
 - `path`: Absolute path to the directory where the hive should be created
@@ -777,6 +767,7 @@ colonize_hive(
 **Optional Parameters**:
 - `child_tiers`: Per-hive child tiers configuration (dict or None)
 - `scope`: Scope pattern under which to register the hive (str or None)
+- `description`: Short description of the hive's purpose (str or None). When given, it is stored in the hive's `.hive/identity.json` and its config.json entry, and returned by `colonize_hive` and `list_hives`.
 - `allowed_resolvers`: List of resolver names permitted for this hive (list of strings or None). Each name must exist in the global resolver registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). Returns `unknown_resolver` error if any name is unregistered.
 
 ### scope Parameter Semantics

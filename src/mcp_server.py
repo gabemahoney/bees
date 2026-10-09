@@ -983,14 +983,20 @@ async def undertaker(
         query_yaml: YAML string for freeform query (mutually exclusive with query_name)
         query_name: Name of a registered query (mutually exclusive with query_yaml)
 
-    To schedule automatic archiving, add an undertaker_schedule block to the hive
-    in ~/.bees/config.json:
+    To schedule automatic archiving (runs only under `bees serve --http`), add an
+    undertaker_schedule block to the hive's entry in ~/.bees/config.json. Hives are
+    nested under "scopes" -> <scope pattern> -> "hives":
         {
-            "hives": {
-                "example_hive": {
-                    "undertaker_schedule": {
-                        "interval_seconds": 60,
-                        "query_yaml": "{stages: [[status=finished]]}"
+            "scopes": {
+                "/path/to/repo": {
+                    "hives": {
+                        "example_hive": {
+                            "path": "/path/to/hive",
+                            "undertaker_schedule": {
+                                "interval_seconds": 60,
+                                "query_yaml": "{stages: [[status=finished]]}"
+                            }
+                        }
                     }
                 }
             }
