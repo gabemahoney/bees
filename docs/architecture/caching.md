@@ -8,20 +8,30 @@ The cache is an internal implementation detail of `read_ticket()` in `src/reader
 
 ## Data Structure
 
-The cache maps a key to a tuple of file mtime, file path, and parsed ticket data:
+The cache maps a key to a tuple of file signature, file path, and parsed ticket data:
 
 - **Key**: `ticket_id` — the ticket's unique identifier.
-- **Value**: `(mtime, Path, Ticket)` — `mtime` is the `st_mtime` float from `Path.stat()`. `Path` is the absolute filesystem path to the ticket's markdown file. `Ticket` is the parsed dataclass defined in `src/models.py`.
+- **Value**: `(FileSignature | None, Path, Ticket)` — `FileSignature` is the value returned by `file_signature()` in `src/cache.py`: the file's absolute path, device, inode, size, and nanosecond mtime (`st_mtime_ns`), taken from one `stat()` call. The stored signature is `None` when the file was too recently modified to trust (see Freshness Check). `Path` is the absolute filesystem path to the ticket's markdown file. `Ticket` is the parsed dataclass defined in `src/models.py`.
 
-The backing store (`src/cache.py`) is a plain dict with five operations: `get`, `put`, `evict`, `clear`, and `contains`. `get` returns `(mtime, Path, Ticket) | None`. `put` takes `(ticket_id, mtime, path, ticket)`. Callers outside `src/reader.py` must not access it directly.
+The backing store (`src/cache.py`) is a plain dict with five operations: `get`, `put`, `evict`, `clear`, and `contains`. `get` returns `(FileSignature | None, Path, Ticket) | None`. `put` takes `(ticket_id, signature, path, ticket)`, where `signature` may be `None`. Callers outside `src/reader.py` must not access it directly.
+
+## Freshness Check
+
+A cache entry is fresh only when the file's current signature equals the stored one. A change to any of the five fields causes a re-read, and an entry cached from a different path never matches.
+
+Equal signatures do not prove equal contents. A write that lands within one timestamp tick of the version that was read and keeps its size can leave every field unchanged, whether it rewrites the file in place or atomically replaces it onto a reused inode. The racy-timestamp guard covers this case: after the `stat()` and before reading the contents, the signature is passed through `trusted_signature()`. If the file's mtime is within `RACY_WINDOW_NS` (3 seconds) of the current time, it returns `None`, and the entry is stored with a `None` signature. `None` never equals a current signature, so a file modified in the last 3 seconds is re-read on every lookup. Once the file is older, the next read stores its signature and later lookups are served from the cache.
+
+Two cases can still serve stale contents: a writer that sets the mtime back to an exact earlier value while keeping the same size and inode (e.g. `os.utime` or archive extraction), and clock skew larger than the window, which makes a just-written file look old enough to trust.
+
+`file_signature()`, `trusted_signature()`, and `FileSignature` are shared by every in-memory cache of on-disk file contents. The global config and `.hive/identity.json` caches in `src/config.py` use the same signature and guard as their freshness key (see [configuration.md](configuration.md), Config API).
 
 ## Lazy-Loading Lifecycle
 
 The cache is empty on server startup. No pre-warming or background population occurs. Entries are added on demand as tickets are read:
 
-1. **First read**: Cache miss. File is read from disk, parsed, and the result is stored under `ticket_id` with the file's current mtime.
-2. **Subsequent reads (unchanged file)**: `stat()` is called to get the current mtime. If it matches the cached mtime, the cached `Ticket` is returned with no file I/O.
-3. **Subsequent reads (changed file)**: mtime mismatch. File is re-read, re-parsed, and the cache entry is updated.
+1. **First read**: Cache miss. File is read from disk, parsed, and the result is stored under `ticket_id` with the file's current signature, or `None` if the file was modified within the racy window.
+2. **Subsequent reads (unchanged file)**: `stat()` is called to compute the current signature. If it matches the cached signature, the cached `Ticket` is returned with no file I/O.
+3. **Subsequent reads (changed file)**: Signature mismatch. File is re-read, re-parsed, and the cache entry is updated.
 
 The cache has no eviction policy — entries are retained for the lifetime of the server process.
 
@@ -31,16 +41,16 @@ The cache has no eviction policy — entries are retained for the lifetime of th
 
 **Path-provided mode** (`file_path` is given):
 
-1. Calls `stat()` on the provided path to get its current mtime.
-2. Checks the cache for a `ticket_id` entry with a matching mtime.
-3. Returns the cached ticket on mtime match; otherwise reads, parses, and caches the file.
+1. Calls `stat()` on the provided path to compute its current signature.
+2. Checks the cache for a `ticket_id` entry with a matching signature. The signature includes the path, so an entry cached from a different path never matches.
+3. Returns the cached ticket on signature match; otherwise reads, parses, and caches the file.
 
 **ID-only mode** (`file_path` is omitted):
 
 1. Checks the cache for a `ticket_id` entry to retrieve its stored `Path`.
 2. If found, calls `stat()` on the cached path.
-   - mtime match: returns cached ticket immediately.
-   - mtime mismatch: re-reads from cached path and updates cache.
+   - Signature match: returns cached ticket immediately.
+   - Signature mismatch: re-reads from cached path and updates cache.
    - `FileNotFoundError`: evicts the stale entry and falls through to discovery.
 3. On cache miss or after stale eviction, searches all configured hives via `find_ticket_file()`.
 4. Once a path is found, reads, parses, and caches the result (including the discovered path).

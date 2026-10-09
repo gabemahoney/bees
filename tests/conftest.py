@@ -351,9 +351,9 @@ def mock_global_bees_dir(request, tmp_path, monkeypatch):
         import src.config
         src.config._SCOPE_PATTERN_CACHE.clear()
         src.config._GLOBAL_CONFIG_CACHE = None
-        src.config._GLOBAL_CONFIG_CACHE_MTIME = None
+        src.config._GLOBAL_CONFIG_CACHE_SIGNATURE = None
         src.config._IDENTITY_CACHE.clear()
-        src.config._IDENTITY_CACHE_MTIME.clear()
+        src.config._IDENTITY_CACHE_SIGNATURE.clear()
         return None
 
     global_bees = tmp_path / "global_bees"
@@ -367,13 +367,13 @@ def mock_global_bees_dir(request, tmp_path, monkeypatch):
     # Clear the scope pattern cache to avoid stale compiled patterns
     src.config._SCOPE_PATTERN_CACHE.clear()
 
-    # Clear the mtime-based global config cache for test isolation
+    # Clear the file-signature-based global config cache for test isolation
     src.config._GLOBAL_CONFIG_CACHE = None
-    src.config._GLOBAL_CONFIG_CACHE_MTIME = None
+    src.config._GLOBAL_CONFIG_CACHE_SIGNATURE = None
 
-    # Clear the identity.json mtime cache for test isolation
+    # Clear the identity.json file-signature cache for test isolation
     src.config._IDENTITY_CACHE.clear()
-    src.config._IDENTITY_CACHE_MTIME.clear()
+    src.config._IDENTITY_CACHE_SIGNATURE.clear()
 
     # Clear any in-memory override to prevent leakage between tests
     src.config._GLOBAL_CONFIG_OVERRIDE = None

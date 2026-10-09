@@ -1,14 +1,16 @@
 """Tests for the ticket read-through cache (src.cache + src.reader caching path).
 
 PURPOSE:
-Validates that read_ticket() correctly uses the mtime-based cache:
-cache hits skip parse_frontmatter, mtime mismatches trigger re-reads,
-deleted files evict the cache entry, and non-FileNotFoundError stat failures leave
-the cache entry intact.
+Validates that read_ticket() correctly uses the file-signature-based cache
+(path, device, inode, size, mtime_ns): cache hits skip parse_frontmatter,
+signature mismatches trigger re-reads, deleted files evict the cache entry,
+and non-FileNotFoundError stat failures leave the cache entry intact.
 
 SCOPE - Tests that belong here:
 - Cache hit: second read of unchanged file skips parse_frontmatter
-- Cache miss on mtime change: stale entry triggers re-read and returns new content
+- Cache miss when one signature field changes: path, inode, size or mtime
+- Cache miss after a racy read (file read within RACY_WINDOW_NS of its mtime), even with identical stat output
+- trusted_signature(): the RACY_WINDOW_NS boundary
 - Cache miss on first read: uncached file is parsed and then cached
 - FileNotFoundError evicts cache entry and propagates to caller
 - PermissionError (non-FileNotFoundError OSError) propagates without evicting cache
@@ -16,8 +18,12 @@ SCOPE - Tests that belong here:
 
 SCOPE - Tests that DON'T belong here:
 - Cache module unit tests (get/put/evict/clear in isolation)
+
+Tests that expect a cache hit backdate() the file first: a file read within RACY_WINDOW_NS of its
+mtime is cached untrusted and re-read on every lookup.
 """
 
+import os
 import time
 from unittest.mock import patch
 
@@ -29,16 +35,18 @@ from src.parser import parse_frontmatter as real_parse_frontmatter
 from src.paths import get_ticket_path
 from src.reader import read_ticket
 from src.writer import write_ticket_file
+from tests.helpers import backdate
 from tests.test_constants import TICKET_ID_TEST_BEE
 
 
 class TestCacheReadThrough:
-    """Read-through correctness: hit, mtime miss, and first-read caching."""
+    """Read-through correctness: hit, miss on any signature change or after a racy read, and first-read caching."""
 
     def test_cache_hit_second_read_skips_parse(self, isolated_bees_env):
         """Second read of an unchanged file returns the cached ticket without re-parsing."""
         hive_dir = isolated_bees_env.create_hive("backend")
         ticket_file = isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", "Test Bee")
+        backdate(ticket_file)
 
         with patch("src.reader.parse_frontmatter", wraps=real_parse_frontmatter) as mock_parse:
             ticket1 = read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file)
@@ -50,30 +58,54 @@ class TestCacheReadThrough:
         assert ticket1.title == "Test Bee"
         assert ticket2.title == "Test Bee"
 
-    def test_cache_miss_on_mtime_change(self, isolated_bees_env):
-        """Re-reading a file whose mtime changed returns updated content and re-parses."""
+    @pytest.mark.parametrize(
+        "by_path", [pytest.param(True, id="path_lookup"), pytest.param(False, id="id_only_lookup")]
+    )
+    @pytest.mark.parametrize(
+        "changed",
+        [
+            pytest.param("st_mtime_ns", id="mtime_change"),
+            pytest.param("st_size", id="in_place_rewrite"),
+            pytest.param("st_ino", id="atomic_replace"),
+            pytest.param(None, id="racy_read_then_identical_stat"),
+        ],
+    )
+    def test_rewritten_file_is_reread(self, isolated_bees_env, monkeypatch, changed, by_path):
+        """A rewritten file is re-read when one stat field changed, or, after a racy read, when none did.
+
+        changed is the only stat field the rewrite changes. None: the first read happens 1 ns after
+        the file's mtime, and the rewrite keeps inode, size and mtime, as two same-size atomic saves
+        within one timestamp tick that reuse the inode do.
+        """
         hive_dir = isolated_bees_env.create_hive("backend")
-        isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", "Original Title")
-        ticket_file = hive_dir / TICKET_ID_TEST_BEE / f"{TICKET_ID_TEST_BEE}.md"
+        ticket_file = isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", "Title A")
+        stamp = backdate(ticket_file)
+        if changed is None:
+            # src.cache reads the clock through time.time_ns
+            monkeypatch.setattr(time, "time_ns", lambda: stamp + 1)
+        before = ticket_file.stat()
+        assert read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file).title == "Title A"
 
-        with patch("src.reader.parse_frontmatter", wraps=real_parse_frontmatter) as mock_parse:
-            ticket1 = read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file)
-            assert mock_parse.call_count == 1
-            assert ticket1.title == "Original Title"
+        new_title = "Title Bee" if changed == "st_size" else "Title B"
+        if changed == "st_ino":
+            staging = isolated_bees_env.create_hive("staging")
+            os.replace(isolated_bees_env.create_ticket(staging, TICKET_ID_TEST_BEE, "bee", new_title), ticket_file)
+        else:
+            isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", new_title)
+        new_stamp = stamp + 10**9 if changed == "st_mtime_ns" else stamp
+        os.utime(ticket_file, ns=(new_stamp, new_stamp))
+        after = ticket_file.stat()
+        fields = ("st_ino", "st_size", "st_mtime_ns")
+        assert {f for f in fields if getattr(after, f) != getattr(before, f)} == ({changed} if changed else set())
 
-            # Small sleep to ensure distinct mtime on filesystems with coarse resolution
-            time.sleep(0.01)
-            # Overwrite file to change mtime and content
-            isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", "Updated Title")
-
-            ticket2 = read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file)
-            assert mock_parse.call_count == 2
-            assert ticket2.title == "Updated Title"
+        ticket = read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file if by_path else None)
+        assert ticket.title == new_title
 
     def test_cache_miss_on_new_file_then_cached(self, isolated_bees_env):
         """First read of an uncached file parses from disk and caches; second read is a hit."""
         hive_dir = isolated_bees_env.create_hive("backend")
         ticket_file = isolated_bees_env.create_ticket(hive_dir, TICKET_ID_TEST_BEE, "bee", "New Ticket")
+        backdate(ticket_file)
 
         assert ticket_cache.get(TICKET_ID_TEST_BEE) is None
 
@@ -86,6 +118,35 @@ class TestCacheReadThrough:
             assert mock_parse.call_count == 1
 
         assert ticket_cache.get(TICKET_ID_TEST_BEE) is not None
+
+    def test_same_id_from_another_path_with_same_mtime_reads_that_file(self, isolated_bees_env):
+        """Reading one ticket ID from two files that share size and an old mtime returns each file's own contents."""
+        file_a, file_b = (
+            isolated_bees_env.create_ticket(isolated_bees_env.create_hive(hive), TICKET_ID_TEST_BEE, "bee", title)
+            for hive, title in [("hive_a", "Title A"), ("hive_b", "Title B")]
+        )
+        backdate(file_a, file_b)
+        assert file_a.stat().st_size == file_b.stat().st_size
+
+        assert read_ticket(TICKET_ID_TEST_BEE, file_path=file_a).title == "Title A"
+        assert read_ticket(TICKET_ID_TEST_BEE, file_path=file_b).title == "Title B"
+        assert read_ticket(TICKET_ID_TEST_BEE, file_path=file_a).title == "Title A"
+
+
+class TestTrustedSignature:
+    """trusted_signature(): only a file whose mtime is more than RACY_WINDOW_NS old keys a trusted entry."""
+
+    @pytest.mark.parametrize(
+        "past_window_ns, trusted",
+        [pytest.param(0, False, id="mtime_at_window_edge"), pytest.param(1, True, id="mtime_past_window")],
+    )
+    def test_trusted_only_past_racy_window(self, monkeypatch, past_window_ns, trusted):
+        """The signature is returned once now - mtime exceeds RACY_WINDOW_NS, else None."""
+        mtime_ns = 1_700_000_000 * 10**9
+        signature = ("/hive/b.x/b.x.md", 1, 2, 3, mtime_ns)
+        monkeypatch.setattr(time, "time_ns", lambda: mtime_ns + ticket_cache.RACY_WINDOW_NS + past_window_ns)
+
+        assert ticket_cache.trusted_signature(signature) == (signature if trusted else None)
 
 
 class TestCacheErrorCases:
@@ -281,7 +342,7 @@ class TestCachePathStorage:
 
         cached = ticket_cache.get(TICKET_ID_TEST_BEE)
         assert cached is not None
-        _mtime, cached_path, _ticket = cached
+        _signature, cached_path, _ticket = cached
         assert cached_path == ticket_file
 
     def test_id_only_warm_cache_skips_discovery(self, isolated_bees_env):
@@ -310,11 +371,11 @@ class TestCachePathStorage:
         original_ticket = read_ticket(TICKET_ID_TEST_BEE, file_path=ticket_file)
         cached_before = ticket_cache.get(TICKET_ID_TEST_BEE)
         assert cached_before is not None
-        original_mtime = cached_before[0]
+        original_signature = cached_before[0]
 
         # Overwrite cache entry with a stale (nonexistent) path
         stale_path = hive_dir / "stale_dir" / f"{TICKET_ID_TEST_BEE}.md"
-        ticket_cache.put(TICKET_ID_TEST_BEE, original_mtime, stale_path, original_ticket)
+        ticket_cache.put(TICKET_ID_TEST_BEE, original_signature, stale_path, original_ticket)
 
         # ID-only read: stale path → FileNotFoundError on stat → evict → fall through
         # to hive discovery via compute_ticket_path, which finds the canonical location
@@ -323,6 +384,6 @@ class TestCachePathStorage:
         # Cache should now hold the canonical path
         cached = ticket_cache.get(TICKET_ID_TEST_BEE)
         assert cached is not None
-        _mtime, cached_path, _ticket = cached
+        _signature, cached_path, _ticket = cached
         assert cached_path == ticket_file
         assert ticket.title == "Test Bee"

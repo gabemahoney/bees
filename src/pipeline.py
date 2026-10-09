@@ -70,11 +70,11 @@ class PipelineEvaluator:
         Excludes special directories (eggs/, evicted/, .hive/) and index.md files.
         Only includes files matching {ticket_id}/{ticket_id}.md pattern.
 
-        NOTE: This method intentionally bypasses read_ticket() and the mtime cache
+        NOTE: This method intentionally bypasses read_ticket() and the ticket cache
         (see engineering best practices Section 8). The bypass is valid here because:
         - The pipeline holds a read-only in-memory dict; it never writes ticket files.
         - Tickets are loaded once at init and never re-read during a pipeline lifetime.
-        - No cache interaction occurs: we neither read from nor populate the mtime cache.
+        - No cache interaction occurs: we neither read from nor populate the ticket cache.
         Files missing schema_version are skipped (not bees tickets). Parse failures
         (corrupted files) are also silently skipped.
 

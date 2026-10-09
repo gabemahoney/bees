@@ -390,6 +390,8 @@ The config module provides a type-safe dataclass API for all config operations.
 - `load_global_config() -> dict`: Read entire `~/.bees/config.json` as raw dict
 - `save_global_config(global_config: dict)`: Atomically write entire global config
 
+**Read cache**: `load_global_config()` keeps the parsed config in memory, keyed on the config file's signature with the racy-timestamp guard described in [caching.md](caching.md#freshness-check): a config file modified within the last 3 seconds is re-read on every call. `set_config_path()` clears the cache when the config path changes, and `save_global_config()` clears it after each write. Each hive's `.hive/identity.json` is cached per hive path with the same check. `write_identity()` (`src/mcp_hive_ops.py`) calls `invalidate_identity_cache(hive_path)` after each write, which drops that hive's entries, matching cache keys by resolved path.
+
 **Scoped Config (high-level)**:
 - `load_bees_config() -> BeesConfig | None`: Load config for current repo_root from context
 - `save_bees_config(config: BeesConfig, scope_pattern: str)`: Save config to the specified scope pattern (required parameter, no longer infers scope internally).
@@ -951,7 +953,7 @@ After resolving the config dict from whichever form is provided, the dict is val
 
 The resolved config dict is installed into `_GLOBAL_CONFIG_OVERRIDE`. For the remainder of the process lifetime:
 
-- `load_global_config()` returns `_GLOBAL_CONFIG_OVERRIDE` directly, skipping disk I/O and the mtime cache
+- `load_global_config()` returns `_GLOBAL_CONFIG_OVERRIDE` directly, skipping disk I/O and the read cache
 - `save_global_config()` mutates `_GLOBAL_CONFIG_OVERRIDE` in place instead of writing to disk
 
 All config mutations (hive registration, named query additions, etc.) are applied to the in-memory dict only.

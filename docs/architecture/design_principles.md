@@ -10,7 +10,7 @@ Bees operates under strict constraints to maintain simplicity and reliability:
 
 - **No daemons**: All operations are synchronous and complete within the execution context. No background processes means no daemon management, no process monitoring, and no state synchronization issues.
 
-- **Limited caching**: An mtime-based in-memory cache accelerates `read_ticket()` results while remaining consistent — cache entries are invalidated when the file's modification time changes. No persistent or distributed caching.
+- **Limited caching**: A stat-based in-memory cache accelerates `read_ticket()` results while remaining consistent — a cache entry is served only while the file's signature (path, device, inode, size, and nanosecond modification time) is unchanged, and a file modified within the last 3 seconds is re-read on every lookup, since a same-size write within one timestamp tick can leave the signature unchanged. No persistent or distributed caching.
 
 - **No external tool dependencies**: Bees must work without any external tools installed on the host — including git, curl, or any other CLI tools. Root detection uses the current working directory directly; no git traversal or git-based discovery is permitted anywhere in the codebase. A project directory does not need to be a git repository for Bees to function.
 

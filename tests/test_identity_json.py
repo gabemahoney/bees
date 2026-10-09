@@ -8,14 +8,17 @@ atomic reads and writes of .hive/identity.json marker files.
 SCOPE - Tests that belong here:
 - read_identity(): Missing file, valid JSON, corrupt JSON, all field variants
 - write_identity(): File creation, overwrite, atomicity, cleanup on error
+- write_identity() and invalidate_identity_cache(): the hive's cached identity.json is dropped
 
 SCOPE - Tests that DON'T belong here:
 - colonize_hive identity handling -> test_colonize_hive.py
 - scan_for_hive identity parsing -> test_mcp_scan_validate.py
 - Hive marker directory creation -> test_colonize_hive.py
+- identity.json cache freshness (file signature) -> test_config.py
 
 RELATED FILES:
 - src/mcp_hive_ops.py: Contains read_identity and write_identity
+- src/config.py: Contains the identity.json cache and invalidate_identity_cache
 - test_colonize_hive.py: Integration tests that exercise identity via colonize_hive
 """
 
@@ -23,6 +26,8 @@ import json
 
 import pytest
 
+import src.config
+from src.config import _read_identity_cached, invalidate_identity_cache
 from src.mcp_hive_ops import read_identity, write_identity
 
 
@@ -280,3 +285,37 @@ class TestWriteIdentity:
 
         written = json.loads((tmp_path / "identity.json").read_text())
         assert "status_values_explicitly_null" not in written
+
+
+# -- identity cache invalidation tests ----------------------------------------
+
+
+class TestIdentityCacheInvalidation:
+    """write_identity() and invalidate_identity_cache() drop the hive's cached identity.json."""
+
+    @pytest.mark.parametrize(
+        "via_write_identity",
+        [pytest.param(True, id="write_identity"), pytest.param(False, id="invalidate_identity_cache")],
+    )
+    def test_rewrite_is_reread_despite_unchanged_signature(self, tmp_path, monkeypatch, via_write_identity):
+        """After identity.json is rewritten and its entry dropped, the next cached read returns the new contents.
+
+        The file signature is frozen at an old mtime, as when a same-size atomic replace reuses the inode
+        within one timestamp tick, so only the dropped entry forces the re-read. The cache key spells the
+        hive through a symlink: entries are matched by resolved path.
+        """
+        marker = tmp_path / "hive" / ".hive"
+        marker.mkdir(parents=True)
+        write_identity(marker, IDENTITY_MINIMAL)
+        (tmp_path / "link").symlink_to(marker.parent)
+        # mtime_ns 0: old, so the cache trusts the signature
+        monkeypatch.setattr(src.config, "file_signature", lambda path: (str(path), 0, 0, 0, 0))
+        assert _read_identity_cached(str(tmp_path / "link")) == IDENTITY_MINIMAL
+
+        if via_write_identity:
+            write_identity(marker, IDENTITY_ALL_FIELDS)
+        else:
+            (marker / "identity.json").write_text(json.dumps(IDENTITY_ALL_FIELDS))
+            invalidate_identity_cache(marker.parent)
+
+        assert _read_identity_cached(str(tmp_path / "link")) == IDENTITY_ALL_FIELDS

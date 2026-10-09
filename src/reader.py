@@ -18,8 +18,11 @@ def read_ticket(ticket_id: str, file_path: Path | str | None = None) -> Ticket:
     Read and parse a ticket file, returning a Ticket object.
 
     Uses a module-level cache keyed on ticket_id. A stat() check on the file
-    determines freshness: cache hit on mtime match, re-read on mismatch,
-    read+cache on miss.
+    determines freshness: cache hit when the file signature (path, device,
+    inode, size, mtime_ns) matches, re-read on mismatch, read+cache on miss.
+    A file modified within cache.RACY_WINDOW_NS of being read is cached
+    untrusted and re-read on every lookup until it is older (see
+    cache.trusted_signature()).
 
     When file_path is provided, it is used directly.
 
@@ -58,17 +61,18 @@ def read_ticket(ticket_id: str, file_path: Path | str | None = None) -> Ticket:
     # ID-only lookup: check cache for stored path first
     cached = cache.get(ticket_id)
     if cached is not None:
-        cached_mtime, cached_path, cached_ticket = cached
+        cached_signature, cached_path, cached_ticket = cached
         try:
-            file_mtime = cached_path.stat().st_mtime
+            file_signature = cache.file_signature(cached_path)
         except FileNotFoundError:
             # Stale cached path — evict and fall through to discovery
             cache.evict(ticket_id)
         else:
-            if cached_mtime == file_mtime:
+            if cached_signature == file_signature:
                 return cached_ticket
-            # mtime mismatch — re-read from cached path (pass known mtime to avoid redundant stat)
-            return _read_from_path(ticket_id, cached_path, _known_mtime=file_mtime)
+            # Signature mismatch or untrusted entry — re-read from cached path
+            # (pass known signature to avoid redundant stat)
+            return _read_from_path(ticket_id, cached_path, _known_signature=file_signature)
 
     # Cache miss or stale: discover via hive config
     from .config import load_bees_config
@@ -85,33 +89,35 @@ def read_ticket(ticket_id: str, file_path: Path | str | None = None) -> Ticket:
     raise FileNotFoundError(f"Ticket '{ticket_id}' not found in any configured hive")
 
 
-def _read_from_path(ticket_id: str, file_path: Path, *, _known_mtime: float | None = None) -> Ticket:
+def _read_from_path(ticket_id: str, file_path: Path, *, _known_signature: cache.FileSignature | None = None) -> Ticket:
     """Read and cache a ticket from an explicit file path.
 
     Args:
-        _known_mtime: If provided, skip the stat() call and cache freshness check.
+        _known_signature: If provided, skip the stat() call and cache freshness check.
             Used when the caller has already verified the file exists and the cache
-            is stale (e.g., ID-only lookup with mtime mismatch).
+            is stale (e.g., ID-only lookup with signature mismatch).
     """
-    if _known_mtime is not None:
-        file_mtime = _known_mtime
+    if _known_signature is not None:
+        file_signature = _known_signature
     else:
-        # Stat the file to get mtime; evict on FileNotFoundError, propagate other OSError
+        # Stat the file; evict on FileNotFoundError, propagate other OSError
         try:
-            file_mtime = file_path.stat().st_mtime
+            file_signature = cache.file_signature(file_path)
         except FileNotFoundError:
             cache.evict(ticket_id)
             raise
-        except OSError:
-            raise
 
-        # Check cache freshness
+        # Check cache freshness. The signature includes the path, so an entry
+        # cached from a different file never matches.
         cached = cache.get(ticket_id)
         if cached is not None:
-            cached_mtime, cached_path, cached_ticket = cached
-            if cached_mtime == file_mtime:
+            cached_signature, _cached_path, cached_ticket = cached
+            if cached_signature == file_signature:
                 return cached_ticket
-            # mtime mismatch — fall through to re-read
+            # Signature mismatch or untrusted entry — fall through to re-read
+
+    # Decide whether the signature can be trusted before reading the contents
+    cache_signature = cache.trusted_signature(file_signature)
 
     # Parse file
     frontmatter, body = parse_frontmatter(file_path)
@@ -149,7 +155,7 @@ def _read_from_path(ticket_id: str, file_path: Path, *, _known_mtime: float | No
     ticket = Ticket(**_filter_ticket_fields(frontmatter))
     ticket._raw_keys = raw_keys
 
-    cache.put(ticket_id, file_mtime, file_path, ticket)
+    cache.put(ticket_id, cache_signature, file_path, ticket)
 
     return ticket
 

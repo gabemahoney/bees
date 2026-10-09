@@ -34,6 +34,7 @@ from .config import (
     find_matching_scope,
     get_all_scopes_config,
     get_scope_key_for_hive,
+    invalidate_identity_cache,
     load_bees_config,
     load_global_config,
     load_resolver_registry,
@@ -108,6 +109,8 @@ def write_identity(hive_marker_path: Path, data: dict) -> None:
             except Exception:
                 pass
         raise OSError(f"Failed to write identity to {identity_file}: {e}") from e
+
+    invalidate_identity_cache(hive_marker_path.parent)
 
 
 def read_identity(hive_marker_path: Path) -> dict | None:

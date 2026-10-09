@@ -300,7 +300,7 @@ class TestColonizeHive:
         empty_config = {"scopes": {}, "schema_version": src.config.GLOBAL_SCHEMA_VERSION}
         (mock_global_bees_dir / "config.json").write_text(json.dumps(empty_config))
         src.config._GLOBAL_CONFIG_CACHE = None
-        src.config._GLOBAL_CONFIG_CACHE_MTIME = None
+        src.config._GLOBAL_CONFIG_CACHE_SIGNATURE = None
 
         # Second colonization on the same path — re-registers the hive from scratch
         result2 = await colonize_hive("Test Hive", str(hive_path))

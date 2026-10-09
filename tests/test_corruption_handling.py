@@ -14,7 +14,7 @@ from src.mcp_hive_ops import _list_hives, _sanitize_hive
 from src.mcp_index_ops import _generate_index
 from src.mcp_move_bee import _move_bee
 from src.mcp_ticket_ops import _create_ticket, _delete_ticket, _get_types, _show_ticket, _update_ticket
-from tests.helpers import write_ticket_file
+from tests.helpers import backdate, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     HIVE_DESTINATION,
@@ -181,7 +181,8 @@ async def test_successful_read_is_cached_and_second_read_hits_cache(isolated_bee
     helper = isolated_bees_env
     hive_dir = helper.create_hive(HIVE_BACKEND)
     helper.write_config(child_tiers={})
-    write_ticket_file(hive_dir, TICKET_ID_TEST_BEE, title=TITLE_TEST_BEE)
+    # Backdated: the cache trusts only a file older than src.cache.RACY_WINDOW_NS
+    backdate(write_ticket_file(hive_dir, TICKET_ID_TEST_BEE, title=TITLE_TEST_BEE))
 
     # First call: primes the cache
     result = await _show_ticket([TICKET_ID_TEST_BEE])

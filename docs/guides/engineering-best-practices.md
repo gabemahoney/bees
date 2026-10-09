@@ -77,14 +77,15 @@ Don't optimize prematurely, but don't create obvious bottlenecks either.
 
 The ticket cache is an internal optimization inside `read_ticket()`. All code that reads ticket data must route through it.
 
-- **Always use `read_ticket()`.** It is the only sanctioned way to load ticket data. Direct file reads that bypass `read_ticket()` are prohibited — they skip the mtime cache and will serve stale data to callers.
+- **Always use `read_ticket()`.** It is the only sanctioned way to load ticket data. Direct file reads that bypass `read_ticket()` are prohibited — they skip the ticket cache and will serve stale data to callers.
 - **Never open ticket markdown files directly.** Constructing a `Path` to a ticket file and parsing it inline is a cache bypass. Use `read_ticket()` regardless of context (MCP handlers, pipeline loading, linting, relationship sync).
-- **Cache reads and population are internal to `read_ticket()`.** Do not call `cache.get()` or `cache.put()` from production `src/` code outside `src/reader.py`. Cache population and mtime checking are managed exclusively by `read_ticket()`. Presence checks via `cache.contains()` are allowed from any module — they reveal only whether an ID is cached, not the cached data itself. Write paths may import `src.cache` solely to call `cache.evict()` after a filesystem write. Tests may import `src.cache` directly to inspect or reset cache state between test cases.
+- **Ticket-cache reads and population are internal to `read_ticket()`.** Do not call `cache.get()` or `cache.put()` from production `src/` code outside `src/reader.py`; ticket-cache population and freshness checks belong to `read_ticket()`. Presence checks via `cache.contains()` are allowed from any module — they reveal only whether an ID is cached, not the cached data itself. Write paths may call `cache.evict()` after a filesystem write. Tests may import `src.cache` directly to inspect or reset cache state between test cases.
+- **Use the shared file-signature helpers for other file caches.** `file_signature()`, `trusted_signature()`, and `FileSignature` in `src/cache.py` are the freshness check for any in-memory cache of on-disk file contents, and any module may import them (`src/config.py` does, for the global config and `identity.json` caches). Take the signature before reading the file and key the entry on `trusted_signature()` of it, never the raw signature, so a file modified within `RACY_WINDOW_NS` (3 s) of the read is re-read instead of served stale. See [caching.md](../architecture/caching.md#freshness-check).
 
 ### Write-Path Rules
 
 - **Always evict after writes.** After any `write_ticket_file()` call, evict the written ticket via `cache.evict(hive_name, ticket_id)`. Skipping eviction leaves stale data in the cache for the remainder of the server process.
-- **Never populate the cache on the write path.** Write operations must not call `cache.put()`. The cache is populated lazily by `read_ticket()` on the next read. Populating on write bypasses mtime validation and can serve data that is already stale.
+- **Never populate the cache on the write path.** Write operations must not call `cache.put()`. The cache is populated lazily by `read_ticket()` on the next read. Populating on write bypasses file-signature validation and can serve data that is already stale.
 - **Evict related tickets during relationship sync.** Any operation that rewrites a related ticket's frontmatter (parent/child sync, dependency sync) must evict that related ticket after writing. The eviction target is the ticket whose file was written, not the ticket that triggered the sync.
 
 ## 9. Ticket File Discovery
@@ -110,7 +111,7 @@ Always use the canonical write utility. Never write ticket files directly.
 
 Always load config through the canonical loader. Never read config.json directly.
 
-- **Always use `load_bees_config()` or `load_global_config()` from `src/config.py`.** These functions handle scope matching, hive name normalization, and mtime-based caching. Direct `json.load()` reads skip scope matching (leaking out-of-scope hives), miss schema migrations, and re-read the entire config on every call.
+- **Always use `load_bees_config()` or `load_global_config()` from `src/config.py`.** These functions handle scope matching, hive name normalization, and file-signature-based caching. Direct `json.load()` reads skip scope matching (leaking out-of-scope hives), miss schema migrations, and re-read the entire config on every call.
 - **Use `resolve_child_tiers_for_hive()` and `resolve_status_values_for_hive()` from `src/config.py`** for per-hive settings. These implement 4-level fallback resolution: (1) hive identity.json, (2) scope config, (3) global config, (4) default. Directly accessing `config["child_tiers"]` skips hive-level overrides from identity.json.
 
 ## 12. ID Generation and Validation

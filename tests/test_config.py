@@ -2,6 +2,7 @@
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ from src.config import (
 from src.mcp_hive_ops import write_identity
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config, write_scoped_config
+from tests.helpers import backdate
 from tests.test_constants import (
     SCOPE_PATTERN_BARE,
     SCOPE_PATTERN_DEEP,
@@ -440,23 +442,28 @@ class TestLoadGlobalConfig:
         """Consecutive calls return the same cached object when file is unchanged."""
         data = {"scopes": {"/cached": {"hives": {}}}, "schema_version": "2.0"}
         (mock_global_bees_dir / "config.json").write_text(json.dumps(data))
+        backdate(mock_global_bees_dir / "config.json")
         result1 = load_global_config()
         result2 = load_global_config()
         assert result1 is result2
 
-    def test_cache_invalidated_on_mtime_change(self, mock_global_bees_dir):
-        """Cache is invalidated when the file's mtime changes."""
+    @pytest.mark.parametrize(
+        "racy", [pytest.param(False, id="mtime_change"), pytest.param(True, id="racy_read_then_identical_stat")]
+    )
+    def test_cache_invalidated_on_rewrite(self, mock_global_bees_dir, monkeypatch, racy):
+        """A same-size in-place rewrite is re-read when its mtime changed, or, after a racy read, when it did not."""
         config_path = mock_global_bees_dir / "config.json"
-        v1 = {"scopes": {"/v1": {"hives": {}}}, "schema_version": "2.0"}
-        config_path.write_text(json.dumps(v1))
+        config_path.write_text(json.dumps({"scopes": {"/v1": {"hives": {}}}, "schema_version": "2.0"}))
+        stamp = backdate(config_path)
+        if racy:
+            # Read 1 ns after the file's mtime (src.cache reads the clock through time.time_ns)
+            monkeypatch.setattr(time, "time_ns", lambda: stamp + 1)
         result1 = load_global_config()
         assert "/v1" in result1["scopes"]
 
-        # Write v2 and bump mtime by 1 second
-        v2 = {"scopes": {"/v2": {"hives": {}}}, "schema_version": "2.0"}
-        config_path.write_text(json.dumps(v2))
-        st = config_path.stat()
-        os.utime(config_path, (st.st_atime, st.st_mtime + 1))
+        config_path.write_text(json.dumps({"scopes": {"/v2": {"hives": {}}}, "schema_version": "2.0"}))
+        new_stamp = stamp if racy else stamp + 10**9
+        os.utime(config_path, ns=(new_stamp, new_stamp))
 
         result2 = load_global_config()
         assert result2 is not result1
@@ -1605,6 +1612,48 @@ class TestStatusValuesResolution:
         assert result == ["scope_todo", "scope_done"]
 
     @pytest.mark.parametrize(
+        "atomic",
+        [pytest.param(True, id="atomic_replace"), pytest.param(False, id="racy_read_then_identical_stat")],
+    )
+    def test_identity_json_rewrite_with_same_size_and_mtime_is_reread(
+        self, tmp_path, monkeypatch, mock_global_bees_dir, atomic
+    ):
+        """identity.json rewritten with the same size and mtime is re-read, not served from cache.
+
+        The rewrite bypasses write_identity, as another process's would. atomic_replace: a new inode
+        is the only change. racy_read_then_identical_stat: the first read happens 1 ns after the
+        file's mtime, and the in-place rewrite keeps inode, size and mtime.
+        """
+        monkeypatch.chdir(tmp_path)
+        hive_path = _setup_hive_identity(tmp_path, "backend", status_values=["old_a", "old_b"])
+        write_scoped_config(
+            mock_global_bees_dir,
+            tmp_path,
+            {"hives": {"backend": {"path": hive_path, "display_name": "Backend", "created_at": TS}}, "child_tiers": {}},
+        )
+        identity_file = Path(hive_path) / ".hive" / "identity.json"
+        stamp = backdate(identity_file)
+        if not atomic:
+            # src.cache reads the clock through time.time_ns
+            monkeypatch.setattr(time, "time_ns", lambda: stamp + 1)
+        before = identity_file.stat()
+        assert resolve_status_values_for_hive("backend") == ["old_a", "old_b"]
+
+        new_text = identity_file.read_text().replace("old_", "new_")
+        if atomic:
+            staged = identity_file.with_name("staged.json")
+            staged.write_text(new_text)
+            os.replace(staged, identity_file)
+        else:
+            identity_file.write_text(new_text)
+        os.utime(identity_file, ns=(stamp, stamp))
+        after = identity_file.stat()
+        assert (after.st_size, after.st_mtime_ns) == (before.st_size, before.st_mtime_ns)
+        assert (after.st_ino != before.st_ino) == atomic
+
+        assert resolve_status_values_for_hive("backend") == ["new_a", "new_b"]
+
+    @pytest.mark.parametrize(
         "hive_values,scope_values,global_values,expected",
         [
             pytest.param(
@@ -1847,36 +1896,31 @@ class TestStatusValuesConfigRoundTrip:
 class TestSetConfigPath:
     """Tests for set_config_path() override behavior."""
 
-    def test_load_reads_from_override_path(self, tmp_path):
-        """set_config_path causes load_global_config to read from the specified file."""
-        config_data = {"scopes": {"/test": {"hives": {}}}, "schema_version": "2.0"}
-        config_file = tmp_path / "custom_config.json"
-        config_file.write_text(json.dumps(config_data))
+    @pytest.mark.parametrize(
+        "first, second",
+        [
+            pytest.param("a", "default", id="override_to_default"),
+            pytest.param("default", "b", id="default_to_override"),
+            pytest.param("a", "b", id="override_to_other_override"),
+        ],
+    )
+    def test_switch_reads_newly_selected_file_with_same_mtime(self, first, second, tmp_path, mock_global_bees_dir):
+        """After set_config_path switches files, load_global_config reads the new file, not the cached one.
+
+        All files share one old mtime, as files written within one timestamp tick do. override_to_default
+        is the reported failure: set_config_path(None) after an override returned the override's config.
+        """
+        files = {"default": mock_global_bees_dir / "config.json", "a": tmp_path / "a.json", "b": tmp_path / "b.json"}
+        for name, path in files.items():
+            path.write_text(json.dumps({"scopes": {f"/{name}": {}}, "schema_version": "2.0"}))
+        backdate(*files.values())
+
         try:
-            set_config_path(str(config_file))
-            result = load_global_config()
-            assert result["scopes"] == {"/test": {"hives": {}}}
+            for name in (first, second):
+                set_config_path(None if name == "default" else str(files[name]))
+                assert list(load_global_config()["scopes"]) == [f"/{name}"]
         finally:
             set_config_path(None)
-
-    def test_reset_to_default_reads_default_path(self, tmp_path, mock_global_bees_dir):
-        """set_config_path(None) resets to reading from ~/.bees/config.json."""
-        custom_data = {"scopes": {"/custom": {}}, "schema_version": "2.0"}
-        disk_data = {"scopes": {"/disk": {"hives": {}}}, "schema_version": "2.0"}
-
-        config_file = tmp_path / "custom_config.json"
-        config_file.write_text(json.dumps(custom_data))
-        (mock_global_bees_dir / "config.json").write_text(json.dumps(disk_data))
-
-        set_config_path(str(config_file))
-        try:
-            result = load_global_config()
-            assert "/custom" in result["scopes"]
-        finally:
-            set_config_path(None)
-
-        result = load_global_config()
-        assert "/disk" in result["scopes"]
 
     def test_save_writes_to_override_path(self, tmp_path):
         """save_global_config writes to the override path when set_config_path is active."""

@@ -76,6 +76,8 @@ write_ticket_file(hive_path, ticket)                # handles YAML frontmatter +
 
 Also available: `setup_child_tiers()`, `assert_ticket_id_format()`, `assert_relationship_bidirectional()`, `build_test_scenario()`.
 
+`backdate(*paths)` sets each file's atime and mtime to one stamp a minute in the past and returns that stamp (ns). The ticket, global config, and identity caches re-read a file modified within the last 3 seconds on every lookup (see [caching.md](caching.md#freshness-check)), so a test that expects a cache hit right after writing a file must backdate the file first.
+
 For CI script tests: `load_script()` imports a `docker/` script by path (`docker/` is not a package), with its `docker/` neighbours importable as in the container. `mcp_initialize_response()` builds the JSON-RPC `initialize` result of an MCP server with a given name.
 
 ### Parametrization

@@ -183,7 +183,7 @@ The `read_ticket()` function validates `schema_version` field presence in frontm
 
 ### Cache-Backed Reads
 
-All ticket parsing flows through `read_ticket()`, which is backed by an in-memory mtime cache when `hive_name` is provided. This includes single-ticket reads and bulk operations like `list_tickets()` and `infer_ticket_type_from_id()`. See [caching.md](caching.md) for the full cache design.
+All ticket parsing flows through `read_ticket()`, which is backed by an in-memory cache validated against each file's stat signature. This includes single-ticket reads and bulk operations like `list_tickets()` and `infer_ticket_type_from_id()`. See [caching.md](caching.md) for the full cache design.
 
 ### Design Rationale
 

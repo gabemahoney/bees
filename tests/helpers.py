@@ -11,7 +11,9 @@ Usage:
 
 import importlib.util
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 from src.config import ChildTierConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
@@ -22,6 +24,17 @@ from src.id_utils import generate_guid
 from tests.test_constants import (
     TICKET_ID_TEST_BEE,
 )
+
+
+def backdate(*paths: Path) -> int:
+    """Set every path's atime and mtime to one stamp a minute ago and return it (ns).
+
+    A minute exceeds src.cache.RACY_WINDOW_NS, so the file caches trust the files' signatures.
+    """
+    stamp = time.time_ns() - 60 * 10**9
+    for path in paths:
+        os.utime(path, ns=(stamp, stamp))
+    return stamp
 
 
 def make_body_at_cap(fill_char: str = "a") -> str:

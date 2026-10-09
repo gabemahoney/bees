@@ -22,6 +22,7 @@ from src.paths import (
 from src.reader import get_ticket_type
 from src.repo_context import repo_root_context
 from tests.conftest import write_scoped_config
+from tests.helpers import backdate
 from src.paths import compute_ticket_path as _compute_ticket_path
 from tests.test_constants import (
     TICKET_ID_ABC,
@@ -671,14 +672,14 @@ class TestListTicketsDynamicTypeValidation:
 
 
 class TestPathsCacheIntegration:
-    """Cache behavior for list_tickets() and infer_ticket_type_from_id()."""
+    """Cache behavior for list_tickets() and infer_ticket_type_from_id() (files backdated, so caches trust them)."""
 
     def test_list_tickets_cache_hit_on_second_call(self, isolated_bees_env):
         """Second list_tickets() call returns cached results without re-parsing."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("backend")
         helper.write_config()
-        helper.create_ticket(hive_dir, "b.nc1", "bee", "List Cache Test")
+        backdate(helper.create_ticket(hive_dir, "b.nc1", "bee", "List Cache Test"))
 
         with patch("src.reader.parse_frontmatter", wraps=real_parse_frontmatter) as mock_parse:
             list_tickets()
@@ -692,7 +693,7 @@ class TestPathsCacheIntegration:
         helper = isolated_bees_env
         hive_dir = helper.create_hive("backend")
         helper.write_config()
-        helper.create_ticket(hive_dir, "b.ic1", "bee", "Infer Cache Test")
+        backdate(helper.create_ticket(hive_dir, "b.ic1", "bee", "Infer Cache Test"))
 
         with patch("src.reader.parse_frontmatter", wraps=real_parse_frontmatter) as mock_parse:
             result1 = infer_ticket_type_from_id("b.ic1")
@@ -708,7 +709,7 @@ class TestPathsCacheIntegration:
         helper = isolated_bees_env
         hive_dir = helper.create_hive("backend")
         helper.write_config()
-        helper.create_ticket(hive_dir, "b.sc1", "bee", "Shared Cache Test")
+        backdate(helper.create_ticket(hive_dir, "b.sc1", "bee", "Shared Cache Test"))
 
         with patch("src.reader.parse_frontmatter", wraps=real_parse_frontmatter) as mock_parse:
             tickets = list_tickets()
@@ -728,11 +729,9 @@ class TestGetTicketType:
         helper = isolated_bees_env
         ticket_file = helper.base_path / "b.cht1.md"
         ticket_file.touch()
-        file_mtime = ticket_file.stat().st_mtime
-
         mock_ticket = MagicMock()
         mock_ticket.type = "bee"
-        src.cache.put("b.cht1", file_mtime, ticket_file, mock_ticket)
+        src.cache.put("b.cht1", src.cache.file_signature(ticket_file), ticket_file, mock_ticket)
 
         with patch("src.paths.find_ticket_file") as mock_find:
             result = get_ticket_type("b.cht1")

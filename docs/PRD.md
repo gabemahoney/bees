@@ -49,7 +49,7 @@ Bees is a **file-based ticket management system** designed for LLM-assisted deve
 
 - No database — Markdown files with YAML frontmatter only
 - No daemons required (undertaker scheduling is optional, HTTP-mode only)
-- Limited caching — mtime-based in-memory only; no persistent/distributed cache
+- Limited caching — stat-based in-memory only (path, device, inode, size, mtime); no persistent/distributed cache
 - Scale target: tens of hives, thousands of tickets
 - Max bees per scope: 39,304 (34³)
 - Max children per parent: 1,156 (34²)
@@ -1225,11 +1225,12 @@ Error: `"No hives configured"` if no hives in config
 
 ### 21.1 Overview
 
-The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. Each cache entry stores the file's modification time, path, and parsed ticket data.
+The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. Each cache entry stores the file's signature (path, device, inode, size, and nanosecond modification time), path, and parsed ticket data. The signature is left empty when the file was modified within the last 3 seconds of being read.
 
 ### 21.2 Cache Behavior
 
-- **Read**: if the file's mtime hasn't changed since caching, return the cached ticket; otherwise re-read and re-parse
+- **Read**: if the file's signature hasn't changed since caching, return the cached ticket; otherwise re-read and re-parse
+- **Recently modified files**: a file modified within the last 3 seconds is re-read on every lookup until it is older, because a same-size write within one timestamp tick can leave the signature unchanged
 - **Write**: evict the cache entry after a successful write (never populate cache during writes)
 - **Delete**: evict the cache entry after deletion
 - **Move**: evict the cache entry after a ticket is moved

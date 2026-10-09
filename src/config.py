@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.cache import FileSignature, file_signature, trusted_signature
 from src.repo_context import get_repo_root
 
 logger = logging.getLogger(__name__)
@@ -20,13 +21,16 @@ logger = logging.getLogger(__name__)
 # Module-level path override for config file location
 _CONFIG_PATH_OVERRIDE: str | None = None
 
-# mtime-based cache for load_global_config()
+# File-signature-based cache for load_global_config(). The signature is
+# trusted_signature() of the file at read time; None means never serve the
+# cached dict, re-read instead.
 _GLOBAL_CONFIG_CACHE: dict | None = None
-_GLOBAL_CONFIG_CACHE_MTIME: float | None = None
+_GLOBAL_CONFIG_CACHE_SIGNATURE: FileSignature | None = None
 
-# mtime-based cache for identity.json reads (keyed by hive path)
+# File-signature-based cache for identity.json reads (keyed by hive path),
+# with the same trusted_signature() semantics
 _IDENTITY_CACHE: dict[str, dict] = {}
-_IDENTITY_CACHE_MTIME: dict[str, float] = {}
+_IDENTITY_CACHE_SIGNATURE: dict[str, FileSignature | None] = {}
 
 # In-memory config override for tests (bypasses disk I/O entirely)
 _GLOBAL_CONFIG_OVERRIDE: dict | None = None
@@ -34,8 +38,15 @@ _TEST_CONFIG_LOCK = threading.Lock()
 
 
 def set_config_path(path: str | None) -> None:
-    """Set config file path override. None resets to default."""
-    global _CONFIG_PATH_OVERRIDE
+    """Set config file path override. None resets to default.
+
+    Clears the global config cache when the path changes, so the next
+    load_global_config() reads the newly selected file.
+    """
+    global _CONFIG_PATH_OVERRIDE, _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_SIGNATURE
+    if path != _CONFIG_PATH_OVERRIDE:
+        _GLOBAL_CONFIG_CACHE = None
+        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
     _CONFIG_PATH_OVERRIDE = path
 
 
@@ -48,11 +59,11 @@ def set_test_config_override(config: dict | None) -> None:
     Args:
         config: Dict to use as the global config, or None to disable override.
     """
-    global _GLOBAL_CONFIG_OVERRIDE, _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_MTIME
+    global _GLOBAL_CONFIG_OVERRIDE, _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_SIGNATURE
     with _TEST_CONFIG_LOCK:
         _GLOBAL_CONFIG_OVERRIDE = config
         _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_MTIME = None
+        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
 
 
 # Hive Configuration (global ~/.bees/config.json with scoped patterns)
@@ -628,14 +639,17 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
 def load_global_config() -> dict:
     """Load the entire global config from ~/.bees/config.json.
 
-    Uses mtime-based caching to avoid redundant disk reads when the
-    config file has not changed.
+    Caches the parsed config keyed on the file signature (path, device,
+    inode, size, mtime_ns) to avoid redundant disk reads when the config
+    file has not changed. A file modified within src.cache.RACY_WINDOW_NS
+    of being read is re-read on every call until it is older (see
+    src.cache.trusted_signature()).
 
     Returns:
         The global config dict. Returns empty scopes structure if file missing.
         Returns default structure on JSON errors with logged warning.
     """
-    global _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_MTIME
+    global _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_SIGNATURE
 
     with _TEST_CONFIG_LOCK:
         if _GLOBAL_CONFIG_OVERRIDE is not None:
@@ -649,19 +663,21 @@ def load_global_config() -> dict:
 
     if not config_path.exists():
         _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_MTIME = None
+        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
         return default_struct
 
     try:
-        current_mtime = config_path.stat().st_mtime
+        current_signature = file_signature(config_path)
     except OSError:
         _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_MTIME = None
+        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
         return default_struct
 
-    if _GLOBAL_CONFIG_CACHE is not None and _GLOBAL_CONFIG_CACHE_MTIME == current_mtime:
+    if _GLOBAL_CONFIG_CACHE is not None and _GLOBAL_CONFIG_CACHE_SIGNATURE == current_signature:
         return _GLOBAL_CONFIG_CACHE
 
+    # Decide whether the signature can be trusted before reading the contents
+    cache_signature = trusted_signature(current_signature)
     try:
         with open(config_path) as f:
             data = json.load(f)
@@ -722,7 +738,7 @@ def load_global_config() -> dict:
                 )
 
     _GLOBAL_CONFIG_CACHE = data
-    _GLOBAL_CONFIG_CACHE_MTIME = current_mtime
+    _GLOBAL_CONFIG_CACHE_SIGNATURE = cache_signature
     return data
 
 
@@ -734,7 +750,7 @@ def save_global_config(global_config: dict) -> None:
     Args:
         global_config: The full global config dict to write
     """
-    global _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_MTIME
+    global _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_SIGNATURE
 
     if "schema_version" not in global_config:
         global_config["schema_version"] = GLOBAL_SCHEMA_VERSION
@@ -768,7 +784,7 @@ def save_global_config(global_config: dict) -> None:
         temp_path = None
 
         _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_MTIME = None
+        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
 
     except Exception as e:
         if temp_fd is not None:
@@ -1298,10 +1314,12 @@ def validate_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> None:
 
 
 def _read_identity_cached(hive_path: str) -> dict | None:
-    """Read identity.json for a hive with mtime-based caching.
+    """Read identity.json for a hive with file-signature-based caching.
 
     Uses the same caching pattern as load_global_config: checks the file's
-    mtime and returns the cached dict if unchanged.
+    signature (path, device, inode, size, mtime_ns) and returns the cached
+    dict if unchanged. A file modified within src.cache.RACY_WINDOW_NS of
+    being read is re-read on every call until it is older.
 
     Args:
         hive_path: The hive's filesystem path (HiveConfig.path)
@@ -1309,26 +1327,28 @@ def _read_identity_cached(hive_path: str) -> dict | None:
     Returns:
         Parsed identity dict, or None if missing/corrupt.
     """
-    global _IDENTITY_CACHE, _IDENTITY_CACHE_MTIME
+    global _IDENTITY_CACHE, _IDENTITY_CACHE_SIGNATURE
 
     identity_file = Path(hive_path) / ".hive" / "identity.json"
 
     if not identity_file.exists():
         # Clear cache entry if file was removed
         _IDENTITY_CACHE.pop(hive_path, None)
-        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        _IDENTITY_CACHE_SIGNATURE.pop(hive_path, None)
         return None
 
     try:
-        current_mtime = identity_file.stat().st_mtime
+        current_signature = file_signature(identity_file)
     except OSError:
         _IDENTITY_CACHE.pop(hive_path, None)
-        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        _IDENTITY_CACHE_SIGNATURE.pop(hive_path, None)
         return None
 
-    if hive_path in _IDENTITY_CACHE and _IDENTITY_CACHE_MTIME.get(hive_path) == current_mtime:
+    if hive_path in _IDENTITY_CACHE and _IDENTITY_CACHE_SIGNATURE.get(hive_path) == current_signature:
         return _IDENTITY_CACHE[hive_path]
 
+    # Decide whether the signature can be trusted before reading the contents
+    cache_signature = trusted_signature(current_signature)
     try:
         from .mcp_hive_ops import read_identity  # noqa: PLC0415
 
@@ -1337,17 +1357,33 @@ def _read_identity_cached(hive_path: str) -> dict | None:
     except (ValueError, OSError) as e:
         logger.warning("Failed to read identity.json for hive at %s: %s", hive_path, e)
         _IDENTITY_CACHE.pop(hive_path, None)
-        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        _IDENTITY_CACHE_SIGNATURE.pop(hive_path, None)
         return None
 
     if data is not None:
         _IDENTITY_CACHE[hive_path] = data
-        _IDENTITY_CACHE_MTIME[hive_path] = current_mtime
+        _IDENTITY_CACHE_SIGNATURE[hive_path] = cache_signature
     else:
         _IDENTITY_CACHE.pop(hive_path, None)
-        _IDENTITY_CACHE_MTIME.pop(hive_path, None)
+        _IDENTITY_CACHE_SIGNATURE.pop(hive_path, None)
 
     return data
+
+
+def invalidate_identity_cache(hive_path: str | Path) -> None:
+    """Drop the cached identity.json for the hive at hive_path.
+
+    Called after identity.json is rewritten, as save_global_config() clears the
+    global config cache. Cache keys are HiveConfig.path strings, so keys are
+    matched by resolved path rather than by spelling.
+
+    Args:
+        hive_path: The hive's filesystem path (the parent of its .hive directory)
+    """
+    target = os.path.realpath(hive_path)
+    for key in [k for k in _IDENTITY_CACHE.keys() | _IDENTITY_CACHE_SIGNATURE.keys() if os.path.realpath(k) == target]:
+        _IDENTITY_CACHE.pop(key, None)
+        _IDENTITY_CACHE_SIGNATURE.pop(key, None)
 
 
 def resolve_child_tiers_for_hive(normalized_hive: str, config: BeesConfig | None = None) -> dict[str, ChildTierConfig]:
