@@ -281,15 +281,26 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Validates each ticket's directory location based on `parent` field in frontmatter
 - For bees (no parent): Verifies directory is at hive root level
 - For child tickets: Verifies directory is directly under parent's directory
+- **Parents first**: `_order_parents_first()` orders the tickets by how many ancestors each has through `parent` links, bees first, keeping scan order among equals; a parent cycle stops the count, so the run still ends. A child's expected directory is therefore computed from where its parent is after the parent's own move: a parent misplaced inside its child's directory (e.g. bee `b.abc` at `<hive>/t1.abc.aa/b.abc/`) moves out first, and the child follows in the same run
 - **Auto-correction behavior**: Automatically moves misplaced ticket directories to correct location
-- Uses `shutil.move()` to relocate entire directory subtree (preserves all children)
+- `_move_ticket_dir()` relocates the entire directory subtree (preserves all children) and never deletes anything:
+  - Target missing: the ticket's directory is moved there whole
+  - Target exists: `_merge_dir_into()` moves the entries of the ticket's directory into it, everything the target already holds stays, and the emptied ticket directory is removed (its empty parents stay). Each entry name is checked again just before that entry moves; if the name was taken in the target since the conflict check, the merge stops with an error and nothing is overwritten or nested (entries already moved stay moved, the rest stay where they were)
+  - Target exists and holds the ticket's directory (a ticket misplaced inside its own expected directory, e.g. a bee at `<hive>/b.abc/misc/b.abc/`): the ticket's directory is first moved into a temporary directory `<ticket_id>.moving-XXXX` beside the target, so no entry is moved into itself, and its entries are then merged into the target. Afterwards, whether the merge succeeded or failed, `_remove_staging_leftovers()` removes the temporary directory and the directories left empty between the old location and the target, innermost first, using only `rmdir`: a directory that still holds anything stays, and on the way back up so does every directory above it. A failure to remove one is logged and never replaces the move's own error
+- **Rationale for never deleting**: an existing target can hold the ticket itself (misplaced inside its own expected directory), other children, or unrelated files; deleting it before the move would lose them
+- **Failed moves**: a move that fails partway (e.g. a name taken during the merge, or an `OSError` from the filesystem) is reported as error `directory_enforcement_failed` for that ticket, with no `move_directory` fix; nothing is lost, every file is in the target, the old directory or the temporary directory. The temporary directory is not hidden, so a ticket stranded there is found as misplaced: a stranded child ticket is usually moved later in the same run (it is checked after its parent), otherwise on the next run. A non-ticket file stranded in the old directory or in `<ticket_id>.moving-XXXX/` is not moved by any later run and stays until moved by hand; the error names the entry that failed to move. An empty `<ticket_id>.moving-XXXX/` can remain after a later run recovers the ticket from it
 - Reports fixes via `LinterReport.add_fix()` with type `"move_directory"`
 - Never makes a move that crosses the boundary of a hive nested inside this one. Before each move, `_move_crosses_hive()` blocks it when any of these holds (see [Nested Hives](#nested-hives)):
   - The ticket's current directory is inside another hive (`find_enclosing_hive_root()`)
   - The target directory itself is another hive's root or inside another hive (`find_enclosing_hive_root()`)
   - The ticket's current directory holds another hive anywhere below it, which the move would carry off its path (`find_nested_hive_root()`)
-  - The target directory exists and holds another hive anywhere below it; the move deletes an existing target first (`find_nested_hive_root()`)
+  - The target directory exists and holds another hive anywhere below it, which the ticket's directory would then hold (`find_nested_hive_root()`)
 - A blocked move is skipped, nothing is moved or deleted, and error `cross_hive_move_blocked` is reported naming the reason
+- A move that passes the hive guard is then checked by `_find_move_conflict()`, which refuses it when any of these holds:
+  - The target lies inside the ticket's own directory (a directory cannot be moved into itself)
+  - The target exists but is a symlink or not a directory
+  - An entry of the ticket's directory has the same name as an entry the target keeps (the ticket's own directory sitting directly in the target does not count, since it leaves before its entries arrive)
+- A refused move touches nothing, and error `move_target_conflict` is reported naming the reason; it stays until the conflict is fixed by hand. A child whose parent sits misplaced inside the child's own directory is not such a conflict: the parent moves out first (see Parents first)
 - Triggered on every linter run (manual `sanitize_hive`, and the watcher loop when `start_watcher()` is running)
 
 **Directory Enforcement Rules**:
@@ -313,6 +324,12 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Expected location: `hive_root/b.xyz/`
 - Action: Linter moves `b.xyz/` directory to hive root
 
+*Bee misplaced inside its own expected directory*:
+- Frontmatter: `parent: null`
+- Current location: `hive_root/b.abc/misc/b.abc/`
+- Expected location: `hive_root/b.abc/`
+- Action: Linter moves `misc/b.abc/` out into a temporary directory beside `b.abc/`, merges its entries into `b.abc/`, then removes the temporary directory, and `misc/` if left empty; nothing else in `b.abc/` is touched
+
 **Empty Ticket Directory Cleanup**:
 - `detect_empty_ticket_dirs()` finds ticket-ID directories with no `{ticket_id}.md` inside, left behind when ticket creation claims a directory but the write fails; such a directory blocks that ID from reuse
 - Skips directories modified in the last 10 minutes, to avoid racing in-flight ticket creation
@@ -326,7 +343,7 @@ A hive may sit inside another hive's directory, e.g. hive `plans` at `Ideas/Plan
 
 - **Boundary**: a directory below the hive root starts another hive when it holds its own `.hive/` directory or is the root of a hive registered in any scope (see [storage.md](storage.md#nested-hives))
 - **Pruned walks**: TicketScanner, `find_ticket_file()`, directory enforcement and empty-directory cleanup all walk through `walk_hive()`, which stops at that boundary. The nested hive's tickets get no `unknown_tier`, `invalid_tier_parent` or other errors from the enclosing hive's config, and no fixes
-- **Move guard**: if a planned directory move would cross the boundary, carry a nested hive along with the ticket's directory, or delete a target directory that holds one, directory enforcement skips it and reports `cross_hive_move_blocked` (see Directory Structure Enforcement)
+- **Move guard**: if a planned directory move would cross the boundary, carry a nested hive along with the ticket's directory, or go into an existing target directory that holds one, directory enforcement skips it and reports `cross_hive_move_blocked` (see Directory Structure Enforcement)
 - **Cross-hive references**: `sanitize_hive` builds `all_scope_ticket_map` by scanning each in-scope hive on its own, so the tickets of a nested hive registered in scope resolve like any other hive's. The tickets of a nested hive that is not registered in scope (e.g. one marked only by `.hive/`) are not in the map: a reference to one of them from the enclosing hive is reported as dangling, and is removed when `auto_fix_dangling_refs: true`
 - **Rationale**: the nested hive has its own tiers, status values and layout. Linting its tickets against the enclosing hive's config would flag tiers the enclosing hive does not define as `unknown_tier`, and directory enforcement would move the nested hive's bees to the enclosing hive's root, out of their own hive
 
@@ -448,9 +465,9 @@ The linter implements three categories of auto-fix rules that automatically repa
 - Implemented via `enforce_directory_structure()` method
 - Runs on every linter invocation (not gated by `auto_fix` flag)
 - Ensures filesystem structure matches frontmatter `parent` field (source of truth)
-- Automatically moves misplaced ticket directories to correct location
-- Uses `shutil.move()` to relocate entire directory subtrees (preserves all children)
-- Never moves a ticket into or out of a nested hive, carries one along, or deletes a target directory that holds one (`cross_hive_move_blocked`, see [Nested Hives](#nested-hives))
+- Automatically moves misplaced ticket directories to correct location, parents before their children
+- Relocates entire directory subtrees (preserves all children) and never deletes anything: an existing target directory is merged into, and a move that would overwrite an entry of the target or nest the target inside the ticket's own directory is refused (`move_target_conflict`); a move that fails partway is reported as `directory_enforcement_failed` (see Directory Structure Enforcement under [Validation Rules](#validation-rules))
+- Never moves a ticket into or out of a nested hive, carries one along, or moves it into an existing target directory that holds one (`cross_hive_move_blocked`, see [Nested Hives](#nested-hives))
 - Triggered by manual `sanitize_hive` calls and any direct linter invocation
 - Reported as fixes in `LinterReport` (type: `"move_directory"`)
 
@@ -629,6 +646,8 @@ Corruption detection identifies database integrity issues through linter validat
 - Circular dependencies in blocking relationships or hierarchical structure
 - Misplaced ticket directories not matching parent relationships
 - Directory moves blocked at a nested hive's boundary (`cross_hive_move_blocked`)
+- Directory moves refused because the target conflicts with the ticket's directory (`move_target_conflict`)
+- Directory moves that failed partway (`directory_enforcement_failed`)
 - Auto-fixes whose ticket write failed (`fix_not_applied`)
 
 **Warnings** (non-critical):
@@ -666,6 +685,7 @@ Return LinterReport to caller
 **Requires Manual Intervention**:
 - Circular dependency resolution (requires understanding intended structure)
 - Duplicate ID conflicts (requires choosing which ticket to preserve)
+- Directory move conflicts (`move_target_conflict`: requires choosing which of two same-named entries to keep, or where the ticket's directory belongs)
 
 ### Database Integrity Guarantees
 

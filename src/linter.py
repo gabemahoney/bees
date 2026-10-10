@@ -7,6 +7,8 @@ including scanning tickets from the filesystem and running validation checks.
 import json
 import logging
 import re
+import shutil
+import tempfile
 import time
 from collections.abc import Generator
 from dataclasses import asdict
@@ -1314,29 +1316,36 @@ class Linter:
 
         For each ticket with a parent, verifies the ticket's directory is located under
         the parent's directory. If not, automatically moves the ticket's directory (and
-        all its children) to the correct location using shutil.move().
+        all its children) to the correct location (see _move_ticket_dir()).
 
         For bees (tickets with no parent), verifies the directory is at hive root level.
 
+        Tickets are checked parents first (see _order_parents_first()), so a
+        child's expected directory is computed from where its parent is after
+        the parent's own move, e.g. a bee misplaced inside its child's directory
+        moves out before the child is checked.
+
         This is a core enforcement rule that always auto-moves misplaced tickets.
         Frontmatter is the source of truth; filesystem structure is derived from it.
-        A move out of or into another hive nested inside this one, one that
-        would carry such a hive along with the ticket's directory, or one that
-        would delete a directory holding such a hive, is never made; it is
-        reported as a cross_hive_move_blocked error instead.
+        A move never deletes anything: an existing target directory is merged
+        into, and a move that would nest the target inside the ticket's own
+        directory or overwrite an entry of the target is reported as a
+        move_target_conflict error instead. A move out of or into another hive
+        nested inside this one, one that would carry such a hive along with the
+        ticket's directory, or one into an existing directory holding such a
+        hive, is never made; it is reported as a cross_hive_move_blocked error
+        instead.
 
         Args:
             tickets: List of all tickets to check
             report: LinterReport to collect fixes and errors into
         """
-        import shutil
-
         # Create a lookup map for quick ticket access by ID
         ticket_map = {ticket.id: ticket for ticket in tickets}
 
         hive_path = Path(self.tickets_dir)
 
-        for ticket in tickets:
+        for ticket in self._order_parents_first(tickets, ticket_map):
             try:
                 # Find this ticket's file within the linter's own hive
                 # Use deep=True to find misplaced tickets in non-standard directories
@@ -1391,19 +1400,13 @@ class Linter:
                         # Ensure expected parent directory exists
                         expected_parent_dir.mkdir(parents=True, exist_ok=True)
 
-                        # If expected_dir already exists, remove it first to avoid nesting
-                        if expected_dir.exists():
-                            shutil.rmtree(expected_dir)
-
                         # Move the ticket's directory (and all children) to correct location
-                        shutil.move(str(current_dir), str(expected_dir))
-                        cache.evict(ticket.id)
-
-                        report.add_fix(
-                            ticket_id=ticket.id,
-                            fix_type="move_directory",
-                            description=f"Moved ticket directory to {expected_dir} (under parent {ticket.parent})",
-                        )
+                        if self._move_ticket_dir(ticket.id, current_dir, expected_dir, report):
+                            report.add_fix(
+                                ticket_id=ticket.id,
+                                fix_type="move_directory",
+                                description=f"Moved ticket directory to {expected_dir} (under parent {ticket.parent})",
+                            )
 
                 else:
                     # Bee (no parent) - should be at hive root level
@@ -1427,19 +1430,13 @@ class Linter:
 
                         logger.info(f"Moving bee {ticket.id} from {current_dir} to {expected_dir} (hive root)")
 
-                        # If expected_dir already exists, remove it first to avoid nesting
-                        if expected_dir.exists():
-                            shutil.rmtree(expected_dir)
-
                         # Move the bee's directory to hive root
-                        shutil.move(str(current_dir), str(expected_dir))
-                        cache.evict(ticket.id)
-
-                        report.add_fix(
-                            ticket_id=ticket.id,
-                            fix_type="move_directory",
-                            description=f"Moved bee directory to hive root at {expected_dir}",
-                        )
+                        if self._move_ticket_dir(ticket.id, current_dir, expected_dir, report):
+                            report.add_fix(
+                                ticket_id=ticket.id,
+                                fix_type="move_directory",
+                                description=f"Moved bee directory to hive root at {expected_dir}",
+                            )
 
             except Exception as e:
                 logger.error(f"Error enforcing directory structure for ticket {ticket.id}: {e}")
@@ -1450,6 +1447,27 @@ class Linter:
                     severity="error",
                 )
 
+    @staticmethod
+    def _order_parents_first(tickets: list[Ticket], ticket_map: dict[str, Ticket]) -> list[Ticket]:
+        """Return tickets ordered by how many ancestors each has in ticket_map, bees first.
+
+        The parent chain is followed rather than the tier in the ticket's type,
+        so the order holds even for a ticket whose type does not match its
+        parent's. The sort is stable: tickets with the same number of ancestors
+        keep their scan order. A parent cycle stops the count at the first ID
+        seen twice.
+        """
+
+        def ancestor_count(ticket: Ticket) -> int:
+            seen = {ticket.id}
+            parent_id = ticket.parent
+            while parent_id in ticket_map and parent_id not in seen:
+                seen.add(parent_id)
+                parent_id = ticket_map[parent_id].parent
+            return len(seen) - 1
+
+        return sorted(tickets, key=ancestor_count)
+
     def _move_crosses_hive(self, ticket_id: str, current_dir: Path, expected_dir: Path, report: LinterReport) -> bool:
         """Report and return True if moving current_dir to expected_dir would cross into another hive.
 
@@ -1459,8 +1477,9 @@ class Linter:
         ticket into or onto such a directory. The move carries everything below
         current_dir with it, so it is also blocked when another hive's root lies
         anywhere below current_dir: a hive is never moved off its path. The move
-        deletes an existing expected_dir first, so it is also blocked when
-        another hive's root lies anywhere below expected_dir.
+        merges into an existing expected_dir, so it is also blocked when another
+        hive's root lies anywhere below expected_dir: the ticket's directory
+        would then hold that hive.
 
         Args:
             ticket_id: ID of the ticket that would be moved
@@ -1485,7 +1504,10 @@ class Linter:
         if reason is None and expected_dir.exists():
             other_hive_root = find_nested_hive_root(expected_dir)
             if other_hive_root is not None:
-                reason = f"{expected_dir} would be deleted first, and it holds another hive rooted at {other_hive_root}"
+                reason = (
+                    f"{expected_dir} already exists and holds another hive rooted at {other_hive_root}, "
+                    "which the ticket's directory would then hold"
+                )
         if reason is None:
             return False
 
@@ -1497,6 +1519,139 @@ class Linter:
             severity="error",
         )
         return True
+
+    def _move_ticket_dir(self, ticket_id: str, current_dir: Path, expected_dir: Path, report: LinterReport) -> bool:
+        """Move a ticket's directory to expected_dir without deleting anything.
+
+        When expected_dir does not exist, current_dir is moved there whole. When
+        it exists, the entries of current_dir are moved into it and everything
+        else it holds stays. A current_dir inside expected_dir (a ticket
+        misplaced inside its own expected directory) is first moved to a
+        temporary directory beside expected_dir, so no entry is ever moved into
+        itself. Afterwards, whether the merge succeeded or failed, the temporary
+        directory and the directories left empty between the old place and
+        expected_dir are removed if they are empty (see
+        _remove_staging_leftovers()). The temporary directory is not hidden, so
+        a ticket stranded there by a failed merge or a crash is found as
+        misplaced on the next run.
+
+        Nothing is moved and a move_target_conflict error is reported when the
+        move would nest expected_dir inside current_dir or overwrite something
+        (see _find_move_conflict()). An entry that appears in expected_dir after
+        that check is not overwritten either: the merge stops with an error (see
+        _merge_dir_into()).
+
+        Args:
+            ticket_id: ID of the ticket being moved
+            current_dir: The ticket's current directory
+            expected_dir: Directory the ticket belongs in
+            report: LinterReport to collect a conflict error into
+
+        Returns:
+            True if the ticket's directory was moved, False if a conflict was reported
+
+        Raises:
+            OSError: If a move fails partway, including FileExistsError when an
+                entry name is taken in expected_dir during the merge
+        """
+        conflict = self._find_move_conflict(current_dir, expected_dir)
+        if conflict is not None:
+            logger.error(f"Not moving ticket {ticket_id}: {conflict}")
+            report.add_error(
+                ticket_id=ticket_id,
+                error_type="move_target_conflict",
+                message=f"Did not move '{ticket_id}' from {current_dir} to {expected_dir}: {conflict}",
+                severity="error",
+            )
+            return False
+
+        if not expected_dir.exists():
+            shutil.move(str(current_dir), str(expected_dir))
+        elif current_dir.is_relative_to(expected_dir):
+            staging_root = Path(tempfile.mkdtemp(prefix=f"{ticket_id}.moving-", dir=expected_dir.parent))
+            staged_dir = staging_root / current_dir.name
+            try:
+                shutil.move(str(current_dir), str(staged_dir))
+                self._merge_dir_into(staged_dir, expected_dir)
+            finally:
+                self._remove_staging_leftovers(staging_root, current_dir, expected_dir)
+        else:
+            self._merge_dir_into(current_dir, expected_dir)
+        cache.evict(ticket_id)
+        return True
+
+    @staticmethod
+    def _find_move_conflict(current_dir: Path, expected_dir: Path) -> str | None:
+        """Return why current_dir cannot be moved to expected_dir safely, or None if it can.
+
+        The move is refused when expected_dir lies inside current_dir (a
+        directory cannot be moved into itself), when expected_dir exists but is
+        a symlink or not a directory, or when an entry of current_dir has the
+        same name as an entry expected_dir keeps. When current_dir sits directly
+        in expected_dir, its own entry there does not count: it leaves before
+        its entries arrive.
+        """
+        if expected_dir.is_relative_to(current_dir):
+            return f"{expected_dir} is inside the ticket's own directory"
+        if expected_dir.is_symlink() or (expected_dir.exists() and not expected_dir.is_dir()):
+            return f"{expected_dir} already exists and is not a directory"
+        if not expected_dir.exists():
+            return None
+        kept_names = {entry.name for entry in expected_dir.iterdir()}
+        if current_dir.parent == expected_dir:
+            kept_names.discard(current_dir.name)
+        clashes = sorted(kept_names.intersection(entry.name for entry in current_dir.iterdir()))
+        if clashes:
+            return f"{expected_dir} already holds {', '.join(clashes)}, which the ticket's directory also holds"
+        return None
+
+    @staticmethod
+    def _merge_dir_into(source_dir: Path, target_dir: Path) -> None:
+        """Move every entry of source_dir into target_dir, then remove the emptied source_dir.
+
+        The caller has checked that no entry name is already taken in target_dir.
+        Each name is checked again just before its entry moves, since a move
+        onto a taken name would silently replace a file there or nest the entry
+        inside a directory there.
+
+        Raises:
+            FileExistsError: If an entry's name has been taken in target_dir
+                since the caller's check. Entries moved before it stay moved;
+                it and the entries after it stay in source_dir.
+        """
+        for entry in sorted(source_dir.iterdir()):
+            target = target_dir / entry.name
+            if target.exists() or target.is_symlink():
+                raise FileExistsError(f"{target} appeared during the move, so {entry} was not moved there")
+            shutil.move(str(entry), str(target))
+        source_dir.rmdir()
+
+    @staticmethod
+    def _remove_staging_leftovers(staging_root: Path, old_dir: Path, expected_dir: Path) -> None:
+        """Remove what a move through a temporary directory leaves behind, if it is empty.
+
+        Removes staging_root, then the directories between old_dir and
+        expected_dir, innermost first, stopping at the first one that is not
+        empty. Only empty directories are removed, so whatever a failed move
+        left in them stays. Runs after a failed move too, so an OSError here
+        is logged and never raised: it must not replace the move's own error.
+
+        Args:
+            staging_root: Temporary directory the ticket's directory was moved through
+            old_dir: The ticket's directory before the move, inside expected_dir
+            expected_dir: Directory the ticket's directory was merged into
+        """
+        try:
+            staging_root.rmdir()
+        except OSError as e:
+            logger.warning(f"Left temporary directory {staging_root} in place: {e}")
+        for leftover_dir in old_dir.parents:
+            if leftover_dir == expected_dir:
+                break
+            try:
+                leftover_dir.rmdir()
+            except OSError:
+                break  # not empty: it and everything above it stay
 
     def detect_cycles(self, tickets: list[Ticket]) -> list[ValidationError]:
         """Detect cycles in both blocking and hierarchical dependency relationships.

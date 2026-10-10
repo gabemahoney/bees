@@ -285,7 +285,7 @@ frontend/b.r8p/b.r8p.md
 **`find_nested_hive_root()`** (`src/paths.py`):
 - Returns the first root of another hive found anywhere below a directory, or `None`
 - Walks every directory below it, including hidden ones, `evicted/` and `cemetery/`, unlike the pruned walks
-- Used by the linter's directory enforcement to refuse a move that would carry a nested hive along with the ticket's directory, or delete an existing target directory that holds one
+- Used by the linter's directory enforcement to refuse a move that would carry a nested hive along with the ticket's directory, or go into an existing target directory that holds one
 
 **`iter_ticket_files()`** (`src/paths.py`):
 - Primary traversal function for well-structured hives
@@ -358,7 +358,7 @@ Both modes run on `walk_hive()`, so neither enters a nested hive.
 
 **Limits**:
 - Pruning applies to walks. Moving or deleting a whole ticket directory (move-bee, the undertaker's move to `/cemetery`, delete) still takes everything in it, including a hive nested inside that ticket directory. Renaming a hive's folder (`rename_hive` with folder rename) likewise moves every hive nested in it and does not update their registered paths.
-- The linter's directory enforcement is the exception: it never carries a nested hive along with a ticket's directory, nor deletes a target directory that holds one (see [Linter Enforcement](#linter-enforcement)).
+- The linter's directory enforcement is the exception: it never carries a nested hive along with a ticket's directory, nor moves a ticket's directory into an existing target directory that holds one (see [Linter Enforcement](#linter-enforcement)).
 - An unregistered nested hive (one marked only by `.hive/`) is walked by no registered hive, so its tickets are not in `sanitize_hive`'s cross-hive ticket map (see [validation.md](validation.md#nested-hives)).
 
 ### Integration with Schema Versioning
@@ -387,7 +387,10 @@ The linter's `enforce_directory_structure()` method ensures filesystem matches f
 - Verifies ticket directory is located under parent's directory
 - If misplaced, automatically moves ticket directory (and all children) to correct location
 - For bees (no parent), verifies directory is at hive root level
-- Never makes a move that crosses a nested hive's boundary: out of a nested hive, into or onto one, carrying one along with the ticket's directory, or deleting an existing target directory that holds one. It reports `cross_hive_move_blocked` and moves nothing (see [validation.md](validation.md#nested-hives))
+- Checks tickets parents first (by ancestor count through `parent` links), so a parent misplaced inside its child's directory moves out first and the child follows in the same run
+- Never deletes anything: an existing target directory is merged into, including one that holds the misplaced ticket itself (e.g. a bee at `b.abc/misc/b.abc/`, moved through a temporary `b.abc.moving-XXXX/` directory beside the target). A move that would overwrite an entry of the target, or nest the target inside the ticket's own directory, is refused with `move_target_conflict` and nothing is moved. Each entry name is checked again just before it moves, so a name taken during the merge is never overwritten either (see [validation.md](validation.md#validation-rules), Directory Structure Enforcement)
+- A move that fails partway is reported as `directory_enforcement_failed`; afterwards only emptied directories (the temporary one and those left on the way) are removed. A ticket left behind is found as misplaced later in the same run or on the next; a non-ticket file left behind stays until moved by hand
+- Never makes a move that crosses a nested hive's boundary: out of a nested hive, into or onto one, carrying one along with the ticket's directory, or into an existing target directory that holds one. It reports `cross_hive_move_blocked` and moves nothing (see [validation.md](validation.md#nested-hives))
 
 **Auto-correction flow**:
 1. User accidentally moves `t1.amx.12/` directory to wrong location via file manager

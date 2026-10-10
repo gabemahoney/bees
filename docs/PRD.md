@@ -1181,7 +1181,9 @@ Returns:
 | `missing_backlink` | error | Yes | Downstream missing up_dep backlink |
 | `dependency_cycle` | error | No | Circular dependency chain |
 | `hierarchy_cycle` | error | No | Circular parent-child chain |
-| `cross_hive_move_blocked` | error | No | Directory enforcement would move a ticket into or out of a nested hive, carry a nested hive along with the ticket's directory, or delete a target directory that holds one; nothing is moved |
+| `cross_hive_move_blocked` | error | No | Directory enforcement would move a ticket into or out of a nested hive, carry a nested hive along with the ticket's directory, or move it into an existing target directory that holds one; nothing is moved |
+| `move_target_conflict` | error | No | Directory enforcement would overwrite an entry the existing target directory already holds, move into a target that is a symlink or not a directory, or nest the target inside the ticket's own directory; nothing is moved |
+| `directory_enforcement_failed` | error | No | A directory move failed partway, e.g. an entry name was taken in the target during the merge; nothing is overwritten or deleted, a ticket left behind is moved later in the run or on the next run, and a non-ticket file left behind stays until moved by hand |
 | `fix_not_applied` | error | No | An auto-fix's ticket write failed, or an earlier write of that ticket failed in the same run (it is not written again); the fix is not in `fixes_applied` |
 | `hive_load_failure` | — | No | Failed to load a hive; skips dangling checks |
 
@@ -1189,7 +1191,7 @@ Returns:
 
 ### 19.3 Auto-Fix Categories
 
-1. **Directory structure enforcement** (always enabled): moves misplaced ticket directories to correct location based on frontmatter `parent` field, never into or out of a nested hive, carrying one along, or deleting a target directory that holds one
+1. **Directory structure enforcement** (always enabled): moves misplaced ticket directories to correct location based on frontmatter `parent` field, checking parents before their children, merging into an existing target directory and never deleting anything (a ticket misplaced inside its own expected directory is moved up, not lost; a parent misplaced inside its child's directory moves out first, and both settle in one run); never into or out of a nested hive, carrying one along, or into an existing target directory that holds one
 2. **Bidirectional field repair** (when `auto_fix=True`): `add_child`, `add_down_dependency`, `add_up_dependency`
 3. **Dangling reference removal** (when `auto_fix_dangling_refs: true`): `remove_dangling_dependency`, `clear_dangling_parent`
 

@@ -93,7 +93,7 @@ Eviction always occurs **after** the filesystem operation completes successfully
 A small number of filesystem operations outside `write_ticket_file()` must still evict directly, because they mutate ticket state without going through the writer:
 
 - **`_delete_ticket()`** (`src/mcp_ticket_ops.py`): Evicts each ticket after `shutil.rmtree()` removes its directory. Deletion is not a write operation and does not call `write_ticket_file()`.
-- **`enforce_directory_structure()`** (`src/linter.py`): Evicts each ticket after `shutil.move()` relocates its directory. Moving is not a write operation.
+- **`enforce_directory_structure()`** (`src/linter.py`): `_move_ticket_dir()` evicts each ticket after relocating its directory (a refused move, or one that fails partway, evicts nothing). Moving is not a write operation.
 - **`read_ticket()`** (`src/reader.py`): Evicts the cache entry on `FileNotFoundError` during `stat()` — the file no longer exists at the cached path.
 
 ### Create Operations
