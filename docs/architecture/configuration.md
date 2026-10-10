@@ -270,7 +270,7 @@ Per-hive child_tiers resolution is enforced in ticket operations to ensure ticke
 The `get_types` MCP tool (and `bees get-types` CLI command) reads raw `child_tiers` from all three configuration levels independently, without inheritance resolution. This provides visibility into how child tiers are configured at each level before fallback is applied.
 
 **Parameters**:
-- None. The tool uses the current repo root to locate the matching scope.
+- `repo_root` (MCP only, optional): The repo root to look up, used when the client does not supply one through the roots protocol (see `resolve_repo_root()` in `src/mcp_roots.py`). The CLI takes no arguments and uses the repo root of the current directory.
 
 **Return value**:
 - `global`: The raw `child_tiers` from the top-level config (dict or null)
@@ -303,6 +303,7 @@ The `set_types` MCP tool (and `bees set-types` CLI command) writes or removes th
 - `hive` (CLI `--hive`): Required when `scope="hive"`; normalized before lookup
 - `child_tiers` (CLI `--child-tiers`): The value to write. `{}` is valid (bees-only). Required unless `unset=True`.
 - `unset`: Remove the `child_tiers` key from the target level (idempotent)
+- `repo_root` (MCP only, optional): The repo root to use when the client does not supply one through the roots protocol (see `resolve_repo_root()` in `src/mcp_roots.py`). A client without roots support must pass it for every scope, including `"global"`, because the tool checks the repo root before any write. The CLI has no such flag and uses the repo root of the current directory.
 
 **Scope targets**:
 - `global`: Reads/writes the top-level `child_tiers` key in `~/.bees/config.json`
@@ -545,6 +546,7 @@ The `set_status_values` MCP tool (and `bees set-status-values` CLI command) writ
 - `hive` (CLI `--hive`): Required when `scope="hive"`; normalized before lookup
 - `status_values` (CLI `--status-values`): List of allowed status strings to write (e.g., `["open", "worker", "finished"]`). Required unless `unset=True`. Empty list `[]` is treated identically to `unset=True`.
 - `unset`: If True, remove `status_values` from the target level (idempotent)
+- `repo_root` (MCP only, optional): The repo root to use when the client does not supply one through the roots protocol (see `resolve_repo_root()` in `src/mcp_roots.py`). A client without roots support must pass it for every scope, including `"global"`, because the tool checks the repo root before any write. The CLI has no such flag and uses the repo root of the current directory.
 
 **Scope targets**:
 - `global`: Reads/writes the top-level `status_values` key in `~/.bees/config.json`
@@ -771,6 +773,7 @@ The `colonize_hive` MCP tool creates and registers new hives with optional per-h
 - `scope`: Scope pattern under which to register the hive (str or None)
 - `description`: Short description of the hive's purpose (str or None). When given, it is stored in the hive's `.hive/identity.json` and its config.json entry, and returned by `colonize_hive` and `list_hives`.
 - `allowed_resolvers`: List of resolver names permitted for this hive (list of strings or None). Each name must exist in the global resolver registry or be one of the built-in names (`"file-path"`, `"github"`, `"bees"`, or `"default"`). Returns `unknown_resolver` error if any name is unregistered.
+- `repo_root`: The repo root to use (str or None). The tool reads it only when it is called without an MCP context, as in direct Python calls. Over MCP, the tool takes the repo root from the roots protocol and uses it when the hive path lies inside it; otherwise it uses the hive path itself as the repo root (see the `colonize_hive` adapter in `src/mcp_server.py`). The CLI has no such flag.
 
 ### scope Parameter Semantics
 
