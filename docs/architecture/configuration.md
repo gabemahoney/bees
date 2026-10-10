@@ -588,17 +588,17 @@ bees set-status-values --scope=global --unset
 The `get_status_values` MCP tool (and `bees get-status-values` CLI command) reads raw `status_values` from all three configuration levels independently, without inheritance resolution. This provides visibility into how status values are configured at each level before fallback is applied.
 
 **Parameters**:
-- None. The tool uses the current repo root to locate the matching scope.
+- `repo_root` (MCP only, optional): The repo root to look up, used when the client does not supply one through the roots protocol (see `resolve_repo_root()` in `src/mcp_roots.py`). The CLI takes no arguments and uses the repo root of the current directory.
 
 **Return value**:
 - `global`: The raw `status_values` from the top-level config (list of strings or null)
-- `scope`: The raw `status_values` from the matched scope block (list of strings or null)
+- `scope`: The raw `status_values` from the most-specific matching scope block (list of strings or null)
 - `hives`: A dictionary mapping each normalized hive name to its raw `status_values` (list of strings or null per hive)
 
-All values are raw/stored — not resolved through the fallback chain. Null indicates the key is absent or unset at that level. Every registered hive in the matched scope appears in the `hives` dictionary regardless of whether it has explicit status_values.
+All values are raw/stored — not resolved through the fallback chain. Null indicates the key is absent or unset at that level. Every hive registered in any scope that matches the repo root appears in the `hives` dictionary, whether or not it has explicit status_values. When a hive name is registered in more than one matching scope, the most-specific scope's entry wins.
 
 **Scope targets**:
-- Uses `find_matching_scope()` to locate the matching scope block for the current repo root
+- Uses `find_all_matching_scopes()` to collect every scope block that matches the repo root, least to most specific
 - Returns `no_matching_scope` error if no scope pattern matches
 
 **Error types**: `no_matching_scope`
