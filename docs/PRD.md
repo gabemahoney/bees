@@ -366,7 +366,7 @@ Mutually exclusive with `--config`. Ephemeral (discarded on exit).
 {hive_root}/
 ├── .hive/
 │   └── identity.json        # Hive marker
-├── cemetery/                 # Archived tickets (flat storage)
+├── cemetery/                 # Archived tickets
 ├── b.amx/                   # Bee directory
 │   ├── b.amx.md             # Bee ticket
 │   └── t1.amx.1j/           # Child tier directory
@@ -1002,10 +1002,10 @@ Parameters: `hive` (required), exactly one of `query_yaml` or `query_name`
 Process:
 1. Execute query to get candidate tickets
 2. Filter to bees only (non-bee tickets → `skipped` list)
-3. **Phase 1 (atomic)**: move each bee's directory into the cemetery. Every bee is located and checked before the cemetery is created or anything moves; the run fails with no bee moved if a bee's directory is missing, holds another hive, or its cemetery target is or lies inside another hive, or already exists and holds one
+3. **Phase 1 (atomic)**: move each bee's directory into the cemetery. Every bee is located and checked before the cemetery is created or anything moves; the run fails with no bee moved if a bee's directory is missing, holds another hive, or its cemetery target is or lies inside another hive, or already exists (for example an earlier archived bee that kept the same plain ID name, since bee IDs are unique only within the live hive). A target that appears after that check is refused at that bee's move, so a bee is never nested inside another
 4. **Phase 2 (best-effort rename)**: within cemetery, rename directories and files from `{shortID}` to `{guid}` format
 
-Cemetery naming convention: `{tier}.{guid}.md` (flat, no subdirectories)
+Cemetery layout: each archived ticket keeps its place in its bee's directory tree, at `{tier}.{guid}/{tier}.{guid}.md` nested under its parent's directory (e.g. `cemetery/b.{guid}/t1.{guid}/t1.{guid}.md`). A ticket whose rename is skipped (no guid, an unreadable ticket, or a failed rename) keeps its plain ID name, as do the tickets of bees moved by a run whose phase 1 then fails, since phase 2 does not run
 
 Returns: `{status, archived_count, archived_guids, skipped}`
 
@@ -1013,7 +1013,8 @@ Errors:
 - Both `query_yaml` and `query_name` → error
 - Neither → error
 - `query_not_found`, `query_out_of_scope`
-- Phase 1 refusal (bee directory not found, or a move that would carry or enter another hive) → error naming the bee and, for a hive, its root; nothing moved
+- Phase 1 refusal (bee directory not found, a move that would carry or enter another hive, or a cemetery target that already exists) → error naming the bee and the other hive's root or the existing target; nothing moved
+- Phase 1 move failure (including a cemetery target that appeared after the check) → error naming the bee; bees moved earlier in the run stay moved
 
 ### 16.2 Scheduled Archival (HTTP Mode Only)
 

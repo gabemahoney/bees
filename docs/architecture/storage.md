@@ -35,7 +35,7 @@ hive_root/
 - `child_tiers`: (optional) Per-hive tier configuration override
 - `status_values`: (optional) Per-hive status values override — can be a list (override active), `null` (explicit override — use no labels), or absent (inherit from scope/global)
 
-**`/cemetery`**: Archive directory for retired tickets managed by the undertaker. Files use the naming convention `{tier}.{guid}.md`. Excluded from all active operations (queries, linting, indexing, path resolution). Not auto-created during colonization.
+**`/cemetery`**: Archive directory for retired tickets managed by the undertaker. Archived tickets keep their directory layout under `{tier}.{guid}` names (see [Location and File Naming](#location-and-file-naming)). Excluded from all active operations (queries, linting, indexing, path resolution). Not auto-created during colonization.
 
 **`evicted/`**: Reserved directory for completed/archived tickets (not auto-created during colonization)
 
@@ -83,7 +83,14 @@ The cemetery is an archive for tickets that have been retired by the undertaker.
 
 ### Location and File Naming
 
-The cemetery lives at `{hive_root}/cemetery/`. Archived ticket files use a flat naming convention: `{tier}.{guid}.md` (e.g., `t1.abc123def.md`). This differs from the normal hierarchical `{ticket_id}/{ticket_id}.md` pattern — cemetery files are stored flat, not in per-ticket directories.
+The cemetery lives at `{hive_root}/cemetery/`. The undertaker moves each archived bee's directory tree into it whole (phase 1, to `cemetery/<bee directory name>`), then renames each ticket's directory and file in that tree from `{tier}.{shortID}` to `{tier}.{guid}` (phase 2). Archived tickets therefore keep the hierarchical layout under GUID names, e.g. `cemetery/b.{guid}/b.{guid}.md` with a child at `cemetery/b.{guid}/t1.{guid}/t1.{guid}.md`. A ticket whose rename is skipped (no guid, an unreadable ticket, or a failed rename) keeps its plain ID name. So does every ticket of a bee moved by a run whose phase 1 then fails at a later bee's move (including the move-time re-check in [Archive Name Collisions](#archive-name-collisions)): phase 1 returns the error before phase 2 runs, and no later run renames them, since the undertaker queries only the live hive.
+
+### Archive Name Collisions
+
+Bee IDs are checked for uniqueness only against the live hive (see [Uniqueness](#uniqueness)), so a new bee can reuse the ID of a bee archived under its plain ID name. Moving it to `cemetery/<bee directory name>` would nest it inside the earlier bee's directory, so the undertaker refuses any bee whose cemetery target already exists, as a directory, a file or a dangling symlink:
+- Every bee is checked before the cemetery is created or anything moves; one existing target fails the whole run with nothing moved (`Phase 1 failed: not archiving bee '<id>': <target> already exists in the cemetery. No bees were moved.`)
+- The target is checked again just before each move, since another run can create it after the first check. That bee stays in the hive and the run fails; as for any phase 1 move failure, bees moved earlier in the run stay in the cemetery and keep their plain ID names, since phase 2 does not run
+- A bee archived under its GUID name leaves no collision: a bee reusing its ID is archived beside it under its own GUID
 
 ### Exclusion from Active Operations
 
@@ -365,7 +372,7 @@ Both modes run on `walk_hive()`, so neither enters a nested hive.
 
 **Whole-directory moves and deletes**: Pruning applies to walks, but moving or deleting a directory takes everything in it. So every operation that moves or deletes a whole ticket directory first checks it with `hive_crossing_reason()`, and `rename_hive` checks a hive folder it would move with `find_nested_hive_root()`. Each refuses before changing anything, with a message naming the other hive's root:
 - move-bee: a bee whose directory holds another hive is listed in `failed`; the other bees still move
-- The undertaker: every bee is checked before anything is created or moved. A bee whose directory holds another hive, or whose `/cemetery` target is or lies inside one, or already exists and holds one, fails the whole run (`Phase 1 failed: ... No bees were moved.`)
+- The undertaker: every bee is checked before anything is created or moved. A bee whose directory holds another hive, or whose `/cemetery` target is or lies inside one, or already exists and holds one, fails the whole run (`Phase 1 failed: ... No bees were moved.`). An existing target that holds no hive is refused too (see [Archive Name Collisions](#archive-name-collisions))
 - delete: a ticket whose directory holds another hive or lies inside one is not deleted, and no dependency is cleaned (`delete_failed`; in a bulk delete it is listed in `failed` and the other IDs proceed)
 - `rename_hive` with folder rename: a hive folder holding another hive is not renamed (`nested_hive`), since the move would leave that hive's registered path stale. Renaming with `rename_folder=False` still works, as does a rename whose folder already has the new normalized name, since that folder does not move
 - The linter's directory enforcement: never carries a nested hive along with a ticket's directory, nor moves a ticket's directory into an existing target directory that holds one (see [Linter Enforcement](#linter-enforcement))

@@ -463,6 +463,8 @@ By default the clone lands in the source bee's own hive. Use `--hive <hive-name>
 
 The undertaker archives bee tickets by moving them into a `/cemetery` directory inside the hive, renaming them by GUID for stable long-term identity. The cemetery is excluded from all normal ticket operations and queries — archived tickets are effectively read-only from bees' perspective.
 
+An archived ticket keeps its ticket ID name when it could not be renamed (for example, one without a GUID), or when the run that archived its bee failed at a later bee's move: that run stops before renaming, so the bees it had already moved keep their ID names. A later bee can reuse such an ID. Archiving that bee fails with an error naming the existing cemetery entry, and the run archives nothing; rename or move that entry, then run the undertaker again.
+
 ## YAML Query Syntax
 
 Queries are pipelines of filter stages. Each stage narrows the result set from the previous stage. Terms within a stage are ANDed. A stage can contain only search terms OR only graph terms, never both.

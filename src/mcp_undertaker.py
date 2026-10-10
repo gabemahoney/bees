@@ -4,7 +4,9 @@ Undertaker MCP Tool — archives bee tickets and their descendants to /cemetery.
 Two-phase archival:
   Phase 1 (atomic mv): Move each matched bee's directory tree into /cemetery.
           If any move fails, return error immediately. Nothing is moved if a
-          bee's directory, or its existing cemetery target, holds another hive.
+          bee's directory holds another hive, its cemetery target lies in
+          another hive, or that target already exists (an earlier archived bee
+          that kept the same plain ID name, since IDs can be reused).
   Phase 2 (best-effort rename): Within cemetery, rename ticket dirs and files
           from {tier}.{shortID} to {tier}.{guid} using the guid from frontmatter.
           Failures are logged and skipped.
@@ -180,7 +182,8 @@ def _undertaker_core(
     cemetery_dir = hive_path / "cemetery"
 
     # Locate every bee and refuse before anything is created or moved if a
-    # move would carry another hive or put a bee inside one
+    # move would carry another hive or put a bee inside one, or if its
+    # cemetery target already exists: shutil.move would nest the bee inside it
     bee_dirs: list[tuple[str, Path]] = []  # (bee_id, bee_dir)
     for bee_id in bee_ids:
         ticket_file = find_ticket_file(hive_path, bee_id)
@@ -191,7 +194,10 @@ def _undertaker_core(
             }
 
         bee_dir = ticket_file.parent
-        reason = hive_crossing_reason(hive_path, bee_dir, cemetery_dir / bee_dir.name)
+        dest = cemetery_dir / bee_dir.name
+        reason = hive_crossing_reason(hive_path, bee_dir, dest)
+        if reason is None and (dest.exists() or dest.is_symlink()):
+            reason = f"{dest} already exists in the cemetery"
         if reason is not None:
             return {
                 "status": "error",
@@ -208,6 +214,13 @@ def _undertaker_core(
     for bee_id, bee_dir in bee_dirs:
         bee_dir_paths.append(bee_dir.resolve())
         dest = cemetery_dir / bee_dir.name
+        # Check again just before the move: the target can appear after the
+        # pre-check (another run), and shutil.move would nest the bee inside it
+        if dest.exists() or dest.is_symlink():
+            return {
+                "status": "error",
+                "message": f"Phase 1 failed: could not move '{bee_id}': {dest} already exists in the cemetery",
+            }
         try:
             shutil.move(str(bee_dir), str(dest))
             moved_bees.append((bee_id, dest))

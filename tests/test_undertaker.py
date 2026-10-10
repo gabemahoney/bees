@@ -12,6 +12,7 @@ SCOPE - Tests that belong here:
 - Parameter validation: both params error, neither params error
 - Cemetery directory auto-creation and pre-existence
 - Phase 1 refusal, before anything moves, of a move that would carry or enter another hive
+- Phase 1 refusal of a move onto an existing cemetery target, at the check or at the move (no nesting)
 
 SCOPE - Tests that DON'T belong here:
 - Query parsing -> test_query_parser.py
@@ -379,6 +380,85 @@ class TestUndertaker:
         assert result["status"] == "error"
         assert f"rooted at {hive_dir / nested_root}" in result["message"]
         assert tree_snapshot(hive_dir) == tree_before
+
+    @pytest.mark.parametrize("target_kind", ["archived_bee", "file", "dangling_symlink"])
+    async def test_phase1_refuses_existing_cemetery_target(self, isolated_bees_env, target_kind):
+        """When a bee's cemetery target already exists (an earlier archived bee that kept the same plain ID name, a
+        file, or a dangling symlink), the run fails naming it and nothing is created or moved, not even the bee
+        checked first (b.nfj)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        helper.create_ticket(hive_dir, "b.aaa", "bee", "Checked First", guid=_make_guid("aaa"))
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Reused ID", guid=_make_guid("abc"))
+        target = hive_dir / "cemetery" / "b.abc"
+        target.parent.mkdir()
+        if target_kind == "archived_bee":
+            helper.create_ticket(target.parent, "b.abc", "bee", "Earlier Archived Bee", guid=_make_guid("abc9"))
+        elif target_kind == "file":
+            target.write_text("not a bee")
+        else:
+            target.symlink_to(hive_dir / "missing")
+        tree_before = tree_snapshot(hive_dir)
+
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['type=bee']",
+        )
+
+        assert result["status"] == "error"
+        assert f"{target} already exists" in result["message"]
+        assert tree_snapshot(hive_dir) == tree_before
+
+    async def test_phase1_refuses_move_onto_target_created_after_check(self, isolated_bees_env):
+        """A cemetery target that appears after the phase 1 check (another run) is refused at that bee's move: the
+        bee stays in the hive and is not nested inside the target (b.nfj)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        helper.create_ticket(hive_dir, "b.aaa", "bee", "Moved First", guid=_make_guid("aaa"))
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Reused ID", guid=_make_guid("abc"))
+        target = hive_dir / "cemetery" / "b.abc"
+        real_move = shutil.move
+
+        def move_then_create_target(src, dst):
+            real_move(src, dst)
+            if Path(dst).name == "b.aaa":
+                helper.create_ticket(target.parent, "b.abc", "bee", "Other Run's Bee", guid=_make_guid("abc9"))
+
+        with patch("src.mcp_undertaker.shutil.move", side_effect=move_then_create_target):
+            result = await _undertaker(
+                hive_name="test_hive",
+                query_yaml="stages:\n- ['type=bee']",
+            )
+
+        assert result["status"] == "error"
+        assert f"{target} already exists" in result["message"]
+        assert (hive_dir / "b.abc" / "b.abc.md").exists()
+        assert not (target / "b.abc").exists()
+
+    async def test_reused_id_archives_beside_earlier_bee_renamed_to_guid(self, isolated_bees_env):
+        """A bee reusing the ID of an earlier bee that was archived and renamed to its guid is archived under its
+        own guid name, and the earlier bee is left as it was (b.nfj)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+        query_yaml = "stages:\n- ['type=bee']"
+        new_guid = _make_guid("abc9")
+
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Earlier Bee", guid=_make_guid("abc"))
+        assert (await _undertaker(hive_name="test_hive", query_yaml=query_yaml))["status"] == "success"
+        cemetery_before = tree_snapshot(hive_dir / "cemetery")
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Reused ID", guid=new_guid)
+
+        result = await _undertaker(hive_name="test_hive", query_yaml=query_yaml)
+
+        assert result["status"] == "success"
+        assert result["archived_guids"] == [new_guid]
+        assert (hive_dir / "cemetery" / f"b.{new_guid}" / f"b.{new_guid}.md").exists()
+        assert cemetery_before.items() <= tree_snapshot(hive_dir / "cemetery").items()
 
     async def test_phase2_leaves_nested_hive_tickets_unrenamed(self, isolated_bees_env):
         """Tickets of a hive that appears in a bee's dir after the phase 1 check keep their names and are not
