@@ -391,7 +391,6 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_hive_ops.save_global_config")
     @patch("src.mcp_hive_ops.load_global_config")
     @patch("src.mcp_hive_ops.save_bees_config")
-    @patch("src.mcp_hive_ops.load_bees_config")
     @patch("src.mcp_hive_ops.validate_hive_path")
     @patch("src.mcp_hive_ops.normalize_hive_name")
     @patch("pathlib.Path.mkdir")
@@ -404,7 +403,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_mkdir,
         mock_normalize,
         mock_validate_path,
-        mock_load_config,
         mock_save_config,
         mock_load_global,
         mock_save_global,
@@ -412,7 +410,6 @@ class TestColonizeHiveOrchestrationUnit:
         """Test that colonize_hive calls normalize_hive_name from config system."""
         mock_normalize.return_value = "back_end"
         mock_validate_path.return_value = Path("/repo/tickets")
-        mock_load_config.return_value = None
         mock_load_global.return_value = {"scopes": {}, "schema_version": "3.0"}
 
         await colonize_hive("Back End", "/repo/tickets")
@@ -451,7 +448,6 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_hive_ops.save_global_config")
     @patch("src.mcp_hive_ops.load_global_config")
     @patch("src.mcp_hive_ops.save_bees_config")
-    @patch("src.mcp_hive_ops.load_bees_config")
     @patch("src.mcp_hive_ops.validate_hive_path")
     @patch("src.mcp_hive_ops.get_repo_root_from_path")
     @patch("src.mcp_hive_ops.normalize_hive_name")
@@ -466,7 +462,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_normalize,
         mock_get_repo_from_path,
         mock_validate_path,
-        mock_load_config,
         mock_save_config,
         mock_load_global,
         mock_save_global,
@@ -475,7 +470,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_normalize.return_value = "backend"
         mock_get_repo_from_path.return_value = Path("/repo")
         mock_validate_path.return_value = Path("/repo/tickets")
-        mock_load_config.return_value = None
         mock_load_global.return_value = {"scopes": {}, "schema_version": "3.0"}
 
         result = await colonize_hive("Backend", "/repo/tickets")
@@ -714,6 +708,7 @@ class TestColonizeHiveScope:
         # Use parent/* — matches git_repo_tmp_path so load_bees_config() can find it
         scope = str(git_repo_tmp_path.parent) + "/*"
         existing_path = str(git_repo_tmp_path / "existing")
+        queries = {"my_query": {"stages": [["status=open"]]}}
 
         write_multi_scope_config(
             mock_global_bees_dir,
@@ -725,7 +720,9 @@ class TestColonizeHiveScope:
                             "display_name": "Existing Hive",
                             "created_at": "2026-01-01T00:00:00",
                         }
-                    }
+                    },
+                    "queries": queries,
+                    "future_key": {"keep": True},
                 }
             },
         )
@@ -734,10 +731,11 @@ class TestColonizeHiveScope:
         result = await colonize_hive("New Hive", str(new_hive_path), scope=scope)
 
         assert result["status"] == RESULT_STATUS_SUCCESS
-        config = json.loads((mock_global_bees_dir / "config.json").read_text())
-        hives = config["scopes"][scope]["hives"]
-        assert "existing_hive" in hives
-        assert "new_hive" in hives
+        scope_after = json.loads((mock_global_bees_dir / "config.json").read_text())["scopes"][scope]
+        assert set(scope_after["hives"]) == {"existing_hive", "new_hive"}
+        # Regression b.4eb: keys BeesConfig does not model survive
+        assert scope_after["queries"] == queries
+        assert scope_after["future_key"] == {"keep": True}
 
     @pytest.mark.parametrize(
         "scope",
@@ -1001,21 +999,28 @@ class TestColonizeHiveScopeSelection:
     async def test_wildcard_and_exact_scope_both_exist_uses_exact(
         self, git_repo_tmp_path, mock_global_bees_dir
     ):
-        """Both wildcard parent AND exact scope exist → hive is added to exact scope, not wildcard."""
+        """Both wildcard parent AND exact scope exist → hive is added to exact scope, not wildcard.
+
+        Regression b.4eb: the exact scope keeps its named queries and unknown keys, does not gain the
+        glob scope's hives, and the glob scope is left unchanged.
+        """
         wildcard_pattern = str(git_repo_tmp_path.parent) + "/**"
         exact_scope = str(git_repo_tmp_path)
+        queries = {"my_query": {"stages": [["status=open"]]}}
+        glob_scope = {
+            "hives": {
+                "parent_hive": {
+                    "path": str(git_repo_tmp_path.parent / "parent_tickets"),
+                    "display_name": "Parent Hive",
+                    "created_at": "2026-01-01T00:00:00",
+                }
+            },
+            "queries": {"glob_query": {"stages": [["status=closed"]]}},
+        }
         write_multi_scope_config(
             mock_global_bees_dir,
             {
-                wildcard_pattern: {
-                    "hives": {
-                        "parent_hive": {
-                            "path": str(git_repo_tmp_path.parent / "parent_tickets"),
-                            "display_name": "Parent Hive",
-                            "created_at": "2026-01-01T00:00:00",
-                        }
-                    }
-                },
+                wildcard_pattern: glob_scope,
                 exact_scope: {
                     "hives": {
                         "existing": {
@@ -1023,7 +1028,9 @@ class TestColonizeHiveScopeSelection:
                             "display_name": "Existing",
                             "created_at": "2026-01-01T00:00:00",
                         }
-                    }
+                    },
+                    "queries": queries,
+                    "future_key": {"keep": True},
                 },
             },
         )
@@ -1032,11 +1039,13 @@ class TestColonizeHiveScopeSelection:
         result = await colonize_hive("New Tickets", str(hive_path))
 
         assert result["status"] == RESULT_STATUS_SUCCESS
-        config = load_global_config()
-        # New hive must be in the exact scope
-        assert "new_tickets" in config["scopes"][exact_scope]["hives"]
+        scopes = load_global_config()["scopes"]
+        # New hive must be in the exact scope, alongside its own hive only (no glob-scope hives copied in)
+        assert set(scopes[exact_scope]["hives"]) == {"existing", "new_tickets"}
+        assert scopes[exact_scope]["queries"] == queries
+        assert scopes[exact_scope]["future_key"] == {"keep": True}
         # Wildcard scope must be untouched
-        assert "new_tickets" not in config["scopes"].get(wildcard_pattern, {}).get("hives", {})
+        assert scopes[wildcard_pattern] == glob_scope
 
 
 class TestColonizeHiveDescription:

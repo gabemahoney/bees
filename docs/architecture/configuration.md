@@ -350,7 +350,7 @@ The hive registry tracks all registered hives within a scope, mapping normalized
 The `child_tiers` and `status_values` keys in identity.json are the authoritative source for hive-level overrides of these settings. Absent keys mean the hive inherits from scope/global. See the Child Tiers Configuration and Status Values Configuration sections for resolution semantics.
 
 **Operations**:
-- `colonize_hive(name, path, child_tiers=None)`: Register new hive, create identity marker, write to global config. Creates exact-path scope if no scope matches. Optional `child_tiers` parameter allows setting per-hive tier configuration at creation time (see Hive Colonization section below).
+- `colonize_hive(name, path, child_tiers=None)`: Register new hive, create identity marker, write to global config. Creates the repo's exact-path scope if none exists. When the repo's exact scope exists, only that scope's own data is read and rewritten (hives from glob scopes are not copied in, its named `queries` are kept). Optional `child_tiers` parameter allows setting per-hive tier configuration at creation time (see Hive Colonization section below).
 - `abandon_hive(name)`: Remove from all matching scopes' hive registries, leave filesystem intact. See Hive Scope Inheritance section for multi-scope behavior.
 - `rename_hive(old_name, new_name)`: Update scope registry and identity marker. Ticket IDs are globally unique and NOT rewritten during rename. When the hive exists in exactly one matching scope (the "owning scope"), the operation targets that scope automatically. Error types: `config_conflict` (hive exists in multiple overlapping scopes — use `abandon_hive` to resolve), `hive_not_found` (hive is not visible to the current repo).
 - `sanitize_hive(name)`: Validate and auto-fix malformed tickets in a hive. When the hive exists in exactly one matching scope (the owning scope), the operation targets that scope automatically. Error types: `config_conflict` (hive exists in multiple overlapping scopes — use `abandon_hive` to resolve), `hive_not_found` (hive is not visible to the current repo).
@@ -395,9 +395,9 @@ The config module provides a type-safe dataclass API for all config operations.
 
 **Scoped Config (high-level)**:
 - `load_bees_config() -> BeesConfig | None`: Load config for current repo_root from context
-- `save_bees_config(config: BeesConfig, scope_pattern: str)`: Save config to the specified scope pattern (required parameter, no longer infers scope internally).
+- `save_bees_config(config: BeesConfig, scope_pattern: str)`: Save config to the specified scope pattern (required parameter). Keys of the scope that `BeesConfig` does not model (named `queries`, `schema_version`, unknown keys) are kept. `config` must hold that scope's own data, for example from `parse_scope_to_bees_config`, never the merged view `load_bees_config()` returns: saving a merge copies other matching scopes' hives into this scope.
 - `parse_scope_to_bees_config(scope_data: dict) -> BeesConfig`: Parse a scope dict into BeesConfig
-- `serialize_bees_config_to_scope(config: BeesConfig) -> dict`: Serialize BeesConfig to scope dict
+- `serialize_bees_config_to_scope(config: BeesConfig, existing_scope: dict | None = None) -> dict`: Serialize BeesConfig to scope dict. `BeesConfig` models only `hives`, `child_tiers` and `status_values`. With `existing_scope` (the scope's current dict) the result starts from it, so every other key survives; the three modeled keys always come from `config`, and `child_tiers` and `status_values` are dropped when None.
 
 **Context Management**: `repo_root` flows through Python's `contextvars.ContextVar` (see `src/repo_context.py`), eliminating the need to thread it through function parameters. MCP entry points set the context via `repo_root_context(resolved_root)`.
 
@@ -779,7 +779,7 @@ The `colonize_hive` MCP tool creates and registers new hives with optional per-h
 
 The `scope` parameter controls which scope key the hive is registered under in `~/.bees/config.json`.
 
-**When omitted (None, default)**: The hive is registered under an exact-path scope derived from the current repo root. If no scope matching the repo root exists, a new exact-path scope is created automatically.
+**When omitted (None, default)**: The hive is registered under an exact-path scope derived from the current repo root. If the repo's exact-path scope does not exist (even when a glob scope matches the repo root), it is created automatically.
 
 **When provided**: The hive is registered directly under the given scope key. The pattern must be a valid canonical scope form — exact/trailing-slash (e.g. `/projects/myrepo/`), single-level wildcard (`/projects/*`), or recursive wildcard (`/projects/**`). If the scope key does not yet exist in config, it is created. Use this to share a hive across multiple repos that all fall under a common wildcard scope.
 
