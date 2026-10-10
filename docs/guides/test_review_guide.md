@@ -7,10 +7,11 @@ Writing Integration tests is covered in docs/architecture/testing.md
 
 ## Integration Test Guide
 Integration test cases are described in plain English in a bee called b.qi9 in the `testplans` hive.
-- If a new feature is introduced, there must be one or more plain English t2 level testcase that covers it.
+- If a new feature is introduced, there must be one or more plain English testcases that cover it: t2 level (or t3s under a t2) in a script phase, t3 level under a Test Area (t2) in a Claude phase.
 - Do not describe the bees commands required to test it, use plain English. The LLM should figure out what bees commands to run.
 - Write positive, negative and edge case tests
-- If you introduce multiple tests with depedencies, mark the dependencies between the t2s in the bee.
+- If you introduce multiple tests with depedencies, mark the dependencies between them in the bee.
+- In a Claude phase, every Test Area has at least one testcase, and every testcase has a `Test <N>:` title in its phase's range, numbered above its dependencies (see "Test numbers" in docs/architecture/testing.md).
 
 
 ## Unit Test Code Review Checklist

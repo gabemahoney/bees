@@ -1,6 +1,6 @@
 # Ticket Index
 
-*Generated: 2026-10-10 02:17:00*
+*Generated: 2026-10-10 04:19:05*
 
 <details><summary id="b-qi9">Full Regression Test [b.qi9] <code>pupa</code></summary>
 
@@ -207,34 +207,34 @@
 
 <div style="padding-left: 1.5em">
 
-<div id="t3-qi9-de-hf-8u" style="margin-left:1em">
+<div id="t3-qi9-de-hf-xb" style="margin-left:1em">
 
-[append_ticket_body chunk_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.8u/t3.qi9.de.hf.8u.md) [t3.qi9.de.hf.8u] `pupa`
-
-</div>
-<div id="t3-qi9-de-hf-7r" style="margin-left:1em">
-
-[body_file stdin dash rejected via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.7r/t3.qi9.de.hf.7r.md) [t3.qi9.de.hf.7r] `pupa`
-
-</div>
-<div id="t3-qi9-de-hf-1t" style="margin-left:1em">
-
-[chunk + chunk_file mutual exclusivity via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.1t/t3.qi9.de.hf.1t.md) [t3.qi9.de.hf.1t] `pupa`
+[Test 315: create_ticket body_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.xb/t3.qi9.de.hf.xb.md) [t3.qi9.de.hf.xb] `pupa`
 
 </div>
 <div id="t3-qi9-de-hf-r1" style="margin-left:1em">
 
-[create_ticket body + body_file mutual exclusivity via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.r1/t3.qi9.de.hf.r1.md) [t3.qi9.de.hf.r1] `pupa`
-
-</div>
-<div id="t3-qi9-de-hf-xb" style="margin-left:1em">
-
-[create_ticket body_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.xb/t3.qi9.de.hf.xb.md) [t3.qi9.de.hf.xb] `pupa`
+[Test 316: create_ticket body + body_file mutual exclusivity via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.r1/t3.qi9.de.hf.r1.md) [t3.qi9.de.hf.r1] `pupa`
 
 </div>
 <div id="t3-qi9-de-hf-7q" style="margin-left:1em">
 
-[update_ticket body_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.7q/t3.qi9.de.hf.7q.md) [t3.qi9.de.hf.7q] `pupa`
+[Test 317: update_ticket body_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.7q/t3.qi9.de.hf.7q.md) [t3.qi9.de.hf.7q] `pupa`
+
+</div>
+<div id="t3-qi9-de-hf-8u" style="margin-left:1em">
+
+[Test 318: append_ticket_body chunk_file via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.8u/t3.qi9.de.hf.8u.md) [t3.qi9.de.hf.8u] `pupa`
+
+</div>
+<div id="t3-qi9-de-hf-1t" style="margin-left:1em">
+
+[Test 319: chunk + chunk_file mutual exclusivity via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.1t/t3.qi9.de.hf.1t.md) [t3.qi9.de.hf.1t] `pupa`
+
+</div>
+<div id="t3-qi9-de-hf-7r" style="margin-left:1em">
+
+[Test 320: body_file stdin dash rejected via stdio](b.qi9/t1.qi9.de/t2.qi9.de.hf/t3.qi9.de.hf.7r/t3.qi9.de.hf.7r.md) [t3.qi9.de.hf.7r] `pupa`
 
 </div>
 
@@ -346,50 +346,59 @@
 
 <div style="padding-left: 1.5em">
 
+<details><summary id="t2-qi9-4u-bb">Body Escape Sequences [t2.qi9.4u.bb] <code>pupa</code></summary>
+
+&ensp;&ensp;&ensp;&ensp;[Body Escape Sequences](b.qi9/t1.qi9.4u/t2.qi9.4u.bb/t2.qi9.4u.bb.md) [t2.qi9.4u.bb]
+
+<div style="padding-left: 1.5em">
+
+<div id="t3-qi9-4u-bb-ym" style="margin-left:1em">
+
+[Test 336: create_ticket and update_ticket expand literal \n and \t in body via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.bb/t3.qi9.4u.bb.ym/t3.qi9.4u.bb.ym.md) [t3.qi9.4u.bb.ym] `pupa`
+
+</div>
+
+</div>
+</details>
 <details><summary id="t2-qi9-4u-su">Body File / Chunk File MCP Params [t2.qi9.4u.su] <code>pupa</code></summary>
 
 &ensp;&ensp;&ensp;&ensp;[Body File / Chunk File MCP Params](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t2.qi9.4u.su.md) [t2.qi9.4u.su]
 
 <div style="padding-left: 1.5em">
 
-<div id="t3-qi9-4u-su-yd" style="margin-left:1em">
+<div id="t3-qi9-4u-su-ut" style="margin-left:1em">
 
-[append_ticket_body chunk_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.yd/t3.qi9.4u.su.yd.md) [t3.qi9.4u.su.yd] `pupa`
-
-</div>
-<div id="t3-qi9-4u-su-kz" style="margin-left:1em">
-
-[body_file stdin dash rejected via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.kz/t3.qi9.4u.su.kz.md) [t3.qi9.4u.su.kz] `pupa`
-
-</div>
-<div id="t3-qi9-4u-su-f4" style="margin-left:1em">
-
-[chunk + chunk_file mutual exclusivity via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.f4/t3.qi9.4u.su.f4.md) [t3.qi9.4u.su.f4] `pupa`
+[Test 337: create_ticket body_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.ut/t3.qi9.4u.su.ut.md) [t3.qi9.4u.su.ut] `pupa`
 
 </div>
 <div id="t3-qi9-4u-su-2m" style="margin-left:1em">
 
-[create_ticket body + body_file mutual exclusivity via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.2m/t3.qi9.4u.su.2m.md) [t3.qi9.4u.su.2m] `pupa`
-
-</div>
-<div id="t3-qi9-4u-su-ut" style="margin-left:1em">
-
-[create_ticket body_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.ut/t3.qi9.4u.su.ut.md) [t3.qi9.4u.su.ut] `pupa`
+[Test 338: create_ticket body + body_file mutual exclusivity via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.2m/t3.qi9.4u.su.2m.md) [t3.qi9.4u.su.2m] `pupa`
 
 </div>
 <div id="t3-qi9-4u-su-2r" style="margin-left:1em">
 
-[update_ticket body_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.2r/t3.qi9.4u.su.2r.md) [t3.qi9.4u.su.2r] `pupa`
+[Test 339: update_ticket body_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.2r/t3.qi9.4u.su.2r.md) [t3.qi9.4u.su.2r] `pupa`
+
+</div>
+<div id="t3-qi9-4u-su-yd" style="margin-left:1em">
+
+[Test 340: append_ticket_body chunk_file via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.yd/t3.qi9.4u.su.yd.md) [t3.qi9.4u.su.yd] `pupa`
+
+</div>
+<div id="t3-qi9-4u-su-f4" style="margin-left:1em">
+
+[Test 341: chunk + chunk_file mutual exclusivity via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.f4/t3.qi9.4u.su.f4.md) [t3.qi9.4u.su.f4] `pupa`
+
+</div>
+<div id="t3-qi9-4u-su-kz" style="margin-left:1em">
+
+[Test 342: body_file stdin dash rejected via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.su/t3.qi9.4u.su.kz/t3.qi9.4u.su.kz.md) [t3.qi9.4u.su.kz] `pupa`
 
 </div>
 
 </div>
 </details>
-<div id="t2-qi9-4u-bb" style="margin-left:1em">
-
-[create_ticket and update_ticket expand literal \n and \t in body field](b.qi9/t1.qi9.4u/t2.qi9.4u.bb/t2.qi9.4u.bb.md) [t2.qi9.4u.bb] `pupa`
-
-</div>
 <details><summary id="t2-qi9-4u-p8">Health Check [t2.qi9.4u.p8] <code>pupa</code></summary>
 
 &ensp;&ensp;&ensp;&ensp;[Health Check](b.qi9/t1.qi9.4u/t2.qi9.4u.p8/t2.qi9.4u.p8.md) [t2.qi9.4u.p8]
@@ -398,12 +407,12 @@
 
 <div id="t3-qi9-4u-p8-t4" style="margin-left:1em">
 
-[Test 315: Health check via HTTP GET](b.qi9/t1.qi9.4u/t2.qi9.4u.p8/t3.qi9.4u.p8.t4/t3.qi9.4u.p8.t4.md) [t3.qi9.4u.p8.t4] `pupa`
+[Test 321: Health check via HTTP GET](b.qi9/t1.qi9.4u/t2.qi9.4u.p8/t3.qi9.4u.p8.t4/t3.qi9.4u.p8.t4.md) [t3.qi9.4u.p8.t4] `pupa`
 
 </div>
 <div id="t3-qi9-4u-p8-9k" style="margin-left:1em">
 
-[Test 316: Health check via MCP tool over HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.p8/t3.qi9.4u.p8.9k/t3.qi9.4u.p8.9k.md) [t3.qi9.4u.p8.9k] `pupa`
+[Test 322: Health check via MCP tool over HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.p8/t3.qi9.4u.p8.9k/t3.qi9.4u.p8.9k.md) [t3.qi9.4u.p8.9k] `pupa`
 
 </div>
 
@@ -417,52 +426,52 @@
 
 <div id="t3-qi9-4u-w8-h2" style="margin-left:1em">
 
-[Test 317: Colonize hive via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.h2/t3.qi9.4u.w8.h2.md) [t3.qi9.4u.w8.h2] `pupa`
+[Test 323: Colonize hive via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.h2/t3.qi9.4u.w8.h2.md) [t3.qi9.4u.w8.h2] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-21" style="margin-left:1em">
 
-[Test 318: Create bee via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.21/t3.qi9.4u.w8.21.md) [t3.qi9.4u.w8.21] `pupa`
+[Test 324: Create bee via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.21/t3.qi9.4u.w8.21.md) [t3.qi9.4u.w8.21] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-79" style="margin-left:1em">
 
-[Test 319: Create task via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.79/t3.qi9.4u.w8.79.md) [t3.qi9.4u.w8.79] `pupa`
+[Test 325: Create task via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.79/t3.qi9.4u.w8.79.md) [t3.qi9.4u.w8.79] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-hp" style="margin-left:1em">
 
-[Test 320: Show ticket via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.hp/t3.qi9.4u.w8.hp.md) [t3.qi9.4u.w8.hp] `pupa`
+[Test 326: Show ticket via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.hp/t3.qi9.4u.w8.hp.md) [t3.qi9.4u.w8.hp] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-4v" style="margin-left:1em">
 
-[Test 321: Update ticket via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.4v/t3.qi9.4u.w8.4v.md) [t3.qi9.4u.w8.4v] `pupa`
+[Test 327: Update ticket via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.4v/t3.qi9.4u.w8.4v.md) [t3.qi9.4u.w8.4v] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-31" style="margin-left:1em">
 
-[Test 322: Freeform query via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.31/t3.qi9.4u.w8.31.md) [t3.qi9.4u.w8.31] `pupa`
+[Test 328: Freeform query via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.31/t3.qi9.4u.w8.31.md) [t3.qi9.4u.w8.31] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-6p" style="margin-left:1em">
 
-[Test 323: Named query lifecycle via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.6p/t3.qi9.4u.w8.6p.md) [t3.qi9.4u.w8.6p] `pupa`
+[Test 329: Named query lifecycle via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.6p/t3.qi9.4u.w8.6p.md) [t3.qi9.4u.w8.6p] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-qp" style="margin-left:1em">
 
-[Test 324: Undertaker via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.qp/t3.qi9.4u.w8.qp.md) [t3.qi9.4u.w8.qp] `pupa`
+[Test 330: Undertaker via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.qp/t3.qi9.4u.w8.qp.md) [t3.qi9.4u.w8.qp] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-rz" style="margin-left:1em">
 
-[Test 325: Generate index via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.rz/t3.qi9.4u.w8.rz.md) [t3.qi9.4u.w8.rz] `pupa`
+[Test 331: Generate index via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.rz/t3.qi9.4u.w8.rz.md) [t3.qi9.4u.w8.rz] `pupa`
 
 </div>
 <div id="t3-qi9-4u-w8-yr" style="margin-left:1em">
 
-[Test 326: Abandon hive via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.yr/t3.qi9.4u.w8.yr.md) [t3.qi9.4u.w8.yr] `pupa`
+[Test 332: Abandon hive via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.yr/t3.qi9.4u.w8.yr.md) [t3.qi9.4u.w8.yr] `pupa`
 
 </div>
 
@@ -476,17 +485,17 @@
 
 <div id="t3-qi9-4u-3m-pi" style="margin-left:1em">
 
-[Test 327: set_status_values via HTTP — set global](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.pi/t3.qi9.4u.3m.pi.md) [t3.qi9.4u.3m.pi] `pupa`
+[Test 333: set_status_values via HTTP — set global](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.pi/t3.qi9.4u.3m.pi.md) [t3.qi9.4u.3m.pi] `pupa`
 
 </div>
 <div id="t3-qi9-4u-3m-xd" style="margin-left:1em">
 
-[Test 328: set_status_values via HTTP — unset global](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.xd/t3.qi9.4u.3m.xd.md) [t3.qi9.4u.3m.xd] `pupa`
+[Test 334: set_status_values via HTTP — unset global](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.xd/t3.qi9.4u.3m.xd.md) [t3.qi9.4u.3m.xd] `pupa`
 
 </div>
 <div id="t3-qi9-4u-3m-hy" style="margin-left:1em">
 
-[Test 329: set_status_values via HTTP — invalid_scope error](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.hy/t3.qi9.4u.3m.hy.md) [t3.qi9.4u.3m.hy] `pupa`
+[Test 335: set_status_values via HTTP — invalid_scope error](b.qi9/t1.qi9.4u/t2.qi9.4u.3m/t3.qi9.4u.3m.hy/t3.qi9.4u.3m.hy.md) [t3.qi9.4u.3m.hy] `pupa`
 
 </div>
 

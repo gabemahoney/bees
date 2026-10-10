@@ -22,6 +22,8 @@ SCOPE - Tests that belong here:
 - test numbers: every test of integration.sh and every test titled `Test <N>:` in b.qi9 belongs to one phase, the one
   whose `Tests in this phase:` range holds it, only Claude phases' tests carry `Test <N>:` titles, and `/ci <N>` finds
   that phase as the /ci skill describes
+- the Claude phases' tests as /release-test collects them: every Test Area has test cases, and every test case has a
+  `Test <N>:` title in its phase's range, numbered above its up_dependencies, test cases of its own Test Area
 - test_runner.sh: requires a phase number, passes it on, and runs integration.sh's phases with it
 - test_runner.sh: a failing setup command ends it with a crash line naming the command (ERR trap), and the trap
   is cleared before integration.sh or Claude starts
@@ -222,6 +224,29 @@ def _plan_numbers():
     return SimpleNamespace(epics=epics, ranges=ranges, titled=titled)
 
 
+def _claude_test_areas():
+    """The Claude phases' tests as /release-test collects them, from the plan's files: {phase: {Test Area ID: [test
+    case]}}, the Test Areas the epic's `children`, the test cases each Test Area's. A test case: its ID, the number of
+    its `Test <N>:` title as /ci finds it (None without one), and its up_dependencies."""
+    plan_dir = TESTPLANS / cp.PLAN_ID
+
+    def ticket(*ids):
+        path = plan_dir.joinpath(*ids, f"{ids[-1]}.md")
+        fields, title = cp.read_frontmatter(path), _TITLED_TEST.search(path.read_text(encoding="utf-8"))
+        up = fields.get("up_dependencies") or []
+        return SimpleNamespace(id=ids[-1], children=fields.get("children") or [], number=title and int(title[1]), up=up)
+
+    script_phases = _script_phases()
+    return {
+        phase["phase"]: {
+            area: [ticket(phase["id"], area, case) for case in ticket(phase["id"], area).children]
+            for area in ticket(phase["id"]).children
+        }
+        for phase in cp.read_plan(TESTPLANS)
+        if phase["phase"] not in script_phases
+    }
+
+
 def _spans(numbers):
     """Sorted numbers as their runs, for readable failures: [1, 2, 3, 7] -> "1-3, 7"."""
     runs = []
@@ -411,6 +436,50 @@ def test_each_claude_phase_range_is_its_titled_tests():
 
     assert claude
     assert {phase: _spans(numbers) for phase, numbers in titled.items()} == {p: _spans(plan.ranges[p]) for p in claude}
+
+
+def test_every_claude_phase_test_area_has_test_cases():
+    """/release-test runs only the test cases (t3) of a Claude phase's Test Areas: a Test Area without any runs
+    nothing, whatever its own body describes. Regression b.ock: Phase 4's t2.qi9.4u.bb described its test in its body
+    and had no test case. A script phase's t2 bees describe the script's tests themselves, so they need none."""
+    areas = _claude_test_areas()
+
+    assert areas and all(areas.values()), "Claude phases with no Test Area"
+    empty = sorted(area for phase in areas.values() for area, cases in phase.items() if not cases)
+    assert empty == [], "Test Areas with no test case"
+
+
+def test_every_claude_phase_test_case_is_numbered_in_its_phase_range():
+    """`/release-test <N>` and `/ci <N>` find a test only by its `Test <N>:` title, and the range must cover every
+    test the phase runs. Regression b.ock: the six Body File tests of Phase 3 and of Phase 4 had no number, and the
+    ranges (301-314, 315-329) left them out; the range check above sees only the tests that have a title."""
+    plan = _plan_numbers()
+    cases = {phase: [case for area in areas.values() for case in area] for phase, areas in _claude_test_areas().items()}
+
+    untitled = sorted(case.id for phase_cases in cases.values() for case in phase_cases if case.number is None)
+    assert untitled == [], "test cases with no `Test <N>:` title"
+    numbers = {phase: _spans(case.number for case in phase_cases) for phase, phase_cases in cases.items()}
+    assert numbers == {phase: _spans(plan.ranges[phase]) for phase in cases}
+
+
+def test_claude_phase_test_numbers_follow_up_dependencies():
+    """/release-test runs a phase's tests in up_dependencies order, and `/release-test <N>` runs N's up_dependencies
+    first and skips the other tests before N, so a test's number is above those of its up_dependencies, tests of its
+    own Test Area: /release-test looks for them in N's Test Area only. Bug b.ock numbered each phase's Body File tests
+    in their up_dependencies order."""
+    wrong = []
+    for areas in _claude_test_areas().values():
+        for cases in areas.values():
+            numbers = {case.id: case.number for case in cases}
+            wrong += [
+                (case.id, case.number, dep, numbers.get(dep))
+                for case in cases
+                for dep in case.up
+                if None in (case.number, numbers.get(dep)) or numbers[dep] >= case.number
+            ]
+
+    # An up_dependency outside the test case's Test Area has no number here (None)
+    assert wrong == [], "(test case, its number, up_dependency, its number in that Test Area): not numbered above it"
 
 
 def test_only_claude_phase_tests_carry_title_numbers_each_once():

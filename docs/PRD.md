@@ -1483,7 +1483,7 @@ Installs hook entries:
 
 ## 26. Integration Test Acceptance Criteria
 
-The integration test suite lives at `b.qi9` in the testplans hive. It consists of 6 phases and ~220 test cases across 26+ test areas. A reimplementation is considered functionally equivalent if it passes all these tests.
+The integration test suite lives at `b.qi9` in the testplans hive. It consists of 6 phases and ~230 test cases across 26+ test areas. A reimplementation is considered functionally equivalent if it passes all these tests.
 
 ### 26.1 Phase Structure
 
@@ -1491,8 +1491,8 @@ The integration test suite lives at `b.qi9` in the testplans hive. It consists o
 |-------|-----|-------|-------------|
 | 1 | t1.qi9.8h | 1-3 | Installation & Environment |
 | 2 | t1.qi9.w8 | 4-83 | CLI Exhaustive Tests (Part 1) |
-| 3 | t1.qi9.de | 301-314 | Stdio MCP Server Tests |
-| 4 | t1.qi9.4u | 315-329 | HTTP MCP Server Tests |
+| 3 | t1.qi9.de | 301-320 | Stdio MCP Server Tests |
+| 4 | t1.qi9.4u | 321-342 | HTTP MCP Server Tests |
 | 5 | t1.qi9.h5 | 84-178 | CLI Exhaustive Tests (Part 2) |
 | 6 | t1.qi9.kw | 179-192 | Resolver Registry Tests |
 
