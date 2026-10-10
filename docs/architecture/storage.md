@@ -200,6 +200,14 @@ All ticket parsing flows through `read_ticket()`, which is backed by an in-memor
 - **Set at creation time** (not dynamically) creates immutable audit trail of when ticket was created
 - **Enables future schema evolution**: queries can filter by version
 
+## Frontmatter Delimiters
+
+**Design Decision**: A ticket file starts with a `---` line, and its frontmatter ends at the closing delimiter: the first later line that starts with `---` (`parse_frontmatter` in `src/parser.py`). Three dashes anywhere else, inside a value or on an indented line of a multi-line value, are part of the YAML. A file with no closing line is a `ParseError` ("invalid frontmatter format"). The line need only start with `---`, so a hand-written closing line with trailing spaces or text still closes the frontmatter; any text after the `---` starts the body.
+
+**Writer contract**: `serialize_frontmatter` (`src/writer.py`) never starts a line between the delimiters with `---`, in the fast serializer and the `yaml.dump` fallback alike. Each field's line starts with its key, list items start with `- `, and the lines of a multi-line value are indented. Files are read with universal newlines, so a raw `\r` in a value would start a new line, and YAML also breaks lines at NEL, LS and PS. So a string holding any of those is written double-quoted with the break escaped, and a multi-line list item goes to the `yaml.dump` fallback, which indents its lines. A writer change that breaks this lets a value close the frontmatter early: the read then fails, or silently drops the later fields.
+
+**Other readers**: `docker/ci_plan.py` (`read_frontmatter`, stdlib only) and the v2→v3 migration (`_parse_md_frontmatter`) also end the frontmatter at the first later line that starts with `---`. A new reader must do the same, never split the file on every `---`.
+
 ## Ticket Type System
 
 ### Type Definition

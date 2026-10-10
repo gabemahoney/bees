@@ -20,18 +20,17 @@ as is the one exception to "verbatim": CR line endings read back as LF
 (``test_cr_line_endings_read_back_as_lf``).
 """
 
-import asyncio
 import io
-import json
 
 import pytest
 
 from src.mcp_server import append_ticket_body, create_ticket, show_ticket, update_ticket
 from src.paths import compute_ticket_path
 from src.reader import read_ticket
-from src.repo_context import repo_root_context
+from tests.helpers import cli_success, mcp_success
+from tests.test_constants import HIVE_BACKEND
 
-_HIVE = "test"
+_HIVE = HIVE_BACKEND  # the hive conftest's hive_env registers
 
 # In these Python literals "\\n" is the two characters backslash + n and
 # "\\\\" is two backslashes. Each body is corrupted by escape expansion.
@@ -64,32 +63,9 @@ _SOURCES = [
 ]
 
 
-@pytest.fixture
-def hive_dir(isolated_bees_env):
-    """One registered hive in an isolated tmp repo, with the repo context pinned to it."""
-    hive = isolated_bees_env.create_hive(_HIVE)
-    isolated_bees_env.write_config()
-    with repo_root_context(isolated_bees_env.base_path):
-        yield hive
-
-
-def _cli(cli_runner, *argv):
-    stdout, exit_code = cli_runner(list(argv))
-    assert exit_code == 0, stdout
-    result = json.loads(stdout)
-    assert result["status"] == "success", result
-    return result
-
-
-def _mcp(coro):
-    result = asyncio.run(coro)
-    assert result["status"] == "success", result
-    return result
-
-
 def _cli_create(cli_runner, *body_args):
     argv = ["create-ticket", "--ticket-type", "bee", "--title", "Verbatim", "--hive", _HIVE, *body_args]
-    return _cli(cli_runner, *argv)["ticket_id"]
+    return cli_success(cli_runner, *argv)["ticket_id"]
 
 
 def _write(op, via, value, cli_runner, *, from_file, ticket_id=None):
@@ -111,16 +87,16 @@ def _write(op, via, value, cli_runner, *, from_file, ticket_id=None):
         if op == "create":
             return _cli_create(cli_runner, flag, value)
         command = ["update-ticket", "--ids"] if op == "update" else ["append-ticket-body", "--ticket-id"]
-        _cli(cli_runner, *command, tid, flag, value)
+        cli_success(cli_runner, *command, tid, flag, value)
         return tid
 
     kwargs = {f"{noun}_file" if from_file else noun: value}
     if op == "create":
-        return _mcp(create_ticket(ticket_type="bee", title="Verbatim", hive=_HIVE, **kwargs))["ticket_id"]
+        return mcp_success(create_ticket(ticket_type="bee", title="Verbatim", hive=_HIVE, **kwargs))["ticket_id"]
     if op == "update":
-        _mcp(update_ticket(ticket_ids=tid, **kwargs))
+        mcp_success(update_ticket(ticket_ids=tid, **kwargs))
     else:
-        _mcp(append_ticket_body(ticket_id=tid, **kwargs))
+        mcp_success(append_ticket_body(ticket_id=tid, **kwargs))
     return tid
 
 
@@ -141,8 +117,9 @@ def _stored_body(hive_dir, ticket_id):
 @pytest.mark.parametrize("content", _FILE_BODIES)
 @pytest.mark.parametrize("via,stdin", _SOURCES)
 @pytest.mark.parametrize("op", ["create", "update", "append"])
-def test_file_sourced_body_stored_verbatim(hive_dir, cli_runner, tmp_path, monkeypatch, op, via, stdin, content):
+def test_file_sourced_body_stored_verbatim(hive_env, cli_runner, tmp_path, monkeypatch, op, via, stdin, content):
     """A body read from a file or stdin round-trips exactly: no escape expansion, no trimming."""
+    _, hive_dir, _ = hive_env
     source = _source(content, stdin, tmp_path, monkeypatch)
 
     ticket_id = _write(op, via, source, cli_runner, from_file=True)
@@ -151,7 +128,7 @@ def test_file_sourced_body_stored_verbatim(hive_dir, cli_runner, tmp_path, monke
 
 
 @pytest.mark.parametrize("via,stdin", _SOURCES)
-def test_appended_chunks_keep_their_newlines(hive_dir, cli_runner, tmp_path, monkeypatch, via, stdin):
+def test_appended_chunks_keep_their_newlines(hive_env, cli_runner, tmp_path, monkeypatch, via, stdin):
     """b.pp8 report: two "chunk\\n" appends to a newline-ended body each stay on their own line."""
     ticket_id = _write("create", via, _source(_REPORTED_BODY, stdin, tmp_path, monkeypatch), cli_runner, from_file=True)
     for _ in range(2):
@@ -159,16 +136,17 @@ def test_appended_chunks_keep_their_newlines(hive_dir, cli_runner, tmp_path, mon
         _write("append", via, source, cli_runner, from_file=True, ticket_id=ticket_id)
 
     if via == "cli":
-        shown = _cli(cli_runner, "show-ticket", "--ids", ticket_id)
+        shown = cli_success(cli_runner, "show-ticket", "--ids", ticket_id)
     else:
-        shown = _mcp(show_ticket(ticket_ids=[ticket_id]))
+        shown = mcp_success(show_ticket(ticket_ids=[ticket_id]))
     assert shown["tickets"][0]["body"] == "line one\nliteral \\t here\nchunk\nchunk\n"
 
 
 @pytest.mark.parametrize("via", ["cli", "mcp"])
 @pytest.mark.parametrize("op", ["create", "update", "append"])
-def test_inline_body_still_expands_escapes(hive_dir, cli_runner, op, via):
+def test_inline_body_still_expands_escapes(hive_env, cli_runner, op, via):
     """Inline body/chunk text still turns backslash+n / backslash+t into a newline / tab, kept at the end too."""
+    _, hive_dir, _ = hive_env
     ticket_id = _write(op, via, "line1\\nline2\\tcol\\n", cli_runner, from_file=False)
 
     assert _stored_body(hive_dir, ticket_id) == "line1\nline2\tcol\n"

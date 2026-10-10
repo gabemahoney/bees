@@ -73,8 +73,8 @@ def _statuses(pattern, text):
 
 
 def _yaml_frontmatter(path):
-    """A ticket file's frontmatter as PyYAML reads it."""
-    return yaml.safe_load(path.read_text().split("---\n", 2)[1])
+    """A ticket file's frontmatter as PyYAML reads it, up to the closing delimiter: the next line starting with ---."""
+    return yaml.safe_load(re.split(r"^---", path.read_text(), maxsplit=2, flags=re.MULTILINE)[1])
 
 
 def _write_plan(testplans, epics, children=None):
@@ -150,6 +150,11 @@ _LONG = "a title long enough that the YAML writer wraps it onto a second line, "
         pytest.param(
             serialize_frontmatter({"title": f"Phase 1 {_LONG}".strip(), "status": "pupa", "egg": {"key": 1}}),
             id="long_plain_title_on_two_lines",
+        ),
+        # b.5yy: the indented line of dashes of a multi-line value does not close the frontmatter
+        pytest.param(
+            serialize_frontmatter({"title": "Phase 1", "notes": "a\n---\nb", "status": "pupa", "children": ["t2.a"]}),
+            id="indented_dashes_in_multi_line_value",
         ),
         # Other YAML forms of the same values
         pytest.param('---\ntitle: "Phase 1: \\"quoted\\" caf\\u00e9"\nparent: ~\n---\n', id="double_quoted_and_tilde"),

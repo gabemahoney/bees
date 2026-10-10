@@ -18,8 +18,14 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
     """
     Parse markdown file and extract YAML frontmatter and body.
 
+    The file must start with ``---``. The frontmatter runs from there to the closing
+    delimiter: the first later line that starts with ``---``. Three dashes anywhere else
+    (inside a value, or on an indented line of a multi-line value) are part of the YAML,
+    and write_ticket_file never starts a frontmatter line with ``---``.
+
     The body is the exact inverse of write_ticket_file: only the end of the closing
-    ``---`` line, the blank separator line and one trailing newline are removed.
+    ``---`` line, the blank separator line and one trailing newline are removed (if the
+    closing line holds more than whitespace after ``---``, that text starts the body).
     Leading and trailing whitespace inside the body is kept, so a body written with
     write_ticket_file reads back unchanged, except that the file is read with universal
     newlines: "\\r\\n" and a lone "\\r" read back as "\\n", and a "\\r" that ends the body
@@ -56,24 +62,27 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
     if not content.startswith("---"):
         raise ParseError(f"File {path} does not start with '---' frontmatter delimiter")
 
-    # Split on frontmatter delimiters
-    parts = content.split("---", 2)
+    # The closing delimiter starts a line, so a "---" inside a value never closes the
+    # frontmatter: search for "\n---" from the end of the opening line. The file is read
+    # with universal newlines, so "\n" is the only line break here.
+    opening_line_end = content.find("\n")
+    closing_start = -1 if opening_line_end == -1 else content.find("\n---", opening_line_end)
 
-    if len(parts) < 3:
+    if closing_start == -1:
         raise ParseError(f"File {path} has invalid frontmatter format. Expected format: ---\\n[YAML]\\n---\\n[body]")
 
-    # parts[0] is empty (before first ---), parts[1] is YAML, parts[2] is the rest of the
-    # closing delimiter line plus the body section
-    yaml_content = parts[1].strip()
+    yaml_content = content[len("---") : closing_start].strip()
+    # The rest of the closing delimiter line, then the body section
+    after_delimiter = content[closing_start + len("\n---") :]
 
     # Undo exactly what write_ticket_file adds around the body, and nothing else, so the
     # body round-trips verbatim (CR line endings aside, see the docstring): the end of the
     # closing delimiter line, the blank separator line (absent in some hand-written files)
     # and one trailing newline.
-    delimiter_rest, _, body = parts[2].partition("\n")
+    delimiter_rest, _, body = after_delimiter.partition("\n")
     if delimiter_rest.strip():
         # Text on the closing delimiter line itself is part of the body
-        body = parts[2]
+        body = after_delimiter
     if body.startswith("\n"):
         body = body[1:]
     if body.endswith("\n"):

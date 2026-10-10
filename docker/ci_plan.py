@@ -84,7 +84,9 @@ def read_frontmatter(path: Path) -> dict[str, object]:
     raw: dict[str, str | list] = {}
     key = None
     for line in lines[1:]:
-        if line.strip() == FRONTMATTER_DELIMITER:
+        # As in bees' parse_frontmatter, the closing delimiter is the first line that starts with
+        # "---": an indented line of dashes belongs to a multi-line value above it
+        if line.startswith(FRONTMATTER_DELIMITER):
             return {k: v if isinstance(v, list) else _scalar(v.strip()) for k, v in raw.items()}
         stripped = line.strip()
         if not stripped:

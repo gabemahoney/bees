@@ -15,6 +15,12 @@ from .paths import compute_ticket_directory, get_ticket_path
 from .types import TicketType
 from .validator import validate_id_format
 
+# Line breaks other than "\n": "\r", which reads back as "\n" because ticket files are
+# read with universal newlines, and the breaks YAML counts as well as "\n" (NEL, LS, PS).
+# Written raw, any of them could start a frontmatter line with "---", which
+# parse_frontmatter takes for the closing delimiter.
+_OTHER_LINE_BREAKS = re.compile("[\r\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+
 
 class BlockScalarDumper(yaml.SafeDumper):
     """Custom YAML dumper that uses block scalar style (|) for multi-line strings."""
@@ -24,6 +30,9 @@ class BlockScalarDumper(yaml.SafeDumper):
 
 def str_representer(dumper, data):
     """Represent strings using block scalar style if they contain newlines."""
+    if _OTHER_LINE_BREAKS.search(data):
+        # Double quotes escape these, so they read back exactly
+        return dumper.represent_scalar("tag:yaml.org,2002:str", data, style='"')
     if "\n" in data:
         # Use literal block scalar style (|) for multi-line strings
         return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
@@ -82,6 +91,9 @@ def _serialize_list_item(item: Any, parts: list[str]) -> None:
     elif isinstance(item, (int, float)):
         parts.append(f"- {item}\n")
     elif isinstance(item, str):
+        if "\n" in item or _OTHER_LINE_BREAKS.search(item):
+            # Written raw, a later line of the item would start at column 0
+            raise ValueError("Multi-line list items not supported by fast serializer")
         if _needs_quoting(item):
             parts.append(f"- '{item.replace(chr(39), chr(39)*2)}'\n")
         else:
@@ -100,8 +112,11 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
     Handles: scalars, null, booleans, lists (block style), datetime (quoted ISO),
     and multi-line strings (literal block |).
 
-    Raises ValueError for unsupported types (nested dicts, complex list items)
-    so callers can fall back to yaml.dump.
+    Raises ValueError for unsupported types (nested dicts, complex list items) and
+    for strings it cannot write safely (multi-line list items, line breaks other
+    than "\\n") so callers can fall back to yaml.dump. No line it writes between
+    the delimiters starts with "---": keys come first, list items start with "- "
+    and the lines of a multi-line value are indented.
 
     Args:
         data: Raw ticket metadata dictionary (may contain datetime objects)
@@ -110,7 +125,7 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
         YAML frontmatter string with --- delimiters
 
     Raises:
-        ValueError: If data contains types not handled by the fast serializer
+        ValueError: If data contains types or strings not handled by the fast serializer
     """
     parts: list[str] = ["---\n"]
     for key, value in data.items():
@@ -125,6 +140,8 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
         elif isinstance(value, float):
             parts.append(f"{key}: {value}\n")
         elif isinstance(value, str):
+            if _OTHER_LINE_BREAKS.search(value):
+                raise ValueError(f"Line break other than \\n not supported by fast serializer: key={key!r}")
             if "\n" in value:
                 has_trailing = value.endswith("\n")
                 chomp = "" if has_trailing else "-"

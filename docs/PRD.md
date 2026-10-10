@@ -217,6 +217,8 @@ Optional markdown body here. This becomes the `description` field.
 
 A blank line follows the closing `---`, and one newline follows the body; a ticket with an empty body ends at the closing `---` line. Reading removes exactly those, so the body round-trips verbatim, leading whitespace and trailing newlines included, except CR line endings, which read back as `\n`.
 
+The closing delimiter is the first line after the opening `---` that starts with `---`; a file without one fails to parse. Three dashes anywhere else, inside a value or on an indented line of a multi-line value, are part of the YAML, so a value such as `a---b` or `---` (in a title, status, tag or reference material) is stored and read back as written. The writer never starts a frontmatter line with `---`: each field's line starts with its key, list items start with `- `, the lines of a multi-line value are indented, and other line breaks are escaped (see 5.2).
+
 ### 5.2 Serialization Rules
 
 | Type | Serialization |
@@ -241,6 +243,8 @@ A blank line follows the closing `---`, and one newline follows the body; a tick
 | non-empty list | block style: `key:\n- item1\n- item2` |
 | multi-line string (no trailing newline) | literal block `\|-` |
 | multi-line string (with trailing newline) | literal block `\|` |
+| string with a line break other than `\n` (`\r`, NEL U+0085, LS U+2028, PS U+2029) | Falls back to standard YAML serialization; the string is double-quoted with the break escaped: `key: "a\r---b"` |
+| multi-line list item | Falls back to standard YAML serialization (a literal block under `- `) |
 | nested dict | Falls back to standard YAML serialization |
 
 ### 5.3 Atomic Writes

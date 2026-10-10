@@ -14,6 +14,8 @@ from src.validator import ValidationError, validate_id_format, validate_ticket
 from tests.conftest import write_scoped_config
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
+    DASH_VALUES,
+    GUID_EXAMPLE_BEE,
     TICKET_ID_ABC,
     TICKET_ID_INVALID_TOOLONG,
     TICKET_ID_INVALID_UPPER_PREFIX,
@@ -85,6 +87,17 @@ Body text.""")
             pytest.param("Just plain text", "does not start with", id="missing_frontmatter"),
             pytest.param(f"---\nid: {TICKET_ID_LEGACY_BEE}\ntitle: [invalid yaml: unclosed\n---\n\nBody.", "Failed to parse YAML", id="malformed_yaml"),
             pytest.param(f"---\nid: {TICKET_ID_LEGACY_BEE}\ntype: bee\n\nBody without closing delimiter.", "invalid frontmatter format", id="missing_closing"),
+            # b.5yy: three dashes inside a value, or on an indented line of one, never close the frontmatter
+            pytest.param(
+                f"---\nid: {TICKET_ID_LEGACY_BEE}\ntitle: a---b\n\nBody.",
+                "invalid frontmatter format",
+                id="dashes_only_inside_a_value",
+            ),
+            pytest.param(
+                f"---\nid: {TICKET_ID_LEGACY_BEE}\ntitle: |-\n  a\n  ---\n  b\n",
+                "invalid frontmatter format",
+                id="dashes_only_on_an_indented_line",
+            ),
         ],
     )
     def test_parse_errors(self, tmp_path, content, match):
@@ -140,6 +153,19 @@ Body text.""")
         )
 
         assert parse_frontmatter(path)[1] == expected_body
+
+    @pytest.mark.parametrize("value", list(DASH_VALUES.values()), ids=list(DASH_VALUES))
+    @pytest.mark.parametrize("field", ["title", "tags", "reference_materials"])
+    def test_value_with_dashes_round_trips_through_writer(self, tmp_path, field, value):
+        """A value holding --- never closes the frontmatter: it, every later field and the body read back (b.5yy)."""
+        frontmatter = {"id": TICKET_ID_ABC, "type": "bee", "title": "T", "status": "open"}
+        frontmatter[field] = {"tags": [value, "next"], "reference_materials": [{"value": value}]}.get(field, value)
+        frontmatter.update(schema_version="0.1", guid=GUID_EXAMPLE_BEE)
+        body = "Body\n---\nend\n"
+        path = tmp_path / "ticket.md"
+        writer.write_ticket_file(TICKET_ID_ABC, "bee", frontmatter, body, file_path=path)
+
+        assert parse_frontmatter(path) == (frontmatter, body)
 
     @pytest.mark.parametrize(
         "after_closing_delimiter,expected_body",

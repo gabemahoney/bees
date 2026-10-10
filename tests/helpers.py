@@ -9,6 +9,7 @@ Usage:
     from tests.helpers import setup_child_tiers, make_ticket, write_ticket_file
 """
 
+import asyncio
 import importlib.util
 import json
 import os
@@ -87,6 +88,22 @@ def run_cli_capture_both(argv, capsys):
 
     captured = capsys.readouterr()
     return captured.out.strip(), captured.err, exit_code
+
+
+def cli_success(cli_runner, *argv) -> dict:
+    """Run a bees CLI command through the ``cli_runner`` fixture; assert exit 0 and status "success", return the JSON."""
+    stdout, exit_code = cli_runner(list(argv))
+    assert exit_code == 0, stdout
+    result = json.loads(stdout)
+    assert result["status"] == "success", result
+    return result
+
+
+def mcp_success(coro) -> dict:
+    """Run an MCP tool function's coroutine (``src/mcp_server.py``); assert status "success", return the result."""
+    result = asyncio.run(coro)
+    assert result["status"] == "success", result
+    return result
 
 
 def write_corrupt_ticket(hive_dir: Path, ticket_id: str) -> None:

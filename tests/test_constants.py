@@ -282,6 +282,23 @@ REFERENCE_MATERIALS_SINGLE = [{"value": "docs/spec.md"}]
 REFERENCE_MATERIALS_WITH_RESOLVER = [{"value": "https://github.com/cli/cli/issues/1", "resolver": "github"}]
 REFERENCE_MATERIALS_MULTI = [{"value": "docs/spec.md"}, {"value": "docs/arch.md"}]
 
+# ============================================================================
+# Frontmatter values holding three dashes (b.5yy): none may close the frontmatter
+# ============================================================================
+# {pytest id: value}. Parametrize with list(DASH_VALUES.values()), ids=list(DASH_VALUES)
+DASH_VALUES = {
+    "dashes_inside": "a---b",
+    "only_dashes": "---",
+    "dashes_then_space": "--- x",
+    "dashes_then_text": "---x",
+    "line_of_dashes": "a\n---\nb",  # a multi-line value with a line of three dashes
+    "single_quoted": "Fix: '---' b",  # ": " makes the writer single-quote it, doubling the inner quotes
+    "cr_then_dashes": "a\r---b",  # "\r" reads back as "\n" (universal newlines)
+    "nel_then_dashes": "a\x85---b",  # NEL, LS and PS are YAML line breaks too
+    "ls_then_dashes": "a\N{LINE SEPARATOR}---b",
+    "ps_then_dashes": "a\N{PARAGRAPH SEPARATOR}---b",
+}
+
 # GitHub resolver test constants
 GITHUB_ISSUE_URL = "https://github.com/cli/cli/issues/1"           # Standard github.com issue URL
 GITHUB_ENTERPRISE_URL = "https://github.example.com/org/repo/issues/42"  # GitHub Enterprise issue URL

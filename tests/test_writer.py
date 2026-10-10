@@ -16,12 +16,17 @@ SCOPE - Tests that DON'T belong here:
 - Ticket creation and factory logic -> test_writer_factory.py
 """
 
+import re
 from datetime import datetime
 
 import pytest
 import yaml
 
 from src.writer import fast_serialize_frontmatter, serialize_frontmatter
+from tests.test_constants import DASH_VALUES
+
+# Every line break a ticket file reader sees: universal newlines ("\r\n", "\r", "\n") and YAML (also NEL, LS, PS)
+_LINE_BREAK = re.compile("\r\n|[\n\r\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
 
 
 def _parse_fm(text: str) -> dict:
@@ -169,3 +174,17 @@ class TestSerializeFrontmatter:
         parsed = _parse_fm(result)
         assert parsed["meta"] == {"k": "v"}
         assert parsed.get("created_at") == dt.isoformat()
+
+    @pytest.mark.parametrize("value", list(DASH_VALUES.values()), ids=list(DASH_VALUES))
+    @pytest.mark.parametrize("field", ["title", "tags"])
+    def test_no_frontmatter_line_starts_with_dashes(self, value, field):
+        """In the yaml.dump fallback, no line between the delimiters starts with ---, at any line break (b.5yy)."""
+        # The nested dict forces yaml.dump; test_reader.py's writer round trip covers the fast path
+        data = {"id": "b.abc", field: [value] if field == "tags" else value, "guid": "g", "meta": {"key": value}}
+
+        result = serialize_frontmatter(data)
+
+        lines = _LINE_BREAK.split(result)
+        assert lines[0] == "---" and lines[-2:] == ["---", ""]
+        assert [line for line in lines[1:-2] if line.startswith("---")] == []
+        assert _parse_fm(result) == data
