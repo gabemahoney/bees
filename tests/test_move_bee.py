@@ -10,7 +10,7 @@ from src.config import get_scope_key_for_hive
 from src.mcp_hive_ops import write_identity
 from src.mcp_move_bee import _move_bee_core
 from src.reader import read_ticket
-from tests.helpers import write_ticket_file
+from tests.helpers import tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     HIVE_CLONE_DEST,
@@ -607,8 +607,10 @@ def test_move_bee_incompatible_tier_types(isolated_bees_env):
     assert (source_dir / TICKET_ID_MOVE_BEE_1).exists()
 
 
-def test_move_bee_compatibility_ignores_nested_hive(isolated_bees_env):
-    """A hive nested in the bee's tree (ticket-named dir with its own .hive/) is not part of the compatibility check."""
+def test_move_bee_refuses_bee_holding_nested_hive(isolated_bees_env):
+    """A bee whose dir holds another hive (ticket-named dir with its own .hive/) is not moved and is in failed,
+    naming that hive; the nested hive's tickets play no part in the compatibility check, and the other bee
+    still moves (b.xvo)."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
@@ -616,14 +618,21 @@ def test_move_bee_compatibility_ignores_nested_hive(isolated_bees_env):
     _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compatible Bee", status="open")
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_2, title="Plain Bee", status="open")
     nested_root = source_dir / TICKET_ID_MOVE_BEE_1 / TICKET_ID_T1
     (nested_root / ".hive").mkdir(parents=True)
     write_ticket_file(nested_root, "b.nnn", title="Nested Hive Bee", status="worker")
+    bee_tree_before = tree_snapshot(source_dir / TICKET_ID_MOVE_BEE_1)
 
-    result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_CLONE_DEST)
+    result = _move_bee_core([TICKET_ID_MOVE_BEE_1, TICKET_ID_MOVE_BEE_2], HIVE_CLONE_DEST)
 
     assert result["status"] == "success"
-    assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
+    assert result["moved"] == [TICKET_ID_MOVE_BEE_2]
+    assert [entry["id"] for entry in result["failed"]] == [TICKET_ID_MOVE_BEE_1]
+    assert str(nested_root) in result["failed"][0]["reason"]
+    assert tree_snapshot(source_dir / TICKET_ID_MOVE_BEE_1) == bee_tree_before
+    assert not (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
+    assert (dest_dir / TICKET_ID_MOVE_BEE_2).exists()
 
 
 def test_move_bee_batch_abort_on_one_failing(isolated_bees_env):

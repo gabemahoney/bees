@@ -18,6 +18,7 @@ from src.paths import (
     find_nested_hive_root,
     find_ticket_file,
     get_ticket_path,
+    hive_crossing_reason,
     infer_ticket_type_from_id,
     iter_ticket_files,
     iter_ticket_files_deep,
@@ -983,6 +984,58 @@ class TestNestedHivePruning:
         inner = tmp_path / "b.aaa" / skipped_dir / "Inner"
         (inner / ".hive").mkdir(parents=True)
         assert find_nested_hive_root(tmp_path / "b.aaa") == inner
+
+    @pytest.mark.parametrize("outer_hive", ["marker"], indirect=True)
+    @pytest.mark.parametrize(
+        "src,dest,operation,expected",
+        [
+            pytest.param(
+                "Sub/b.sss",
+                "b.aaa/t1.aaa.bc/b.sss",
+                "move",
+                "{src} is inside another hive rooted at {o}/Sub",
+                id="src_inside_hive_named_before_dest",
+            ),
+            pytest.param(
+                "b.aaa",
+                "Sub/b.aaa",
+                "move",
+                "{dest} is inside another hive rooted at {o}/Sub",
+                id="dest_inside_hive_named_before_src_holding_one",
+            ),
+            pytest.param(
+                "b.aaa",
+                "cemetery/b.aaa",
+                "move",
+                "{src} holds another hive rooted at {o}/b.aaa/t1.aaa.bc, which the move would carry",
+                id="src_holds_hive_move",
+            ),
+            pytest.param(
+                "b.aaa",
+                None,
+                "delete",
+                "{src} holds another hive rooted at {o}/b.aaa/t1.aaa.bc, which the delete would remove",
+                id="src_holds_hive_delete",
+            ),
+            pytest.param(
+                "misc/b.mmm",
+                "b.aaa",
+                "move",
+                "{dest} already exists and holds another hive rooted at {o}/b.aaa/t1.aaa.bc",
+                id="dest_exists_holding_hive",
+            ),
+            pytest.param("misc/b.mmm", "misc", "move", None, id="clean_move_onto_existing_dir"),
+            pytest.param("misc", None, "delete", None, id="clean_delete"),
+        ],
+    )
+    def test_hive_crossing_reason(self, outer_hive, src, dest, operation, expected):
+        """Names the path and the root of the other hive it lies in or holds, src before dest; None when clean."""
+        outer, _, _ = outer_hive
+        src_path = outer / src
+        dest_path = None if dest is None else outer / dest
+        if expected is not None:
+            expected = expected.format(src=src_path, dest=dest_path, o=outer)
+        assert hive_crossing_reason(outer, src_path, dest_path, operation=operation) == expected
 
     @pytest.mark.parametrize("outer_hive", ["registered"], indirect=True)
     def test_registered_nested_hive_skipped_through_symlinked_root(self, outer_hive, tmp_path):

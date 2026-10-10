@@ -16,6 +16,7 @@ SCOPE - Tests that belong here:
 - Multi-hive deletion scenarios
 - Atomic delete correctness (single shutil.rmtree on root directory)
 - delete_with_dependencies config path (_collect_deletion_set + cleanup)
+- Safety guards: hive root, a ticket directory that holds another hive or lies inside one
 
 SCOPE - Tests that DON'T belong here:
 - Ticket creation -> test_create_ticket.py
@@ -38,6 +39,7 @@ from src.config import load_bees_config
 from src.mcp_server import _create_ticket, _delete_ticket
 from src.paths import get_ticket_path
 from src.reader import read_ticket
+from tests.helpers import tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     HIVE_FRONTEND,
@@ -408,6 +410,58 @@ class TestDeleteTicketDirectoryRemoval:
         # Ticket directory should be nested under hive root, not equal to it
         assert ticket_dir != hive_root
         assert hive_root in ticket_dir.parents
+
+
+class TestDeleteTicketNestedHive:
+    """A ticket whose directory holds another hive, or lies inside one, is never deleted (b.xvo)."""
+
+    @pytest.mark.parametrize(
+        "nested_root, ticket_parent, ticket_id, ticket_type",
+        [
+            pytest.param("b.abc/Inner", "", "b.abc", "bee", id="ticket_dir_holds_hive"),
+            pytest.param("b.abc/t1.abc.de", "b.abc/t1.abc.de", "t2.abc.de.fg", "t2", id="ticket_dir_inside_hive"),
+        ],
+    )
+    async def test_single_delete_refused_with_nothing_changed(
+        self, isolated_bees_env, nested_root, ticket_parent, ticket_id, ticket_type
+    ):
+        """delete_failed naming the other hive; no file removed and, with delete_with_dependencies on, no
+        dependency of another ticket cleaned."""
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+        write_ticket_file(hive_dir / ticket_parent, ticket_id, type=ticket_type, up_dependencies=["b.ext"])
+        write_ticket_file(hive_dir, "b.ext", down_dependencies=[ticket_id])
+        (hive_dir / nested_root / ".hive").mkdir(parents=True, exist_ok=True)
+        write_ticket_file(hive_dir / nested_root, "b.inn", title="Nested Hive Bee")
+        tree_before = tree_snapshot(hive_dir)
+
+        with patch("src.mcp_ticket_ops.load_global_config", return_value={"delete_with_dependencies": True}):
+            result = await _delete_ticket(ticket_ids=ticket_id)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "delete_failed"
+        assert f"rooted at {hive_dir / nested_root}" in result["message"]
+        assert tree_snapshot(hive_dir) == tree_before
+
+    async def test_bulk_delete_lists_refused_ticket_in_failed(self, isolated_bees_env):
+        """The ticket holding another hive is in failed, naming that hive, its tree intact; the other is deleted."""
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+        write_ticket_file(hive_dir, "b.abc")
+        write_ticket_file(hive_dir, "b.def")
+        nested_root = hive_dir / "b.abc" / "Inner"
+        (nested_root / ".hive").mkdir(parents=True)
+        write_ticket_file(nested_root, "b.inn", title="Nested Hive Bee")
+        abc_tree_before = tree_snapshot(hive_dir / "b.abc")
+
+        result = await _delete_ticket(ticket_ids=["b.abc", "b.def"])
+
+        assert result["status"] == "success"
+        assert result["deleted"] == ["b.def"]
+        assert [entry["id"] for entry in result["failed"]] == ["b.abc"]
+        assert str(nested_root) in result["failed"][0]["reason"]
+        assert tree_snapshot(hive_dir / "b.abc") == abc_tree_before
+        assert not (hive_dir / "b.def").exists()
 
 
 class TestDeleteTicketHiveRouting:

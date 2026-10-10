@@ -50,6 +50,7 @@ from .config import (
 from .constants import SCHEMA_VERSION
 from .id_utils import normalize_hive_name
 from .mcp_hive_utils import validate_hive_path
+from .paths import find_nested_hive_root
 from .repo_context import get_repo_root, repo_root_context
 from .repo_utils import get_repo_root_from_path
 
@@ -968,12 +969,26 @@ async def _rename_hive(
     new_hive_path = hive_path  # default: unchanged
     if rename_folder:
         new_hive_path = hive_path.parent / normalized_new
+        same_folder = new_hive_path.resolve() == hive_path.resolve()
         # Check if target path already exists (and isn't the same directory)
-        if new_hive_path.exists() and new_hive_path.resolve() != hive_path.resolve():
+        if new_hive_path.exists() and not same_folder:
             return {
                 "status": "error",
                 "message": f"Target path already exists: {new_hive_path}",
                 "error_type": "path_conflict",
+            }
+        # Another hive below the folder would be moved off its registered path with it, unless the
+        # folder already has the new name and stays where it is
+        nested_hive_root = None if same_folder else find_nested_hive_root(hive_path)
+        if nested_hive_root is not None:
+            return {
+                "status": "error",
+                "message": (
+                    f"Cannot rename folder: {hive_path} holds another hive rooted at {nested_hive_root}, "
+                    "which the rename would move off its registered path. "
+                    "Rename the hive without renaming its folder (rename_folder=False, CLI --no-rename-folder)."
+                ),
+                "error_type": "nested_hive",
             }
         try:
             shutil.move(str(hive_path), str(new_hive_path))

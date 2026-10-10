@@ -457,12 +457,12 @@ Behavior:
 - Updates config key from old normalized to new normalized
 - Updates `display_name` in config
 - Updates `.hive/identity.json`
-- With `rename_folder=true`: physically moves directory on disk
+- With `rename_folder=true`: physically moves directory on disk. Refused with nothing changed when the folder holds another hive (a directory with its own `.hive/`, or a registered hive root, anywhere below it), since the move would leave that hive's registered path stale. A folder that already has the new normalized name does not move, so that rename is not refused
 - With `rename_folder=false`: only updates registry, no disk rename
 
 Ticket IDs and cross-references are NOT updated.
 
-Errors: `hive_not_found`, `name_conflict`, `validation_error` (normalizes to empty), `path_conflict` (target dir exists), `folder_rename_error`
+Errors: `hive_not_found`, `name_conflict`, `validation_error` (normalizes to empty), `path_conflict` (target dir exists), `nested_hive` (folder holds another hive; rename with `rename_folder=false` instead), `folder_rename_error`
 
 ### 7.8 Hive Path Validation
 
@@ -571,6 +571,7 @@ Behavior:
 3. **Dependency cleanup**: controlled by `delete_with_dependencies` global config flag
    - `false` (default): dependency backlinks in surviving tickets are left as dangling references
    - `true`: removes all dependency backlinks in surviving tickets before deletion
+4. **Nested hive guard**: a ticket whose directory holds another hive (a directory with its own `.hive/`, or a registered hive root), or lies inside one, is not deleted and nothing is changed, dependencies included. Single delete returns `delete_failed`; bulk delete lists it in `failed`
 
 Returns: `{status: "success", deleted: [...], not_found: [...], failed: [...]}`
 
@@ -1001,7 +1002,7 @@ Parameters: `hive` (required), exactly one of `query_yaml` or `query_name`
 Process:
 1. Execute query to get candidate tickets
 2. Filter to bees only (non-bee tickets → `skipped` list)
-3. **Phase 1 (atomic)**: move each bee's directory into the cemetery
+3. **Phase 1 (atomic)**: move each bee's directory into the cemetery. Every bee is located and checked before the cemetery is created or anything moves; the run fails with no bee moved if a bee's directory is missing, holds another hive, or its cemetery target is or lies inside another hive, or already exists and holds one
 4. **Phase 2 (best-effort rename)**: within cemetery, rename directories and files from `{shortID}` to `{guid}` format
 
 Cemetery naming convention: `{tier}.{guid}.md` (flat, no subdirectories)
@@ -1012,6 +1013,7 @@ Errors:
 - Both `query_yaml` and `query_name` → error
 - Neither → error
 - `query_not_found`, `query_out_of_scope`
+- Phase 1 refusal (bee directory not found, or a move that would carry or enter another hive) → error naming the bee and, for a hive, its root; nothing moved
 
 ### 16.2 Scheduled Archival (HTTP Mode Only)
 
@@ -1051,6 +1053,7 @@ Cemetery contents are excluded from all normal operations via positive-match tra
 - Cemetery is never a valid destination
 - Source and destination must be in the same scope
 - Moves entire directory tree (including child subdirectories)
+- Bee whose directory holds another hive (a directory with its own `.hive/`, or a registered hive root) → `failed`, not moved
 - Ticket ID in frontmatter is unchanged after move
 - Already in destination → `skipped`
 - Not found → `not_found`
@@ -1438,6 +1441,7 @@ Installs hook entries:
 | `name_conflict` | Rename to existing name |
 | `validation_error` | Name normalizes to empty |
 | `path_conflict` | Rename target directory exists |
+| `nested_hive` | Folder rename of a hive whose folder holds another hive |
 | `folder_rename_error` | OS error during rename |
 | `filesystem_error` | identity.json write failure |
 | `config_error` | Config save failure |

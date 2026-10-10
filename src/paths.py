@@ -4,7 +4,7 @@ import logging
 import os
 from collections.abc import Callable, Generator, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .id_utils import is_ticket_id, normalize_hive_name
 from .reader import get_ticket_type, read_ticket
@@ -142,6 +142,50 @@ def find_enclosing_hive_root(hive_root: Path, path: Path) -> Path | None:
         candidate = os.path.join(candidate, part)
         if candidate in other_hive_roots or os.path.isdir(os.path.join(candidate, HIVE_MARKER_DIR)):
             return Path(candidate)
+    return None
+
+
+def hive_crossing_reason(
+    hive_root: Path, src: Path, dest: Path | None = None, operation: Literal["move", "delete"] = "move"
+) -> str | None:
+    """Return why moving src to dest, or deleting src, would cross into another hive, or None.
+
+    Check this before moving or deleting a whole directory of the hive at
+    hive_root, so another hive is never carried, deleted or entered with it.
+    In order, the operation is refused when:
+
+    - src, then dest, lies inside another hive nested below hive_root (see
+      find_enclosing_hive_root()): that directory belongs to the other hive
+    - another hive's root lies anywhere below src (see find_nested_hive_root()):
+      the move would carry it off its path, the delete would remove it
+    - dest already exists and another hive's root lies anywhere below it: src,
+      or its entries, would land in a directory holding that hive
+
+    Args:
+        hive_root: Root of the hive src belongs to
+        src: Directory to be moved or deleted
+        dest: Where src would be moved, or None to skip the checks on dest
+            (a delete, or a move whose dest lies in another hive)
+        operation: "move" or "delete"; only changes the wording of the reason
+
+    Returns:
+        The reason the operation is refused, naming the other hive's root, or
+        None if it may go ahead
+    """
+    for path in (src, dest):
+        if path is None:
+            continue
+        other_hive_root = find_enclosing_hive_root(hive_root, path)
+        if other_hive_root is not None:
+            return f"{path} is inside another hive rooted at {other_hive_root}"
+    other_hive_root = find_nested_hive_root(src)
+    if other_hive_root is not None:
+        consequence = "which the delete would remove" if operation == "delete" else "which the move would carry"
+        return f"{src} holds another hive rooted at {other_hive_root}, {consequence}"
+    if dest is not None and dest.exists():
+        other_hive_root = find_nested_hive_root(dest)
+        if other_hive_root is not None:
+            return f"{dest} already exists and holds another hive rooted at {other_hive_root}"
     return None
 
 

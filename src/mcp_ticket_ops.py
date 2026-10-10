@@ -58,6 +58,7 @@ from .paths import (
     build_ticket_path_map,
     compute_ticket_path,
     get_ticket_path,
+    hive_crossing_reason,
     iter_ticket_files,
     walk_hive,
 )
@@ -1292,7 +1293,8 @@ def _delete_one_core(
         The root ticket type string.
 
     Raises:
-        ValueError: On any read/delete error.
+        ValueError: On any read/delete error, or before anything is changed
+            when the ticket's directory holds another hive or lies inside one.
     """
     root_ticket_type = ticket_type_from_prefix(ticket_id)
     if hive_path is None or not compute_ticket_path(ticket_id, hive_path).exists():
@@ -1311,6 +1313,13 @@ def _delete_one_core(
     # Safety guard: never delete the hive root directory
     if hive_path and root_dir == hive_path:
         error_msg = f"Cannot delete hive root directory: {root_dir}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Safety guard: never delete a directory of another hive nested in this one, or one holding such a hive
+    reason = hive_crossing_reason(hive_path, root_dir, operation="delete")
+    if reason is not None:
+        error_msg = f"Cannot delete ticket {ticket_id}: {reason}"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -1398,6 +1407,7 @@ async def _delete_ticket(
         - All child tickets are deleted (cascade behaviour)
         - The entire directory subtree under each ticket is removed atomically
         - Hive root directory is never deleted (safety guard)
+        - A ticket whose directory holds another hive, or lies inside one, is not deleted (safety guard)
         - Dependency cleanup is opt-in via global config ``delete_with_dependencies: true``
     """
     schema_error = check_schema_version()

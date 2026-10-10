@@ -11,7 +11,7 @@ Each ticket is stored in its own directory within the hive, with child tickets n
 When you create new tickets you should tell the LLM which Hive to create them in.
 Modifying or deleting tickets does not require you to specify the Hive.
 
-A hive can live inside another hive's folder, for example a Plans hive at `Ideas/Plans` inside an Ideas hive. Bees treats the inner folder as a separate hive: listing, querying and sanitizing the outer hive never read or change the inner hive's tickets. Keep the inner hive outside any ticket folder, since deleting, moving or archiving a ticket takes its whole folder with it. Sanitize is the exception: it never moves a misplaced ticket whose folder holds a hive, or onto a folder that holds one, and reports `cross_hive_move_blocked` instead.
+A hive can live inside another hive's folder, for example a Plans hive at `Ideas/Plans` inside an Ideas hive. Bees treats the inner folder as a separate hive: listing, querying and sanitizing the outer hive never read or change the inner hive's tickets. Keep the inner hive outside any ticket folder: bees will not delete, move or archive a ticket whose folder holds a hive, and reports an error naming that hive instead (an undertaker run then archives nothing). Sanitize never moves a misplaced ticket whose folder holds a hive, or onto a folder that holds one, and reports `cross_hive_move_blocked` instead. Renaming the outer hive also fails, with `nested_hive`, when that would move its folder; rename it with `--no-rename-folder` to keep the folder where it is.
 
 > [!TIP]
 > Its a good idea to disallow your LLM agents from reading or writing to your hive directories. Otherwise, LLMs may route around bees and potentially write malformed tickets.

@@ -37,6 +37,11 @@ def backdate(*paths: Path) -> int:
     return stamp
 
 
+def tree_snapshot(root: Path) -> dict[str, bytes | None]:
+    """Every file (its bytes) and directory (None) below root, hidden ones included, by relative path."""
+    return {p.relative_to(root).as_posix(): p.read_bytes() if p.is_file() else None for p in root.rglob("*")}
+
+
 def make_body_at_cap(fill_char: str = "a") -> str:
     """Return a body string of exactly ``BODY_MAX_LENGTH`` characters.
 

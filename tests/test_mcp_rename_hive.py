@@ -14,7 +14,7 @@ SCOPE - Tests that belong here:
 - .hive marker file updates (normalized_name and display_name)
 - Folder rename on disk (rename_folder=True default, rename_folder=False opt-out)
 - Validation: duplicate name detection, non-existent hive handling
-- Error cases: path_conflict, folder_rename_error
+- Error cases: path_conflict, folder_rename_error, nested_hive (folder holds another hive)
 - Edge cases: special characters, missing marker files
 
 SCOPE - Tests that DON'T belong here:
@@ -39,7 +39,8 @@ import pytest
 from src.config import BeesConfig, HiveConfig, find_matching_scope, load_bees_config, load_global_config, save_bees_config
 from src.mcp_hive_ops import _rename_hive
 from src.repo_context import repo_root_context
-from tests.conftest import write_multi_scope_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
+from tests.helpers import tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     RESULT_STATUS_SUCCESS,
@@ -326,6 +327,76 @@ class TestRenameHiveEdgeCases:
         # Config path unchanged
         config = load_bees_config()
         assert config.hives["api_layer"].path == original_path
+
+
+@pytest.fixture(params=["hive_marker_in_ticket_dir", "registered_hive_in_folder"])
+def folder_with_nested_hive(request, tmp_path, mock_global_bees_dir):
+    """Hive backend, in folder core/, holding another hive (.hive/ in a ticket dir, or registered without one).
+
+    Yields (core folder, nested hive root, global config path).
+    """
+    hive_dir = tmp_path / "core"
+    hives = {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}}
+    if request.param == "hive_marker_in_ticket_dir":
+        nested_root = hive_dir / "b.abc" / "Inner"
+        (nested_root / ".hive").mkdir(parents=True)
+    else:
+        nested_root = hive_dir / "inner"
+        nested_root.mkdir(parents=True)
+        hives["inner"] = {"path": str(nested_root), "display_name": "Inner"}
+    write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": hives, "child_tiers": {}})
+    write_ticket_file(nested_root, "b.inn", title="Nested Hive Bee")
+    with repo_root_context(tmp_path):
+        yield hive_dir, nested_root, mock_global_bees_dir / "config.json"
+
+
+class TestRenameHiveNestedHive:
+    """A hive folder holding another hive is never renamed on disk (b.xvo)."""
+
+    async def test_folder_rename_refused(self, folder_with_nested_hive):
+        """nested_hive error naming the other hive; folder, nested hive and config unchanged."""
+        hive_dir, nested_root, config_path = folder_with_nested_hive
+        config_before = config_path.read_text()
+        tree_before = tree_snapshot(hive_dir)
+
+        result = await _rename_hive(HIVE_BACKEND, "api_layer", resolved_root=hive_dir.parent)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "nested_hive"
+        assert str(nested_root) in result["message"]
+        assert config_path.read_text() == config_before
+        assert tree_snapshot(hive_dir) == tree_before
+        assert not (hive_dir.parent / "api_layer").exists()
+
+    @pytest.mark.parametrize(
+        "new_name, rename_folder, normalized_new",
+        [
+            pytest.param("api_layer", False, "api_layer", id="without_folder_rename"),
+            pytest.param("Core", True, "core", id="folder_already_has_new_name"),
+        ],
+    )
+    async def test_rename_keeping_folder_in_place_succeeds(
+        self, folder_with_nested_hive, new_name, rename_folder, normalized_new
+    ):
+        """With rename_folder=False, or a folder already named for the new name, the hive is renamed in place;
+        the nested hive keeps its files and registration."""
+        hive_dir, nested_root, config_path = folder_with_nested_hive
+        repo_root = hive_dir.parent
+
+        def hive_paths():
+            hives = json.loads(config_path.read_text())["scopes"][str(repo_root)]["hives"]
+            return {name: entry["path"] for name, entry in hives.items()}
+
+        expected_paths = {**hive_paths(), normalized_new: str(hive_dir)}
+        del expected_paths[HIVE_BACKEND]
+        nested_before = tree_snapshot(nested_root)
+
+        result = await _rename_hive(HIVE_BACKEND, new_name, resolved_root=repo_root, rename_folder=rename_folder)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["path"] == str(hive_dir)
+        assert hive_paths() == expected_paths
+        assert tree_snapshot(nested_root) == nested_before
 
 
 class TestRenameHiveIntegration:

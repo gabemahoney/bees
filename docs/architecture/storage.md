@@ -280,12 +280,19 @@ frontend/b.r8p/b.r8p.md
 
 **`find_enclosing_hive_root()`** (`src/paths.py`):
 - Returns the root of another hive nested below a hive root that a given path lies in, or `None`
-- Used by the linter's directory enforcement to refuse a move out of a nested hive, or into or onto one
+- Used through `hive_crossing_reason()` to refuse moving or deleting a directory that lies inside a nested hive, or a move into or onto one
 
 **`find_nested_hive_root()`** (`src/paths.py`):
 - Returns the first root of another hive found anywhere below a directory, or `None`
 - Walks every directory below it, including hidden ones, `evicted/` and `cemetery/`, unlike the pruned walks
-- Used by the linter's directory enforcement to refuse a move that would carry a nested hive along with the ticket's directory, or go into an existing target directory that holds one
+- Used through `hive_crossing_reason()` to refuse moving or deleting a directory that holds a nested hive, or a move into an existing target directory that holds one
+- Used directly by `rename_hive` (folder rename) to refuse moving a hive folder that holds another hive
+
+**`hive_crossing_reason()`** (`src/paths.py`):
+- The shared check before moving a whole directory of a hive to a target, or deleting it (see [Nested Hives](#nested-hives))
+- Returns why the operation would cross into another hive, naming the path and that hive's root, or `None`. In order: the source, then the target, lies inside another hive (`find_enclosing_hive_root()`); another hive's root lies below the source, which the move would carry or the delete would remove (`find_nested_hive_root()`); the target already exists and holds another hive
+- The target is optional: without one (a delete, or a move into another hive) only the source is checked
+- Used by the linter's directory enforcement (`_move_crosses_hive()`), move-bee, the undertaker's phase 1 and delete
 
 **`iter_ticket_files()`** (`src/paths.py`):
 - Primary traversal function for well-structured hives
@@ -356,9 +363,14 @@ Both modes run on `walk_hive()`, so neither enters a nested hive.
 - **Own configuration**: The nested hive has its own tiers, status values and layout. Linting its tickets against the enclosing hive's config would flag their tiers `unknown_tier` and move its bees to the enclosing hive's root, out of their own hive.
 - **One owner per ticket**: Each ticket is scanned, fixed and moved only by the hive it lives in.
 
+**Whole-directory moves and deletes**: Pruning applies to walks, but moving or deleting a directory takes everything in it. So every operation that moves or deletes a whole ticket directory first checks it with `hive_crossing_reason()`, and `rename_hive` checks a hive folder it would move with `find_nested_hive_root()`. Each refuses before changing anything, with a message naming the other hive's root:
+- move-bee: a bee whose directory holds another hive is listed in `failed`; the other bees still move
+- The undertaker: every bee is checked before anything is created or moved. A bee whose directory holds another hive, or whose `/cemetery` target is or lies inside one, or already exists and holds one, fails the whole run (`Phase 1 failed: ... No bees were moved.`)
+- delete: a ticket whose directory holds another hive or lies inside one is not deleted, and no dependency is cleaned (`delete_failed`; in a bulk delete it is listed in `failed` and the other IDs proceed)
+- `rename_hive` with folder rename: a hive folder holding another hive is not renamed (`nested_hive`), since the move would leave that hive's registered path stale. Renaming with `rename_folder=False` still works, as does a rename whose folder already has the new normalized name, since that folder does not move
+- The linter's directory enforcement: never carries a nested hive along with a ticket's directory, nor moves a ticket's directory into an existing target directory that holds one (see [Linter Enforcement](#linter-enforcement))
+
 **Limits**:
-- Pruning applies to walks. Moving or deleting a whole ticket directory (move-bee, the undertaker's move to `/cemetery`, delete) still takes everything in it, including a hive nested inside that ticket directory. Renaming a hive's folder (`rename_hive` with folder rename) likewise moves every hive nested in it and does not update their registered paths.
-- The linter's directory enforcement is the exception: it never carries a nested hive along with a ticket's directory, nor moves a ticket's directory into an existing target directory that holds one (see [Linter Enforcement](#linter-enforcement)).
 - An unregistered nested hive (one marked only by `.hive/`) is walked by no registered hive, so its tickets are not in `sanitize_hive`'s cross-hive ticket map (see [validation.md](validation.md#nested-hives)).
 
 ### Integration with Schema Versioning

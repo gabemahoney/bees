@@ -290,11 +290,11 @@ The linter validates ticket structure and relationships through a two-phase scan
 - **Rationale for never deleting**: an existing target can hold the ticket itself (misplaced inside its own expected directory), other children, or unrelated files; deleting it before the move would lose them
 - **Failed moves**: a move that fails partway (e.g. a name taken during the merge, or an `OSError` from the filesystem) is reported as error `directory_enforcement_failed` for that ticket, with no `move_directory` fix; nothing is lost, every file is in the target, the old directory or the temporary directory. The temporary directory is not hidden, so a ticket stranded there is found as misplaced: a stranded child ticket is usually moved later in the same run (it is checked after its parent), otherwise on the next run. A non-ticket file stranded in the old directory or in `<ticket_id>.moving-XXXX/` is not moved by any later run and stays until moved by hand; the error names the entry that failed to move. An empty `<ticket_id>.moving-XXXX/` can remain after a later run recovers the ticket from it
 - Reports fixes via `LinterReport.add_fix()` with type `"move_directory"`
-- Never makes a move that crosses the boundary of a hive nested inside this one. Before each move, `_move_crosses_hive()` blocks it when any of these holds (see [Nested Hives](#nested-hives)):
+- Never makes a move that crosses the boundary of a hive nested inside this one. Before each move, `_move_crosses_hive()` blocks it, through the shared `hive_crossing_reason()` (`src/paths.py`), when any of these holds (see [Nested Hives](#nested-hives)):
   - The ticket's current directory is inside another hive (`find_enclosing_hive_root()`)
   - The target directory itself is another hive's root or inside another hive (`find_enclosing_hive_root()`)
   - The ticket's current directory holds another hive anywhere below it, which the move would carry off its path (`find_nested_hive_root()`)
-  - The target directory exists and holds another hive anywhere below it, which the ticket's directory would then hold (`find_nested_hive_root()`)
+  - The target directory exists and holds another hive anywhere below it, so the ticket's directory would land in a directory holding that hive (`find_nested_hive_root()`)
 - A blocked move is skipped, nothing is moved or deleted, and error `cross_hive_move_blocked` is reported naming the reason
 - A move that passes the hive guard is then checked by `_find_move_conflict()`, which refuses it when any of these holds:
   - The target lies inside the ticket's own directory (a directory cannot be moved into itself)

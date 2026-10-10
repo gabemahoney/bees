@@ -3,7 +3,8 @@ Undertaker MCP Tool — archives bee tickets and their descendants to /cemetery.
 
 Two-phase archival:
   Phase 1 (atomic mv): Move each matched bee's directory tree into /cemetery.
-          If any move fails, return error immediately.
+          If any move fails, return error immediately. Nothing is moved if a
+          bee's directory, or its existing cemetery target, holds another hive.
   Phase 2 (best-effort rename): Within cemetery, rename ticket dirs and files
           from {tier}.{shortID} to {tier}.{guid} using the guid from frontmatter.
           Failures are logged and skipped.
@@ -66,7 +67,7 @@ import yaml
 from .config import BeesConfig, load_bees_config, load_global_config, resolve_named_query
 from .id_utils import is_ticket_id
 from .index_generator import generate_index
-from .paths import find_ticket_file, walk_hive
+from .paths import find_ticket_file, hive_crossing_reason, walk_hive
 from .pipeline import PipelineEvaluator
 from .query_parser import QueryParser, QueryValidationError
 from .reader import read_ticket
@@ -177,12 +178,10 @@ def _undertaker_core(
 
     # ── Step 4: Phase 1 — atomic mv ─────────────────────────────────────
     cemetery_dir = hive_path / "cemetery"
-    cemetery_dir.mkdir(exist_ok=True)
 
-    # Record bee directory paths before moving so we can detect cascade-moved children
-    bee_dir_paths: list[Path] = []  # absolute paths of moved bee directories
-
-    moved_bees: list[tuple[str, Path]] = []  # (bee_id, cemetery_dest)
+    # Locate every bee and refuse before anything is created or moved if a
+    # move would carry another hive or put a bee inside one
+    bee_dirs: list[tuple[str, Path]] = []  # (bee_id, bee_dir)
     for bee_id in bee_ids:
         ticket_file = find_ticket_file(hive_path, bee_id)
         if not ticket_file:
@@ -192,6 +191,21 @@ def _undertaker_core(
             }
 
         bee_dir = ticket_file.parent
+        reason = hive_crossing_reason(hive_path, bee_dir, cemetery_dir / bee_dir.name)
+        if reason is not None:
+            return {
+                "status": "error",
+                "message": f"Phase 1 failed: not archiving bee '{bee_id}': {reason}. No bees were moved.",
+            }
+        bee_dirs.append((bee_id, bee_dir))
+
+    cemetery_dir.mkdir(exist_ok=True)
+
+    # Record bee directory paths before moving so we can detect cascade-moved children
+    bee_dir_paths: list[Path] = []  # absolute paths of moved bee directories
+
+    moved_bees: list[tuple[str, Path]] = []  # (bee_id, cemetery_dest)
+    for bee_id, bee_dir in bee_dirs:
         bee_dir_paths.append(bee_dir.resolve())
         dest = cemetery_dir / bee_dir.name
         try:

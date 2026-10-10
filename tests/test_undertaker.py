@@ -11,6 +11,7 @@ SCOPE - Tests that belong here:
 - Non-bee filtering: t1/t2 tickets in results are skipped
 - Parameter validation: both params error, neither params error
 - Cemetery directory auto-creation and pre-existence
+- Phase 1 refusal, before anything moves, of a move that would carry or enter another hive
 
 SCOPE - Tests that DON'T belong here:
 - Query parsing -> test_query_parser.py
@@ -22,12 +23,16 @@ RELATED FILES:
 - test_paths.py: find_ticket_file used in Phase 1
 """
 
+import shutil
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 from src.config import BeesConfig, HiveConfig
 from src.constants import ID_CHARSET
 from src.mcp_undertaker import UndertakerScheduler, _undertaker
+from tests.helpers import tree_snapshot
 
 
 def _make_guid(short_id: str) -> str:
@@ -344,22 +349,59 @@ class TestUndertaker:
         assert result["status"] == "success"
         assert result["archived_guids"] == []
 
+    @pytest.mark.parametrize(
+        "nested_root",
+        [
+            pytest.param("b.nst/Inner", id="bee_dir_holds_hive"),
+            pytest.param("cemetery", id="cemetery_is_hive"),
+            pytest.param("cemetery/b.nst", id="target_is_hive"),
+            pytest.param("cemetery/b.nst/Inner", id="target_holds_hive"),
+        ],
+    )
+    async def test_phase1_refuses_move_carrying_or_entering_nested_hive(self, isolated_bees_env, nested_root):
+        """When a bee's dir holds another hive, or its cemetery target is, lies in or holds one, the run fails
+        naming that hive and nothing is created or moved, not even the bee checked first (b.xvo)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        helper.create_ticket(hive_dir, "b.aaa", "bee", "Checked First", guid=_make_guid("aaa"))
+        helper.create_ticket(hive_dir, "b.nst", "bee", "Blocked Bee", guid=_make_guid("nst"))
+        (hive_dir / nested_root / ".hive").mkdir(parents=True)
+        helper.create_ticket(hive_dir / nested_root, "b.inn", "bee", "Nested Hive Bee", guid=_make_guid("inn"))
+        tree_before = tree_snapshot(hive_dir)
+
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['type=bee']",
+        )
+
+        assert result["status"] == "error"
+        assert f"rooted at {hive_dir / nested_root}" in result["message"]
+        assert tree_snapshot(hive_dir) == tree_before
+
     async def test_phase2_leaves_nested_hive_tickets_unrenamed(self, isolated_bees_env):
-        """Tickets of a hive nested in an archived bee's directory keep their names and are not counted (b.x6n)."""
+        """Tickets of a hive that appears in a bee's dir after the phase 1 check keep their names and are not
+        counted (b.x6n)."""
         helper = isolated_bees_env
         hive_dir = helper.create_hive("test_hive", "Test Hive")
         helper.write_config()
 
         bee_guid = _make_guid("abc")
         helper.create_ticket(hive_dir, "b.abc", "bee", "Test Bee", guid=bee_guid)
-        nested_root = hive_dir / "b.abc" / "Inner"
-        (nested_root / ".hive").mkdir(parents=True)
-        helper.create_ticket(nested_root, "b.nnn", "bee", "Nested Hive Bee", guid=_make_guid("nnn"))
+        real_move = shutil.move
 
-        result = await _undertaker(
-            hive_name="test_hive",
-            query_yaml="stages:\n- ['type=bee']",
-        )
+        def move_then_nest_hive(src, dst):
+            real_move(src, dst)
+            nested_root = Path(dst) / "Inner"
+            (nested_root / ".hive").mkdir(parents=True)
+            helper.create_ticket(nested_root, "b.nnn", "bee", "Nested Hive Bee", guid=_make_guid("nnn"))
+
+        with patch("src.mcp_undertaker.shutil.move", side_effect=move_then_nest_hive):
+            result = await _undertaker(
+                hive_name="test_hive",
+                query_yaml="stages:\n- ['type=bee']",
+            )
 
         assert result["archived_count"] == 1
         assert result["archived_guids"] == [bee_guid]

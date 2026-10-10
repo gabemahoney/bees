@@ -49,7 +49,7 @@ Deleting a ticket cascades to its entire child subtree using a two-phase approac
 
 **Phase 1 — Collection**: Walks the ticket's directory tree with `walk_hive()` (`src/paths.py`), entering only ticket-ID directories and never a hive nested in the subtree, to discover child ticket directories without parsing YAML. Builds an ordered list of ticket IDs (leaves first, root last). The root ticket's existence is validated before traversal begins; if it does not exist, the operation raises `ValueError` and nothing is deleted.
 
-**Phase 2 — Deletion**: Iterates the collected list bottom-up, removing each ticket's directory with `shutil.rmtree`. A safety guard prevents accidental deletion of the hive root directory.
+**Phase 2 — Deletion**: Iterates the collected list bottom-up, removing each ticket's directory with `shutil.rmtree`. A safety guard prevents accidental deletion of the hive root directory. Another refuses, before anything is deleted or any dependency is cleaned, a ticket whose directory holds another hive or lies inside one (see [storage.md](storage.md#nested-hives)).
 
 **Parent cleanup**: When a child ticket is deleted, the parent's `children` array is automatically updated to remove the deleted ticket's ID.
 

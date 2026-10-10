@@ -22,7 +22,7 @@ from .config import (
 )
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_valid_ticket_id, normalize_hive_name
-from .paths import find_ticket_file, iter_ticket_files
+from .paths import find_ticket_file, hive_crossing_reason, iter_ticket_files
 from .reader import read_ticket
 from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -240,6 +240,12 @@ def _move_bee_core(
         if dest_bee_path.exists():
             failed.append({"id": bee_id, "reason": f"destination already exists: {dest_bee_path}"})
             continue
+        # The move carries everything below bee_dir, so it must not hold another hive. dest_bee_path lies in
+        # the destination hive and does not exist, so only bee_dir is checked.
+        reason = hive_crossing_reason(Path(config.hives[source_hive_name].path), bee_dir)
+        if reason is not None:
+            failed.append({"id": bee_id, "reason": reason})
+            continue
         try:
             shutil.move(str(bee_dir), str(dest_bee_path))
             cache.evict(bee_id)
@@ -345,6 +351,7 @@ async def _move_bee(
         - Malformed ID: bee_id fails ticket ID format validation → added to failed list
         - Non-bee ticket: bee_id does not start with 'b.' → added to failed list
         - Cross-scope move: source and destination in different scopes → added to failed list
+        - Nested hive: another hive's root lies below the bee's directory → added to failed list, nothing moved
         - Filesystem error: shutil.move fails → added to failed list with exception message
     """
     # Check for config conflicts before proceeding

@@ -22,9 +22,8 @@ from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
 from src.linter_report import LinterReport, ValidationError
 from src.models import Ticket
 from src.paths import (
-    find_enclosing_hive_root,
-    find_nested_hive_root,
     find_ticket_file,
+    hive_crossing_reason,
     iter_ticket_files_deep,
     walk_hive,
 )
@@ -1479,7 +1478,7 @@ class Linter:
         anywhere below current_dir: a hive is never moved off its path. The move
         merges into an existing expected_dir, so it is also blocked when another
         hive's root lies anywhere below expected_dir: the ticket's directory
-        would then hold that hive.
+        would then hold that hive. The checks are those of hive_crossing_reason().
 
         Args:
             ticket_id: ID of the ticket that would be moved
@@ -1490,24 +1489,7 @@ class Linter:
         Returns:
             True if the move is blocked (an error was reported), False otherwise
         """
-        hive_path = Path(self.tickets_dir)
-        reason = None
-        for path in (current_dir, expected_dir):
-            other_hive_root = find_enclosing_hive_root(hive_path, path)
-            if other_hive_root is not None:
-                reason = f"{path} is inside another hive rooted at {other_hive_root}"
-                break
-        if reason is None:
-            other_hive_root = find_nested_hive_root(current_dir)
-            if other_hive_root is not None:
-                reason = f"{current_dir} holds another hive rooted at {other_hive_root}, which the move would carry"
-        if reason is None and expected_dir.exists():
-            other_hive_root = find_nested_hive_root(expected_dir)
-            if other_hive_root is not None:
-                reason = (
-                    f"{expected_dir} already exists and holds another hive rooted at {other_hive_root}, "
-                    "which the ticket's directory would then hold"
-                )
+        reason = hive_crossing_reason(Path(self.tickets_dir), current_dir, expected_dir)
         if reason is None:
             return False
 
