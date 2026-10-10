@@ -19,7 +19,7 @@ reference_materials: null
 Comprehensive end-to-end release test for bees. Runs in Docker against a clean environment. CLI-first, then MCP server transports.
 
 **Conventions:**
-- This runs inside a disposable Docker container. bees uses `~/.bees/config.json` naturally — no `--config` or `--test-config` flags needed (except tests 94-97 which specifically test that feature).
+- This runs inside a disposable Docker container. bees uses `~/.bees/config.json` naturally — no `--config` or `--test-config` flags needed (except tests that specifically test that feature, such as the Test Config Mode section of Phase 5).
 - `$REPO` refers to the working directory (e.g., `/test-repo`)
 - When a test says "save the ID", remember the `ticket_id` from the output for use in later tests
 - Tests within a phase are sequential — later tests depend on state from earlier ones

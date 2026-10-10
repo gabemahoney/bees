@@ -15,6 +15,9 @@ SCOPE - Tests that belong here:
 - integration.sh: an error outside the assert helpers fails the running test through fail_test (ERR and
   EXIT traps), and fail_test ends in a bug filing line even when file_bug.py prints none
 - the sections each phase runs
+- test numbers: every test of integration.sh and every test titled `Test <N>:` in b.qi9 belongs to one phase, the one
+  whose `Tests in this phase:` range holds it, only Claude phases' tests carry `Test <N>:` titles, and `/ci <N>` finds
+  that phase as the /ci skill describes
 - test_runner.sh: requires a phase number, passes it on, and runs integration.sh's phases with it
 - test_runner.sh: a failing setup command ends it with a crash line naming the command (ERR trap), and the trap
   is cleared before integration.sh or Claude starts
@@ -28,6 +31,7 @@ SCOPE - Tests that DON'T belong here:
 
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +44,7 @@ INTEGRATION = REPO_ROOT / "tests" / "integration.sh"
 TEST_RUNNER = REPO_ROOT / "docker" / "test_runner.sh"
 
 cp = load_script(REPO_ROOT / "docker" / "ci_plan.py")
+TESTPLANS = cp.TESTPLANS_PATH
 
 # "# === PHASE 2: TICKET CRUD ===" heads a section of Phase 2, "# === HELPER FUNCTIONS ===" one of no phase
 _HEADER = re.compile(r"# === (?:PHASE (\d+): )?(.+?) ===")
@@ -59,6 +64,10 @@ _NOT_EQUAL = re.compile(rf"{_VAR}\s+!=\s+{_VAR}")
 _TRAP = re.compile(r"trap '?(?P<handler>\w+)(?P<args>[^']*)'? (?P<signal>[A-Z]+)")
 # set -E, alone or with other options (set -eE, set -Eeuo pipefail), or set -o errtrace
 _ERRTRACE = re.compile(r"set -[a-zA-Z]*E[a-zA-Z]*(?: \w+)?|set -o errtrace")
+# An epic's range, as /ci reads it: "Tests in this phase: 84-178", or with an en dash
+_PHASE_RANGE = re.compile(r"Tests in this phase: (\d+)[-–](\d+)")
+# A test titled "Test <N>:", as /ci finds it: grep -rlE "^title: '?Test <N>:" docker/testplans/b.qi9
+_TITLED_TEST = re.compile(r"^title: '?Test (\d+):", re.M)
 
 # The sections each phase runs, as the b.qi9 epics describe the phases. Asserted by name, not by test count:
 # a count changes with every test added, while a section moves to another phase only by a decision about the plan.
@@ -144,6 +153,56 @@ def _first_test_index(lines):
     return min(i for i, line in enumerate(lines) if line.startswith("run_test "))
 
 
+def _script_test_numbers():
+    """{phase: test numbers} of integration.sh: run_test numbers every test in order, whatever its phase, and each
+    test belongs to the phase of the phase_section above it."""
+    numbers, phase, count = {}, None, 0
+    for line in INTEGRATION.read_text().splitlines():
+        if section := re.fullmatch(r"phase_section (\d+)", line):
+            phase = int(section[1])
+        elif re.fullmatch(r"\s*run_test\s+\S+", line):
+            count += 1
+            numbers.setdefault(phase, []).append(count)
+    return numbers
+
+
+def _plan_numbers():
+    """The plan's test numbers, from the files /ci reads: {epic ID: phase}, {phase: range} from each epic's `Tests in
+    this phase:` line, and (number, epic) of each test titled `Test <N>:`, its epic the directory right below b.qi9."""
+    plan_dir = TESTPLANS / cp.PLAN_ID
+    epics = {phase["id"]: phase["phase"] for phase in cp.read_plan(TESTPLANS)}
+    ranges = {}
+    for epic, phase in epics.items():
+        found = _PHASE_RANGE.findall((plan_dir / epic / f"{epic}.md").read_text(encoding="utf-8"))
+        assert len(found) == 1, f"epic {epic} (Phase {phase}) must give one `Tests in this phase:` range: {found}"
+        ranges[phase] = range(int(found[0][0]), int(found[0][1]) + 1)
+    titled = [
+        (int(number), path.relative_to(plan_dir).parts[0])
+        for path in sorted(plan_dir.rglob("*.md"))
+        for number in _TITLED_TEST.findall(path.read_text(encoding="utf-8"))
+    ]
+    return SimpleNamespace(epics=epics, ranges=ranges, titled=titled)
+
+
+def _spans(numbers):
+    """Sorted numbers as their runs, for readable failures: [1, 2, 3, 7] -> "1-3, 7"."""
+    runs = []
+    for number in sorted(numbers):
+        if runs and number == runs[-1][1] + 1:
+            runs[-1][1] = number
+        else:
+            runs.append([number, number])
+    return ", ".join(str(first) if first == last else f"{first}-{last}" for first, last in runs)
+
+
+def _ci_phase(number, plan):
+    """The phase `/ci <number>` starts: the epic of the test titled `Test <number>:`, else the phase whose range holds
+    the number. None when that gives no single phase, as for a title outside every epic's directory."""
+    found = {plan.epics.get(epic) for titled, epic in plan.titled if titled == number}
+    found = found or {phase for phase, numbers in plan.ranges.items() if number in numbers}
+    return found.pop() if len(found) == 1 else None
+
+
 def _traps(signal, script=INTEGRATION):
     """(line index, match) of each trap ``script`` sets for ``signal``."""
     lines = script.read_text().splitlines()
@@ -207,7 +266,7 @@ def test_test_runner_runs_the_scripts_phases_with_it():
 def test_plan_phases_each_run_under_one_runner():
     """Every phase the script runs is one /ci launches, and the phases test_runner.sh starts an MCP server for
     run under Claude. Every other phase falls through to the Claude launch, so none is left without a runner."""
-    plan = {phase["phase"] for phase in cp.read_plan(cp.TESTPLANS_PATH)}
+    plan = {phase["phase"] for phase in cp.read_plan(TESTPLANS)}
     script = _script_phases()
     servers = set().union(*(phases for phases, text in _test_runner_phase_blocks() if "claude mcp add" in text))
 
@@ -311,6 +370,69 @@ def test_each_phase_runs_its_sections_of_the_plan():
 
 
 # ---------------------------------------------------------------------------
+# Test numbers: integration.sh and the plan's ranges and titles
+# ---------------------------------------------------------------------------
+
+
+def test_each_script_phase_range_is_the_tests_its_sections_run():
+    """Regression b.6s5: Phase 2 ran tests 4-77 and 174-179 for its range 4-77, Phase 5 86-173 and 186-192 for 78-149,
+    Phase 6 78-85 and 180-185 for 150-159. The script's numbers stay below the Claude phases' numbers, so adding a
+    script test renumbers no Claude test."""
+    script, script_phases = _script_test_numbers(), _script_phases()
+    plan = _plan_numbers()
+    claude_starts = [numbers.start for phase, numbers in plan.ranges.items() if phase not in script_phases]
+
+    expected = {phase: _spans(plan.ranges.get(phase, [])) for phase in script_phases}
+    assert {phase: _spans(script.get(phase, [])) for phase in script_phases} == expected
+    assert claude_starts and max(max(numbers) for numbers in script.values()) < min(claude_starts)
+
+
+def test_each_claude_phase_range_is_its_titled_tests():
+    """A Claude phase's tests are numbered only by their `Test <N>:` titles. Regression b.6s5: Phase 3 had tests
+    104-114 and 133-135 for its range 104-114, Phase 4 115-126 and 136-138 for 115-126."""
+    plan = _plan_numbers()
+    claude = sorted(set(plan.ranges) - _script_phases())
+    titled = {phase: [number for number, epic in plan.titled if plan.epics.get(epic) == phase] for phase in claude}
+
+    assert claude
+    assert {phase: _spans(numbers) for phase, numbers in titled.items()} == {p: _spans(plan.ranges[p]) for p in claude}
+
+
+def test_only_claude_phase_tests_carry_title_numbers_each_once():
+    """A script phase's numbers live only in its range, so a script test added or removed renumbers no title.
+    Regression b.6s5: `Test 150:` titled a Phase 6 test while Phase 5 ran test 150."""
+    plan = _plan_numbers()
+    script_phases = _script_phases()
+    titles = Counter(number for number, _ in plan.titled)
+
+    assert [number for number, count in titles.items() if count > 1] == [], "numbers in more than one title"
+    titled_script_tests = [(number, epic) for number, epic in plan.titled if plan.epics.get(epic) in script_phases]
+    assert titled_script_tests == [], "script-phase test bees titled `Test <N>:`"
+
+
+def test_ci_starts_the_phase_that_runs_the_test():
+    """/ci <N> starts the phase of the test titled `Test <N>:`, else the phase whose range holds N. Regression b.6s5:
+    `/ci 150` started Phase 6 for Phase 5's test 150, and `/ci 175` and `/ci 182` started no phase."""
+    plan = _plan_numbers()
+    script_phases = _script_phases()
+    # Each test number: the phases that run it. The script's phases run its tests, a Claude phase its titled tests
+    runs = {}
+    for phase, numbers in _script_test_numbers().items():
+        for number in numbers:
+            runs.setdefault(number, set()).add(phase)
+    for number, epic in plan.titled:
+        # A title outside every epic's directory is a test no phase runs: /ci finds the title, then no epic
+        phases = runs.setdefault(number, set())
+        if epic in plan.epics and plan.epics[epic] not in script_phases:
+            phases.add(plan.epics[epic])
+    started = {number: _ci_phase(number, plan) for number in sorted(runs)}
+
+    assert runs
+    wrong = {number: (phase, runs[number]) for number, phase in started.items() if {phase} != runs[number]}
+    assert wrong == {}, "test number: (phase /ci starts, phases that run the test)"
+
+
+# ---------------------------------------------------------------------------
 # integration.sh: result lines
 # ---------------------------------------------------------------------------
 
@@ -341,6 +463,18 @@ def test_a_phase_passes_only_if_one_of_its_tests_ran():
 
     assert guard < passed, "SUCCESS SIGNAL must check RUN_COUNT before the pass line"
     assert any(_EXIT_ERROR.fullmatch(line) for line in lines[guard:passed])
+
+
+def test_tests_passed_line_counts_tests_not_checks():
+    """Regression b.6s5: pass_test counted passed checks, and a test may pass several, so `Tests passed: X / Y` could
+    show more passes than the Y tests that ran. run_test counts a test that returns: every failure ends the script."""
+    body = [line.strip() for line in _function_body("run_test")]
+    call = body.index('"$fn"')
+    counted = [line for line in body[call + 1 :] if "PASS_COUNT" in line]
+    uses = [line.strip() for line in INTEGRATION.read_text().splitlines() if "PASS_COUNT" in line]
+
+    assert len(counted) == 1 and counted[0].startswith("PASS_COUNT="), "run_test must count the test after it returns"
+    assert uses == ["PASS_COUNT=0", *counted, 'echo "Tests passed: $PASS_COUNT / $RUN_COUNT"']
 
 
 def test_fail_test_ends_in_a_bug_filing_line_when_file_bug_py_prints_none():
@@ -374,9 +508,9 @@ def test_fail_test_ends_in_a_bug_filing_line_when_file_bug_py_prints_none():
     ],
 )
 def test_an_error_outside_the_checks_fails_the_running_test(signal, guard):
-    """Regression b.mqm: under set -e, a command failing outside the assert helpers (Test 173's `kill` of a server
-    that had died) ended Phase 5 with no FAIL line and no bug. The ERR trap catches a failing command, the EXIT trap
-    an error that ends the script without one (e.g. an unset variable under set -u)."""
+    """Regression b.mqm: under set -e, a command failing outside the assert helpers (test_http_port_config's `kill`
+    of a server that had died) ended Phase 5 with no FAIL line and no bug. The ERR trap catches a failing command, the
+    EXIT trap an error that ends the script without one (e.g. an unset variable under set -u)."""
     lines = INTEGRATION.read_text().splitlines()
     traps = _traps(signal)
     run_test = [line.strip() for line in _function_body("run_test")]
