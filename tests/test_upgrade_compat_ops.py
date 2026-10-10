@@ -342,16 +342,12 @@ EXPECTED_LINT = {
     "plans": set(),
     "shared_hive": set(),
 }
-RESOLVER_BUG = "b.fvn: the linter reports the built-in resolvers (bees, github, file-path) as unknown"
-# Tickets whose reference materials name a built-in resolver; their unknown_resolver reports are b.fvn
-BUILTIN_RESOLVER_ROLES = {"tree_bee", "plan_bee"}
 ROLE_OF = {ticket_id: role for role, ticket_id in ROLES.items()}
 
 
 def _lint_set(errors) -> set[tuple[str, str]]:
-    """(role, error type) of each report, without the b.fvn reports (RESOLVER_BUG)."""
-    found = {(ROLE_OF.get(e["ticket_id"], e["ticket_id"]), e["error_type"]) for e in errors}
-    return {(role, kind) for role, kind in found if not (kind == "unknown_resolver" and role in BUILTIN_RESOLVER_ROLES)}
+    """(role, error type) of each report."""
+    return {(ROLE_OF.get(e["ticket_id"], e["ticket_id"]), e["error_type"]) for e in errors}
 
 
 @pytest.mark.parametrize("hive", sorted(EXPECTED_LINT))
@@ -378,7 +374,6 @@ def test_linter_reports_without_writing(corpus, hive):
     assert corpus.diff() == (set(), set(), set())
 
 
-@pytest.mark.xfail(strict=True, reason=RESOLVER_BUG)
 def test_sanitize_accepts_builtin_resolvers(corpus, cli_runner):
     """A reference material with a built-in resolver is valid, so sanitize does not report it."""
     result = json.loads(cli_runner(["sanitize-hive", "--hive", "plans"])[0])

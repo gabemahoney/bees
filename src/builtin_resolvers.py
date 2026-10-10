@@ -9,6 +9,9 @@ import re
 import shutil
 import subprocess
 
+#: Names of the built-in resolvers. They are never stored in the resolver
+#: registry, and cannot be registered or removed by users.
+BUILTIN_RESOLVER_NAMES = frozenset({"default", "file-path", "github", "bees"})
 
 # ---------------------------------------------------------------------------
 # Resolver convention strings

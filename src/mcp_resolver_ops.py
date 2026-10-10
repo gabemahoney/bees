@@ -9,6 +9,7 @@ import logging
 import re
 from pathlib import Path
 
+from .builtin_resolvers import BUILTIN_RESOLVER_NAMES
 from .config import ResolverEntry, load_global_config, load_resolver_registry, save_resolver_registry
 
 logger = logging.getLogger(__name__)
@@ -122,8 +123,7 @@ def _set_resolver(
     Returns:
         Success or error dict.
     """
-    _RESERVED_NAMES = {"default", "file-path", "github", "bees"}
-    if name in _RESERVED_NAMES:
+    if name in BUILTIN_RESOLVER_NAMES:
         return {
             "status": "error",
             "error_type": "reserved_name",

@@ -2094,6 +2094,31 @@ Test body."""
         assert len(errors) == 0
 
 
+class TestReferenceMaterialsResolverNames:
+    """validate_reference_materials_json_serializable() accepts built-in resolvers without a registry entry (b.fvn)."""
+
+    def _run_check(self, tmp_path, resolver):
+        """Lint a bee whose one reference material names `resolver`; the resolver registry is empty."""
+        ticket = make_ticket(id=TICKET_ID_ABC, type="bee", reference_materials=[{"value": "x", "resolver": resolver}])
+        report = LinterReport()
+        Linter(str(tmp_path)).validate_reference_materials_json_serializable(ticket, report)
+        return report
+
+    @pytest.mark.parametrize("resolver", ["default", "file-path", "github", "bees"])
+    def test_builtin_resolver_not_reported_unknown(self, tmp_path, resolver):
+        """A built-in resolver is never in the registry, and is not reported as unknown."""
+        report = self._run_check(tmp_path, resolver)
+
+        assert report.get_errors(error_type="unknown_resolver") == []
+
+    def test_unregistered_resolver_reported_unknown(self, tmp_path):
+        """A name that is neither built-in nor registered still gets an unknown_resolver warning."""
+        report = self._run_check(tmp_path, "not-a-resolver")
+
+        errors = report.get_errors(error_type="unknown_resolver")
+        assert [e.ticket_id for e in errors] == [TICKET_ID_ABC]
+
+
 class TestDisallowedFieldsDetection:
     """Tests for validate_disallowed_fields() functionality."""
 

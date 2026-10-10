@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .builtin_resolvers import BUILTIN_RESOLVER_NAMES
 from .config import (
     BeesConfig,
     HiveConfig,
@@ -387,8 +388,7 @@ async def colonize_hive_core(
             # Step 4.6: Validate allowed_resolvers if provided
             if allowed_resolvers is not None:
                 registry = load_resolver_registry()
-                _builtin_resolvers = {"default", "file-path", "github", "bees"}
-                unknown = [r for r in allowed_resolvers if r not in _builtin_resolvers and r not in registry]
+                unknown = [r for r in allowed_resolvers if r not in BUILTIN_RESOLVER_NAMES and r not in registry]
                 if unknown:
                     return {
                         "status": "error",

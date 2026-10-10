@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from src import cache
+from src.builtin_resolvers import BUILTIN_RESOLVER_NAMES
 from src.config import BeesConfig, load_resolver_registry, resolve_child_tiers_for_hive, resolve_status_values_for_hive
 from src.constants import GUID_LENGTH, ID_CHARSET
 from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
@@ -651,7 +652,7 @@ class Linter:
                         message=f"reference_materials[{i}] 'resolver' must be a string",
                         severity="error",
                     )
-                elif resolver not in registry:
+                elif resolver not in BUILTIN_RESOLVER_NAMES and resolver not in registry:
                     report.add_error(
                         ticket_id=ticket.id,
                         error_type="unknown_resolver",
