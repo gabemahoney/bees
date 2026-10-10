@@ -7,11 +7,15 @@ CI runs each phase of b.qi9 in its own container. docker/test_runner.sh runs som
 tests/integration.sh and the others with Claude (/release-test). integration.sh tags each test section
 with its phase (phase_section), runs only the tests of the phase in $PHASE, and prints
 `RELEASE TEST PHASE <N> PASSED`, the line /ci waits for. These tests read both scripts as text and never
-run them: integration.sh overwrites the global bees config. Only `bash -n` (parse, run nothing) touches them.
+run them: integration.sh overwrites the global bees config. Only `bash -n` (parse, run nothing) touches them
+whole. The start test number tests run a copy of integration.sh's helper functions and of its phase_section
+and test calls with bash, each test a stub that runs no command.
 
 SCOPE - Tests that belong here:
 - integration.sh: every test section is tagged with one of its phases, the phase is checked before any
   test runs, run_test skips the tests of other phases, and the pass and fail lines name the phase
+- integration.sh: a start test number still runs the setup tests the tests from it on need, and no other
+  test below it
 - integration.sh: an error outside the assert helpers fails the running test through fail_test (ERR and
   EXIT traps), and fail_test ends in a bug filing line even when file_bug.py prints none
 - the sections each phase runs
@@ -29,6 +33,7 @@ SCOPE - Tests that DON'T belong here:
 - how test_runner.sh runs Claude and ends a Claude phase (ci_claude_stream.py) -> test_ci_claude_stream.py
 """
 
+import os
 import re
 import subprocess
 from collections import Counter
@@ -57,9 +62,6 @@ _PHASE_REF = re.compile(r"\$\{?PHASE\b")
 _EXIT_ERROR = re.compile(r"\s*exit [1-9]\d*")
 # A built-in phase (${PHASE:-1}); ${PHASE:-} only keeps `set -u` from failing
 _DEFAULT_PHASE = re.compile(r"\$\{PHASE:-[^}]")
-# "$A" != "$B", quotes and ${} braces optional: the names of the two variables
-_VAR = r'"?\$\{?(\w+)\}?"?'
-_NOT_EQUAL = re.compile(rf"{_VAR}\s+!=\s+{_VAR}")
 # trap '<handler> <args>' <signal>, or trap <handler> <signal>; `trap - <signal>` (removing one) does not match
 _TRAP = re.compile(r"trap '?(?P<handler>\w+)(?P<args>[^']*)'? (?P<signal>[A-Z]+)")
 # set -E, alone or with other options (set -eE, set -Eeuo pipefail), or set -o errtrace
@@ -68,6 +70,12 @@ _ERRTRACE = re.compile(r"set -[a-zA-Z]*E[a-zA-Z]*(?: \w+)?|set -o errtrace")
 _PHASE_RANGE = re.compile(r"Tests in this phase: (\d+)[-–](\d+)")
 # A test titled "Test <N>:", as /ci finds it: grep -rlE "^title: '?Test <N>:" docker/testplans/b.qi9
 _TITLED_TEST = re.compile(r"^title: '?Test (\d+):", re.M)
+# integration.sh's calls that run a test, and how long each holds a test numbered below START_TEST for the tests after
+# it (bug b.m4k): run_test not at all, a setup test to the end of its section or of its phase
+_HOLDS = {"run_test": None, "run_setup_test": "section", "run_phase_setup_test": "phase"}
+_RUN = f"(?:{'|'.join(_HOLDS)})"
+# pass_test's line: [PASS] Test 179: test_ref_setup
+_PASSED = re.compile(r"^\[PASS\] Test (\d+): (\w+)$", re.M)
 
 # The sections each phase runs, as the b.qi9 epics describe the phases. Asserted by name, not by test count:
 # a count changes with every test added, while a section moves to another phase only by a decision about the plan.
@@ -150,20 +158,50 @@ def _script_phases():
 
 
 def _first_test_index(lines):
-    return min(i for i, line in enumerate(lines) if line.startswith("run_test "))
+    return min(i for i, line in enumerate(lines) if re.match(rf"{_RUN}\s", line))
+
+
+def _script_tests():
+    """integration.sh's tests in order: number (run_test numbers every test, whatever its phase), function, the phase
+    and section (index) of the phase_section above it, and how long it is held below START_TEST (_HOLDS)."""
+    tests, phase, section = [], None, -1
+    for line in INTEGRATION.read_text().splitlines():
+        if m := re.fullmatch(r"phase_section (\d+)", line):
+            phase, section = int(m[1]), section + 1
+        elif m := re.fullmatch(rf"\s*({_RUN})\s+(\S+)", line):
+            test = SimpleNamespace(number=len(tests) + 1, fn=m[2], phase=phase, section=section, hold=_HOLDS[m[1]])
+            tests.append(test)
+    return tests
 
 
 def _script_test_numbers():
-    """{phase: test numbers} of integration.sh: run_test numbers every test in order, whatever its phase, and each
-    test belongs to the phase of the phase_section above it."""
-    numbers, phase, count = {}, None, 0
-    for line in INTEGRATION.read_text().splitlines():
-        if section := re.fullmatch(r"phase_section (\d+)", line):
-            phase = int(section[1])
-        elif re.fullmatch(r"\s*run_test\s+\S+", line):
-            count += 1
-            numbers.setdefault(phase, []).append(count)
+    """{phase: test numbers} of integration.sh."""
+    numbers = {}
+    for test in _script_tests():
+        numbers.setdefault(test.phase, []).append(test.number)
     return numbers
+
+
+def _replay_script():
+    """integration.sh's test selection, to run with bash: its CONFIGURATION variables, its helper functions, its
+    phase_section and test calls in order, and its SUCCESS SIGNAL. Each test is a stub that only passes: no bees
+    command, no environment guard, no trap."""
+    config = [line for line in _section_lines("CONFIGURATION") if re.match(r"[A-Z_]+=", line)]
+    helpers, inside = [], False
+    for line in _section_lines("HELPER FUNCTIONS"):
+        inside = inside or bool(re.fullmatch(r"\w+\(\) \{", line))
+        if inside or re.fullmatch(r"\w+\(\) \{.*\}", line):
+            helpers.append(line)
+        inside = inside and line != "}"
+    stubs = [f"{test.fn}() {{ pass_test {test.fn}; }}" for test in _script_tests()]
+    calls = [
+        line
+        for section in _sections()
+        if section.phase is not None
+        for _, line in section.lines
+        if re.fullmatch(rf"phase_section \d+|\s*{_RUN}\s+\S+", line)
+    ]
+    return "\n".join(["set -euo pipefail", *config, *helpers, *stubs, *calls, *_section_lines("SUCCESS SIGNAL")])
 
 
 def _plan_numbers():
@@ -302,7 +340,7 @@ def test_phase_is_checked_before_any_test_runs():
     """Regression b.aqj: the script ignored $PHASE, so every phase ran every test."""
     lines = _numbered_lines()
     selection = next((section for section in _sections() if section.name == "PHASE SELECTION"), None)
-    first_test = min(number for number, _ in _calls(lines, "run_test"))
+    first_test = min(number for number, _ in _calls(lines, _RUN))
     first_section = min((number for number, _ in _calls(lines, "phase_section")), default=first_test)
 
     assert selection, "integration.sh must select the phase in a PHASE SELECTION section"
@@ -312,29 +350,6 @@ def test_phase_is_checked_before_any_test_runs():
     assert max(exits) < first_test
     assert first_section < first_test, "a test before the first phase_section belongs to no phase"
     assert not _DEFAULT_PHASE.search(INTEGRATION.read_text())
-
-
-def test_run_test_runs_only_the_tests_of_the_phase_in_PHASE():
-    """Regression b.aqj: run_test skipped only the tests below START_TEST, whatever their phase."""
-    body = [line.strip() for line in _function_body("run_test")]
-    call = body.index('"$fn"')
-    # [ "$SECTION_PHASE" != "$PHASE" ] || [ "$TEST_NUM" -lt "$START_TEST" ], or one [[ ... || ... ]]
-    skips = [
-        (i, [operand.strip(" []") for operand in m[1].split("||")])
-        for i, line in enumerate(body[:call])
-        if (m := re.fullmatch(r"if (.+); then", line)) and "SECTION_PHASE" in line
-    ]
-
-    assert len(skips) == 1, "run_test must check the section's phase in one `if` before it runs the test"
-    [(skip, operands)] = skips
-    # Either check alone skips the test: with `&&`, every phase ran every test from START_TEST on
-    compared = [{m[1], m[2]} for operand in operands if (m := _NOT_EQUAL.fullmatch(operand))]
-    assert compared == [{"SECTION_PHASE", "PHASE"}], f"run_test must skip when $SECTION_PHASE != $PHASE: {operands}"
-    assert any("START_TEST" in operand for operand in operands), f"no START_TEST check joined by ||: {operands}"
-    assert re.fullmatch(r"return(?: 0)?", body[skip + 1]), "the skip must return before the test runs"
-    # RUN_COUNT counts only the tests that ran: the pass line's count, and no pass without one
-    assert any(line.startswith("RUN_COUNT=") for line in body[skip + 2 : call])
-    assert 'SECTION_PHASE="$1"' in [line.strip() for line in _function_body("phase_section")]
 
 
 def test_every_phase_header_is_followed_by_its_phase_section():
@@ -356,14 +371,14 @@ def test_only_setup_and_end_headers_have_no_phase():
     untagged = [section for section in _sections() if section.phase is None]
 
     assert {section.name for section in untagged} == UNTAGGED_SECTIONS
-    assert [section.name for section in untagged if _calls(section.lines, "run_test")] == []
+    assert [section.name for section in untagged if _calls(section.lines, _RUN)] == []
 
 
 def test_each_phase_runs_its_sections_of_the_plan():
     """Regression b.aqj: no section had a phase, so Phases 1, 2 and 5 each ran every section, Phase 6's too."""
     runs = {}
     for section in _sections():
-        if section.phase is not None and _calls(section.lines, "run_test"):
+        if section.phase is not None and _calls(section.lines, _RUN):
             runs.setdefault(section.phase, set()).add(section.name)
 
     assert runs == PHASE_SECTIONS
@@ -433,6 +448,93 @@ def test_ci_starts_the_phase_that_runs_the_test():
 
 
 # ---------------------------------------------------------------------------
+# integration.sh: a start test number and the setup tests the tests from it on need
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def replay(tmp_path_factory):
+    """Runs _replay_script as `PHASE=<phase> integration.sh <start>`: its result, and the (number, function) of each
+    test that ran, in order."""
+    script = tmp_path_factory.mktemp("replay") / "replay.sh"
+    script.write_text(_replay_script())
+
+    def run(phase, start):
+        env = {**os.environ, "PHASE": str(phase)}
+        result = subprocess.run(["bash", str(script), str(start)], env=env, capture_output=True, text=True, timeout=30)
+        return result, [(int(number), fn) for number, fn in _PASSED.findall(result.stdout)]
+
+    return run
+
+
+@pytest.mark.parametrize(
+    "start, setup",
+    [
+        # Bug b.m4k's starts: /ci 182, then /ci 189, 190 and 192
+        pytest.param("test_ref_multi_entry", ["test_ref_setup"], id="ref_multi_entry"),
+        pytest.param("test_p6_unset_resolver", ["test_p6_register_resolver_verify"], id="p6_unset_resolver"),
+        pytest.param("test_p6_colonize_allowed_resolvers", ["test_p6_register_resolver_verify"], id="p6_colonize"),
+        pytest.param("test_p6_reject_unset_referenced_resolver", ["test_p6_register_resolver_verify"], id="p6_reject"),
+        # The section after REFERENCE MATERIALS needs none of its setup tests
+        pytest.param("test_update_config", [], id="update_config"),
+        # BODY FILE creates its tickets in TICKET CRUD's hive, ID CHARSET AND HIERARCHICAL IDS in ERROR HANDLING's
+        pytest.param("test_body_file_update", ["test_crud_setup", "test_body_file_create"], id="body_file_update"),
+        pytest.param("test_id_3level_bidir", ["test_error_setup"], id="id_3level_bidir"),
+    ],
+)
+def test_a_start_inside_a_section_runs_the_setup_tests_it_needs_first(replay, start, setup):
+    """Regression b.m4k: `/ci 182` skipped test_ref_setup (179), and `/ci 189`, 190 and 192 skipped
+    test_p6_register_resolver_verify (187), so the tests after them ran against a hive or resolver never set up."""
+    tests = {test.fn: test for test in _script_tests()}
+    first = tests[start]
+    result, ran = replay(first.phase, first.number)
+
+    assert result.returncode == 0, result.stderr
+    assert [fn for number, fn in ran if number < first.number] == setup
+    assert ran[len(setup)] == (first.number, start), "the setup tests run before the start test"
+    # They count as tests that ran
+    assert f"Tests passed: {len(ran)} / {len(ran)}" in result.stdout
+
+
+def test_each_start_number_runs_the_setup_tests_of_its_section_first(replay):
+    """Bug b.m4k, for every section and every start number in it: first the setup tests of its section numbered below
+    it, and those its phase keeps for later sections too (run_phase_setup_test), in test order under their own
+    numbers, then every test of the phase from it on. No other test runs: a section none of whose tests run needs
+    none of its setup tests, and no test of another phase runs (regression b.aqj: run_test skipped only the tests
+    below START_TEST, whatever their phase)."""
+    tests = _script_tests()
+    unmarked = [test.fn for test in tests if test.fn.endswith("_setup") and test.hold is None]
+    assert unmarked == [], "tests named *_setup run with run_test: a start number after them skips them"
+
+    wrong = {}
+    for start in tests:
+        phase = [test for test in tests if test.phase == start.phase]
+        held = [t for t in phase if t.hold == "phase" or (t.hold and t.section == start.section)]
+        expected = [(t.number, t.fn) for t in held if t.number < start.number]
+        expected += [(t.number, t.fn) for t in phase if t.number >= start.number]
+        result, ran = replay(start.phase, start.number)
+        if result.returncode or ran != expected:
+            wrong[start.number] = (_spans(number for number, _ in ran), _spans(number for number, _ in expected))
+    assert wrong == {}, "start number: (tests that ran, tests that should run; the same: ran out of order)"
+
+
+def test_a_start_past_the_phases_last_test_runs_no_test_and_fails(replay):
+    """With START_TEST past a phase's last test no test of it ran, and the phase still passed. Bug b.m4k: the setup
+    tests still held then (test_crud_setup and test_error_setup, held to the end of their phase, and RESOLVER
+    REGISTRY's, the last section) must not run either: they run only right before a test numbered START_TEST or
+    above."""
+    assert any(test.hold == "phase" for test in _script_tests()), "no setup test is held to the end of its phase"
+
+    wrong = {}
+    for phase, numbers in _script_test_numbers().items():
+        result, ran = replay(phase, max(numbers) + 1)
+        passed = f"RELEASE TEST PHASE {phase} PASSED" in result.stdout
+        if result.returncode != 1 or ran or "[SETUP]" in result.stdout or passed:
+            wrong[phase] = (result.returncode, result.stdout[-300:])
+    assert wrong == {}, "phase: (exit status, end of its output)"
+
+
+# ---------------------------------------------------------------------------
 # integration.sh: result lines
 # ---------------------------------------------------------------------------
 
@@ -455,25 +557,17 @@ def test_result_line_names_the_phase_that_ran(block, result, exits_after):
     assert not re.search(r"RELEASE TEST PHASE \d", INTEGRATION.read_text())
 
 
-def test_a_phase_passes_only_if_one_of_its_tests_ran():
-    """With START_TEST past a phase's last test, no test ran, and the phase would still pass."""
-    lines = _section_lines("SUCCESS SIGNAL")
-    passed = next(i for i, line in enumerate(lines) if "RELEASE TEST PHASE" in line)
-    guard = next((i for i, line in enumerate(lines) if line.startswith("if ") and "RUN_COUNT" in line), passed)
-
-    assert guard < passed, "SUCCESS SIGNAL must check RUN_COUNT before the pass line"
-    assert any(_EXIT_ERROR.fullmatch(line) for line in lines[guard:passed])
-
-
 def test_tests_passed_line_counts_tests_not_checks():
     """Regression b.6s5: pass_test counted passed checks, and a test may pass several, so `Tests passed: X / Y` could
-    show more passes than the Y tests that ran. run_test counts a test that returns: every failure ends the script."""
-    body = [line.strip() for line in _function_body("run_test")]
+    show more passes than the Y tests that ran. run_numbered_test, which runs every test that runs, counts a test that
+    returns: every failure ends the script."""
+    body = [line.strip() for line in _function_body("run_numbered_test")]
     call = body.index('"$fn"')
     counted = [line for line in body[call + 1 :] if "PASS_COUNT" in line]
-    uses = [line.strip() for line in INTEGRATION.read_text().splitlines() if "PASS_COUNT" in line]
+    code = [line.strip() for line in INTEGRATION.read_text().splitlines() if not line.lstrip().startswith("#")]
+    uses = [line for line in code if "PASS_COUNT" in line]
 
-    assert len(counted) == 1 and counted[0].startswith("PASS_COUNT="), "run_test must count the test after it returns"
+    assert len(counted) == 1 and counted[0].startswith("PASS_COUNT="), "count the test after it returns"
     assert uses == ["PASS_COUNT=0", *counted, 'echo "Tests passed: $PASS_COUNT / $RUN_COUNT"']
 
 
@@ -513,8 +607,8 @@ def test_an_error_outside_the_checks_fails_the_running_test(signal, guard):
     EXIT trap an error that ends the script without one (e.g. an unset variable under set -u)."""
     lines = INTEGRATION.read_text().splitlines()
     traps = _traps(signal)
-    run_test = [line.strip() for line in _function_body("run_test")]
-    call = run_test.index('"$fn"')
+    runner = [line.strip() for line in _function_body("run_numbered_test")]
+    call = runner.index('"$fn"')
 
     assert len(traps) == 1, f"integration.sh must set one {signal} trap: setting another replaces it"
     [(at, trap)] = traps
@@ -528,8 +622,8 @@ def test_an_error_outside_the_checks_fails_the_running_test(signal, guard):
     assert any(all(re.search(term, line) for term in terms) for line in guards), guards
     # With the ERR trap still set, a failure while reporting would report again
     assert "trap - ERR" in body[:report]
-    # run_test names the test only while it runs: a failure between tests is no test's
-    assert run_test[call - 1 : call + 2] == ['CURRENT_TEST="$fn"', '"$fn"', 'CURRENT_TEST=""']
+    # run_numbered_test, which runs every test, names it only while it runs: a failure between tests is no test's
+    assert runner[call - 1 : call + 2] == ['CURRENT_TEST="$fn"', '"$fn"', 'CURRENT_TEST=""']
 
 
 def test_err_trap_fires_in_the_tests_and_reports_from_the_main_shell_only():

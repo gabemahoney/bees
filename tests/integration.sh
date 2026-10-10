@@ -4,12 +4,13 @@ set -euo pipefail
 # === CONFIGURATION ===
 REPO=/test-repo
 TEST_NUM=0
-# Function name of the test running now, set by run_test; empty between tests
+# Function name of the test running now, set by run_numbered_test; empty between tests
 CURRENT_TEST=""
 # Tests that ran, and tests that passed (not checks: a test may pass several checks)
 RUN_COUNT=0
 PASS_COUNT=0
 FAIL_COUNT=0
+# The tests numbered below it are skipped, except the setup tests the tests from it on need (see run_test)
 START_TEST="${1:-0}"
 
 # The phases of test plan b.qi9 this script runs. Each section below belongs to one of them
@@ -26,6 +27,8 @@ SCRIPT_PHASES=(1 2 5 6)
 PHASE="${PHASE:-}"
 # Phase of the section being declared, set by phase_section
 SECTION_PHASE=""
+# Setup tests held back by START_TEST, in test order, as "<section|phase> <number> <function>" (see run_test)
+HELD_SETUP_TESTS=()
 
 # Environment guard
 [ -d "$REPO" ] || { echo "Must run inside Docker at /test-repo"; exit 1; }
@@ -71,23 +74,27 @@ is_script_phase() {
     [[ "$1" =~ ^[0-9]+$ && " ${SCRIPT_PHASES[*]} " == *" $1 "* ]]
 }
 
-# Starts a section: the run_test calls after it belong to phase $1
+# Starts a section: the tests after it belong to phase $1
 phase_section() {
     if ! is_script_phase "$1"; then
         echo "ERROR: phase_section $1: not one of the phases this script runs (${SCRIPT_PHASES[*]})" >&2
         exit 2
     fi
     SECTION_PHASE="$1"
+    # Setup tests still held from the section before are not needed: none of its tests ran. Phase ones stay.
+    local held kept=()
+    for held in "${HELD_SETUP_TESTS[@]}"; do
+        if [[ "$held" == "phase "* ]]; then
+            kept+=("$held")
+        fi
+    done
+    HELD_SETUP_TESTS=("${kept[@]}")
 }
 
-# Every test gets a number, whatever its phase, so a test's number is the same in every run.
-# Only the tests of the current phase, numbered START_TEST or above, run.
-run_test() {
-    local fn="$1"
-    TEST_NUM=$((TEST_NUM + 1))
-    if [ "$SECTION_PHASE" != "$PHASE" ] || [ "$TEST_NUM" -lt "$START_TEST" ]; then
-        return
-    fi
+# Runs test function $2 as test number $1, and counts it
+run_numbered_test() {
+    local fn="$2"
+    TEST_NUM="$1"
     RUN_COUNT=$((RUN_COUNT + 1))
     CURRENT_TEST="$fn"
     "$fn"
@@ -95,6 +102,45 @@ run_test() {
     # A test that returns passed: every failure ends the script
     PASS_COUNT=$((PASS_COUNT + 1))
 }
+
+# Every test gets a number, whatever its phase, so a test's number is the same in every run.
+# Only the tests of the current phase, numbered START_TEST or above, run, after the setup tests they need.
+#
+# Setup tests: a test may need state that earlier tests of its section set up (a hive, a ticket, a
+# registered resolver, installed hooks), or set up and undo again (test_hm_rename_back). Each such
+# earlier test is a setup test: its section runs it with run_setup_test, not run_test. A test may rely
+# only on the state of the setup tests before it, never on a test run with run_test.
+# - A setup test of the current phase numbered below START_TEST is held, not skipped. Right before the
+#   first test that runs, the held setup tests run, in test order, under their own numbers.
+# - A new section drops the held setup tests of the section before it: none of its tests ran, so it
+#   needs none of them. run_phase_setup_test holds a test to the end of its phase instead, for state
+#   a later section of the phase uses too.
+# - So a setup test below START_TEST never runs without a test numbered START_TEST or above after it.
+#   It counts in RUN_COUNT and PASS_COUNT like any test that ran, and a failure in it fails the phase.
+run_test() {
+    local fn="$1"
+    # How long a setup test is held: "section" from run_setup_test, "phase" from run_phase_setup_test
+    local hold="${2:-}"
+    TEST_NUM=$((TEST_NUM + 1))
+    if [ "$SECTION_PHASE" != "$PHASE" ] || [ "$TEST_NUM" -lt "$START_TEST" ]; then
+        if [ -n "$hold" ] && [ "$SECTION_PHASE" = "$PHASE" ]; then
+            HELD_SETUP_TESTS+=("$hold $TEST_NUM $fn")
+        fi
+        return
+    fi
+    local number="$TEST_NUM" held held_number held_fn
+    for held in "${HELD_SETUP_TESTS[@]}"; do
+        read -r _ held_number held_fn <<< "$held"
+        echo "[SETUP] Test $held_number ($held_fn), held below start test $START_TEST, runs first: later tests need what it sets up"
+        run_numbered_test "$held_number" "$held_fn"
+    done
+    HELD_SETUP_TESTS=()
+    run_numbered_test "$number" "$fn"
+}
+
+run_setup_test() { run_test "$1" section; }
+
+run_phase_setup_test() { run_test "$1" phase; }
 
 check_json() {
     local json_str="$1"
@@ -384,12 +430,13 @@ test_hm_duplicate_name() {
     pass_test "Duplicate hive name rejected"
 }
 
-run_test test_hm_colonize_with_tiers
+run_setup_test test_hm_colonize_with_tiers
 run_test test_hm_list_one
-run_test test_hm_colonize_second
+run_setup_test test_hm_colonize_second
 run_test test_hm_list_both
-run_test test_hm_rename
-run_test test_hm_rename_back
+# test_hm_rename_back needs test_hm_rename, and the tests after it need Test Hive back at test_hive
+run_setup_test test_hm_rename
+run_setup_test test_hm_rename_back
 run_test test_hm_rename_no_folder
 run_test test_hm_duplicate_name
 
@@ -494,9 +541,10 @@ test_tc_restore_unset_global() {
     pass_test "Restore and unset global"
 }
 
-run_test test_tc_setup
+run_setup_test test_tc_setup
 run_test test_tc_get_types
-run_test test_tc_set_global
+# test_tc_unset_hive checks the global tiers it sets
+run_setup_test test_tc_set_global
 run_test test_tc_hive_override
 run_test test_tc_unset_hive
 run_test test_tc_restore_unset_global
@@ -856,11 +904,12 @@ test_crud_add_remove_tags() {
     pass_test "Add/remove tags"
 }
 
-run_test test_crud_setup
-run_test test_crud_create_bee1
-run_test test_crud_create_bee2
-run_test test_crud_create_task
-run_test test_crud_create_subtask
+# BODY FILE / CHUNK FILE creates its tickets in crud_hive too
+run_phase_setup_test test_crud_setup
+run_setup_test test_crud_create_bee1
+run_setup_test test_crud_create_bee2
+run_setup_test test_crud_create_task
+run_setup_test test_crud_create_subtask
 run_test test_crud_show_single
 run_test test_crud_show_bulk
 run_test test_crud_update_title
@@ -1043,12 +1092,12 @@ test_dep_clean_deps_flag_rejected() {
     pass_test "clean-dependencies rejected"
 }
 
-run_test test_dep_setup
-run_test test_dep_create_with_up_deps
+run_setup_test test_dep_setup
+run_setup_test test_dep_create_with_up_deps
 run_test test_dep_bidirectional_sync
-run_test test_dep_update
+run_setup_test test_dep_update
 run_test test_dep_delete_with_cleanup
-run_test test_dep_default_dangling
+run_setup_test test_dep_default_dangling
 run_test test_dep_bulk_delete_ordering
 run_test test_dep_clean_deps_flag_rejected
 
@@ -1183,7 +1232,7 @@ test_id_guid_prefix() {
     pass_test "GUID prefix matches short_id"
 }
 
-run_test test_id_setup
+run_setup_test test_id_setup
 run_test test_id_valid_ids
 run_test test_id_bee_length
 run_test test_id_task_length
@@ -1257,8 +1306,9 @@ f.write_text(t)
     pass_test "Linter flags invalid status"
 }
 
-run_test test_status_setup
-run_test test_status_freeform
+run_setup_test test_status_setup
+# test_status_linter_flags_invalid edits the bee it creates
+run_setup_test test_status_freeform
 run_test test_status_linter_flags_invalid
 
 # === PHASE 2: FREEFORM QUERIES ===
@@ -1443,7 +1493,7 @@ test_query_down_deps() {
     pass_test "Query down_dependencies"
 }
 
-run_test test_query_setup
+run_setup_test test_query_setup
 run_test test_query_type_bee
 run_test test_query_type_t1
 run_test test_query_by_status
@@ -1571,12 +1621,12 @@ test_nq_delete_global() {
     pass_test "Delete global query"
 }
 
-run_test test_nq_setup
-run_test test_nq_add_global
+run_setup_test test_nq_setup
+run_setup_test test_nq_add_global
 run_test test_nq_execute
 run_test test_nq_list
 run_test test_nq_conflict
-run_test test_nq_add_repo
+run_setup_test test_nq_add_repo
 run_test test_nq_execute_repo
 run_test test_nq_delete_repo
 run_test test_nq_delete_global
@@ -1675,10 +1725,10 @@ test_body_file_not_found() {
     pass_test "--body-file nonexistent"
 }
 
-run_test test_body_file_create
+run_setup_test test_body_file_create
 run_test test_body_file_mutual_exclusion
 run_test test_body_file_update
-run_test test_chunk_file_append
+run_setup_test test_chunk_file_append
 run_test test_chunk_file_mutual_exclusion
 run_test test_body_file_not_found
 
@@ -1733,7 +1783,7 @@ test_index_specific_hive() {
     pass_test "Generate index specific hive"
 }
 
-run_test test_index_setup
+run_setup_test test_index_setup
 run_test test_index_all_hives
 run_test test_index_specific_hive
 
@@ -1844,8 +1894,8 @@ test_undertaker_named_query() {
     pass_test "Archive via named query"
 }
 
-run_test test_undertaker_setup
-run_test test_undertaker_yaml_query
+run_setup_test test_undertaker_setup
+run_setup_test test_undertaker_yaml_query
 run_test test_undertaker_cemetery_guid_naming
 run_test test_undertaker_excluded_from_queries
 run_test test_undertaker_named_query
@@ -2046,13 +2096,13 @@ test_move_force_bypass() {
     pass_test "Force bypass move"
 }
 
-run_test test_move_setup
-run_test test_move_bee_between_hives
+run_setup_test test_move_setup
+run_setup_test test_move_bee_between_hives
 run_test test_move_bee_id_preserved
 run_test test_move_reject_non_bee
 run_test test_move_already_in_dest
 run_test test_move_friendly_name_dest
-run_test test_move_blocked_by_status_values
+run_setup_test test_move_blocked_by_status_values
 run_test test_move_blocked_by_tiers
 run_test test_move_force_bypass
 
@@ -2337,7 +2387,8 @@ p.write_text(json.dumps(d))
     pass_test "Auto-fix dangling parent"
 }
 
-run_test test_sanitizer_setup
+# Also the parent hive of the nested hive test_sanitizer_nested_hive_setup creates
+run_setup_test test_sanitizer_setup
 run_test test_sanitizer_clean_hive
 run_test test_sanitizer_broken_bidir_ref
 run_test test_sanitizer_disallowed_fields
@@ -2398,7 +2449,7 @@ test_sanitizer_nested_hive_no_move() {
     pass_test "Nested hive no move"
 }
 
-run_test test_sanitizer_nested_hive_setup
+run_setup_test test_sanitizer_nested_hive_setup
 run_test test_sanitizer_nested_hive_no_move
 
 # === PHASE 5: ERROR HANDLING ===
@@ -2536,7 +2587,10 @@ test_error_missing_required_flags() {
     pass_test "Missing required flags"
 }
 
-run_test test_error_setup
+# ID CHARSET AND HIERARCHICAL IDS and test_t9_cap use Error Hive too. Colonizing it also writes the
+# config file and $REPO's scope, which test_testconfig_no_disk_write, test_http_port_config and
+# GLOB-SCOPE STATUS VALUES need: no other test before them in this phase may have run
+run_phase_setup_test test_error_setup
 run_test test_error_invalid_id
 run_test test_error_missing_on_show
 run_test test_error_missing_on_update
@@ -2711,10 +2765,11 @@ test_setup_remove_idempotent() {
     pass_test "Setup --remove idempotent"
 }
 
-run_test test_setup_install_global
+run_setup_test test_setup_install_global
 run_test test_setup_install_idempotent
 run_test test_setup_install_project
-run_test test_setup_remove
+# test_setup_remove_idempotent needs the hooks test_setup_install_global installs removed
+run_setup_test test_setup_remove
 run_test test_setup_remove_idempotent
 
 # === PHASE 5: STING COMMAND ===
@@ -2748,7 +2803,7 @@ test_sting_outside_scope() {
     pass_test "Sting outside scope"
 }
 
-run_test test_sting_setup
+run_setup_test test_sting_setup
 run_test test_sting_in_scope
 run_test test_sting_outside_scope
 
@@ -2903,10 +2958,10 @@ test_sv_create_invalid_status() {
     pass_test "Create with invalid status"
 }
 
-run_test test_sv_setup
+run_setup_test test_sv_setup
 run_test test_sv_set_global
-run_test test_sv_set_repo_scope
-run_test test_sv_set_hive
+run_setup_test test_sv_set_repo_scope
+run_setup_test test_sv_set_hive
 run_test test_sv_unset_global
 run_test test_sv_error_missing_values
 run_test test_sv_error_missing_hive_name
@@ -2995,9 +3050,9 @@ test_sv_glob_cleanup() {
     pass_test "Cleanup glob hive"
 }
 
-run_test test_sv_glob_scope_setup
+run_setup_test test_sv_glob_scope_setup
 run_test test_sv_glob_get_finds_glob_hive
-run_test test_sv_glob_set_succeeds
+run_setup_test test_sv_glob_set_succeeds
 run_test test_sv_glob_verify_write
 run_test test_sv_glob_cleanup
 
@@ -3215,13 +3270,14 @@ test_clone_force_bypass() {
     assert_eq "$status" "success" "Clone --force bypass"
 }
 
-run_test test_clone_setup
+run_setup_test test_clone_setup
 run_test test_clone_flat_bee
 run_test test_clone_tree
 run_test test_clone_reject_non_bee
 run_test test_clone_not_found
-run_test test_clone_cross_hive
-run_test test_clone_incompatible_blocked
+# Creates Clone Dest, which test_clone_incompatible_blocked uses
+run_setup_test test_clone_cross_hive
+run_setup_test test_clone_incompatible_blocked
 run_test test_clone_force_bypass
 
 # === PHASE 5: FAST PARSER PIPELINE ===
@@ -3861,7 +3917,7 @@ test_hp_update_config_no_pending_migrations() {
     pass_test "update-config no pending migrations"
 }
 
-run_test test_hp_identity_written
+run_setup_test test_hp_identity_written
 run_test test_hp_colonize_no_name_uses_marker
 run_test test_hp_colonize_no_name_no_marker_fails
 run_test test_hp_colonize_corrupt_marker
@@ -4049,11 +4105,12 @@ RESOLVER
     pass_test "Ref resolver timeout"
 }
 
-run_test test_ref_setup
+run_setup_test test_ref_setup
 run_test test_ref_single_entry
 run_test test_ref_null_clear
 run_test test_ref_multi_entry
-run_test test_ref_custom_resolver
+# Creates $REPO/scripts, where test_ref_resolver_timeout writes its resolver
+run_setup_test test_ref_custom_resolver
 run_test test_ref_resolver_timeout
 
 # === PHASE 6: UPDATE CONFIG ===
@@ -4265,7 +4322,7 @@ test_p6_reject_unset_referenced_resolver() {
     pass_test "P6: Reject unset referenced resolver"
 }
 
-run_test test_p6_register_resolver_verify
+run_setup_test test_p6_register_resolver_verify
 run_test test_p6_reject_reserved_name
 run_test test_p6_unset_resolver
 run_test test_p6_colonize_allowed_resolvers
@@ -4273,7 +4330,8 @@ run_test test_p6_reject_unregistered_resolver
 run_test test_p6_reject_unset_referenced_resolver
 
 # === SUCCESS SIGNAL ===
-# A phase never passes without running a test (e.g. START_TEST past its last test)
+# A phase never passes without running a test (e.g. START_TEST past its last test). A held setup test
+# runs only right before a test numbered START_TEST or above, so it never counts here alone.
 if [ "$RUN_COUNT" -eq 0 ]; then
     echo "ERROR: no test of phase $PHASE ran: none is numbered $START_TEST or above." >&2
     exit 1
