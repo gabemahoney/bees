@@ -229,23 +229,29 @@ The closing delimiter is the first line after the opening `---` that starts with
 | `True` | `key: true` |
 | `False` | `key: false` |
 | plain string | `key: Hello World` (unquoted) |
-| YAML keyword string (`"true"`, `"null"`, `"yes"`, `"no"`, `"on"`, `"off"`) | `key: 'value'` (single-quoted) |
+| string YAML reads as another type: null, bool, int, float, timestamp (YAML 1.1, any case), merge `<<` or value `=` (`null`, `~`, `Yes`, `off`, `42`, `1.5`, `0x1F`, `1:20`, `2024-06-15`); also the keywords `null`, `true`, `false`, `yes`, `no`, `on`, `off` in any case, and anything Python `float()` accepts (`1e3`, `nan`, `inf`), which YAML 1.2 readers would take for a number | `key: 'true'` (single-quoted). A string that only starts like one stays plain: `2024-01-15 sync` (version 0.8.4 quoted it) |
 | string with `": "` | `key: 'Fix: the bug'` (single-quoted) |
-| string starting with `[`, `{`, `#`, `&`, `*`, `!`, `>`, `"`, `'`, `@`, `` ` ``, `%`, `?`, `:`, `,` | single-quoted |
+| string starting with `?`, `:`, `,`, `[`, `]`, `{`, `}`, `#`, `&`, `*`, `!`, `\|`, `>`, `'`, `"`, `@`, `` ` ``, `%` | single-quoted |
+| string `-` alone or starting with `- ` | `key: '- x'` (single-quoted). `-x` stays plain |
 | string ending with `:` | single-quoted |
 | string containing ` #` | single-quoted |
 | string with leading/trailing whitespace | single-quoted |
-| string that parses as float | single-quoted |
-| string matching ISO 8601 timestamp prefix | single-quoted |
+| one-line string containing a tab | single-quoted, tab kept raw |
 | empty string | `key: ''` |
+| `'` inside a single-quoted string | doubled: `key: 'it''s: here'` |
 | datetime | `key: '2024-06-15T10:30:00'` (single-quoted ISO) |
 | empty list | **OMITTED entirely** from frontmatter |
-| non-empty list | block style: `key:\n- item1\n- item2` |
+| non-empty list | block style: `key:\n- item1\n- item2`; each item quoted by the string rules above |
 | multi-line string (no trailing newline) | literal block `\|-` |
-| multi-line string (with trailing newline) | literal block `\|` |
+| multi-line string (exactly one trailing newline) | literal block `\|` |
+| multi-line string (more than one trailing newline, or only newlines) | literal block `\|+` |
+| multi-line string whose first non-empty line starts with a space | literal block with indentation indicator `2`: `\|2-`, `\|2` or `\|2+` |
 | string with a line break other than `\n` (`\r`, NEL U+0085, LS U+2028, PS U+2029) | Falls back to standard YAML serialization; the string is double-quoted with the break escaped: `key: "a\r---b"` |
+| string with a character YAML cannot hold raw: a control character other than tab and `\n`, a byte order mark, a non-character such as U+FFFF, a lone surrogate | Falls back to standard YAML serialization; the string is double-quoted with the character escaped: `key: "a\ab"` |
 | multi-line list item | Falls back to standard YAML serialization (a literal block under `- `) |
 | nested dict | Falls back to standard YAML serialization |
+
+Every string value reads back exactly as it was written. The writer uses the first style that does: plain, then single-quoted, then (for a value holding `\n`) a literal block. A value no style can hold sends the whole frontmatter to standard YAML serialization.
 
 ### 5.3 Atomic Writes
 
@@ -536,6 +542,7 @@ Returns:
 - Invalid ID format → goes to `errors` with `error_type: invalid_ticket_id`
 - Valid ID but no ticket → goes to `not_found`
 - Found ticket → fully populated in `tickets` array
+- Found ticket whose file cannot be read or parsed (bad YAML, no `schema_version`, no closing `---`) → goes to `errors` as `{"id", "reason": "Failed to read ticket <id>: ..."}` and is left out of `tickets`; the call still succeeds and the other IDs are reported as usual
 - Reference materials are resolved per-entry using named resolvers (each entry augmented with a `resolved` key)
 
 ### 8.3 Update Ticket

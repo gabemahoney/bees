@@ -9,6 +9,8 @@ import pytest
 import yaml
 
 from src.migrations.upgrade_v2_to_v3 import upgrade
+from src.parser import parse_frontmatter
+from src.writer import write_ticket_file
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +273,80 @@ def test_already_migrated_ticket_skipped(tmp_path):
     _write(md, content)
     upgrade(_hive_config(hive_dir))
     assert md.read_text() == content
+
+
+@pytest.mark.parametrize("egg,body", [
+    pytest.param("v", "\n\nafter two blank lines", id="body_leading_blank_lines"),
+    pytest.param("v", "\n", id="body_only_a_newline"),
+    # The writer keep-chomps (|+) a value with two trailing newlines; written last, they are kept
+    pytest.param("a\n\n", "", id="last_key_trailing_newlines"),
+])
+def test_migrated_ticket_reads_back_its_body_and_values_exactly(tmp_path, egg, body):
+    """Migrating a writer-written ticket keeps its body (leading blank lines too) and values exactly (b.gg4)."""
+    md = tmp_path / "h" / "b.abc" / "b.abc.md"
+    frontmatter = {"id": "b.abc", "type": "bee", "title": "T", "schema_version": "0.1", "egg": egg}
+    write_ticket_file("b.abc", "bee", frontmatter, body, file_path=md)
+
+    upgrade(_hive_config(tmp_path / "h"))
+
+    expected = {**frontmatter, "reference_materials": [{"value": egg}]}
+    del expected["egg"]
+    assert parse_frontmatter(md) == (expected, body)
+
+
+@pytest.mark.parametrize("egg", [
+    pytest.param("a\x85b", id="nel"),
+    pytest.param("a\nb\x85c", id="nel_in_multiline"),
+    pytest.param("a\u2028b", id="line_separator"),
+    pytest.param("a\rb", id="carriage_return"),
+])
+def test_migration_keeps_line_break_characters_in_values(tmp_path, egg):
+    """A value with NEL, LS or CR survives migration exactly: it is written double-quoted, not raw (b.gg4)."""
+    md = tmp_path / "h" / "b.abc" / "b.abc.md"
+    frontmatter = {"id": "b.abc", "type": "bee", "title": "T", "schema_version": "0.1", "egg": egg}
+    write_ticket_file("b.abc", "bee", frontmatter, "Body", file_path=md)
+
+    upgrade(_hive_config(tmp_path / "h"))
+
+    assert parse_frontmatter(md)[0]["reference_materials"] == [{"value": egg}]
+
+
+@pytest.mark.parametrize("after_closing_delimiter,expected_body", [
+    # The layouts of test_reader.py's test_body_layouts_not_written_by_writer
+    pytest.param("\nbody\n", "body", id="no_blank_separator"),
+    pytest.param("\n\nbody\n", "body", id="blank_separator"),
+    pytest.param("\n\nbody", "body", id="no_final_newline"),
+    pytest.param("  \n\nbody\n", "body", id="spaces_after_delimiter"),
+    pytest.param("body\nmore\n", "body\nmore", id="text_on_delimiter_line"),
+    pytest.param("", "", id="frontmatter_only_no_newline"),
+    pytest.param("\n", "", id="frontmatter_only"),
+    pytest.param("\n\n", "", id="frontmatter_only_blank_line"),
+])
+def test_migration_reads_hand_written_body_layouts_like_the_parser(tmp_path, after_closing_delimiter, expected_body):
+    """A hand-written layout migrates to the body parse_frontmatter reads from the original (b.gg4)."""
+    md = tmp_path / "h" / "b.xx" / "b.xx.md"
+    _write(md, f"---\nid: b.xx\ntype: bee\ntitle: T\negg: v\n---{after_closing_delimiter}")
+
+    upgrade(_hive_config(tmp_path / "h"))
+
+    frontmatter, body = parse_frontmatter(md)
+    assert frontmatter["reference_materials"] == [{"value": "v"}]
+    assert body == expected_body
+
+
+@pytest.mark.parametrize("tail", [
+    pytest.param("title: x\t\n", id="tab_after_last_line"),
+    pytest.param("title: x\n\t\n", id="tab_only_line_before_closing"),
+])
+def test_migration_reads_tab_hand_edited_frontmatter(tmp_path, tail):
+    """A tab ending the last frontmatter line, or alone on a line before the closing ---, still migrates (b.gg4)."""
+    md = tmp_path / "h" / "b.xx" / "b.xx.md"
+    _write(md, f"---\nid: b.xx\ntype: bee\negg: v\n{tail}---\nBody.\n")
+
+    upgrade(_hive_config(tmp_path / "h"))
+
+    frontmatter, body = parse_frontmatter(md)
+    assert (frontmatter["title"], frontmatter["reference_materials"], body) == ("x", [{"value": "v"}], "Body.")
 
 
 def test_egg_and_reference_materials_both_present(tmp_path):

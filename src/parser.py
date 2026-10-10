@@ -71,7 +71,9 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
     if closing_start == -1:
         raise ParseError(f"File {path} has invalid frontmatter format. Expected format: ---\\n[YAML]\\n---\\n[body]")
 
-    yaml_content = content[len("---") : closing_start].strip()
+    # Keep the newline that ends the last frontmatter line and any empty lines before the
+    # closing delimiter: they belong to a keep-chomped (|+) block scalar written last
+    yaml_content = content[len("---") : closing_start + 1].lstrip()
     # The rest of the closing delimiter line, then the body section
     after_delimiter = content[closing_start + len("\n---") :]
 
@@ -90,7 +92,12 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
 
     # Parse YAML
     try:
-        frontmatter = yaml.safe_load(yaml_content)
+        try:
+            frontmatter = yaml.safe_load(yaml_content)
+        except yaml.YAMLError:
+            # A hand-edited file may end its last line, or an empty line, with a tab that
+            # YAML rejects: retry once with the whitespace stripped, as older versions read it
+            frontmatter = yaml.safe_load(content[len("---") : closing_start].strip())
     except yaml.YAMLError as e:
         raise ParseError(f"Failed to parse YAML in {path}: {e}") from e
 

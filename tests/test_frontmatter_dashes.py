@@ -8,12 +8,21 @@ over the CLI and the MCP tool functions (``src/mcp_server.py``): create and upda
 returns it with the ticket's real guid and its body unchanged, a later update of another field
 keeps it, and a freeform query still returns the ticket.
 
+The same end-to-end check covers b.gg4's cases: title, status and tag values the writer once wrote
+plain or as a bad block scalar (a lone dash, dash and space, a first line starting with a space,
+trailing newlines, a control character, a tab before ``#`` or after ``:``, ``<<``, ``1:20``),
+which were unreadable or read back changed.
+
 Covered elsewhere: the writer-and-parser round trip of every ``DASH_VALUES`` value in title, tags
 and reference materials (``test_value_with_dashes_round_trips_through_writer``; status takes
 title's path) and the ParseError for a file whose only later ``---`` is inside a value
-(``test_parse_errors``) in test_reader.py; that the writer's yaml.dump fallback never starts a
-frontmatter line with ``---`` in test_writer.py (``test_no_frontmatter_line_starts_with_dashes``);
-ci_plan.py's frontmatter reader in test_ci_skill.py.
+(``test_parse_errors``) in test_reader.py; in test_writer.py, that the writer's yaml.dump fallback
+never starts a frontmatter line with ``---`` (``test_no_frontmatter_line_starts_with_dashes``) and,
+for both writer paths, that every ``QUOTING_VALUES`` and ``DASH_VALUES`` value and seeded random
+strings read back exactly as a middle key, the last key, a list item and the last item of the last
+key's list, with no line starting with ``---`` (``test_generated_strings_round_trip_through_parser``);
+ci_plan.py's frontmatter reader in test_ci_skill.py; show-ticket on a malformed file in
+test_corruption_handling.py.
 """
 
 import json
@@ -24,7 +33,7 @@ import pytest
 from src.mcp_server import create_ticket, execute_freeform_query, show_ticket, update_ticket
 from src.paths import compute_ticket_path
 from tests.helpers import cli_success, mcp_success
-from tests.test_constants import DASH_VALUES, HIVE_BACKEND
+from tests.test_constants import DASH_VALUES, HIVE_BACKEND, QUOTING_VALUES
 
 _HIVE = HIVE_BACKEND  # the hive conftest's hive_env registers
 _BODY = "Body\n---\nend"
@@ -33,6 +42,12 @@ _FIELDS = ["title", "status", "tags", "reference_materials"]
 _SHOWN_AS = {"status": "ticket_status"}
 # One value of each kind; test_reader.py round-trips all of DASH_VALUES through writer and parser
 _E2E_VALUES = ["dashes_inside", "only_dashes", "line_of_dashes", "single_quoted", "cr_then_dashes"]
+# (field, QUOTING_VALUES key) pairs; test_writer.py round-trips all of QUOTING_VALUES through writer and parser
+_QUOTING_E2E = [
+    ("title", "lone_dash"), ("title", "dash_space"), ("status", "dash_space"), ("tags", "dash_space"),
+    ("title", "space_first_line"), ("title", "trailing_newlines"), ("title", "bell"), ("title", "colon_tab"),
+    ("title", "tab_hash"), ("tags", "tab_hash"), ("status", "merge_key"), ("tags", "sexagesimal"),
+]
 
 
 def _flags(fields):
@@ -78,12 +93,15 @@ def _query_bees(via, cli_runner):
     return cli_success(cli_runner, "execute-freeform-query", f"--query-yaml={query}")["ticket_ids"]
 
 
-@pytest.mark.parametrize("value", [DASH_VALUES[key] for key in _E2E_VALUES], ids=_E2E_VALUES)
-@pytest.mark.parametrize("field", _FIELDS)
+@pytest.mark.parametrize("field,value", [
+    *[pytest.param(field, DASH_VALUES[key], id=f"{field}-{key}") for key in _E2E_VALUES for field in _FIELDS],
+    # b.gg4: the cases of the bug report (each unreadable, or read back changed, before the fix)
+    *[pytest.param(field, QUOTING_VALUES[key], id=f"{field}-{key}") for field, key in _QUOTING_E2E],
+])
 @pytest.mark.parametrize("op", ["create", "update"])
 @pytest.mark.parametrize("via", ["cli", "mcp"])
-def test_value_with_dashes_survives_show_update_and_query(hive_env, cli_runner, via, op, field, value):
-    """A value holding --- reads back with the real guid and body, survives another update, and stays queryable."""
+def test_value_survives_show_update_and_query(hive_env, cli_runner, via, op, field, value):
+    """A value holding --- or YAML syntax shows with its real guid and body, survives another update, is queryable."""
     _, hive_dir, _ = hive_env
     arg = {"tags": [value], "reference_materials": [{"value": value}]}.get(field, value)
     ticket_id = _create(via, cli_runner, **({field: arg} if op == "create" else {}))

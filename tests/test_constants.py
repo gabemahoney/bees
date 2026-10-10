@@ -299,6 +299,43 @@ DASH_VALUES = {
     "ps_then_dashes": "a\N{PARAGRAPH SEPARATOR}---b",
 }
 
+# ============================================================================
+# Frontmatter values YAML treats specially (b.gg4): each must read back exactly
+# ============================================================================
+# {pytest id: value}. Parametrize with list(QUOTING_VALUES.values()), ids=list(QUOTING_VALUES)
+QUOTING_VALUES = {
+    # Written plain or as a bad block scalar before b.gg4: unreadable or read back changed
+    "lone_dash": "-",
+    "dash_space": "- x",
+    "dash_tab": "-\tx",
+    "space_first_line": " a\nb",
+    "blank_then_space_line": "\n a",
+    "trailing_newlines": "a\n\n\n",
+    "only_a_newline": "\n",
+    "only_newlines": "\n\n",
+    "spaces_only_line": "a\n  \n",  # as the last key, the parser stripped its trailing spaces
+    "bell": "a\x07b",
+    "colon_tab": "a:\tb",
+    "tab_hash": "a\t#b",
+    "equals": "=",
+    "merge_key": "<<",
+    "hex": "0x1F",
+    "sexagesimal": "1:20",
+    "c1_control": "a\x9fb",
+    "noncharacter": "a\uffffb",
+    "lone_surrogate": "a\ud800b",
+    # Readable before b.gg4 too: must stay so
+    "dash_text": "-x",
+    "tab_first_line": "\ta\nb",
+    "question_space": "? x",
+    "byte_order_mark": "\ufeffa",
+    "nel": "a\x85b",
+    "document_end": "...",
+    "directive": "%x",
+    "date_then_text": "2024-01-15 sync",
+    "tilde": "~",
+}
+
 # GitHub resolver test constants
 GITHUB_ISSUE_URL = "https://github.com/cli/cli/issues/1"           # Standard github.com issue URL
 GITHUB_ENTERPRISE_URL = "https://github.example.com/org/repo/issues/42"  # GitHub Enterprise issue URL

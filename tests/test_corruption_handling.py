@@ -1,7 +1,9 @@
 """Tests for hive behavior when tickets are corrupt.
 
 Verifies that operations succeed even when a hive contains corrupt tickets,
-that _sanitize_hive still works, and that healthy hives are unaffected.
+that _sanitize_hive still works, and that healthy hives are unaffected. A ticket file that
+cannot be read (bad YAML, no schema_version, no closing delimiter) is an `errors` entry of a
+successful show-ticket over the CLI and MCP, never a traceback.
 """
 
 import pytest
@@ -13,8 +15,9 @@ import src.reader
 from src.mcp_hive_ops import _list_hives, _sanitize_hive
 from src.mcp_index_ops import _generate_index
 from src.mcp_move_bee import _move_bee
+from src.mcp_server import show_ticket
 from src.mcp_ticket_ops import _create_ticket, _delete_ticket, _get_types, _show_ticket, _update_ticket
-from tests.helpers import backdate, write_ticket_file
+from tests.helpers import backdate, cli_success, mcp_success, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     HIVE_DESTINATION,
@@ -22,6 +25,7 @@ from tests.test_constants import (
     TICKET_ID_CORRUPT_BEE,
     TICKET_ID_CORRUPT_TASK,
     TICKET_ID_MOVE_BEE_1,
+    TICKET_ID_NONEXISTENT,
     TICKET_ID_TEST_BEE,
     TITLE_TEST_BEE,
 )
@@ -159,6 +163,42 @@ async def test_move_bee_succeeds_when_only_source_hive_corrupt(isolated_bees_env
     assert TICKET_ID_MOVE_BEE_1 in result["moved"]
     assert not (source_dir / TICKET_ID_MOVE_BEE_1).exists()
     assert (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
+
+# ---------------------------------------------------------------------------
+# show-ticket on a malformed ticket file (b.gg4)
+# ---------------------------------------------------------------------------
+
+# How each malformed file differs from the one write_ticket_file writes
+_MALFORMED = {
+    "yaml_error": ("title: Test Ticket\n", "title: - x\n"),
+    "no_schema_version": ("schema_version: '0.1'\n", ""),
+    "no_closing_delimiter": ("\n---\n", "\n"),
+}
+
+
+@pytest.mark.parametrize("damage", list(_MALFORMED.values()), ids=list(_MALFORMED))
+@pytest.mark.parametrize("bulk", [False, True], ids=["alone", "with_good_and_missing"])
+@pytest.mark.parametrize("via", ["cli", "mcp"])
+def test_show_ticket_reports_malformed_file_in_errors(hive_env, cli_runner, via, bulk, damage):
+    """A malformed ticket file is an errors entry in a success result, not a traceback; other IDs still report."""
+    _, hive_dir, _ = hive_env
+    bad_path = write_ticket_file(hive_dir, TICKET_ID_CORRUPT_BEE)
+    text = bad_path.read_text()
+    assert damage[0] in text
+    bad_path.write_text(text.replace(*damage))
+    write_ticket_file(hive_dir, TICKET_ID_TEST_BEE)
+    ids = [TICKET_ID_CORRUPT_BEE, TICKET_ID_TEST_BEE, TICKET_ID_NONEXISTENT] if bulk else [TICKET_ID_CORRUPT_BEE]
+
+    if via == "mcp":
+        result = mcp_success(show_ticket(ticket_ids=ids))
+    else:
+        result = cli_success(cli_runner, "show-ticket", "--ids", *ids)
+
+    assert [ticket["ticket_id"] for ticket in result["tickets"]] == ([TICKET_ID_TEST_BEE] if bulk else [])
+    assert result["not_found"] == ([TICKET_ID_NONEXISTENT] if bulk else [])
+    assert [error["id"] for error in result["errors"]] == [TICKET_ID_CORRUPT_BEE]
+    assert TICKET_ID_CORRUPT_BEE in result["errors"][0]["reason"]
+
 
 # ---------------------------------------------------------------------------
 # Exempt handler and cache tests (t3.SPjpEu)

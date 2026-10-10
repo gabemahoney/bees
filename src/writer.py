@@ -43,43 +43,103 @@ def str_representer(dumper, data):
 # Register the custom string representer
 BlockScalarDumper.add_representer(str, str_representer)
 
-# Characters that require quoting when they appear at the start of a YAML plain scalar.
-# Excludes '-' because yaml.SafeDumper allows plain '-test' style strings.
+# The fast serializer writes a string in the first of these styles that reads back as
+# exactly that string, and leaves the rest to the yaml.dump fallback:
+# - plain, when _is_plain_safe proves it: only printable characters with no tab, no YAML
+#   indicator where YAML would act on it, and yaml.safe_load resolves it to a string;
+# - single-quoted, when it is one line of printable characters (tabs included);
+# - a literal block scalar (|), when it holds "\n" and otherwise only printable characters;
+# - anything else (control characters, a byte order mark, line breaks other than "\n",
+#   a multi-line list item) raises ValueError, and yaml.dump double-quotes it with escapes.
+
+# YAML's printable characters (PyYAML's reader rejects the others) minus tab, the line
+# breaks ("\n", NEL, LS, PS) and the byte order mark, as regex character-class ranges.
+_PRINTABLE_RANGES = "\x20-\x7e\xa0-\u2027\u202a-\ud7ff\ue000-\ufefe\uff00-\ufffd\U00010000-\U0010ffff"
+_PLAIN_CHARS = re.compile(f"[{_PRINTABLE_RANGES}]+")
+# PyYAML ends a plain scalar at a tab, but keeps it inside quotes and block scalars
+_QUOTABLE_CHARS = re.compile(f"[\t{_PRINTABLE_RANGES}]*")
+_BLOCK_CHARS = re.compile(f"[\t\n{_PRINTABLE_RANGES}]*")
+
+# Indicators that YAML acts on at the start of a plain scalar, whatever follows them.
+# '-' is not here: it starts a block sequence only when a space or nothing follows it,
+# so "-test" stays plain (see _is_plain_safe).
 _LEADING_SPECIAL = frozenset('?:,[]{}#&*!|>\'"@`%')
 
-# YAML 1.1 special keyword values (case-insensitive) that would be misinterpreted.
-_YAML_KEYWORDS = frozenset([
-    'null', '~', 'true', 'false', 'yes', 'no', 'on', 'off',
-])
+# YAML 1.1 keywords (compared lower-case) that older versions always quoted; see _is_plain_safe
+_YAML_KEYWORDS = frozenset(["null", "~", "true", "false", "yes", "no", "on", "off"])
 
-# Matches ISO 8601 date/datetime prefixes that YAML would parse as timestamps.
-_TIMESTAMP_RE = re.compile(r'^\d{4}-\d{1,2}-\d{1,2}(?:[T t]|$)')
+# yaml.safe_load resolves plain scalars with this resolver (SafeLoader inherits it)
+_RESOLVER = yaml.resolver.Resolver()
+_STR_TAG = "tag:yaml.org,2002:str"
 
 
-def _needs_quoting(s: str) -> bool:
-    """Return True if YAML plain scalar s requires single-quote quoting."""
-    if not s:
-        return True
+def _is_plain_safe(s: str) -> bool:
+    """Return True if s, written plain as a mapping value or block sequence item, reads back as s."""
+    if not _PLAIN_CHARS.fullmatch(s):
+        return False
+    if s[0] in _LEADING_SPECIAL or s != s.strip():
+        return False
+    # "- x" or a lone "-" starts a block sequence
+    if s[0] == "-" and s[1:2] in ("", " "):
+        return False
+    # ": " (or ":" at the end) starts a mapping value, " #" a comment
+    if ": " in s or s.endswith(":") or " #" in s:
+        return False
+    # Not null, bool, int, float, timestamp, merge ("<<") or value ("=")
+    if _RESOLVER.resolve(yaml.ScalarNode, s, (True, False)) != _STR_TAG:
+        return False
+    # Also quote what looks like a keyword or number to a reader that is not PyYAML (YAML
+    # 1.2 reads "1e3" as a float) and to keep the quotes older versions wrote
     if s.lower() in _YAML_KEYWORDS:
-        return True
-    if s[0] in _LEADING_SPECIAL:
-        return True
-    if ': ' in s or s.endswith(':'):
-        return True
-    if ' #' in s:
-        return True
-    if s != s.strip():
-        return True
-    # Looks like a number (int or float including scientific notation)
+        return False
     try:
         float(s)
-        return True
     except ValueError:
-        pass
-    # Looks like a YAML timestamp
-    if _TIMESTAMP_RE.match(s):
         return True
     return False
+
+
+def _format_scalar(s: str) -> str:
+    """
+    Return single-line string s as a YAML scalar: plain if that is safe, else single-quoted.
+
+    Raises:
+        ValueError: If s holds a line break or a character a single-quoted scalar cannot
+            (a control character, a byte order mark), so the caller falls back to yaml.dump
+    """
+    if _is_plain_safe(s):
+        return s
+    if not _QUOTABLE_CHARS.fullmatch(s):
+        raise ValueError("String with line breaks or non-printable characters not supported by fast serializer")
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _append_block_scalar(key: str, value: str, parts: list[str]) -> None:
+    """
+    Append multi-line string value as a literal block scalar (|) that reads back exactly.
+
+    Raises:
+        ValueError: If value holds a character a block scalar cannot (see _format_scalar)
+    """
+    if not _BLOCK_CHARS.fullmatch(value):
+        raise ValueError(f"Non-printable characters not supported by fast serializer: key={key!r}")
+    # Chomping: strip (-) with no final "\n", clip with exactly one, keep (+) with more
+    # than one or when the value is only newlines (clip would read those back as "")
+    if value.endswith("\n"):
+        text = value[:-1]
+        chomp = "+" if text == "" or text.endswith("\n") else ""
+    else:
+        text = value
+        chomp = "-"
+    lines = text.split("\n")
+    # YAML takes a block's indentation from its first non-empty line, so a first line that
+    # starts with a space needs the indentation given explicitly
+    first_line = next((line for line in lines if line), "")
+    indent = "2" if first_line.startswith(" ") else ""
+    parts.append(f"{key}: |{indent}{chomp}\n")
+    for line in lines:
+        # Empty lines are written bare (no trailing whitespace); others are indented
+        parts.append(f"  {line}\n" if line else "\n")
 
 
 def _serialize_list_item(item: Any, parts: list[str]) -> None:
@@ -91,13 +151,10 @@ def _serialize_list_item(item: Any, parts: list[str]) -> None:
     elif isinstance(item, (int, float)):
         parts.append(f"- {item}\n")
     elif isinstance(item, str):
-        if "\n" in item or _OTHER_LINE_BREAKS.search(item):
+        if "\n" in item:
             # Written raw, a later line of the item would start at column 0
             raise ValueError("Multi-line list items not supported by fast serializer")
-        if _needs_quoting(item):
-            parts.append(f"- '{item.replace(chr(39), chr(39)*2)}'\n")
-        else:
-            parts.append(f"- {item}\n")
+        parts.append(f"- {_format_scalar(item)}\n")
     elif isinstance(item, dict):
         raise ValueError("Dict items in lists not supported by fast serializer")
     else:
@@ -112,11 +169,17 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
     Handles: scalars, null, booleans, lists (block style), datetime (quoted ISO),
     and multi-line strings (literal block |).
 
+    Every string it writes reads back exactly through yaml.safe_load: plain only when
+    that is provably safe, else single-quoted, or for multi-line strings a literal
+    block with the chomping and indentation indicators the value needs (see the
+    style list above _PRINTABLE_RANGES).
+
     Raises ValueError for unsupported types (nested dicts, complex list items) and
     for strings it cannot write safely (multi-line list items, line breaks other
-    than "\\n") so callers can fall back to yaml.dump. No line it writes between
-    the delimiters starts with "---": keys come first, list items start with "- "
-    and the lines of a multi-line value are indented.
+    than "\\n", control characters, a byte order mark) so callers can fall back to
+    yaml.dump. No line it writes between the delimiters starts with "---": keys
+    come first, list items start with "- " and the lines of a multi-line value are
+    indented.
 
     Args:
         data: Raw ticket metadata dictionary (may contain datetime objects)
@@ -140,22 +203,10 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
         elif isinstance(value, float):
             parts.append(f"{key}: {value}\n")
         elif isinstance(value, str):
-            if _OTHER_LINE_BREAKS.search(value):
-                raise ValueError(f"Line break other than \\n not supported by fast serializer: key={key!r}")
             if "\n" in value:
-                has_trailing = value.endswith("\n")
-                chomp = "" if has_trailing else "-"
-                lines = value.rstrip("\n").split("\n")
-                parts.append(f"{key}: |{chomp}\n")
-                for line in lines:
-                    if line:
-                        parts.append(f"  {line}\n")
-                    else:
-                        parts.append("\n")
-            elif _needs_quoting(value):
-                parts.append(f"{key}: '{value.replace(chr(39), chr(39)*2)}'\n")
+                _append_block_scalar(key, value, parts)
             else:
-                parts.append(f"{key}: {value}\n")
+                parts.append(f"{key}: {_format_scalar(value)}\n")
         elif isinstance(value, list):
             if not value:
                 # Skip empty lists to match existing serialize_frontmatter behavior

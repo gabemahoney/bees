@@ -53,6 +53,7 @@ from .mcp_relationships import (
     _remove_from_up_dependencies,
     _update_bidirectional_relationships,
 )
+from .parser import ParseError
 from .paths import (
     _build_queen_hive_collection,
     build_ticket_path_map,
@@ -1575,8 +1576,9 @@ async def _show_ticket(
                 "errors": [{"id": "b.xxx", "reason": "reference resolver timed out: ..."}]
             }
 
-        `not_found` contains IDs of tickets that could not be located or read.
-        `errors` contains IDs of tickets that were found but failed during reference resolution.
+        `not_found` contains IDs of tickets that could not be located.
+        `errors` contains tickets that were found but whose file could not be read or
+        parsed (left out of `tickets`), or that failed during reference resolution.
 
     Example:
         >>> _show_ticket(['b.Amx', 'b.Xyz'])
@@ -1662,6 +1664,11 @@ async def _show_ticket(
         except (ValueError, FileNotFoundError):
             logger.warning(f"Ticket not found or unreadable, adding to not_found: {ticket_id}")
             not_found.append(ticket_id)
+        except (ParseError, ValidationError, OSError) as e:
+            # The file exists but is not a readable ticket (bad YAML, missing schema_version...)
+            error_msg = f"Failed to read ticket {ticket_id}: {e}"
+            logger.error(error_msg)
+            errors.append({"id": ticket_id, "reason": error_msg})
 
     return {"status": "success", "tickets": tickets, "not_found": not_found, "errors": errors}
 

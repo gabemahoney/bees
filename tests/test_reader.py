@@ -167,6 +167,24 @@ Body text.""")
 
         assert parse_frontmatter(path) == (frontmatter, body)
 
+    @pytest.mark.parametrize("last_lines", [
+        pytest.param("title: x\t\n", id="tab_after_last_line"),
+        pytest.param("title: x\n\t\n", id="tab_only_line_before_closing"),
+    ])
+    def test_tab_in_hand_edited_frontmatter_end_still_parses(self, tmp_path, last_lines):
+        """A tab ending the last frontmatter line, or alone on a line before the closing ---, still parses (b.gg4)."""
+        path = tmp_path / "test.md"
+        path.write_text(f"---\nid: {TICKET_ID_ABC}\n{last_lines}---\nBody.\n")
+
+        assert parse_frontmatter(path) == ({"id": TICKET_ID_ABC, "title": "x"}, "Body.")
+
+    def test_keep_chomped_last_value_keeps_trailing_newlines(self, tmp_path):
+        """A |+ block scalar as the last key keeps its trailing newlines, since the closing line's newline is not stripped."""
+        path = tmp_path / "test.md"
+        path.write_text(f"---\nid: {TICKET_ID_ABC}\ntitle: |+\n  a\n\n\n---\nBody.\n")
+
+        assert parse_frontmatter(path) == ({"id": TICKET_ID_ABC, "title": "a\n\n\n"}, "Body.")
+
     @pytest.mark.parametrize(
         "after_closing_delimiter,expected_body",
         [

@@ -16,17 +16,30 @@ SCOPE - Tests that DON'T belong here:
 - Ticket creation and factory logic -> test_writer_factory.py
 """
 
+import random
 import re
 from datetime import datetime
 
 import pytest
 import yaml
 
+from src.parser import ParseError, parse_frontmatter
 from src.writer import fast_serialize_frontmatter, serialize_frontmatter
-from tests.test_constants import DASH_VALUES
+from tests.test_constants import DASH_VALUES, QUOTING_VALUES
 
 # Every line break a ticket file reader sees: universal newlines ("\r\n", "\r", "\n") and YAML (also NEL, LS, PS)
 _LINE_BREAK = re.compile("\r\n|[\n\r\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+
+# YAML indicators and resolver characters, then tab, line breaks, control and other special characters
+_FUZZ_ALPHABET = [*"ab -?:#%.'\"!&*|>{[,@`~=<01exyNnoT\\/+_", "\t", "\n", "\r", "\x00", "\x07", "\x1f", "\x7f",
+                  "\x85", "\x9f", "\xa0", "\N{LINE SEPARATOR}", "\N{PARAGRAPH SEPARATOR}", "\N{IDEOGRAPHIC SPACE}",
+                  "\ufeff", "\uffff", "\ud800", "\U0001F600"]
+
+
+def _generated_strings(count: int, seed: int = 4) -> list[str]:
+    """Seeded random strings of 0 to 8 characters from _FUZZ_ALPHABET."""
+    rnd = random.Random(seed)
+    return ["".join(rnd.choices(_FUZZ_ALPHABET, k=rnd.randint(0, 8))) for _ in range(count)]
 
 
 def _parse_fm(text: str) -> dict:
@@ -55,12 +68,6 @@ class TestFastSerializeFrontmatter:
         """Scalars (int, float, None, bool) serialize to expected YAML lines."""
         result = fast_serialize_frontmatter({key: value})
         assert expected_line in result
-
-    def test_plain_string(self):
-        """Plain strings without special characters emit without quoting."""
-        result = fast_serialize_frontmatter({"title": "Hello World"})
-        assert "title: Hello World\n" in result
-        assert _parse_fm(result)["title"] == "Hello World"
 
     @pytest.mark.parametrize("value", [
         pytest.param("true", id="yaml_true"),
@@ -96,17 +103,6 @@ class TestFastSerializeFrontmatter:
         assert "tags:\n- alpha\n- beta\n" in result
         assert _parse_fm(result)["tags"] == ["alpha", "beta"]
 
-    @pytest.mark.parametrize("body,expected_marker", [
-        pytest.param("Line one\nLine two", "body: |-\n", id="no_trailing_newline"),
-        pytest.param("Line one\nLine two\n", "body: |\n", id="with_trailing_newline"),
-    ])
-    def test_multiline_string_literal_block(self, body, expected_marker):
-        """Multi-line strings use literal block style with correct chomp marker."""
-        result = fast_serialize_frontmatter({"body": body})
-        assert expected_marker in result
-        assert "  Line one\n" in result
-        assert "  Line two\n" in result
-
     def test_key_ordering_preserved(self):
         """Key insertion order from the input dict is preserved in the output."""
         data = {"id": "b.abc", "type": "bee", "title": "Test"}
@@ -123,11 +119,50 @@ class TestFastSerializeFrontmatter:
         with pytest.raises(ValueError):
             fast_serialize_frontmatter({"items": [{"k": "v"}]})
 
-    def test_multiline_blank_line_no_trailing_whitespace(self):
-        """Blank lines in multiline strings emit as bare newlines, not indented whitespace."""
-        result = fast_serialize_frontmatter({"body": "First\n\nSecond"})
-        assert "  First\n\n  Second\n" in result
-        assert _parse_fm(result)["body"] == "First\n\nSecond"
+    @pytest.mark.parametrize("value,expected", [
+        pytest.param("Hello World", "title: Hello World\n", id="plain"),
+        pytest.param("Line one\nLine two", "title: |-\n  Line one\n  Line two\n", id="multiline_no_trailing_newline"),
+        pytest.param("Line one\nLine two\n", "title: |\n  Line one\n  Line two\n", id="multiline_trailing_newline"),
+        pytest.param("First\n\nSecond", "title: |-\n  First\n\n  Second\n", id="multiline_blank_line_bare"),
+        pytest.param("1e3", "title: '1e3'\n", id="float_literal_quoted"),
+        pytest.param("nan", "title: 'nan'\n", id="nan_quoted"),
+        pytest.param("inf", "title: 'inf'\n", id="inf_quoted"),
+        pytest.param("yEs", "title: 'yEs'\n", id="keyword_mixed_case_quoted"),
+        pytest.param("NULL", "title: 'NULL'\n", id="keyword_upper_case_quoted"),
+        pytest.param("-x", "title: -x\n", id="dash_text_plain"),
+        pytest.param("2024-01-15 sync", "title: 2024-01-15 sync\n", id="date_then_text_plain"),
+        pytest.param("-", "title: '-'\n", id="lone_dash_quoted"),
+        pytest.param("- x", "title: '- x'\n", id="dash_space_quoted"),
+        pytest.param("a:\tb", "title: 'a:\tb'\n", id="tab_quoted"),
+        pytest.param("=", "title: '='\n", id="value_key_quoted"),
+        pytest.param("1:20", "title: '1:20'\n", id="sexagesimal_quoted"),
+        pytest.param(" a\nb", "title: |2-\n   a\n  b\n", id="space_first_line_indent_indicator"),
+        pytest.param("a\n\n\n", "title: |+\n  a\n\n\n", id="trailing_newlines_keep"),
+        pytest.param("\n", "title: |+\n\n", id="only_a_newline_keep"),
+    ])
+    def test_string_style(self, value, expected):
+        """A string takes the first style that reads back exactly: plain, single-quoted, literal block (b.gg4)."""
+        result = fast_serialize_frontmatter({"title": value, "guid": "g"})
+
+        assert result == f"---\n{expected}guid: g\n---\n"
+        assert _parse_fm(result)["title"] == value
+
+    @pytest.mark.parametrize("data", [
+        pytest.param({"title": "a\x07b"}, id="control_character"),
+        pytest.param({"title": "\ufeffa"}, id="byte_order_mark"),
+        pytest.param({"title": "a\x85b"}, id="nel"),
+        pytest.param({"title": "a\uffffb"}, id="noncharacter"),
+        pytest.param({"title": "a\ud800b"}, id="lone_surrogate"),
+        pytest.param({"title": "a\n\x07"}, id="control_character_in_block"),
+        pytest.param({"tags": ["a\x07b"]}, id="control_character_list_item"),
+        pytest.param({"tags": ["a\nb"]}, id="multi_line_list_item"),
+    ])
+    def test_unwritable_strings_fall_back_to_yaml_dump(self, data):
+        """A string the fast path cannot write safely raises ValueError; the yaml.dump fallback reads back (b.gg4)."""
+        with pytest.raises(ValueError):
+            fast_serialize_frontmatter(data)
+
+        assert _parse_fm(serialize_frontmatter(data)) == data
 
 
 class TestSerializeFrontmatter:
@@ -188,3 +223,28 @@ class TestSerializeFrontmatter:
         assert lines[0] == "---" and lines[-2:] == ["---", ""]
         assert [line for line in lines[1:-2] if line.startswith("---")] == []
         assert _parse_fm(result) == data
+
+    @pytest.mark.parametrize("shape", ["middle_key", "last_key", "list_item", "last_list_item"])
+    def test_generated_strings_round_trip_through_parser(self, tmp_path, shape):
+        """Every string, named or seeded-random, reads back exactly through parse_frontmatter, fast path or fallback,
+        and no frontmatter line starts with --- (b.gg4, b.5yy)."""
+        path = tmp_path / "ticket.md"
+        failures = []
+        for value in [*QUOTING_VALUES.values(), *DASH_VALUES.values(), *_generated_strings(2000)]:
+            data = {
+                "middle_key": {"id": "b.abc", "title": value, "guid": "g"},
+                "last_key": {"id": "b.abc", "status": value},
+                "list_item": {"id": "b.abc", "tags": [value, "z"], "guid": "g"},
+                "last_list_item": {"id": "b.abc", "tags": ["z", value]},
+            }[shape]
+            text = serialize_frontmatter(data)
+            path.write_text(f"{text}\nbody\n", encoding="utf-8")
+            try:
+                read_back = parse_frontmatter(path)
+            except ParseError as e:
+                read_back = e
+            dash_lines = [line for line in _LINE_BREAK.split(text)[1:-2] if line.startswith("---")]
+            if read_back != (data, "body") or dash_lines:
+                failures.append((value, text))
+
+        assert failures == []

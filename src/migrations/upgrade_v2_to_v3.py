@@ -44,6 +44,7 @@ from typing import Any
 import yaml
 
 from src.paths import iter_ticket_files
+from src.writer import BlockScalarDumper
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -128,6 +129,11 @@ def _remove_egg_keys(d: dict) -> None:
 def _parse_md_frontmatter(text: str) -> tuple[dict, str] | None:
     """Parse YAML frontmatter from a markdown file's text.
 
+    Same rules as parse_frontmatter: the frontmatter ends at the first later line that
+    starts with ``---``, and the body is read back with only what the writer adds around
+    it removed (the end of the closing line, the blank separator line and one trailing
+    newline), so leading blank lines and other whitespace in the body are kept.
+
     Returns (frontmatter_dict, body_text) or None if no valid frontmatter.
     """
     if not text.startswith("---"):
@@ -135,10 +141,23 @@ def _parse_md_frontmatter(text: str) -> tuple[dict, str] | None:
     end = text.find("\n---", 3)
     if end == -1:
         return None
-    yaml_text = text[3:end].strip()
-    body = text[end + 4:].lstrip("\n")
+    yaml_text = text[3 : end + 1].lstrip()
+    after_delimiter = text[end + len("\n---") :]
+    delimiter_rest, _, body = after_delimiter.partition("\n")
+    if delimiter_rest.strip():
+        # Text on the closing delimiter line itself is part of the body
+        body = after_delimiter
+    if body.startswith("\n"):
+        body = body[1:]
+    if body.endswith("\n"):
+        body = body[:-1]
     try:
-        data = yaml.safe_load(yaml_text)
+        try:
+            data = yaml.safe_load(yaml_text)
+        except yaml.YAMLError:
+            # A hand-edited file may end its last line, or an empty line, with a tab that
+            # YAML rejects: retry once with the whitespace stripped, as older versions read it
+            data = yaml.safe_load(text[3:end].strip())
     except yaml.YAMLError:
         return None
     if not isinstance(data, dict):
@@ -147,9 +166,20 @@ def _parse_md_frontmatter(text: str) -> tuple[dict, str] | None:
 
 
 def _dump_frontmatter(data: dict, body: str) -> str:
-    """Re-serialise frontmatter dict + body back to markdown text."""
-    yaml_text = yaml.dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)
-    return f"---\n{yaml_text}---\n{body}"
+    """Re-serialise frontmatter dict + body back to markdown text.
+
+    Lays the body out as write_ticket_file does (blank separator line, body, trailing
+    newline), the inverse of _parse_md_frontmatter.
+    """
+    # BlockScalarDumper double-quotes strings holding "\r", NEL, LS or PS, which a
+    # single-quoted scalar would write raw and YAML would read back as a space or newline
+    yaml_text = yaml.dump(
+        data, Dumper=BlockScalarDumper, default_flow_style=False, allow_unicode=True, sort_keys=False
+    )
+    content = f"---\n{yaml_text}---\n"
+    if body:
+        content += f"\n{body}\n"
+    return content
 
 
 def _migrate_ticket_file(
