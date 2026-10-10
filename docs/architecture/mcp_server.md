@@ -130,7 +130,7 @@ The `mcp_hive_utils` module provides hive path validation and filesystem scannin
 **Design Rationale**: Hive path validation and scanning are shared across multiple hive operations; extracted to avoid duplicating logic in `mcp_server.py`.
 
 **Functions**:
-- `validate_hive_path(path: str, repo_root: Path) -> Path`: Validates hive path is absolute, within repository, and has existing parent directory. Returns normalized absolute path. Raises `ValueError` for invalid paths.
+- `validate_hive_path(path: str) -> Path`: Validates that the hive path is absolute and lies within the repo root, which it reads from the current context (`repo_context.get_repo_root()`). Creates the parent directory if it does not exist. Returns the normalized absolute path. Raises `ValueError` for a relative path, a path outside the repo root, or a parent directory it cannot create.
 - `scan_for_hive(name: str, config: BeesConfig | None = None) -> Path | None`: Recursively searches repository for `.hive` marker matching hive name. Returns hive directory path if found, `None` otherwise. Updates config.json with recovered path when hive is found. Logs warnings for orphaned markers.
 
 **Module Dependencies**:

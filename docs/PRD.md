@@ -1328,7 +1328,7 @@ bees create-ticket --ticket-type bee --title "My Bee" --hive "Test Hive" \
 The MCP server needs to know which repository the caller is working in, so it can find the right scope and hives.
 
 1. **Roots-enabled clients** (e.g., Claude Desktop, Claude Code, OpenCode): The client automatically sends its working directory via the MCP Roots Protocol. The server reads the first root URI, strips the `file://` prefix, and uses that as the repo root. No `repo_root` parameter is needed.
-2. **Basic MCP clients** (no Roots Protocol support): The caller must pass `repo_root` explicitly on every tool call that accepts it. If omitted, the server returns an error instructing the client to supply `repo_root`.
+2. **Basic MCP clients** (no Roots Protocol support): The caller must pass `repo_root` explicitly on every tool call that accepts it. If omitted, the server returns an error instructing the client to supply `repo_root`. The exception is `colonize_hive`: if neither the Roots Protocol nor `repo_root` gives a repo root, it uses the hive path itself as the repo root. It does the same when the hive path lies outside the resolved repo root.
 
 ### 23.3 Complete MCP Tool List
 
