@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from src import writer
 from src.models import Ticket
 from src.parser import ParseError, parse_frontmatter
 from src.reader import read_ticket
@@ -97,6 +98,68 @@ Body text.""")
         """Should raise FileNotFoundError for missing file."""
         with pytest.raises(FileNotFoundError):
             parse_frontmatter(tmp_path / "nonexistent.md")
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param("", id="empty"),
+            pytest.param("x\n", id="one_trailing_newline"),
+            pytest.param("x\n\n", id="two_trailing_newlines"),
+            pytest.param("\nx", id="leading_newline"),
+            pytest.param("  x  ", id="surrounding_spaces"),
+            pytest.param(" ", id="only_a_space"),
+            pytest.param("\n", id="only_a_newline"),
+            pytest.param("\n\n", id="only_two_newlines"),
+            pytest.param("\tindented\n---\nafter a rule\n", id="tab_and_rule_line"),
+            pytest.param("literal \\t stays", id="literal_backslash_t"),
+        ],
+    )
+    def test_body_round_trips_through_writer(self, tmp_path, body):
+        """A body written by the writer reads back exactly, whitespace included (b.pp8)."""
+        path = tmp_path / "ticket.md"
+        writer.write_ticket_file(
+            TICKET_ID_ABC, "bee", {"id": TICKET_ID_ABC, "type": "bee", "title": "T"}, body, file_path=path
+        )
+
+        assert parse_frontmatter(path)[1] == body
+
+    @pytest.mark.parametrize(
+        "body,expected_body",
+        [
+            pytest.param("a\r\nb\r\n", "a\nb\n", id="crlf"),
+            pytest.param("a\rb", "a\nb", id="lone_cr"),
+            pytest.param("x\r", "x", id="final_cr_merges_with_trailing_newline"),
+            pytest.param("\r", "", id="only_a_cr"),
+        ],
+    )
+    def test_cr_line_endings_read_back_as_lf(self, tmp_path, body, expected_body):
+        """Pins current universal-newline behaviour, not a requirement: change it on purpose."""
+        path = tmp_path / "ticket.md"
+        writer.write_ticket_file(
+            TICKET_ID_ABC, "bee", {"id": TICKET_ID_ABC, "type": "bee", "title": "T"}, body, file_path=path
+        )
+
+        assert parse_frontmatter(path)[1] == expected_body
+
+    @pytest.mark.parametrize(
+        "after_closing_delimiter,expected_body",
+        [
+            pytest.param("\nbody\n", "body", id="no_blank_separator"),
+            pytest.param("\n\nbody\n", "body", id="blank_separator"),
+            pytest.param("\n\nbody", "body", id="no_final_newline"),
+            pytest.param("  \n\nbody\n", "body", id="spaces_after_delimiter"),
+            pytest.param("body\nmore\n", "body\nmore", id="text_on_delimiter_line"),
+            pytest.param("", "", id="frontmatter_only_no_newline"),
+            pytest.param("\n", "", id="frontmatter_only"),
+            pytest.param("\n\n", "", id="frontmatter_only_blank_line"),
+        ],
+    )
+    def test_body_layouts_not_written_by_writer(self, tmp_path, after_closing_delimiter, expected_body):
+        """Hand-written and older layouts read without the separator and final newline."""
+        path = tmp_path / "test.md"
+        path.write_text(f"---\nid: {TICKET_ID_LEGACY_BEE}\ntype: bee\n---{after_closing_delimiter}")
+
+        assert parse_frontmatter(path)[1] == expected_body
 
 
 class TestValidateTicket:

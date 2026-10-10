@@ -289,7 +289,7 @@ Inline and file-sourced body content are handled differently, on purpose:
 
 The core functions own the expansion and take a keyword-only flag: `unescape_body` on `_create_ticket`, `_update_ticket` and `_update_ticket_single`, and `unescape_chunk` on `_append_ticket_body`. Both default to `True` (inline). Every adapter that reads content from a file (the MCP tool wrappers in `src/mcp_server.py` and the CLI handlers in `src/cli.py`) passes `False`. A new body-from-file path must do the same, or it silently rewrites the file's escape sequences.
 
-Escape handling is separate from the read path: the parser still trims leading and trailing whitespace from a ticket body when it reads the file, for inline and file-sourced bodies alike.
+Whitespace is never trimmed, for inline and file-sourced bodies alike. `write_ticket_file` puts a blank line after the closing `---` and one newline after the body, and `parse_frontmatter` removes exactly those, so a body reads back as stored, leading whitespace and trailing newlines included, except CR line endings, which read back as `\n`. An appended chunk keeps its own newlines too: a chunk that ends in a newline leaves the next chunk on a line of its own.
 
 ## CLI Entry Point
 

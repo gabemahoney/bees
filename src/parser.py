@@ -18,6 +18,13 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
     """
     Parse markdown file and extract YAML frontmatter and body.
 
+    The body is the exact inverse of write_ticket_file: only the end of the closing
+    ``---`` line, the blank separator line and one trailing newline are removed.
+    Leading and trailing whitespace inside the body is kept, so a body written with
+    write_ticket_file reads back unchanged, except that the file is read with universal
+    newlines: "\\r\\n" and a lone "\\r" read back as "\\n", and a "\\r" that ends the body
+    merges with the trailing newline and is dropped. A file with no body reads as "".
+
     Args:
         file_path: Path to the markdown file
 
@@ -55,9 +62,22 @@ def parse_frontmatter(file_path: Path | str) -> tuple[dict[str, Any], str]:
     if len(parts) < 3:
         raise ParseError(f"File {path} has invalid frontmatter format. Expected format: ---\\n[YAML]\\n---\\n[body]")
 
-    # parts[0] is empty (before first ---), parts[1] is YAML, parts[2] is body
+    # parts[0] is empty (before first ---), parts[1] is YAML, parts[2] is the rest of the
+    # closing delimiter line plus the body section
     yaml_content = parts[1].strip()
-    body = parts[2].strip()
+
+    # Undo exactly what write_ticket_file adds around the body, and nothing else, so the
+    # body round-trips verbatim (CR line endings aside, see the docstring): the end of the
+    # closing delimiter line, the blank separator line (absent in some hand-written files)
+    # and one trailing newline.
+    delimiter_rest, _, body = parts[2].partition("\n")
+    if delimiter_rest.strip():
+        # Text on the closing delimiter line itself is part of the body
+        body = parts[2]
+    if body.startswith("\n"):
+        body = body[1:]
+    if body.endswith("\n"):
+        body = body[:-1]
 
     # Parse YAML
     try:

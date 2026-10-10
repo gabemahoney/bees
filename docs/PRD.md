@@ -215,6 +215,8 @@ schema_version: '0.1'
 Optional markdown body here. This becomes the `description` field.
 ```
 
+A blank line follows the closing `---`, and one newline follows the body; a ticket with an empty body ends at the closing `---` line. Reading removes exactly those, so the body round-trips verbatim, leading whitespace and trailing newlines included, except CR line endings, which read back as `\n`.
+
 ### 5.2 Serialization Rules
 
 | Type | Serialization |

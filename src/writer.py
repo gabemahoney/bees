@@ -281,7 +281,9 @@ def write_ticket_file(
     # Combine frontmatter and body
     content = frontmatter
     if body:
-        # Ensure body starts on a new line after frontmatter
+        # Blank separator line, body, trailing newline. parse_frontmatter removes
+        # exactly these, so the body round-trips verbatim (except CR line endings,
+        # which read back as "\n"; see parse_frontmatter).
         content += f"\n{body}\n"
 
     # Atomic write: write to temp file, then rename

@@ -395,7 +395,7 @@ bees set-status-values --scope=global --unset
 
 `show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--reference-materials`).
 
-`create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
+`create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. Whitespace in bodies and chunks is kept as given, leading whitespace and trailing newlines included, so end a chunk with a newline to start the next one on a new line. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
 
 `--body`/`--body-file` and `--chunk`/`--chunk-file` are mutually exclusive; the file flags read content from the named path (or stdin when the path is `-`). The 10000-character cap applies only to the inline `--body` and `--chunk` flags; `--body-file` and `--chunk-file` have no size limit.
 

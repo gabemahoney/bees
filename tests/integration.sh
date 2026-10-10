@@ -1637,6 +1637,9 @@ phase_section 2
 BODY_FILE_BEE=""
 CHUNK_FILE_BEE=""
 
+# The body must be the file's exact contents, trailing newlines included. $(...) drops trailing
+# newlines, so these tests compare the body's Python repr(), e.g. 'hello from file\n'.
+
 test_body_file_create() {
     echo "hello from file" > /tmp/test_body.txt
     capture_cmd bees create-ticket --ticket-type bee --title "Body File Bee" \
@@ -1648,9 +1651,9 @@ test_body_file_create() {
     BODY_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
     capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
     local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "hello from file" ]; then
-        fail_test "create-ticket --body-file" "Expected body='hello from file', got '$body'"
+    body=$(check_json "$CMD_OUT" "repr(d['tickets'][0]['body'])")
+    if [ "$body" != "'hello from file\n'" ]; then
+        fail_test "create-ticket --body-file" "Expected body 'hello from file\n', got $body"
     fi
     pass_test "create-ticket --body-file"
 }
@@ -1666,7 +1669,7 @@ test_body_file_mutual_exclusion() {
 }
 
 test_body_file_update() {
-    echo "updated body" > /tmp/test_body2.txt
+    printf 'updated body\n\n' > /tmp/test_body2.txt
     capture_cmd bees update-ticket --ids "$BODY_FILE_BEE" --body-file /tmp/test_body2.txt
     if [ "$CMD_EXIT" -ne 0 ]; then
         fail_test "update-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
@@ -1674,9 +1677,9 @@ test_body_file_update() {
     assert_no_traceback "$CMD_OUT" "update-ticket --body-file"
     capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
     local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "updated body" ]; then
-        fail_test "update-ticket --body-file" "Expected body='updated body', got '$body'"
+    body=$(check_json "$CMD_OUT" "repr(d['tickets'][0]['body'])")
+    if [ "$body" != "'updated body\n\n'" ]; then
+        fail_test "update-ticket --body-file" "Expected body 'updated body\n\n', got $body"
     fi
     pass_test "update-ticket --body-file"
 }
@@ -1688,18 +1691,22 @@ test_chunk_file_append() {
         fail_test "append-ticket-body --chunk-file" "Create failed: $CMD_OUT"
     fi
     CHUNK_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
-    printf " appended" > /tmp/test_chunk.txt
-    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
-        --chunk-file /tmp/test_chunk.txt
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "append-ticket-body --chunk-file" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    assert_no_traceback "$CMD_OUT" "append-ticket-body --chunk-file"
+    printf ' appended\n' > /tmp/test_chunk.txt
+    # Append twice: each chunk keeps its newline, so the second starts on a line of its own
+    local i
+    for i in 1 2; do
+        capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
+            --chunk-file /tmp/test_chunk.txt
+        if [ "$CMD_EXIT" -ne 0 ]; then
+            fail_test "append-ticket-body --chunk-file" "append $i: exit $CMD_EXIT: $CMD_OUT"
+        fi
+        assert_no_traceback "$CMD_OUT" "append-ticket-body --chunk-file"
+    done
     capture_cmd bees show-ticket --ids "$CHUNK_FILE_BEE"
     local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "start appended" ]; then
-        fail_test "append-ticket-body --chunk-file" "Expected body='start appended', got '$body'"
+    body=$(check_json "$CMD_OUT" "repr(d['tickets'][0]['body'])")
+    if [ "$body" != "'start appended\n appended\n'" ]; then
+        fail_test "append-ticket-body --chunk-file" "Expected body 'start appended\n appended\n', got $body"
     fi
     pass_test "append-ticket-body --chunk-file"
 }
