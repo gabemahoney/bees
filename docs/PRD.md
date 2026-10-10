@@ -1146,6 +1146,9 @@ Returns:
 }
 ```
 
+- `fixes_applied` lists only fixes written to disk. A fix whose ticket write fails is left out and reported in `errors_remaining` as `fix_not_applied`.
+- A hive nested inside the hive's directory (a subdirectory with its own `.hive/`, or the root of a hive registered in any scope) is left alone: its tickets are not scanned, fixed, moved or removed.
+
 ### 19.2 Linter Validation Rules
 
 | Error Type | Severity | Auto-fixable | Description |
@@ -1178,14 +1181,16 @@ Returns:
 | `missing_backlink` | error | Yes | Downstream missing up_dep backlink |
 | `dependency_cycle` | error | No | Circular dependency chain |
 | `hierarchy_cycle` | error | No | Circular parent-child chain |
+| `cross_hive_move_blocked` | error | No | Directory enforcement would move a ticket into or out of a nested hive, carry a nested hive along with the ticket's directory, or delete a target directory that holds one; nothing is moved |
+| `fix_not_applied` | error | No | An auto-fix's ticket write failed, or an earlier write of that ticket failed in the same run (it is not written again); the fix is not in `fixes_applied` |
 | `hive_load_failure` | — | No | Failed to load a hive; skips dangling checks |
 
 *Conditional: `dangling_dependency` and `dangling_parent` are auto-fixed only when `auto_fix_dangling_refs: true` in global config.
 
 ### 19.3 Auto-Fix Categories
 
-1. **Directory structure enforcement** (always enabled): moves misplaced ticket directories to correct location based on frontmatter `parent` field
-2. **Bidirectional field repair** (when `auto_fix=True`): `add_child`, `set_parent`, `add_down_dependency`, `add_up_dependency`
+1. **Directory structure enforcement** (always enabled): moves misplaced ticket directories to correct location based on frontmatter `parent` field, never into or out of a nested hive, carrying one along, or deleting a target directory that holds one
+2. **Bidirectional field repair** (when `auto_fix=True`): `add_child`, `add_down_dependency`, `add_up_dependency`
 3. **Dangling reference removal** (when `auto_fix_dangling_refs: true`): `remove_dangling_dependency`, `clear_dangling_parent`
 
 ### 19.4 Source of Truth

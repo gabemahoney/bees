@@ -7,22 +7,27 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import src.cache
+from src.id_utils import is_ticket_id
 from src.mcp_id_utils import parse_ticket_id, parse_type_from_ticket_id
 from src.parser import parse_frontmatter as real_parse_frontmatter
 from src.paths import (
     build_ticket_path_map,
     compute_ticket_directory,
     ensure_ticket_directory_exists,
+    find_enclosing_hive_root,
+    find_nested_hive_root,
+    find_ticket_file,
     get_ticket_path,
     infer_ticket_type_from_id,
     iter_ticket_files,
     iter_ticket_files_deep,
     list_tickets,
+    walk_hive,
 )
 from src.reader import get_ticket_type
 from src.repo_context import repo_root_context
-from tests.conftest import write_scoped_config
-from tests.helpers import backdate
+from tests.conftest import write_multi_scope_config, write_scoped_config
+from tests.helpers import backdate, write_ticket_file
 from src.paths import compute_ticket_path as _compute_ticket_path
 from tests.test_constants import (
     TICKET_ID_ABC,
@@ -868,3 +873,121 @@ class TestIterTicketFilesMdSlug:
         assert len(results) == 2
         for p in results:
             assert p.is_file(), f"Expected file, got directory: {p}"
+
+
+NESTED_WALK_IDS = ["b.aaa", "b.mmm", "b.nnn", "b.sss"]
+
+
+class TestNestedHivePruning:
+    """Walks of a hive never enter another hive nested in its directory (b.x6n).
+
+    Layout: hive outer/ holds b.aaa, a misplaced misc/b.mmm, and two nested hives:
+    b.aaa/t1.aaa.bc/ (named like a ticket dir, holds b.nnn) and Sub/ (holds b.sss).
+    """
+
+    @pytest.fixture(params=["marker", "registered", "registered_other_scope"])
+    def outer_hive(self, request, tmp_path, mock_global_bees_dir):
+        """Hive outer/ with nested hives marked by .hive/ or registered (here or in another scope)."""
+        outer = tmp_path / "outer"
+        id_named, plain = outer / "b.aaa" / "t1.aaa.bc", outer / "Sub"
+        write_ticket_file(outer, "b.aaa")
+        write_ticket_file(outer / "misc", "b.mmm")
+        write_ticket_file(id_named, "b.nnn")
+        write_ticket_file(plain, "b.sss")
+        hives = {"outer": {"path": str(outer), "display_name": "Outer"}}
+        nested = {
+            "nested_id": {"path": str(id_named), "display_name": "Nested Id"},
+            "nested_plain": {"path": str(plain), "display_name": "Nested Plain"},
+        }
+        if request.param == "marker":
+            for root in (id_named, plain):
+                (root / ".hive").mkdir()
+            write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": hives, "child_tiers": {}})
+        elif request.param == "registered":
+            write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {**hives, **nested}, "child_tiers": {}})
+        else:
+            write_multi_scope_config(
+                mock_global_bees_dir, {str(tmp_path): {"hives": hives}, "/elsewhere/**": {"hives": nested}}
+            )
+        return outer, id_named, plain
+
+    @pytest.mark.parametrize(
+        "found_ids,expected",
+        [
+            pytest.param(lambda h: {p.parent.name for p in iter_ticket_files(h)}, {"b.aaa"}, id="iter_ticket_files"),
+            pytest.param(
+                lambda h: {p.parent.name for p in iter_ticket_files_deep(h)},
+                {"b.aaa", "b.mmm"},
+                id="iter_ticket_files_deep",
+            ),
+            pytest.param(lambda h: {t for t in NESTED_WALK_IDS if find_ticket_file(h, t)}, {"b.aaa"}, id="find"),
+            pytest.param(
+                lambda h: {t for t in NESTED_WALK_IDS if find_ticket_file(h, t, deep=True)},
+                {"b.aaa", "b.mmm"},
+                id="find_deep",
+            ),
+        ],
+    )
+    def test_walks_skip_nested_hives(self, outer_hive, found_ids, expected):
+        """Ticket walks from the outer hive find only its own tickets."""
+        outer, _, _ = outer_hive
+        assert found_ids(outer) == expected
+
+    def test_nested_hive_walk_finds_its_own_tickets(self, outer_hive):
+        """A walk that starts at a nested hive's root walks that hive."""
+        _, id_named, plain = outer_hive
+        assert [p.parent.name for p in iter_ticket_files_deep(plain)] == ["b.sss"]
+        assert find_ticket_file(id_named, "b.nnn") == id_named / "b.nnn" / "b.nnn.md"
+
+    def test_walk_hive_yields_own_directories_sorted(self, outer_hive):
+        """walk_hive yields the outer hive's directories top-down and sorted, filtered by enter."""
+        outer, _, _ = outer_hive
+        walked = [os.path.relpath(d, outer) for d, _, _ in walk_hive(outer)]
+        assert walked == [".", "b.aaa", "misc", os.path.join("misc", "b.mmm")]
+        assert [os.path.relpath(d, outer) for d, _, _ in walk_hive(outer, enter=is_ticket_id)] == [".", "b.aaa"]
+
+    @pytest.mark.parametrize(
+        "rel_path,expected_root",
+        [
+            pytest.param("Sub/b.sss", "Sub", id="inside_plain_nested"),
+            pytest.param("b.aaa/t1.aaa.bc/b.nnn", "b.aaa/t1.aaa.bc", id="inside_ticket_named_nested"),
+            pytest.param("Sub", "Sub", id="nested_root_itself"),
+            pytest.param("misc/b.mmm", None, id="own_dir"),
+            pytest.param(".", None, id="hive_root"),
+            pytest.param("..", None, id="outside_hive"),
+        ],
+    )
+    def test_find_enclosing_hive_root(self, outer_hive, rel_path, expected_root):
+        """Returns the nested hive's root for a path inside it, else None."""
+        outer, _, _ = outer_hive
+        expected = None if expected_root is None else outer / expected_root
+        assert find_enclosing_hive_root(outer, outer / rel_path) == expected
+
+    @pytest.mark.parametrize(
+        "rel_top,expected_root",
+        [
+            pytest.param("b.aaa", "b.aaa/t1.aaa.bc", id="nested_root_below"),
+            pytest.param("Sub", None, id="top_is_nested_root"),
+            pytest.param("misc", None, id="no_nested_hive"),
+        ],
+    )
+    def test_find_nested_hive_root(self, outer_hive, rel_top, expected_root):
+        """Returns the root of a nested hive strictly below top, else None."""
+        outer, _, _ = outer_hive
+        expected = None if expected_root is None else outer / expected_root
+        assert find_nested_hive_root(outer / rel_top) == expected
+
+    @pytest.mark.parametrize("skipped_dir", [".hidden", "evicted", "cemetery"])
+    def test_find_nested_hive_root_looks_where_walks_do_not(self, tmp_path, skipped_dir):
+        """A nested hive under a directory the ticket walks skip is still found."""
+        inner = tmp_path / "b.aaa" / skipped_dir / "Inner"
+        (inner / ".hive").mkdir(parents=True)
+        assert find_nested_hive_root(tmp_path / "b.aaa") == inner
+
+    @pytest.mark.parametrize("outer_hive", ["registered"], indirect=True)
+    def test_registered_nested_hive_skipped_through_symlinked_root(self, outer_hive, tmp_path):
+        """A registered nested hive is skipped also when the outer hive is walked through a symlink."""
+        outer, _, _ = outer_hive
+        link = tmp_path / "link"
+        link.symlink_to(outer)
+        assert {p.parent.name for p in iter_ticket_files_deep(link)} == {"b.aaa", "b.mmm"}

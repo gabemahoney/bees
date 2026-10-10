@@ -59,6 +59,7 @@ from .paths import (
     compute_ticket_path,
     get_ticket_path,
     iter_ticket_files,
+    walk_hive,
 )
 from .reader import read_ticket
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -1167,7 +1168,8 @@ def _bulk_tier_sort_key(ticket_id: str) -> int:
 def _collect_deletion_set(ticket_id: str, hive_name: str) -> list[str]:
     """Collect all ticket IDs in a subtree for bottom-up deletion.
 
-    Traverses the filesystem directory structure using os.scandir — no YAML
+    Walks the ticket's directory tree with walk_hive, entering only ticket-ID
+    directories and skipping another hive nested in the subtree — no YAML
     parsing. Returns IDs ordered leaves-first so callers can delete without
     orphaning child directories.
 
@@ -1188,26 +1190,12 @@ def _collect_deletion_set(ticket_id: str, hive_name: str) -> list[str]:
     if _del_hp is None or not compute_ticket_path(ticket_id, _del_hp).exists():
         raise ValueError(f"Ticket does not exist: {ticket_id}")
 
-    result: list[str] = []
-    stack: list[str] = [ticket_id]
+    root_dir = compute_ticket_path(ticket_id, _del_hp).parent
+    # The walk yields root_dir first, then descendants with each parent before its children
+    descendants = [os.path.basename(dirpath) for dirpath, _dirs, _files in walk_hive(root_dir, is_ticket_id)][1:]
 
-    while stack:
-        current_id = stack.pop()
-        ticket_dir = compute_ticket_path(current_id, _del_hp).parent
-
-        # Scan for child ticket directories — no YAML parsing needed.
-        try:
-            with os.scandir(ticket_dir) as it:
-                for entry in it:
-                    if entry.is_dir(follow_symlinks=False) and is_ticket_id(entry.name):
-                        stack.append(entry.name)
-        except FileNotFoundError:
-            pass  # Directory already gone; still record for cache eviction
-
-        result.append(current_id)
-
-    result.reverse()
-    return result
+    # ticket_id is recorded even if its directory is already gone, for cache eviction
+    return descendants[::-1] + [ticket_id]
 
 
 def _clean_external_dependencies(deletion_ids: list[str], resolved_hive: str) -> None:

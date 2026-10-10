@@ -19,7 +19,13 @@ from src.constants import GUID_LENGTH, ID_CHARSET
 from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
 from src.linter_report import LinterReport, ValidationError
 from src.models import Ticket
-from src.paths import find_ticket_file, iter_ticket_files_deep
+from src.paths import (
+    find_enclosing_hive_root,
+    find_nested_hive_root,
+    find_ticket_file,
+    iter_ticket_files_deep,
+    walk_hive,
+)
 from src.reader import read_ticket
 from src.writer import write_ticket_file
 
@@ -32,8 +38,10 @@ class TicketScanner:
     """Scanner to load and iterate over all tickets from the filesystem.
 
     Uses the ticket reader module to load tickets from markdown files
-    in the hierarchical hive directory structure. Scans recursively
-    and excludes special directories (eggs, evicted, .hive).
+    in the hierarchical hive directory structure. Scans recursively,
+    skips hidden directories (.hive/), evicted/ and cemetery/, and never
+    enters another hive nested inside this one (a subdirectory with its own
+    .hive/ or a registered hive root).
     """
 
     def __init__(self, tickets_dir: str = "tickets", hive_name: str = "default"):
@@ -50,7 +58,8 @@ class TicketScanner:
         """Scan and yield all tickets from the filesystem.
 
         Uses deep directory traversal via iter_ticket_files_deep — enters all
-        directories except hidden ones (.hive/), evicted/, and /cemetery.
+        directories except hidden ones (.hive/), evicted/, /cemetery, and other
+        hives nested inside this one.
         This broader scan allows the linter to find misplaced and invalid tickets.
 
         Yields:
@@ -66,7 +75,8 @@ class TicketScanner:
         """Scan and yield all tickets paired with their file paths.
 
         Uses deep directory traversal via iter_ticket_files_deep — enters all
-        directories except hidden ones (.hive/), evicted/, and /cemetery.
+        directories except hidden ones (.hive/), evicted/, /cemetery, and other
+        hives nested inside this one.
 
         Yields:
             Tuples of (Ticket, Path) for each ticket file found
@@ -125,6 +135,10 @@ class Linter:
         self.all_scope_ticket_map = all_scope_ticket_map
         self.auto_fix_dangling_refs = auto_fix_dangling_refs
         self.scanner = TicketScanner(tickets_dir, hive_name)
+        # Ticket ID -> file the ticket was scanned from in run(); auto-fixes write back to it
+        self._ticket_paths: dict[str, Path] = {}
+        # IDs of tickets whose auto-fix write failed in this run; they are not written again
+        self._unwritten_ids: set[str] = set()
 
     def run(self, detect_only: bool = False) -> LinterReport:
         """Run linter validation on all tickets.
@@ -148,6 +162,9 @@ class Linter:
         ticket_path_pairs = list(self.scanner.scan_all_with_paths())
         tickets = [t for t, _ in ticket_path_pairs]
         ticket_count = len(tickets)
+        # Last one wins for a duplicate ID, matching the ticket maps the validators build
+        self._ticket_paths = {t.id: p for t, p in ticket_path_pairs}
+        self._unwritten_ids = set()
 
         # Run per-ticket validation checks
         for ticket, file_path in ticket_path_pairs:
@@ -159,6 +176,8 @@ class Linter:
         self.validate_id_uniqueness(tickets, report)
         self.validate_parent_children_bidirectional(tickets, report)
         self.validate_dependencies_bidirectional(tickets, report)
+        # Directory enforcement below may move tickets, so the scanned paths go stale here
+        self._ticket_paths = {}
 
         # Enforce directory structure (skipped in detect_only mode to avoid disk writes)
         if not detect_only:
@@ -215,7 +234,7 @@ class Linter:
         self.validate_status_field(ticket, report)
 
         # GUID validation
-        self.validate_guid(ticket, report)
+        self.validate_guid(ticket, report, file_path)
 
         # Path/ID consistency validation (SR-7.3)
         if file_path is not None:
@@ -472,7 +491,7 @@ class Linter:
                         severity="error",
                     )
 
-    def validate_guid(self, ticket: Ticket, report: LinterReport) -> None:
+    def validate_guid(self, ticket: Ticket, report: LinterReport, file_path: Path | None = None) -> None:
         """Validate the guid field on a ticket.
 
         Checks:
@@ -484,14 +503,23 @@ class Linter:
         Args:
             ticket: Ticket to validate
             report: LinterReport to collect errors into
+            file_path: File the ticket was read from (optional); the auto-fixed
+                guid is written back to it
         """
         if ticket.guid is None:
             if self.auto_fix:
                 short_id = ticket.id.split(".", 1)[1]
                 guid = generate_guid(short_id)
                 ticket.guid = guid
-                self._save_modified_tickets({ticket.id: ticket}, {ticket.id})
+                first_pending_fix = len(report.fixes)
                 report.add_fix(ticket_id=ticket.id, fix_type="add_guid", description=f"Generated guid {guid}")
+                self._save_modified_tickets(
+                    {ticket.id: ticket},
+                    {ticket.id},
+                    report,
+                    first_pending_fix,
+                    file_paths={ticket.id: file_path} if file_path is not None else None,
+                )
                 return
             report.add_error(
                 ticket_id=ticket.id,
@@ -1045,6 +1073,7 @@ class Linter:
         don't list them back (asymmetric policy per SR-6.2).
 
         When auto_fix is enabled, attempts to fix orphaned child→parent relationships.
+        A fix stays in report.fixes only if its ticket is written to disk.
 
         Args:
             tickets: List of all tickets to check
@@ -1053,6 +1082,7 @@ class Linter:
         # Create a lookup map for quick ticket access by ID
         ticket_map = {ticket.id: ticket for ticket in tickets}
         modified_tickets = set()
+        first_pending_fix = len(report.fixes)
 
         for ticket in tickets:
             # Validate parent field format and existence
@@ -1125,7 +1155,7 @@ class Linter:
 
         # Write modified tickets back to filesystem
         if self.auto_fix and modified_tickets:
-            self._save_modified_tickets(ticket_map, modified_tickets)
+            self._save_modified_tickets(ticket_map, modified_tickets, report, first_pending_fix)
 
     def validate_dependencies_bidirectional(self, tickets: list[Ticket], report: LinterReport) -> None:
         """Validate bidirectional consistency of dependency relationships.
@@ -1136,6 +1166,7 @@ class Linter:
         in its up_dependencies.
 
         When auto_fix is enabled, attempts to fix orphaned dependency relationships.
+        A fix stays in report.fixes only if its ticket is written to disk.
 
         Args:
             tickets: List of all tickets to check
@@ -1144,6 +1175,7 @@ class Linter:
         # Create a lookup map for quick ticket access by ID
         ticket_map = {ticket.id: ticket for ticket in tickets}
         modified_tickets = set()
+        first_pending_fix = len(report.fixes)
 
         for ticket in tickets:
             # Validate dependency field formats and cross-type consistency
@@ -1207,7 +1239,7 @@ class Linter:
 
         # Write modified tickets back to filesystem
         if self.auto_fix and modified_tickets:
-            self._save_modified_tickets(ticket_map, modified_tickets)
+            self._save_modified_tickets(ticket_map, modified_tickets, report, first_pending_fix)
 
     def detect_empty_ticket_dirs(self, report: LinterReport) -> None:
         """Detect and optionally remove ticket directories that contain no .md file.
@@ -1218,7 +1250,8 @@ class Linter:
         that ticket ID from future use.
 
         Directories newer than 10 minutes are skipped to avoid racing in-flight
-        ticket creation.
+        ticket creation. Every directory below the hive root is checked except
+        those of another hive nested inside this one.
 
         In auto-fix mode, orphaned directories are removed via dir_path.rmdir().
         In report-only mode, each orphaned directory is added as a LinterError.
@@ -1232,8 +1265,9 @@ class Linter:
 
         cutoff = time.time() - 600  # 10 minutes
 
-        for dir_path in tickets_dir.rglob("*"):
-            if not dir_path.is_dir():
+        for dirpath, _dirs, files in walk_hive(tickets_dir):
+            dir_path = Path(dirpath)
+            if dir_path == tickets_dir:
                 continue
 
             dir_name = dir_path.name
@@ -1243,7 +1277,7 @@ class Linter:
             # Check if the expected ticket file exists (not just any .md file)
             # Using an exact check avoids false positives from macOS resource fork
             # files like ._b.xxx.md which match glob("*.md") but are not ticket files.
-            if (dir_path / f"{dir_name}.md").exists():
+            if f"{dir_name}.md" in files:
                 continue
 
             # Skip recently created directories (in-flight ticket creation)
@@ -1286,6 +1320,10 @@ class Linter:
 
         This is a core enforcement rule that always auto-moves misplaced tickets.
         Frontmatter is the source of truth; filesystem structure is derived from it.
+        A move out of or into another hive nested inside this one, one that
+        would carry such a hive along with the ticket's directory, or one that
+        would delete a directory holding such a hive, is never made; it is
+        reported as a cross_hive_move_blocked error instead.
 
         Args:
             tickets: List of all tickets to check
@@ -1341,6 +1379,9 @@ class Linter:
                             needs_move = True
 
                     if needs_move:
+                        if self._move_crosses_hive(ticket.id, current_dir, expected_dir, report):
+                            continue
+
                         # Move ticket directory to correct location
                         logger.info(
                             f"Moving ticket {ticket.id} from {current_dir} to {expected_dir} "
@@ -1381,6 +1422,9 @@ class Linter:
                             needs_move = True
 
                     if needs_move:
+                        if self._move_crosses_hive(ticket.id, current_dir, expected_dir, report):
+                            continue
+
                         logger.info(f"Moving bee {ticket.id} from {current_dir} to {expected_dir} (hive root)")
 
                         # If expected_dir already exists, remove it first to avoid nesting
@@ -1405,6 +1449,54 @@ class Linter:
                     message=f"Failed to enforce directory structure: {e}",
                     severity="error",
                 )
+
+    def _move_crosses_hive(self, ticket_id: str, current_dir: Path, expected_dir: Path, report: LinterReport) -> bool:
+        """Report and return True if moving current_dir to expected_dir would cross into another hive.
+
+        A ticket directory inside another hive nested in this one (at or below a
+        directory with its own .hive/, or a registered hive root) belongs to that
+        hive, so this hive's linter must not move it out; nor may it move a
+        ticket into or onto such a directory. The move carries everything below
+        current_dir with it, so it is also blocked when another hive's root lies
+        anywhere below current_dir: a hive is never moved off its path. The move
+        deletes an existing expected_dir first, so it is also blocked when
+        another hive's root lies anywhere below expected_dir.
+
+        Args:
+            ticket_id: ID of the ticket that would be moved
+            current_dir: The ticket's current directory
+            expected_dir: Directory the ticket would be moved to
+            report: LinterReport to collect the error into
+
+        Returns:
+            True if the move is blocked (an error was reported), False otherwise
+        """
+        hive_path = Path(self.tickets_dir)
+        reason = None
+        for path in (current_dir, expected_dir):
+            other_hive_root = find_enclosing_hive_root(hive_path, path)
+            if other_hive_root is not None:
+                reason = f"{path} is inside another hive rooted at {other_hive_root}"
+                break
+        if reason is None:
+            other_hive_root = find_nested_hive_root(current_dir)
+            if other_hive_root is not None:
+                reason = f"{current_dir} holds another hive rooted at {other_hive_root}, which the move would carry"
+        if reason is None and expected_dir.exists():
+            other_hive_root = find_nested_hive_root(expected_dir)
+            if other_hive_root is not None:
+                reason = f"{expected_dir} would be deleted first, and it holds another hive rooted at {other_hive_root}"
+        if reason is None:
+            return False
+
+        logger.error(f"Not moving ticket {ticket_id}: {reason}")
+        report.add_error(
+            ticket_id=ticket_id,
+            error_type="cross_hive_move_blocked",
+            message=f"Did not move '{ticket_id}' from {current_dir} to {expected_dir}: {reason}",
+            severity="error",
+        )
+        return True
 
     def detect_cycles(self, tickets: list[Ticket]) -> list[ValidationError]:
         """Detect cycles in both blocking and hierarchical dependency relationships.
@@ -1540,14 +1632,46 @@ class Linter:
 
         return None
 
-    def _save_modified_tickets(self, ticket_map: dict[str, Ticket], modified_ids: set[str]) -> None:
-        """Save modified tickets back to filesystem.
+    def _save_modified_tickets(
+        self,
+        ticket_map: dict[str, Ticket],
+        modified_ids: set[str],
+        report: LinterReport,
+        first_pending_fix: int,
+        file_paths: dict[str, Path] | None = None,
+    ) -> None:
+        """Save modified tickets back to filesystem, keeping only the fixes that were written.
+
+        Auto-fixes are recorded in the report before their ticket is written.
+        When a ticket's write fails, its fixes recorded at or after
+        first_pending_fix are withdrawn from report.fixes and each is reported
+        as a fix_not_applied error, so report.fixes lists only fixes on disk.
+
+        A failed ticket keeps its unwritten fixes in memory, so it is never
+        written again in the same run: a later write would put those fixes on
+        disk. Its later fixes are withdrawn and reported the same way.
+
+        Each ticket is written to the file it was scanned from when that is
+        known, else to the path computed from its ID and this linter's hive.
 
         Args:
             ticket_map: Map of ticket IDs to Ticket objects
             modified_ids: Set of ticket IDs that were modified during auto-fix
+            report: LinterReport holding the pending fixes
+            first_pending_fix: Index in report.fixes of the first fix awaiting these writes
+            file_paths: Ticket ID -> file to write (default: the files scanned by run())
         """
-        for ticket_id in modified_ids:
+        if file_paths is None:
+            file_paths = self._ticket_paths
+
+        for ticket_id in sorted(modified_ids):
+            if ticket_id in self._unwritten_ids:
+                logger.error(f"Not saving modified ticket {ticket_id}: an earlier write of it failed in this run")
+                self._withdraw_unwritten_fixes(
+                    ticket_id, report, first_pending_fix, "an earlier write of the ticket failed in this run"
+                )
+                continue
+
             ticket = ticket_map[ticket_id]
 
             frontmatter_data = asdict(ticket)
@@ -1561,8 +1685,31 @@ class Linter:
                     frontmatter_data=frontmatter_data,
                     body=ticket.body or "",
                     hive_name=self.hive_name,
+                    file_path=file_paths.get(ticket_id),
                 )
-                cache.evict(ticket_id)
                 logger.info(f"Saved modified ticket {ticket_id}")
             except Exception as e:
                 logger.error(f"Failed to save modified ticket {ticket_id}: {e}")
+                self._unwritten_ids.add(ticket_id)
+                self._withdraw_unwritten_fixes(ticket_id, report, first_pending_fix, f"writing the ticket failed: {e}")
+            finally:
+                # The fix mutated the ticket in memory; drop any cached copy so reads come from disk
+                cache.evict(ticket_id)
+
+    @staticmethod
+    def _withdraw_unwritten_fixes(ticket_id: str, report: LinterReport, first_pending_fix: int, reason: str) -> None:
+        """Withdraw a ticket's pending fixes from report.fixes and report each as a fix_not_applied error.
+
+        Args:
+            ticket_id: ID of the ticket that was not written
+            report: LinterReport holding the pending fixes
+            first_pending_fix: Index in report.fixes of the first fix awaiting the write
+            reason: Why the ticket was not written
+        """
+        for fix in report.withdraw_fixes(ticket_id, first_pending_fix):
+            report.add_error(
+                ticket_id=ticket_id,
+                error_type="fix_not_applied",
+                message=f"Fix '{fix.fix_type}' was not applied ({fix.description}): {reason}",
+                severity="error",
+            )

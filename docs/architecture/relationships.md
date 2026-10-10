@@ -47,7 +47,7 @@ The bidirectional sync ensures both sides of the relationship are always consist
 
 Deleting a ticket cascades to its entire child subtree using a two-phase approach:
 
-**Phase 1 — Collection**: Traverses the filesystem using `os.scandir` to discover child ticket directories without parsing YAML. Builds an ordered list of ticket IDs (leaves first, root last). The root ticket's existence is validated before traversal begins; if it does not exist, the operation raises `ValueError` and nothing is deleted.
+**Phase 1 — Collection**: Walks the ticket's directory tree with `walk_hive()` (`src/paths.py`), entering only ticket-ID directories and never a hive nested in the subtree, to discover child ticket directories without parsing YAML. Builds an ordered list of ticket IDs (leaves first, root last). The root ticket's existence is validated before traversal begins; if it does not exist, the operation raises `ValueError` and nothing is deleted.
 
 **Phase 2 — Deletion**: Iterates the collected list bottom-up, removing each ticket's directory with `shutil.rmtree`. A safety guard prevents accidental deletion of the hive root directory.
 

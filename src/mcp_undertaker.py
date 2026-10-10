@@ -54,7 +54,6 @@ config.
 """
 
 import logging
-import os
 import shutil
 import threading
 import time
@@ -67,7 +66,7 @@ import yaml
 from .config import BeesConfig, load_bees_config, load_global_config, resolve_named_query
 from .id_utils import is_ticket_id
 from .index_generator import generate_index
-from .paths import find_ticket_file
+from .paths import find_ticket_file, walk_hive
 from .pipeline import PipelineEvaluator
 from .query_parser import QueryParser, QueryValidationError
 from .reader import read_ticket
@@ -227,8 +226,9 @@ def _undertaker_core(
     archived_guids: list[str] = []
 
     for _bee_id, subtree_root in moved_bees:
-        # Walk bottom-up so child renames complete before parents
-        for dirpath, _dirs, files in os.walk(str(subtree_root), topdown=False):
+        # Visit children before parents so child renames complete first: reverse the
+        # top-down walk, which also skips another hive nested in the subtree
+        for dirpath, _dirs, files in reversed(list(walk_hive(subtree_root))):
             dir_name = Path(dirpath).name
             if not is_ticket_id(dir_name):
                 continue

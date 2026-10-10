@@ -50,6 +50,7 @@ The `.hive/identity.json` file serves as the authoritative marker that identifie
 
 - **Hive recovery**: `scan_for_hive()` can locate hives that have been moved or whose config entries are stale
 - **Hive identification**: Verifies directory is a valid hive before operations
+- **Hive boundary**: A `.hive/` directory below another hive's root starts a nested hive, and walks of the enclosing hive stop there (see [Nested Hives](#nested-hives))
 - **Metadata storage**: Preserves display name and creation timestamp
 
 **Format**:
@@ -86,7 +87,7 @@ The cemetery lives at `{hive_root}/cemetery/`. Archived ticket files use a flat 
 
 ### Exclusion from Active Operations
 
-The cemetery is excluded from all active operations: queries, linting, indexing, and path resolution. This exclusion is not achieved through a hardcoded directory blocklist — instead, it is a natural consequence of the positive-match traversal approach described in the Directory Traversal section below.
+The cemetery is excluded from all active operations: queries, linting, indexing, and path resolution. Strict traversal excludes it without a blocklist, as a natural consequence of the positive-match approach described in the Directory Traversal section below. The linter's deep traversal, which also enters non-ticket directories, skips `cemetery/` by name.
 
 ## Ticket ID System
 
@@ -271,27 +272,43 @@ frontend/b.r8p/b.r8p.md
 
 ### Key Functions
 
+**`walk_hive()`** (`src/paths.py`):
+- The one directory walker for hives: walks top-down like `os.walk`, yielding sorted subdirectory lists
+- Takes an optional `enter` predicate on subdirectory names; only accepted subdirectories are entered
+- Never enters another hive nested below the walk root (see [Nested Hives](#nested-hives)); the walk root itself is always walked, so it may be a hive root or a ticket directory
+- Used by the ticket walkers below and directly by empty-directory cleanup, delete's subtree collection, and the undertaker's archive renames
+
+**`find_enclosing_hive_root()`** (`src/paths.py`):
+- Returns the root of another hive nested below a hive root that a given path lies in, or `None`
+- Used by the linter's directory enforcement to refuse a move out of a nested hive, or into or onto one
+
+**`find_nested_hive_root()`** (`src/paths.py`):
+- Returns the first root of another hive found anywhere below a directory, or `None`
+- Walks every directory below it, including hidden ones, `evicted/` and `cemetery/`, unlike the pruned walks
+- Used by the linter's directory enforcement to refuse a move that would carry a nested hive along with the ticket's directory, or delete an existing target directory that holds one
+
 **`iter_ticket_files()`** (`src/paths.py`):
 - Primary traversal function for well-structured hives
 - Uses positive-match traversal: only enters directories whose names match the ticket ID pattern
 - Yields paths matching the `{ticket_id}/{ticket_id}.md` convention
-- Used by `list_tickets()`, `get_ticket_path()`, and query operations
+- Never enters a nested hive
+- Used by `list_tickets()`, query operations, index generation, and the subtree scans of move-bee, clone-bee and delete (cache eviction)
 
 **`iter_ticket_files_deep()`** (`src/paths.py`):
 - Broader traversal for the linter
-- Enters all directories except hidden ones and `evicted/`
+- Enters all directories except hidden ones, `evicted/` and `cemetery/`, and never enters a nested hive
 - Finds tickets even in wrong locations or with non-standard directory names
 - Used when scanning for misplaced or invalid tickets that need correction
 
 **`find_ticket_file()`** (`src/paths.py`):
 - Locates a specific ticket's file by ID using selective traversal
 - Supports both strict mode (default, ticket-ID directories only) and deep mode (for finding misplaced tickets)
-- Used by `get_ticket_path()` and `infer_ticket_type_from_id()`
+- Never enters a nested hive, in either mode
+- Used by the linter's directory enforcement (deep mode, to find a misplaced ticket and its parent), and by move-bee, clone-bee and the undertaker to locate a ticket (strict mode)
 
 **`get_ticket_path()`** (`src/paths.py`):
-- Delegates to `find_ticket_file()` for selective traversal
-- Validates directory name matches file stem (hierarchical pattern enforcement)
-- Returns path only if directory name equals ticket ID
+- Builds the path with `compute_ticket_path()`, with no directory walk
+- Returns the path only if the file exists there
 - Raises `FileNotFoundError` if ticket doesn't exist
 
 **`compute_ticket_directory()`** (`src/paths.py`):
@@ -306,7 +323,7 @@ frontend/b.r8p/b.r8p.md
 - Performance: O(n) where n = ticket directories in hive tree
 
 **`infer_ticket_type_from_id()`** (`src/paths.py`):
-- Delegates to `find_ticket_file()` for selective traversal
+- Reads the ticket with `read_ticket()` (via `get_ticket_type()`), which locates it with `compute_ticket_path()`, with no directory walk
 - Parses YAML frontmatter to extract `type` field
 - Validates `schema_version` field presence
 - Returns type from frontmatter (authoritative source)
@@ -323,7 +340,26 @@ frontend/b.r8p/b.r8p.md
 **Two traversal modes**:
 
 - **Strict** (`iter_ticket_files`): Only enters ticket-ID directories. Used for all normal operations — queries, indexing, path resolution. Naturally excludes `/cemetery`, `.hive/`, `evicted/`, and any other non-ticket directory.
-- **Deep** (`iter_ticket_files_deep`): Enters all non-hidden directories (skips `.hive/` and `evicted/`). Used by the linter to find misplaced tickets that may have ended up in unexpected locations. This broader scan is necessary because a misplaced ticket's parent directory won't match the ticket ID pattern, so strict traversal would miss it.
+- **Deep** (`iter_ticket_files_deep`): Enters all non-hidden directories except `evicted/` and `cemetery/` (hidden ones include `.hive/`). Used by the linter to find misplaced tickets that may have ended up in unexpected locations. This broader scan is necessary because a misplaced ticket's parent directory won't match the ticket ID pattern, so strict traversal would miss it.
+
+Both modes run on `walk_hive()`, so neither enters a nested hive.
+
+### Nested Hives
+
+**Design Decision**: A hive may sit inside another hive's directory (e.g. hive `plans` at `Ideas/Plans/` inside hive `ideas` at `Ideas/`). The nested hive's tickets belong to it alone: no walk of the enclosing hive enters its directory.
+
+**Boundary**: A directory below the walk root belongs to another hive when it holds its own `.hive/` directory or is the root of a hive registered in any scope of the global config. Either is enough, so an unregistered directory with a `.hive/` and a registered hive root without one both count. Registered roots are matched also when the walk root is a symlink to the hive's directory.
+
+**Pruning**: `walk_hive()` neither yields such a directory nor visits anything under it. The walks over a hive's tree all go through it: the linter scan, `find_ticket_file()`, directory enforcement, empty-directory cleanup, `list_tickets()`, queries, index generation, and the subtree scans of move-bee, clone-bee, delete and the undertaker. Only `find_nested_hive_root()` walks without pruning, since it is looking for such a directory. The `.hive/` check reads the listing `os.walk` already made, and the global config is loaded once per walk, so pruning adds no per-directory I/O.
+
+**Rationale**:
+- **Own configuration**: The nested hive has its own tiers, status values and layout. Linting its tickets against the enclosing hive's config would flag their tiers `unknown_tier` and move its bees to the enclosing hive's root, out of their own hive.
+- **One owner per ticket**: Each ticket is scanned, fixed and moved only by the hive it lives in.
+
+**Limits**:
+- Pruning applies to walks. Moving or deleting a whole ticket directory (move-bee, the undertaker's move to `/cemetery`, delete) still takes everything in it, including a hive nested inside that ticket directory. Renaming a hive's folder (`rename_hive` with folder rename) likewise moves every hive nested in it and does not update their registered paths.
+- The linter's directory enforcement is the exception: it never carries a nested hive along with a ticket's directory, nor deletes a target directory that holds one (see [Linter Enforcement](#linter-enforcement)).
+- An unregistered nested hive (one marked only by `.hive/`) is walked by no registered hive, so its tickets are not in `sanitize_hive`'s cross-hive ticket map (see [validation.md](validation.md#nested-hives)).
 
 ### Integration with Schema Versioning
 
@@ -351,6 +387,7 @@ The linter's `enforce_directory_structure()` method ensures filesystem matches f
 - Verifies ticket directory is located under parent's directory
 - If misplaced, automatically moves ticket directory (and all children) to correct location
 - For bees (no parent), verifies directory is at hive root level
+- Never makes a move that crosses a nested hive's boundary: out of a nested hive, into or onto one, carrying one along with the ticket's directory, or deleting an existing target directory that holds one. It reports `cross_hive_move_blocked` and moves nothing (see [validation.md](validation.md#nested-hives))
 
 **Auto-correction flow**:
 1. User accidentally moves `t1.amx.12/` directory to wrong location via file manager

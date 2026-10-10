@@ -150,7 +150,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - `ValidationError` dataclass represents individual validation errors with fields: `ticket_id`, `error_type`, `message`, `severity`
 - Severity levels: `error` (critical) or `warning` (non-critical)
 - `LinterReport` class collects and queries validation errors
-- Methods: `add_error()`, `get_errors()` with filtering, `is_corrupt()` for database health check
+- Methods: `add_error()`, `get_errors()` with filtering, `is_corrupt()` for database health check, `add_fix()` to record an auto-fix, `withdraw_fixes()` to drop a ticket's fixes whose write failed
 - Output formats: `to_json()`, `to_markdown()`, `to_dict()` for different consumers
 - Summary statistics via `get_summary()` for error counts by type and severity
 
@@ -158,14 +158,15 @@ The linter validates ticket structure and relationships through a two-phase scan
 - `TicketScanner` class loads tickets from filesystem using `src/reader.py`
 - Scans hive directories recursively (hierarchical storage: `{hive_name}/**/*.md`)
 - Validates hierarchical pattern: directory name must match file stem (`{ticket_id}/{ticket_id}.md`)
-- Excludes special directories (`evicted/`, `.hive/`) and `index.md` files
+- Skips hidden directories (`.hive/`), `evicted/`, `cemetery/`, `index.md` files, and any hive nested inside the hive (see [Nested Hives](#nested-hives))
 - Returns generator of `Ticket` objects with types validated against `~/.bees/config.json`
 - Handles filesystem errors gracefully, logging and skipping invalid files
 - `Linter` class orchestrates validation through `run()` method:
-  - Loads all tickets via TicketScanner
+  - Loads all tickets via TicketScanner, remembering the file each was scanned from
   - Runs per-ticket validations
   - Runs cross-ticket validations (uniqueness, relationships)
   - Enforces directory structure (auto-moves misplaced tickets)
+  - Detects empty ticket directories (removes them in auto-fix mode)
   - Returns `LinterReport` with collected errors and fixes
 
 ### Validation Rules
@@ -283,6 +284,12 @@ The linter validates ticket structure and relationships through a two-phase scan
 - **Auto-correction behavior**: Automatically moves misplaced ticket directories to correct location
 - Uses `shutil.move()` to relocate entire directory subtree (preserves all children)
 - Reports fixes via `LinterReport.add_fix()` with type `"move_directory"`
+- Never makes a move that crosses the boundary of a hive nested inside this one. Before each move, `_move_crosses_hive()` blocks it when any of these holds (see [Nested Hives](#nested-hives)):
+  - The ticket's current directory is inside another hive (`find_enclosing_hive_root()`)
+  - The target directory itself is another hive's root or inside another hive (`find_enclosing_hive_root()`)
+  - The ticket's current directory holds another hive anywhere below it, which the move would carry off its path (`find_nested_hive_root()`)
+  - The target directory exists and holds another hive anywhere below it; the move deletes an existing target first (`find_nested_hive_root()`)
+- A blocked move is skipped, nothing is moved or deleted, and error `cross_hive_move_blocked` is reported naming the reason
 - Triggered on every linter run (manual `sanitize_hive`, and the watcher loop when `start_watcher()` is running)
 
 **Directory Enforcement Rules**:
@@ -305,6 +312,23 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Current location: `hive_root/some_dir/b.xyz/`
 - Expected location: `hive_root/b.xyz/`
 - Action: Linter moves `b.xyz/` directory to hive root
+
+**Empty Ticket Directory Cleanup**:
+- `detect_empty_ticket_dirs()` finds ticket-ID directories with no `{ticket_id}.md` inside, left behind when ticket creation claims a directory but the write fails; such a directory blocks that ID from reuse
+- Skips directories modified in the last 10 minutes, to avoid racing in-flight ticket creation
+- In auto-fix mode removes each one (fix type `"remove_empty_dir"`); otherwise reports error `empty_ticket_dir`
+- Runs on every linter run, including detect-only runs
+- Walks the hive with `walk_hive()`, so directories of a nested hive are never checked or removed
+
+### Nested Hives
+
+A hive may sit inside another hive's directory, e.g. hive `plans` at `Ideas/Plans/` inside hive `ideas` at `Ideas/`. The nested hive's tickets belong to it alone: linting the enclosing hive never scans, fixes, moves or removes anything in the nested hive's directory.
+
+- **Boundary**: a directory below the hive root starts another hive when it holds its own `.hive/` directory or is the root of a hive registered in any scope (see [storage.md](storage.md#nested-hives))
+- **Pruned walks**: TicketScanner, `find_ticket_file()`, directory enforcement and empty-directory cleanup all walk through `walk_hive()`, which stops at that boundary. The nested hive's tickets get no `unknown_tier`, `invalid_tier_parent` or other errors from the enclosing hive's config, and no fixes
+- **Move guard**: if a planned directory move would cross the boundary, carry a nested hive along with the ticket's directory, or delete a target directory that holds one, directory enforcement skips it and reports `cross_hive_move_blocked` (see Directory Structure Enforcement)
+- **Cross-hive references**: `sanitize_hive` builds `all_scope_ticket_map` by scanning each in-scope hive on its own, so the tickets of a nested hive registered in scope resolve like any other hive's. The tickets of a nested hive that is not registered in scope (e.g. one marked only by `.hive/`) are not in the map: a reference to one of them from the enclosing hive is reported as dangling, and is removed when `auto_fix_dangling_refs: true`
+- **Rationale**: the nested hive has its own tiers, status values and layout. Linting its tickets against the enclosing hive's config would flag tiers the enclosing hive does not define as `unknown_tier`, and directory enforcement would move the nested hive's bees to the enclosing hive's root, out of their own hive
 
 ### Algorithm Choices
 
@@ -387,7 +411,7 @@ Debounced normally → cycle repeats until stable
 **sanitize_hive MCP tool**:
 - Remains independent manual trigger for linter validation
 - Accepts `hive` parameter to target specific hive
-- Runs linter with `auto_fix=True` on specified hive only
+- Runs linter with `auto_fix=True` on specified hive only, not on hives nested inside its directory
 - Returns structured report with fixes applied and remaining errors
 - Does not trigger watcher pipeline (synchronous operation)
 
@@ -426,19 +450,19 @@ The linter implements three categories of auto-fix rules that automatically repa
 - Ensures filesystem structure matches frontmatter `parent` field (source of truth)
 - Automatically moves misplaced ticket directories to correct location
 - Uses `shutil.move()` to relocate entire directory subtrees (preserves all children)
+- Never moves a ticket into or out of a nested hive, carries one along, or deletes a target directory that holds one (`cross_hive_move_blocked`, see [Nested Hives](#nested-hives))
 - Triggered by manual `sanitize_hive` calls and any direct linter invocation
 - Reported as fixes in `LinterReport` (type: `"move_directory"`)
 
 **2. Bidirectional Field Repair** (when `auto_fix=True`):
 - Implemented via `validate_parent_children_bidirectional()` and `validate_dependencies_bidirectional()` methods
-- Repairs parent↔children relationship inconsistencies:
+- Repairs the child→parent direction of parent↔children relationships (the parent→child direction is not enforced, per the asymmetric policy above):
   - If child lists parent but parent doesn't list child in children array, adds child to parent's children
-  - If parent lists child but child doesn't list parent, sets parent field on child
 - Repairs up_dependencies↔down_dependencies relationship inconsistencies:
   - If ticket A lists B in up_dependencies but B doesn't list A in down_dependencies, adds A to B's down_dependencies
   - If ticket A lists B in down_dependencies but B doesn't list A in up_dependencies, adds A to B's up_dependencies
 - Modified tickets are written back to filesystem via `_save_modified_tickets()`
-- Reported as fixes in `LinterReport` (types: `"add_child"`, `"set_parent"`, `"add_down_dependency"`, `"add_up_dependency"`)
+- Reported as fixes in `LinterReport` (types: `"add_child"`, `"add_down_dependency"`, `"add_up_dependency"`)
 
 **3. Dangling Reference Removal** (when `auto_fix_dangling_refs: true` in global config):
 - Controlled by `auto_fix_dangling_refs` global config flag — separate from `auto_fix`; dangling ref removal is not triggered by `auto_fix=True` alone
@@ -446,6 +470,13 @@ The linter implements three categories of auto-fix rules that automatically repa
 - Removes dangling dependency IDs: deletes the offending ID from `up_dependencies` or `down_dependencies` and writes the ticket to disk (fix type: `"remove_dangling_dependency"`)
 - Clears dangling parent refs: sets the `parent` field to `null` and writes the ticket to disk (fix type: `"clear_dangling_parent"`)
 - Reported as fixes in `LinterReport` with the respective fix types above
+
+**Fixes Are Listed Only Once Written**:
+- Applies to every auto-fix that rewrites a ticket file: `add_child`, `add_down_dependency`, `add_up_dependency`, `remove_dangling_dependency`, `clear_dangling_parent`, and `add_guid` (GUID generation for a ticket with none)
+- The fix is recorded in the report first, then `_save_modified_tickets()` writes the ticket to the file it was scanned from, not to the path computed from its ID. A fix to a misplaced ticket therefore lands in its only copy, which directory enforcement then moves
+- If a ticket's write fails, the fixes recorded for it by the pass awaiting that write are withdrawn from the report (`LinterReport.withdraw_fixes()`) and each is reported as error `fix_not_applied`, naming the fix and the write error
+- A ticket whose write failed is not written again in the same linter run: its unwritten fixes are still on the in-memory ticket, so a later write would put them on disk. Later passes' fixes to it are withdrawn and reported as `fix_not_applied` too, with the reason that an earlier write of the ticket failed in this run. The set of such tickets (`_unwritten_ids`) is reset at the start of each run
+- `fixes_applied` in the `sanitize_hive` response therefore lists only fixes that are on disk
 
 **Source of Truth**: Frontmatter fields (`parent`, `children`, `up_dependencies`, `down_dependencies`) are authoritative. Directory structure, bidirectional consistency, and dangling reference state are all derived from frontmatter and enforced by these auto-fix rules.
 
@@ -547,7 +578,7 @@ Write to {hive_path}/index.md
 - Uses `list_tickets()` from `paths.py` which scans hive directories recursively
 - Validates `bees_version` field presence and filters by YAML `type` field
 - Validates hierarchical pattern: directory name matches file stem
-- Excludes `/evicted` and `.hive` subdirectories automatically
+- Excludes `/evicted`, `.hive` and any hive nested inside the hive automatically
 - Groups tickets by type using YAML frontmatter `type` field
 - With `hive_name` parameter: only returns tickets from specified hive
 - Without `hive_name`: returns all tickets from all hives
@@ -597,6 +628,8 @@ Corruption detection identifies database integrity issues through linter validat
 - Bidirectional relationship inconsistencies (parent/children, dependencies)
 - Circular dependencies in blocking relationships or hierarchical structure
 - Misplaced ticket directories not matching parent relationships
+- Directory moves blocked at a nested hive's boundary (`cross_hive_move_blocked`)
+- Auto-fixes whose ticket write failed (`fix_not_applied`)
 
 **Warnings** (non-critical):
 - Missing optional fields
@@ -642,7 +675,8 @@ Return LinterReport to caller
 - Enforces directory structure (auto-moves misplaced tickets)
 - Validates bidirectional relationships (parent/children, dependencies)
 - Attempts automatic fixes where possible
-- Returns structured report with fixes applied and remaining errors
+- Leaves any hive nested inside the hive's directory untouched
+- Returns structured report with fixes applied (only those written to disk) and remaining errors
 
 ### Error Reporting Formats
 

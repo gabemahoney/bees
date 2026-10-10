@@ -607,6 +607,25 @@ def test_move_bee_incompatible_tier_types(isolated_bees_env):
     assert (source_dir / TICKET_ID_MOVE_BEE_1).exists()
 
 
+def test_move_bee_compatibility_ignores_nested_hive(isolated_bees_env):
+    """A hive nested in the bee's tree (ticket-named dir with its own .hive/) is not part of the compatibility check."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+    env.write_config()
+    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
+
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compatible Bee", status="open")
+    nested_root = source_dir / TICKET_ID_MOVE_BEE_1 / TICKET_ID_T1
+    (nested_root / ".hive").mkdir(parents=True)
+    write_ticket_file(nested_root, "b.nnn", title="Nested Hive Bee", status="worker")
+
+    result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_CLONE_DEST)
+
+    assert result["status"] == "success"
+    assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
+
+
 def test_move_bee_batch_abort_on_one_failing(isolated_bees_env):
     """With three bees and one having an incompatible status, all moves are aborted.
     Error lists only the failing bee ID with its incompatible values."""

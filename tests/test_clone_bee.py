@@ -172,6 +172,23 @@ def test_clone_preserves_external_cross_references(isolated_bees_env):
     assert external_dep in cloned_child.down_dependencies
 
 
+def test_clone_skips_hive_nested_in_bee_dir(isolated_bees_env):
+    """A ticket-named dir in the bee's tree that holds its own .hive/ is another hive: nothing in it is cloned."""
+    env = isolated_bees_env
+    hive_dir = env.create_hive(HIVE_TEST)
+    env.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+    write_ticket_file(hive_dir, TICKET_ID_CLONE_BEE_ROOT, title="Source")
+    nested_root = hive_dir / TICKET_ID_CLONE_BEE_ROOT / TICKET_ID_CLONE_T1_1
+    (nested_root / ".hive").mkdir(parents=True)
+    write_ticket_file(nested_root, "b.nnn", title="Nested Hive Bee")
+
+    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT)
+
+    assert result["status"] == "success"
+    assert result["written"] == 1
+    assert result["failed"] == []
+
+
 # ============================================================================
 # Error Path Tests
 # ============================================================================

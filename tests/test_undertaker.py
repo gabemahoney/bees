@@ -344,6 +344,27 @@ class TestUndertaker:
         assert result["status"] == "success"
         assert result["archived_guids"] == []
 
+    async def test_phase2_leaves_nested_hive_tickets_unrenamed(self, isolated_bees_env):
+        """Tickets of a hive nested in an archived bee's directory keep their names and are not counted (b.x6n)."""
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive("test_hive", "Test Hive")
+        helper.write_config()
+
+        bee_guid = _make_guid("abc")
+        helper.create_ticket(hive_dir, "b.abc", "bee", "Test Bee", guid=bee_guid)
+        nested_root = hive_dir / "b.abc" / "Inner"
+        (nested_root / ".hive").mkdir(parents=True)
+        helper.create_ticket(nested_root, "b.nnn", "bee", "Nested Hive Bee", guid=_make_guid("nnn"))
+
+        result = await _undertaker(
+            hive_name="test_hive",
+            query_yaml="stages:\n- ['type=bee']",
+        )
+
+        assert result["archived_count"] == 1
+        assert result["archived_guids"] == [bee_guid]
+        assert (hive_dir / "cemetery" / f"b.{bee_guid}" / "Inner" / "b.nnn" / "b.nnn.md").exists()
+
 
 class TestUndertakerScheduler:
     """Tests for UndertakerScheduler._fire()."""

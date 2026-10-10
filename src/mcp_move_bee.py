@@ -6,7 +6,6 @@ and performs moves of bee ticket directories.
 """
 
 import logging
-import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -22,8 +21,8 @@ from .config import (
     resolve_owning_scope,
 )
 from .hive_compat import check_cross_hive_compatibility
-from .id_utils import is_ticket_id, is_valid_ticket_id, normalize_hive_name
-from .paths import find_ticket_file
+from .id_utils import is_valid_ticket_id, normalize_hive_name
+from .paths import find_ticket_file, iter_ticket_files
 from .reader import read_ticket
 from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -37,6 +36,8 @@ def _collect_tree_statuses_and_types(
 ) -> tuple[set[str], set[str]]:
     """Collect all status values and child-tier types from a bee's directory subtree.
 
+    Walks the subtree with iter_ticket_files, so another hive nested in it is skipped.
+
     Args:
         bee_dir: Root directory of the bee ticket.
         bee_id: The root bee's ID (excluded from tier type collection).
@@ -48,21 +49,16 @@ def _collect_tree_statuses_and_types(
     """
     statuses: set[str] = set()
     tier_types: set[str] = set()
-    for dirpath, dirs, files in os.walk(bee_dir):
-        dirs[:] = sorted(d for d in dirs if is_ticket_id(d))
-        dir_name = Path(dirpath).name
-        if is_ticket_id(dir_name):
-            md_name = f"{dir_name}.md"
-            if md_name in files:
-                ticket_path = Path(dirpath) / md_name
-                try:
-                    ticket = read_ticket(dir_name, file_path=ticket_path)
-                except Exception:
-                    continue
-                if ticket.status is not None:
-                    statuses.add(ticket.status)
-                if dir_name != bee_id and ticket.type is not None:
-                    tier_types.add(ticket.type)
+    for ticket_path in iter_ticket_files(bee_dir):
+        ticket_id = ticket_path.parent.name
+        try:
+            ticket = read_ticket(ticket_id, file_path=ticket_path)
+        except Exception:
+            continue
+        if ticket.status is not None:
+            statuses.add(ticket.status)
+        if ticket_id != bee_id and ticket.type is not None:
+            tier_types.add(ticket.type)
     return statuses, tier_types
 
 

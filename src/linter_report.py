@@ -84,6 +84,23 @@ class LinterReport:
         fix = FixAction(ticket_id=ticket_id, fix_type=fix_type, description=description)
         self.fixes.append(fix)
 
+    def withdraw_fixes(self, ticket_id: str, start: int = 0) -> list[FixAction]:
+        """Remove and return the fixes recorded for a ticket at or after a position in fixes.
+
+        Used when a fix recorded ahead of its write turns out not to be applied.
+
+        Args:
+            ticket_id: ID of the ticket whose fixes to withdraw
+            start: Index in fixes of the first fix that may be withdrawn
+
+        Returns:
+            The withdrawn fixes, in the order they were recorded
+        """
+        pending = self.fixes[start:]
+        withdrawn = [f for f in pending if f.ticket_id == ticket_id]
+        self.fixes[start:] = [f for f in pending if f.ticket_id != ticket_id]
+        return withdrawn
+
     def get_errors(self, ticket_id: str = None, error_type: str = None, severity: str = None) -> list[ValidationError]:
         """Query validation errors by criteria.
 

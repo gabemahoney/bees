@@ -11,6 +11,8 @@ Each ticket is stored in its own directory within the hive, with child tickets n
 When you create new tickets you should tell the LLM which Hive to create them in.
 Modifying or deleting tickets does not require you to specify the Hive.
 
+A hive can live inside another hive's folder, for example a Plans hive at `Ideas/Plans` inside an Ideas hive. Bees treats the inner folder as a separate hive: listing, querying and sanitizing the outer hive never read or change the inner hive's tickets. Keep the inner hive outside any ticket folder, since deleting, moving or archiving a ticket takes its whole folder with it. Sanitize is the exception: it never moves a misplaced ticket whose folder holds a hive, or onto a folder that holds one, and reports `cross_hive_move_blocked` instead.
+
 > [!TIP]
 > Its a good idea to disallow your LLM agents from reading or writing to your hive directories. Otherwise, LLMs may route around bees and potentially write malformed tickets.
 
@@ -336,6 +338,8 @@ This is a **global-only** setting — it cannot be set at scope or hive level.
 Each fix is recorded in `fixes_applied` in the `sanitize-hive` response:
 - `remove_dangling_dependency`: A non-existent ID was removed from `up_dependencies` or `down_dependencies`
 - `clear_dangling_parent`: A non-existent parent ID was cleared (set to null)
+
+`fixes_applied` lists only fixes written to disk. If a ticket file can't be written, its fixes are reported in `errors_remaining` as `fix_not_applied` instead.
 
 ```json
 {

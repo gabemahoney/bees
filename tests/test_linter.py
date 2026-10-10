@@ -1018,6 +1018,19 @@ class TestLinterReport:
         assert "CORRUPT" in markdown
         assert TICKET_ID_ABC in markdown
 
+    def test_withdraw_fixes(self):
+        """Removes and returns only the ticket's fixes at or after start, in order."""
+        report = LinterReport()
+        report.add_fix(TICKET_ID_ABC, "add_guid", "before start")
+        report.add_fix(TICKET_ID_XYZ, "add_child", "other ticket")
+        report.add_fix(TICKET_ID_ABC, "add_child", "pending 1")
+        report.add_fix(TICKET_ID_ABC, "add_down_dependency", "pending 2")
+
+        withdrawn = report.withdraw_fixes(TICKET_ID_ABC, start=1)
+
+        assert [f.description for f in withdrawn] == ["pending 1", "pending 2"]
+        assert [f.description for f in report.fixes] == ["before start", "other ticket"]
+
 
 # ============================================================================
 # HIVE VALIDATION

@@ -6,7 +6,6 @@ tags, statuses, and internal cross-references (remapped to new IDs).
 """
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,11 +22,10 @@ from .id_utils import (
     generate_child_tier_id,
     generate_guid,
     generate_unique_ticket_id,
-    is_ticket_id,
     is_valid_ticket_id,
     normalize_hive_name,
 )
-from .paths import find_ticket_file
+from .paths import find_ticket_file, iter_ticket_files
 from .reader import read_ticket
 from .repo_context import get_repo_root
 from .writer import write_ticket_file
@@ -38,8 +36,9 @@ logger = logging.getLogger(__name__)
 def _collect_tree(bee_dir: Path) -> list[tuple[str, Path]]:
     """Collect all tickets in a bee's directory subtree in parent-before-children order.
 
-    Uses os.walk top-down traversal, only entering directories whose names
-    match the ticket ID pattern (same filtering as iter_ticket_files).
+    Uses iter_ticket_files' top-down traversal, which only enters directories
+    whose names match the ticket ID pattern and skips another hive nested in
+    the subtree.
 
     Args:
         bee_dir: Root directory of the source bee ticket.
@@ -47,15 +46,7 @@ def _collect_tree(bee_dir: Path) -> list[tuple[str, Path]]:
     Returns:
         List of (ticket_id, file_path) tuples ordered parent-before-children.
     """
-    tree: list[tuple[str, Path]] = []
-    for dirpath, dirs, files in os.walk(bee_dir):
-        dirs[:] = sorted(d for d in dirs if is_ticket_id(d))
-        dir_name = Path(dirpath).name
-        if is_ticket_id(dir_name):
-            md_name = f"{dir_name}.md"
-            if md_name in files:
-                tree.append((dir_name, Path(dirpath) / md_name))
-    return tree
+    return [(ticket_path.parent.name, ticket_path) for ticket_path in iter_ticket_files(bee_dir)]
 
 
 def _clone_bee_core(

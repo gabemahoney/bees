@@ -1436,6 +1436,22 @@ class TestCollectDeletionSet:
         assert "t1.ab1.cd" in result
         assert result.index("t1.ab1.cd") < result.index("b.ab1")
 
+    def test_nested_hive_in_subtree_not_collected(self, isolated_bees_env):
+        """A ticket-named dir holding its own .hive/ is another hive: neither it nor its tickets are collected."""
+        from src.mcp_ticket_ops import _collect_deletion_set
+        from tests.helpers import write_ticket_file
+
+        helper = isolated_bees_env
+        hive_dir = helper.create_hive(HIVE_BACKEND)
+        helper.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+        self._setup_ticket(hive_dir, "b.ab1")
+        self._setup_ticket(hive_dir, "t1.ab1.cd")
+        nested_root = hive_dir / "b.ab1" / "t1.ab1.ef"
+        (nested_root / ".hive").mkdir(parents=True)
+        write_ticket_file(nested_root, "b.nnn")
+
+        assert _collect_deletion_set("b.ab1", HIVE_BACKEND) == ["t1.ab1.cd", "b.ab1"]
+
     def test_nonexistent_ticket_raises_value_error(self, isolated_bees_env):
         """Raises ValueError when root ticket does not exist on disk."""
         from src.mcp_ticket_ops import _collect_deletion_set

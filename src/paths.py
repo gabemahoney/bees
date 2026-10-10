@@ -1,7 +1,8 @@
 """Path resolution utilities for ticket file management."""
 
+import logging
 import os
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -9,22 +10,155 @@ from .id_utils import is_ticket_id, normalize_hive_name
 from .reader import get_ticket_type, read_ticket
 from .types import TicketType
 
+logger = logging.getLogger(__name__)
+
+# Directory that marks a hive root; it holds the hive's identity.json
+HIVE_MARKER_DIR = ".hive"
+
+# Directories a deep walk never enters, besides hidden ones
+_DEEP_WALK_EXCLUDED_DIRS = frozenset({"evicted", "cemetery"})
+
+
+def _is_deep_walk_dir(name: str) -> bool:
+    """Return True if a deep walk enters a subdirectory with this name."""
+    return not name.startswith(".") and name not in _DEEP_WALK_EXCLUDED_DIRS
+
+
+def _relpath_inside(path: str, base: str) -> str | None:
+    """Return path relative to base if path is strictly inside base, else None."""
+    try:
+        rel = os.path.relpath(path, base)
+    except ValueError:  # path and base are on different drives
+        return None
+    if rel in (os.curdir, os.pardir) or rel.startswith(os.pardir + os.sep):
+        return None
+    return rel
+
+
+def _registered_hive_roots_inside(top: str) -> frozenset[str]:
+    """Return the roots of registered hives strictly inside top, spelled as os.walk(top) spells them.
+
+    Hive roots come from every scope of the global config, loaded once per call.
+    top is matched both as given and with symlinks resolved.
+    """
+    from .config import load_global_config
+
+    try:
+        global_config = load_global_config()
+    except (OSError, ValueError) as e:
+        logger.warning(f"Cannot read registered hive roots from the global config: {e}")
+        return frozenset()
+
+    bases = {os.path.abspath(top), os.path.realpath(top)}
+    inside: set[str] = set()
+    for scope_data in global_config.get("scopes", {}).values():
+        hives = scope_data.get("hives") if isinstance(scope_data, dict) else None
+        if not isinstance(hives, dict):
+            continue
+        for hive_data in hives.values():
+            hive_path = hive_data.get("path") if isinstance(hive_data, dict) else None
+            if not isinstance(hive_path, str) or not hive_path:
+                continue
+            for base in bases:
+                rel = _relpath_inside(os.path.abspath(hive_path), base)
+                if rel is not None:
+                    inside.add(os.path.join(top, rel))
+    return frozenset(inside)
+
+
+def _is_other_hive_root(top: str, dirpath: str, dirnames: list[str], other_hive_roots: frozenset[str]) -> bool:
+    """Return True if dirpath, as os.walk(top) yields it, is the root of a hive other than top.
+
+    other_hive_roots is _registered_hive_roots_inside(top).
+    """
+    return dirpath != top and (HIVE_MARKER_DIR in dirnames or dirpath in other_hive_roots)
+
+
+def walk_hive(
+    hive_root: str | os.PathLike, enter: Callable[[str], bool] | None = None
+) -> Iterator[tuple[str, list[str], list[str]]]:
+    """Walk a hive's directory tree top-down like os.walk, never entering another hive.
+
+    A directory below hive_root belongs to another hive when it holds its own
+    .hive/ directory or is the root of a hive registered in any scope of the
+    global config. Such a directory is not yielded and nothing under it is
+    visited. hive_root itself is always walked, so it may be a hive root or a
+    ticket directory inside one.
+
+    The .hive/ check reads the directory listing os.walk already made, and the
+    global config is loaded once per walk, so pruning adds no per-directory I/O.
+
+    Args:
+        hive_root: Directory to walk.
+        enter: Predicate on a subdirectory name; only subdirectories it accepts
+            are entered. None enters every subdirectory.
+
+    Yields:
+        (dirpath, dirnames, filenames) as os.walk yields them, with dirnames
+        already filtered by enter and sorted. dirnames may still name another
+        hive's root; that directory is pruned when the walk reaches it.
+    """
+    top = os.fspath(hive_root)
+    other_hive_roots = _registered_hive_roots_inside(top)
+    for dirpath, dirs, files in os.walk(top):
+        if _is_other_hive_root(top, dirpath, dirs, other_hive_roots):
+            dirs[:] = []
+            continue
+        dirs[:] = sorted(d for d in dirs if enter is None or enter(d))
+        yield dirpath, dirs, files
+
+
+def find_nested_hive_root(top: str | os.PathLike) -> Path | None:
+    """Return the first root of another hive found strictly below top, or None.
+
+    Walks every directory below top, hidden ones included, top-down. A
+    directory is another hive's root when it holds its own .hive/ directory
+    or is the root of a hive registered in any scope of the global config.
+    Check this before deleting top, so another hive is never deleted with it.
+    """
+    top_str = os.fspath(top)
+    other_hive_roots = _registered_hive_roots_inside(top_str)
+    for dirpath, dirs, _files in os.walk(top_str):
+        if _is_other_hive_root(top_str, dirpath, dirs, other_hive_roots):
+            return Path(dirpath)
+    return None
+
+
+def find_enclosing_hive_root(hive_root: Path, path: Path) -> Path | None:
+    """Return the root of another hive that path lies in below hive_root, or None.
+
+    Checks each directory from just below hive_root down to path itself,
+    outermost first, and returns the first that holds its own .hive/ directory
+    or is the root of a hive registered in any scope of the global config.
+    Returns None when path is hive_root itself or is not inside it.
+    """
+    top = os.fspath(hive_root)
+    rel = _relpath_inside(os.path.abspath(path), os.path.abspath(top))
+    if rel is None:
+        return None
+    other_hive_roots = _registered_hive_roots_inside(top)
+    candidate = top
+    for part in Path(rel).parts:
+        candidate = os.path.join(candidate, part)
+        if candidate in other_hive_roots or os.path.isdir(os.path.join(candidate, HIVE_MARKER_DIR)):
+            return Path(candidate)
+    return None
+
 
 def iter_ticket_files(hive_root: Path) -> Generator[Path, None, None]:
     """Yield all ticket .md files in a hive using selective directory traversal.
 
     Only recurses into directories whose names match the ticket ID pattern,
     naturally excluding /cemetery, eggs/, .hive/, evicted/, and any future
-    special directories.
+    special directories. Never enters another hive nested inside this one
+    (a subdirectory with its own .hive/ or a registered hive root; see
+    walk_hive()).
 
     Yields:
         Path objects for files matching {ticket_id}/{ticket_id}.md pattern.
         Skips index.md files.
     """
-    for dirpath, dirs, files in os.walk(hive_root):
-        # Only recurse into ticket-ID subdirectories
-        dirs[:] = sorted(d for d in dirs if is_ticket_id(d))
-
+    for dirpath, _dirs, files in walk_hive(hive_root, enter=is_ticket_id):
         dir_name = Path(dirpath).name
         if is_ticket_id(dir_name):
             md_name = f"{dir_name}.md"
@@ -36,17 +170,16 @@ def iter_ticket_files_deep(hive_root: Path) -> Generator[Path, None, None]:
     """Yield all ticket .md files, including misplaced ones.
 
     Broader traversal for the linter: enters all directories except hidden
-    ones (naturally excludes .hive/), finding tickets even in wrong locations
-    or with non-standard directory names. Only yields files matching the
-    {dirname}/{dirname}.md naming convention.
+    ones (naturally excludes .hive/), evicted/ and cemetery/, finding tickets
+    even in wrong locations or with non-standard directory names. Never enters
+    another hive nested inside this one (a subdirectory with its own .hive/
+    or a registered hive root; see walk_hive()). Only yields files matching
+    the {dirname}/{dirname}.md naming convention.
 
     Use iter_ticket_files() for normal operations on well-structured hives.
     Use this function when scanning for misplaced or invalid tickets.
     """
-    for dirpath, dirs, files in os.walk(hive_root):
-        # Skip hidden directories (.hive, etc.), evicted/, and /cemetery
-        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in ("evicted", "cemetery"))
-
+    for dirpath, _dirs, files in walk_hive(hive_root, enter=_is_deep_walk_dir):
         dir_name = Path(dirpath).name
         md_name = f"{dir_name}.md"
         if md_name in files:
@@ -178,27 +311,23 @@ def compute_ticket_path(ticket_id: str, hive_root: Path) -> Path:
 def find_ticket_file(hive_root: Path, ticket_id: str, deep: bool = False) -> Path | None:
     """Find a specific ticket's .md file using selective directory traversal.
 
-    Returns the first matching {ticket_id}/{ticket_id}.md file found.
+    Returns the first matching {ticket_id}/{ticket_id}.md file found. Never
+    enters another hive nested inside this one (see walk_hive()).
 
     Args:
         hive_root: Root path of the hive to search
         ticket_id: Ticket ID to find
         deep: If False (default), only enters ticket-ID directories.
-              If True, enters all non-hidden directories (for finding misplaced tickets).
+              If True, enters all non-hidden directories except evicted/ and
+              cemetery/ (for finding misplaced tickets).
 
     Returns:
         Path to the ticket's .md file, or None if not found
     """
-    for dirpath, dirs, files in os.walk(hive_root):
-        if deep:
-            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("evicted", "cemetery")]
-        else:
-            dirs[:] = [d for d in dirs if is_ticket_id(d)]
-
-        if Path(dirpath).name == ticket_id:
-            md_name = f"{ticket_id}.md"
-            if md_name in files:
-                return Path(dirpath) / md_name
+    md_name = f"{ticket_id}.md"
+    for dirpath, _dirs, files in walk_hive(hive_root, enter=_is_deep_walk_dir if deep else is_ticket_id):
+        if Path(dirpath).name == ticket_id and md_name in files:
+            return Path(dirpath) / md_name
 
     return None
 
@@ -369,7 +498,8 @@ def list_tickets(ticket_type: TicketType | None = None) -> list[Path]:
     List all ticket files from all configured hives, optionally filtered by type.
 
     Scans hive directories recursively for hierarchical ticket storage.
-    Excludes special directories (eggs, evicted, .hive) and index.md files.
+    Excludes special directories (eggs, evicted, .hive), other hives nested
+    inside a hive, and index.md files.
     Only includes files matching the pattern {ticket_id}/{ticket_id}.md.
 
     Args:
