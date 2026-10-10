@@ -48,6 +48,7 @@ from .mcp_hive_ops import read_identity, write_identity
 from .mcp_relationships import (
     _add_to_down_dependencies,
     _add_to_up_dependencies,
+    _find_hive_for_ticket,
     _remove_child_from_parent,
     _remove_from_down_dependencies,
     _remove_from_up_dependencies,
@@ -60,6 +61,7 @@ from .paths import (
     compute_ticket_path,
     get_ticket_path,
     hive_crossing_reason,
+    infer_ticket_type_from_id,
     iter_ticket_files,
     walk_hive,
 )
@@ -597,6 +599,21 @@ def _validate_deps(dep_ids: list[str], ticket_id: str, ticket_type: str) -> None
             )
 
 
+def _check_deps_syncable(dep_ids: set[str]) -> None:
+    """Raise ValueError unless every dependency resolves (type, hive) and reads, as the add helpers need."""
+    for dep_id in sorted(dep_ids):
+        dep_type = infer_ticket_type_from_id(dep_id)
+        if not dep_type:
+            _log_raise(f"Dependency ticket not found or unreadable: {dep_id}")
+        dep_hive = _find_hive_for_ticket(dep_id)
+        if not dep_hive:
+            _log_raise(f"Dependency ticket hive not found: {dep_id}")
+        try:
+            read_ticket(dep_id, file_path=get_ticket_path(dep_id, dep_type, dep_hive))
+        except (ParseError, ValidationError, FileNotFoundError) as e:
+            _log_raise(f"Dependency ticket cannot be read: {dep_id}: {e}")
+
+
 def _resolve_hive(ticket_id: str, hive_name: str | None) -> str:
     """Resolve hive for a ticket, raising ValueError on failure."""
     if hive_name:
@@ -879,6 +896,18 @@ async def _update_ticket_single(
         assert down_dependencies != _UNSET  # Type narrowing
         ticket.down_dependencies = down_dependencies if down_dependencies is not None else []
 
+    new_up_deps = set(ticket.up_dependencies or [])
+    new_down_deps = set(ticket.down_dependencies or [])
+
+    # Check every dependency being added can be synced before writing anything, so an error leaves no file changed
+    try:
+        if up_dependencies is not _UNSET:
+            _check_deps_syncable(new_up_deps - old_up_deps)
+        if down_dependencies is not _UNSET:
+            _check_deps_syncable(new_down_deps - old_down_deps)
+    except ValueError as e:
+        return {"status": "error", "error_type": "invalid_dependency", "message": str(e)}
+
     # Write updated ticket
     frontmatter_data = asdict(ticket)
     # Remove body from frontmatter - it belongs in the body only
@@ -893,30 +922,31 @@ async def _update_ticket_single(
     cache.evict(ticket_id)
 
     # Sync bidirectional relationships
-    new_up_deps = set(ticket.up_dependencies or [])
-    new_down_deps = set(ticket.down_dependencies or [])
+    try:
+        # Handle up_dependencies changes
+        if up_dependencies is not _UNSET:
+            removed_up = old_up_deps - new_up_deps
+            added_up = new_up_deps - old_up_deps
 
-    # Handle up_dependencies changes
-    if up_dependencies is not _UNSET:
-        removed_up = old_up_deps - new_up_deps
-        added_up = new_up_deps - old_up_deps
+            for dep_id in removed_up:
+                _remove_from_down_dependencies(ticket_id, dep_id)
 
-        for dep_id in removed_up:
-            _remove_from_down_dependencies(ticket_id, dep_id, hive_name=resolved_hive)
+            for dep_id in added_up:
+                _add_to_down_dependencies(ticket_id, dep_id)
 
-        for dep_id in added_up:
-            _add_to_down_dependencies(ticket_id, dep_id, hive_name=resolved_hive)
+        # Handle down_dependencies changes
+        if down_dependencies is not _UNSET:
+            removed_down = old_down_deps - new_down_deps
+            added_down = new_down_deps - old_down_deps
 
-    # Handle down_dependencies changes
-    if down_dependencies is not _UNSET:
-        removed_down = old_down_deps - new_down_deps
-        added_down = new_down_deps - old_down_deps
+            for dep_id in removed_down:
+                _remove_from_up_dependencies(ticket_id, dep_id)
 
-        for dep_id in removed_down:
-            _remove_from_up_dependencies(ticket_id, dep_id, hive_name=resolved_hive)
-
-        for dep_id in added_down:
-            _add_to_up_dependencies(ticket_id, dep_id, hive_name=resolved_hive)
+            for dep_id in added_down:
+                _add_to_up_dependencies(ticket_id, dep_id)
+    except ValueError as e:
+        logger.error(f"Failed to sync dependencies for {ticket_id}: {e}")
+        return {"status": "error", "error_type": "invalid_dependency", "message": str(e)}
 
     logger.info(f"Successfully updated ticket: {ticket_id}")
 
@@ -1244,7 +1274,7 @@ def _clean_external_dependencies(deletion_ids: list[str], resolved_hive: str) ->
             if dep_id in deletion_set:
                 continue
             try:
-                _remove_from_down_dependencies(tid, dep_id, hive_name=resolved_hive)
+                _remove_from_down_dependencies(tid, dep_id)
             except FileNotFoundError:
                 pass
             except Exception as e:
@@ -1256,7 +1286,7 @@ def _clean_external_dependencies(deletion_ids: list[str], resolved_hive: str) ->
             if dep_id in deletion_set:
                 continue
             try:
-                _remove_from_up_dependencies(tid, dep_id, hive_name=resolved_hive)
+                _remove_from_up_dependencies(tid, dep_id)
             except FileNotFoundError:
                 pass
             except Exception as e:

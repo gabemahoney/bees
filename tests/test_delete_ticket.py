@@ -690,6 +690,32 @@ class TestDeleteTicketCleanDependencies:
         ext_b = read_ticket(external_b_id, file_path=get_ticket_path(external_b_id, "bee", HIVE_BACKEND))
         assert target_id not in (ext_b.up_dependencies or [])
 
+    async def test_cleanup_reaches_dependents_in_other_hives(self, isolated_bees_env):
+        """Regression b.23h: deleting a ticket cleans the dependent and the blocker held in another hive."""
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.create_hive(HIVE_FRONTEND)
+        isolated_bees_env.write_config()
+        blocker = await _create_ticket(ticket_type="bee", title="Blocker", hive_name=HIVE_FRONTEND)
+        blocker_id = blocker["ticket_id"]
+        target = await _create_ticket(
+            ticket_type="bee", title="Target", up_dependencies=[blocker_id], hive_name=HIVE_BACKEND
+        )
+        target_id = target["ticket_id"]
+        dependent = await _create_ticket(
+            ticket_type="bee", title="Dependent", up_dependencies=[target_id], hive_name=HIVE_FRONTEND
+        )
+        dependent_id = dependent["ticket_id"]
+        blocker_before = read_ticket(blocker_id, file_path=get_ticket_path(blocker_id, "bee", HIVE_FRONTEND))
+        assert target_id in (blocker_before.down_dependencies or [])
+
+        with patch("src.mcp_ticket_ops.load_global_config", return_value={"delete_with_dependencies": True}):
+            await _delete_ticket(ticket_ids=target_id)
+
+        blocker_after = read_ticket(blocker_id, file_path=get_ticket_path(blocker_id, "bee", HIVE_FRONTEND))
+        dependent_after = read_ticket(dependent_id, file_path=get_ticket_path(dependent_id, "bee", HIVE_FRONTEND))
+        assert target_id not in (blocker_after.down_dependencies or [])
+        assert target_id not in (dependent_after.up_dependencies or [])
+
     async def test_subtree_cleanup_cleans_child_external_deps(self, hive_tier_config):
         """Deleting root with delete_with_dependencies=True removes child's dep refs from external tickets."""
         repo_root, hive_path, tier_config = hive_tier_config
