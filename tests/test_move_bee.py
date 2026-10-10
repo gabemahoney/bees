@@ -10,6 +10,7 @@ from src.config import get_scope_key_for_hive
 from src.mcp_hive_ops import write_identity
 from src.mcp_move_bee import _move_bee_core
 from src.reader import read_ticket
+from tests.conftest import write_global_settings
 from tests.helpers import tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
@@ -553,14 +554,34 @@ def test_move_bee_succeeds_when_dest_hive_has_corrupt_ticket(isolated_bees_env):
 # ===========================================================================
 
 
-def test_move_bee_incompatible_status_values(isolated_bees_env):
+# Config level that holds the destination's restriction. The destination resolves status_values and
+# child_tiers hive > scope > global (b.zcw): "scope_over_global" has the scope restrict (or allow)
+# while the global config says the opposite.
+DEST_CONFIG_LEVELS = ["hive", "scope", "scope_over_global"]
+
+
+def _configure_dest_values(env, dest_dir, level, settings, opposite):
+    """Put ``settings`` (status_values and/or child_tiers) at ``level``; at "scope_over_global" the
+    global config holds ``opposite``."""
+    if level == "hive":
+        env.write_config()
+        _write_hive_identity(dest_dir, HIVE_CLONE_DEST, **settings)
+    else:
+        env.write_config(**settings)
+        if level == "scope_over_global":
+            write_global_settings(env.global_bees_dir, **opposite)
+
+
+@pytest.mark.parametrize("level", DEST_CONFIG_LEVELS)
+def test_move_bee_incompatible_status_values(isolated_bees_env, level):
     """Cross-hive move fails with compatibility_error when dest has restricted status_values
     and the source bee has a status not in that list. Bee is not moved."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.write_config()
-    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done"])
+    _configure_dest_values(
+        env, dest_dir, level, {"status_values": ["open", "done"]}, {"status_values": ["open", "done", "worker"]}
+    )
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compat Test", status="worker")
 
@@ -574,18 +595,21 @@ def test_move_bee_incompatible_status_values(isolated_bees_env):
     assert "worker" in failed["incompatible_status_values"]
     assert failed["incompatible_tier_types"] == []
     assert (source_dir / TICKET_ID_MOVE_BEE_1).exists()
+    assert not (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
 
 
-def test_move_bee_incompatible_tier_types(isolated_bees_env):
+@pytest.mark.parametrize("level", DEST_CONFIG_LEVELS)
+def test_move_bee_incompatible_tier_types(isolated_bees_env, level):
     """Cross-hive move fails with compatibility_error when dest hive has restricted
     child_tiers and source bee has a child with a tier type not in that config."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    # Dest hive only allows t1; source bee has a t2 child
-    # Scope-level tiers include t2 so the child ticket can exist in source
-    env.write_config(child_tiers={"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]})
-    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, child_tiers={"t1": ["Epic", "Epics"]})
+    # Dest only allows t1; source bee has a t2 child
+    both_tiers = {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}
+    _configure_dest_values(
+        env, dest_dir, level, {"child_tiers": {"t1": ["Epic", "Epics"]}}, {"child_tiers": both_tiers}
+    )
 
     write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Parent Bee")
     write_ticket_file(
@@ -605,6 +629,7 @@ def test_move_bee_incompatible_tier_types(isolated_bees_env):
     assert "t2" in failed["incompatible_tier_types"]
     assert failed["incompatible_status_values"] == []
     assert (source_dir / TICKET_ID_MOVE_BEE_1).exists()
+    assert not (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
 
 
 def test_move_bee_refuses_bee_holding_nested_hive(isolated_bees_env):
@@ -696,22 +721,81 @@ def test_move_bee_same_hive_unaffected(isolated_bees_env):
     assert result["moved"] == []
 
 
-def test_move_bee_compatible_cross_hive_unaffected(isolated_bees_env):
-    """Compatible cross-hive move proceeds normally; no regression from compatibility check."""
+@pytest.mark.parametrize("level", DEST_CONFIG_LEVELS)
+def test_move_bee_compatible_cross_hive_unaffected(isolated_bees_env, level):
+    """Compatible cross-hive move proceeds normally; no regression from compatibility check.
+    The destination's status_values and child_tiers, at any config level, allow the bee's status and
+    its t2 child, whatever the lower levels say."""
     env = isolated_bees_env
     source_dir = env.create_hive(HIVE_TEST)
     dest_dir = env.create_hive(HIVE_CLONE_DEST)
-    env.write_config()
-    _write_hive_identity(dest_dir, HIVE_CLONE_DEST, status_values=["open", "done", "worker"])
+    _configure_dest_values(
+        env,
+        dest_dir,
+        level,
+        {"status_values": ["open", "done", "worker"], "child_tiers": {"t1": ["Epic", "Epics"], "t2": ["Task", "Tasks"]}},
+        {"status_values": ["open"], "child_tiers": {"t1": ["Epic", "Epics"]}},
+    )
 
-    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compatible Bee", status="open")
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Compatible Bee", status="worker")
+    write_ticket_file(source_dir / TICKET_ID_MOVE_BEE_1, TICKET_ID_MOVE_BEE_2, title="T2 Child", type="t2")
 
     result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_CLONE_DEST)
 
     assert result["status"] == "success"
     assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
     assert not (source_dir / TICKET_ID_MOVE_BEE_1).exists()
-    assert (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
+    assert (dest_dir / TICKET_ID_MOVE_BEE_1 / TICKET_ID_MOVE_BEE_2).exists()
+
+
+@pytest.mark.parametrize(
+    "glob_values,exact_values,expect_moved",
+    [
+        pytest.param(["open"], ["open", "worker"], True, id="exact_scope_allows_status_glob_does_not"),
+        pytest.param(["open", "worker"], ["open"], False, id="exact_scope_excludes_status_glob_allows"),
+    ],
+)
+def test_move_bee_checks_values_of_most_specific_matching_scope(
+    isolated_bees_env, glob_values, exact_values, expect_moved
+):
+    """Both hives live in the less-specific glob scope; a more specific exact scope matching the repo
+    holds other status_values. The most specific scope's values decide, as for create-ticket (b.zcw)."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+
+    from tests.conftest import write_multi_scope_config
+    from src.repo_context import repo_root_context
+
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test"},
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                },
+                "status_values": glob_values,
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {"hives": {}, "status_values": exact_values},
+        },
+    )
+    write_ticket_file(source_dir, TICKET_ID_MOVE_BEE_1, title="Glob Scope Bee", status="worker")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _move_bee_core([TICKET_ID_MOVE_BEE_1], HIVE_CLONE_DEST)
+
+    if expect_moved:
+        assert result["status"] == "success"
+        assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
+        assert (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
+        assert not (source_dir / TICKET_ID_MOVE_BEE_1).exists()
+    else:
+        assert result["status"] == "error"
+        assert result["error_type"] == "compatibility_error"
+        assert result["failed_bees"][0]["incompatible_status_values"] == ["worker"]
+        assert (source_dir / TICKET_ID_MOVE_BEE_1).exists()
+        assert not (dest_dir / TICKET_ID_MOVE_BEE_1).exists()
 
 
 # ============================================================================

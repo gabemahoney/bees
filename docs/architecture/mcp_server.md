@@ -186,10 +186,11 @@ The `mcp_move_bee` module implements bee ticket relocation between hives within 
 
 **Module Dependencies**:
 - Used by: `mcp_server.py` (registered as `move_bee` MCP tool)
-- Imports: `config` (hive lookup, scope resolution), `id_utils` (ticket ID validation), `repo_utils` (path-based repo detection), `paths` (ticket file location), `repo_context`
+- Imports: `config` (hive lookup, scope resolution), `id_utils` (ticket ID validation), `repo_utils` (path-based repo detection), `paths` (ticket file location), `hive_compat` (cross-hive compatibility check), `repo_context`
 
 **Integration Points**:
 - Only bee tickets (`b.` prefix) can be moved; non-bee IDs are rejected with a descriptive failure reason
+- Cross-hive moves run the same status/tier compatibility check as `clone_bee` (skipped with `force=True`), resolving the destination's values via `load_bees_config()` (hive, then most-specific matching scope, then global, then default); see "mcp_clone_bee Module"
 - Scope validation uses `get_scope_key_for_hive()` to prevent cross-scope moves
 - Bees already in the destination hive are silently skipped and reported in `skipped`
 - A bee whose directory holds another hive (`hive_crossing_reason()`) is not moved and is reported in `failed` naming that hive; the other bees still move (see [Nested Hives](storage.md#nested-hives))
@@ -212,7 +213,7 @@ The `mcp_resolver_ops` module implements the named resolver registry operations:
 
 ### mcp_clone_bee Module
 
-The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket subtree within the same hive or into a named destination hive, assigning fresh IDs, GUIDs, and timestamps to every cloned ticket. Cross-hive cloning includes a compatibility check that rejects the clone if source ticket statuses or tier types are incompatible with the destination hive's configuration; the `force` flag bypasses this check.
+The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket subtree within the same hive or into a named destination hive, assigning fresh IDs, GUIDs, and timestamps to every cloned ticket. Cross-hive cloning includes a compatibility check that rejects the clone if source ticket statuses or tier types are incompatible with the destination hive's configuration; the `force` flag bypasses this check. `move_bee` runs the same check. Both build their config with `load_bees_config()` and resolve the destination's statuses and tiers the same way `create_ticket` does: hive, then the most-specific matching scope, then global, then default.
 
 **Design Rationale**: Clone logic is isolated from ticket CRUD and move operations because it combines tree traversal, ID remapping, and multi-ticket writes into a single atomic-ish workflow. Synchronous core (`_clone_bee_core`) is separated from async MCP wrapper to simplify testing, following the same pattern as `mcp_move_bee`.
 
@@ -222,7 +223,7 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 **Module Dependencies**:
 - Used by: `mcp_server.py` (registered as `clone_bee` MCP tool)
-- Imports: `config` (hive lookup, scope resolution, status and tier resolution), `id_utils` (ID generation and validation), `paths` (ticket file location), `reader` (ticket reading), `writer` (ticket writing), `repo_context`
+- Imports: `config` (hive lookup, scope resolution, status and tier resolution), `id_utils` (ID generation and validation), `paths` (ticket file location), `hive_compat` (cross-hive compatibility check), `reader` (ticket reading), `writer` (ticket writing), `repo_context`
 
 **Integration Points**:
 - Only bee tickets (`b.` prefix) can be cloned; non-bee IDs return `invalid_source_type` error

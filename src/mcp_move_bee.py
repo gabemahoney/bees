@@ -12,11 +12,10 @@ from typing import Any
 
 from . import cache
 from .config import (
-    BeesConfig,
     check_for_config_conflicts,
     check_schema_version,
-    find_all_matching_scopes,
     get_scope_key_for_hive,
+    load_bees_config,
     load_global_config,
     resolve_owning_scope,
 )
@@ -98,15 +97,12 @@ def _move_bee_core(
     global_config = load_global_config()
     repo_root = get_repo_root()
 
-    # Build merged BeesConfig from all matching scopes so source bees in
-    # less-specific scopes are discoverable alongside the destination hive.
-    matching_scopes = find_all_matching_scopes(repo_root, global_config)
-    merged_hives: dict = {}
-    for _, scope_cfg in matching_scopes:
-        merged_hives.update(scope_cfg.hives)
-    config = BeesConfig(hives=merged_hives)
+    # Merged hives from all matching scopes (so source bees in less-specific scopes are
+    # discoverable alongside the destination hive); non-hive settings come from the
+    # most-specific scope, as for create-ticket and get-status-values.
+    config = load_bees_config()
 
-    if destination_hive not in config.hives:
+    if not config or destination_hive not in config.hives:
         return {
             "status": "error",
             "message": f"Destination hive '{destination_hive}' not found.",

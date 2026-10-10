@@ -135,21 +135,14 @@ def test_dependency_update_touches_both_ends(corpus, cli_runner, tmp_path, new_u
 
 # --- move-bee ------------------------------------------------------------------------------
 
-MOVE_SCOPE_BUG = "b.zcw: move-bee's compatibility check ignores scope-level status values and tiers"
-
-
 @pytest.mark.parametrize(
     "role,destination,force",
     [
         pytest.param("idea_plain", "features", False, id="bee_from_outer_hive"),
         pytest.param("idea_bee", "features", True, id="bee_with_child_from_outer_hive_forced"),
         pytest.param("plan_dep_bee", "bugs", False, id="bee_out_of_nested_hive"),
-        pytest.param("moved_bee", "features", True, id="bee_moved_by_084_back_forced"),
-        pytest.param("tree_bee", "plans", True, id="every_tier_into_nested_hive_forced"),
-        pytest.param("tree_bee", "plans", False, id="every_tier_into_nested_hive",
-                     marks=pytest.mark.xfail(strict=True, reason=MOVE_SCOPE_BUG)),
-        pytest.param("moved_bee", "features", False, id="bee_moved_by_084_back",
-                     marks=pytest.mark.xfail(strict=True, reason=MOVE_SCOPE_BUG)),
+        pytest.param("tree_bee", "plans", False, id="every_tier_into_nested_hive"),
+        pytest.param("moved_bee", "features", False, id="bee_moved_by_084_back"),
     ],
 )
 def test_move_bee_moves_the_tree_unchanged(corpus, cli_runner, role, destination, force):

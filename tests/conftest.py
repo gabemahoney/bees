@@ -298,6 +298,18 @@ def write_global_queries(global_bees_dir: Path, queries: dict[str, dict]) -> Non
     config_path.write_text(json.dumps(config, indent=2))
 
 
+def write_global_settings(global_bees_dir: Path, **settings) -> None:
+    """Merge top-level global settings (e.g. ``status_values``, ``child_tiers``) into config.json.
+
+    Keeps the ``scopes`` already written. Global values are the third level of the
+    hive > scope > global resolution of status_values and child_tiers.
+    """
+    config_path = global_bees_dir / "config.json"
+    config = json.loads(config_path.read_text())
+    config.update(settings)
+    config_path.write_text(json.dumps(config, indent=2))
+
+
 def write_queen_repos_config(global_bees_dir: Path, entries: list[tuple[str, bool | None]]) -> None:
     """Write queen_repos into global config.json, merging with pre-existing config.
 

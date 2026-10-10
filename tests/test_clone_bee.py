@@ -2,9 +2,13 @@
 
 from pathlib import Path
 
+import pytest
+
 from src.mcp_clone_bee import _clone_bee_core
 from src.mcp_hive_ops import write_identity
 from src.reader import read_ticket
+from src.repo_context import repo_root_context
+from tests.conftest import write_multi_scope_config
 from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_CLONE_DEST,
@@ -366,6 +370,50 @@ def test_clone_incompatible_tier_types(isolated_bees_env):
     assert result["error_type"] == "compatibility_error"
     assert "t2" in result["incompatible_tier_types"]
     assert result["incompatible_status_values"] == []
+
+
+@pytest.mark.parametrize(
+    "glob_values,exact_values,expect_cloned",
+    [
+        pytest.param(["open"], ["open", "worker"], True, id="exact_scope_allows_status_glob_does_not"),
+        pytest.param(["open", "worker"], ["open"], False, id="exact_scope_excludes_status_glob_allows"),
+    ],
+)
+def test_clone_checks_values_of_most_specific_matching_scope(
+    isolated_bees_env, glob_values, exact_values, expect_cloned
+):
+    """Both hives live in the less-specific glob scope; a more specific exact scope matching the repo
+    holds other status_values. The most specific scope's values decide, as for create-ticket (b.zcw)."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_CLONE_DEST)
+
+    write_multi_scope_config(
+        env.global_bees_dir,
+        {
+            SCOPE_PATTERN_WILDCARD_PARENT: {
+                "hives": {
+                    HIVE_TEST: {"path": str(source_dir), "display_name": "Test Hive"},
+                    HIVE_CLONE_DEST: {"path": str(dest_dir), "display_name": "Clone Dest"},
+                },
+                "status_values": glob_values,
+            },
+            SCOPE_PATTERN_EXACT_CHILD: {"hives": {}, "status_values": exact_values},
+        },
+    )
+    write_ticket_file(source_dir, TICKET_ID_CLONE_BEE_ROOT, title="Glob Scope Bee", status="worker")
+
+    with repo_root_context(Path("/Users/dev/projects/bees")):
+        result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT, destination_hive=HIVE_CLONE_DEST)
+
+    if expect_cloned:
+        assert result["status"] == "success"
+        assert (dest_dir / result["ticket_id"]).exists()
+    else:
+        assert result["status"] == "error"
+        assert result["error_type"] == "compatibility_error"
+        assert result["incompatible_status_values"] == ["worker"]
+        assert list(dest_dir.iterdir()) == []
 
 
 def test_clone_both_checks_fail(isolated_bees_env):
