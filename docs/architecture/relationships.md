@@ -77,6 +77,8 @@ When dependencies change:
 2. **Removing Dependency**: Removing B from `A.up_dependencies` removes A from `B.down_dependencies`
 3. **Inverse Operation**: Adding A to `B.down_dependencies` automatically adds B to `A.up_dependencies`
 
+The other ticket is updated in whichever hive it lives in: `create_ticket`, `update_ticket` and the `delete_with_dependencies` cleanup in `delete_ticket` all sync backlinks across hives. `update_ticket` rejects a dependency being added that is unknown or whose ticket can't be resolved or read, returning a JSON error with `error_type: invalid_dependency` before anything is written. Removing a dependency that can't be found only logs a warning and is skipped. The sync is not atomic: if a dependency becomes unreadable between that check and the sync (a race), the ticket's own file and some backlinks are already written, and the call still returns `invalid_dependency`. An I/O failure partway through can likewise leave some backlinks written.
+
 ### Circular Dependency Prevention
 
 The system validates against dependency cycles using DFS traversal:

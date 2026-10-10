@@ -1037,6 +1037,57 @@ class TestUpdateTicketRefactorRegression:
         assert id_a in ticket_b.down_dependencies
 
 
+class TestUpdateTicketCrossHiveDependencySync:
+    """Regression for b.23h: update-ticket syncs the backlink on a ticket in another hive."""
+
+    @staticmethod
+    def _read_bee(ticket_id, hive):
+        return read_ticket(ticket_id, file_path=get_ticket_path(ticket_id, "bee", hive))
+
+    async def _two_bees(self, isolated_bees_env):
+        isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.create_hive(HIVE_FRONTEND)
+        isolated_bees_env.write_config()
+        r_a = await _create_ticket(ticket_type="bee", title="Backend Bee", hive_name=HIVE_BACKEND)
+        r_b = await _create_ticket(ticket_type="bee", title="Frontend Bee", hive_name=HIVE_FRONTEND)
+        return r_a["ticket_id"], r_b["ticket_id"]
+
+    @pytest.mark.parametrize(
+        "field,backlink",
+        [("up_dependencies", "down_dependencies"), ("down_dependencies", "up_dependencies")],
+    )
+    async def test_removing_dependency_in_other_hive_leaves_no_stale_backlink(
+        self, isolated_bees_env, field, backlink
+    ):
+        """Adding a cross-hive dependency syncs both ends; clearing it removes the backlink in the other hive."""
+        id_a, id_b = await self._two_bees(isolated_bees_env)
+        added = await _update_ticket(id_a, hive_name=HIVE_BACKEND, **{field: [id_b]})
+        assert added["status"] == "success"
+        assert getattr(self._read_bee(id_a, HIVE_BACKEND), field) == [id_b]
+        assert getattr(self._read_bee(id_b, HIVE_FRONTEND), backlink) == [id_a]
+
+        result = await _update_ticket(id_a, hive_name=HIVE_BACKEND, **{field: []})
+
+        assert result["status"] == "success"
+        assert not getattr(self._read_bee(id_b, HIVE_FRONTEND), backlink)
+
+    @pytest.mark.parametrize("field", ["up_dependencies", "down_dependencies"])
+    async def test_unreadable_dependency_in_other_hive_errors_and_writes_nothing(self, isolated_bees_env, field):
+        """A dependency whose file cannot be read is rejected before any file is written."""
+        id_a, id_b = await self._two_bees(isolated_bees_env)
+        path_a = get_ticket_path(id_a, "bee", HIVE_BACKEND)
+        path_b = get_ticket_path(id_b, "bee", HIVE_FRONTEND)
+        path_b.write_text("not frontmatter at all\n")
+        bytes_a, bytes_b = path_a.read_bytes(), path_b.read_bytes()
+
+        result = await _update_ticket(id_a, hive_name=HIVE_BACKEND, **{field: [id_b]})
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "invalid_dependency"
+        assert path_a.read_bytes() == bytes_a
+        assert path_b.read_bytes() == bytes_b
+
+
 # ===========================================================================
 # Smoke tests: operations on valid ticket succeed when hive has corrupt sibling
 # ===========================================================================

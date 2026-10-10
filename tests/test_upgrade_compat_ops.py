@@ -105,15 +105,11 @@ def test_append_extends_only_the_body(corpus, cli_runner, tmp_path, ticket_id):
     assert _same_values(before_fm, after_fm)
 
 
-CROSS_HIVE_DEP_BUG = "b.23h: update-ticket and delete-ticket sync dependency backlinks only in the ticket's own hive"
-
-
 @pytest.mark.parametrize(
     "new_up_roles",
     [
         pytest.param(["dep_tree_bee"], id="same_hive"),
-        pytest.param(["dep_tree_bee", "bug_plain"], id="cross_hive",
-                     marks=pytest.mark.xfail(strict=True, reason=CROSS_HIVE_DEP_BUG)),
+        pytest.param(["dep_tree_bee", "bug_plain"], id="cross_hive"),
     ],
 )
 def test_dependency_update_touches_both_ends(corpus, cli_runner, tmp_path, new_up_roles):
@@ -256,8 +252,7 @@ def test_delete_removes_only_the_subtree(corpus, cli_runner, tmp_path, role, par
     "dependent_role",
     [
         pytest.param("blocked_bee", id="same_hive"),
-        pytest.param("bug_cross_hive_dep", id="cross_hive",
-                     marks=pytest.mark.xfail(strict=True, reason=CROSS_HIVE_DEP_BUG)),
+        pytest.param("bug_cross_hive_dep", id="cross_hive"),
     ],
 )
 def test_delete_with_dependencies_cleans_dependents(corpus, cli_runner, tmp_path, dependent_role):
