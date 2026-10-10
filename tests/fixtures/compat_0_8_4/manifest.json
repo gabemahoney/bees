@@ -1,0 +1,991 @@
+{
+ "bees_version": "0.8.4",
+ "dropped_by_084_read_check": {
+  "statuses": [],
+  "tags": [
+   {
+    "read_084": {
+     "errors": [],
+     "not_found": [],
+     "status": "success",
+     "tickets": [
+      {
+       "body": "",
+       "children": [],
+       "created_at": "2026-10-10T14:58:59.919473",
+       "down_dependencies": [],
+       "guid": "3zj7mevhapf4e6yaywwept32w7gm454b",
+       "parent": null,
+       "reference_materials": null,
+       "schema_version": "0.1",
+       "tags": [
+        [
+         "x"
+        ]
+       ],
+       "ticket_id": "b.3zj",
+       "ticket_status": "open",
+       "ticket_type": "bee",
+       "title": "Tag probe",
+       "up_dependencies": []
+      }
+     ]
+    },
+    "tag": "- x"
+   }
+  ],
+  "titles": [
+   {
+    "read_084": {
+     "error": "src.validator.ValidationError: Field 'title' must be string, got <class 'int'>",
+     "status": "crash"
+    },
+    "title": "0x1F"
+   },
+   {
+    "read_084": {
+     "error": "src.validator.ValidationError: Field 'title' must be string, got <class 'int'>",
+     "status": "crash"
+    },
+    "title": "12:30"
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.xo9/b.xo9.md: sequence entries are not allowed here\n  in \"<unicode string>\", line 3, column 8:\n    title: - dash item\n           ^",
+     "status": "crash"
+    },
+    "title": "- dash item"
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.yg7/b.yg7.md: while scanning for the next token\nfound character '\\t' that cannot start any token\n  in \"<unicode string>\", line 3, column 11:\n    title: tab\tinside\n              ^",
+     "status": "crash"
+    },
+    "title": "tab\tinside"
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.6xi/b.6xi.md: could not determine a constructor for the tag 'tag:yaml.org,2002:value'\n  in \"<unicode string>\", line 3, column 8:\n    title: =\n           ^",
+     "status": "crash"
+    },
+    "title": "="
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.emz/b.emz.md: could not determine a constructor for the tag 'tag:yaml.org,2002:merge'\n  in \"<unicode string>\", line 3, column 8:\n    title: <<\n           ^",
+     "status": "crash"
+    },
+    "title": "<<"
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.3i2/b.3i2.md: while scanning a simple key\n  in \"<unicode string>\", line 4, column 1:\n    separator\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 5, column 1:\n    status: open\n    ^",
+     "status": "crash"
+    },
+    "title": "line separator"
+   },
+   {
+    "read_084": {
+     "error": "src.parser.ParseError: Failed to parse YAML in {{ROOT}}/repo/features/b.3xp/b.3xp.md: while scanning a simple key\n  in \"<unicode string>\", line 4, column 1:\n    inside\n    ^\ncould not find expected ':'\n  in \"<unicode string>\", line 5, column 1:\n    status: open\n    ^",
+     "status": "crash"
+    },
+    "title": "nelinside"
+   }
+  ]
+ },
+ "inputs": {
+  "b.1hr": {
+   "body": "regex \\d+\\s* and C:\\Program Files\\x and \\\\server\\share and trailing \\",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body backslashes"
+  },
+  "b.1js": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": [
+    "!c",
+    "%d",
+    "@e",
+    "`f`"
+   ],
+   "title": "Special tags 3"
+  },
+  "b.1zj": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "rtl עברית"
+  },
+  "b.2io": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "|-"
+  },
+  "b.2pb": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "-leading dash"
+  },
+  "b.2wc": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "\"double quoted\""
+  },
+  "b.3co": {
+   "body": null,
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Plan blocked by the idea's sibling"
+  },
+  "b.3de": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "null"
+  },
+  "b.41n": {
+   "body": null,
+   "reference_materials": null,
+   "status": "in review: maybe",
+   "tags": null,
+   "title": "Freeform status 0"
+  },
+  "b.4gw": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "1e3"
+  },
+  "b.4og": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": [
+    "priority:1",
+    "key: v",
+    "#tag",
+    "yes",
+    "123"
+   ],
+   "title": "Special tags 0"
+  },
+  "b.4p7": {
+   "body": null,
+   "reference_materials": null,
+   "status": "null",
+   "tags": null,
+   "title": "Freeform status 2"
+  },
+  "b.4se": {
+   "body": "Body line one\nBody line two\n",
+   "reference_materials": null,
+   "status": "active",
+   "tags": [
+    "bug"
+   ],
+   "title": "Bug whose file is checked out with CRLF"
+  },
+  "b.6q6": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "[bracketed]"
+  },
+  "b.6sz": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "&anchor"
+  },
+  "b.72b": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "yes"
+  },
+  "b.7k3": {
+   "body": "Trailing spaces   ",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body trailing_spaces"
+  },
+  "b.7ku": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote\n",
+   "reference_materials": null,
+   "status": null,
+   "tags": null,
+   "title": "Idea with a doc"
+  },
+  "b.7xr": {
+   "body": "    Indented first line\nsecond line",
+   "reference_materials": [
+    {
+     "resolver": "bees",
+     "value": "b.7ku"
+    }
+   ],
+   "status": "open",
+   "tags": null,
+   "title": "Plan in the nested hive"
+  },
+  "b.85j": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "true"
+  },
+  "b.87m": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "a # hash"
+  },
+  "b.8dc": {
+   "body": "bell\u0007 vt\u000b ff\f esc\u001b",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body control"
+  },
+  "b.8gq": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote\n",
+   "reference_materials": [
+    {
+     "value": "docs/spec.md"
+    },
+    {
+     "resolver": "bees",
+     "value": "b.abc"
+    },
+    {
+     "value": "notes with spaces/and: colon.md"
+    },
+    {
+     "value": "unicode/ünï.md"
+    },
+    {
+     "value": "C:\\Windows\\path.txt"
+    },
+    {
+     "value": "yes"
+    },
+    {
+     "value": "#123 'quoted'"
+    }
+   ],
+   "status": "open",
+   "tags": [
+    "tree",
+    "priority:1"
+   ],
+   "title": "Tree bee with every tier"
+  },
+  "b.8jh": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "'single quoted'"
+  },
+  "b.8oe": {
+   "body": null,
+   "reference_materials": null,
+   "status": "defined",
+   "tags": null,
+   "title": "Bug with a 22-character guid"
+  },
+  "b.97z": {
+   "body": null,
+   "reference_materials": null,
+   "status": "#hash",
+   "tags": null,
+   "title": "Freeform status 4"
+  },
+  "b.98b": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "zero​width"
+  },
+  "b.9fp": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "nbsp inside"
+  },
+  "b.9gu": {
+   "body": null,
+   "reference_materials": null,
+   "status": "yes",
+   "tags": null,
+   "title": "Freeform status 1"
+  },
+  "b.9mm": {
+   "body": "key: value\n- list\n---\nid: fake\nschema_version: '9'\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body yaml_like"
+  },
+  "b.a45": {
+   "body": "Ends with three newlines.\n\n\n",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Bug blocked by a feature"
+  },
+  "b.brc": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "ends with backslash\\"
+  },
+  "b.cj6": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Bee with a dependent epic"
+  },
+  "b.cm6": {
+   "body": null,
+   "reference_materials": null,
+   "status": "~",
+   "tags": null,
+   "title": "Freeform status 3"
+  },
+  "b.cmv": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "`tick`"
+  },
+  "b.ej9": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "quote's"
+  },
+  "b.eth": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "!tag"
+  },
+  "b.ezu": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "2026-10-10"
+  },
+  "b.gon": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": null,
+   "tags": [
+    "a---b"
+   ],
+   "title": "Tag with three dashes"
+  },
+  "b.h8x": {
+   "body": null,
+   "reference_materials": null,
+   "status": "ünïcödé",
+   "tags": null,
+   "title": "Freeform status 6"
+  },
+  "b.hbo": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "!!str"
+  },
+  "b.hsx": {
+   "body": "Plain body.",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": [
+    "bug",
+    "priority:2"
+   ],
+   "title": "Bug with a plain body"
+  },
+  "b.i7b": {
+   "body": "From --body-file\r\nwith \\n and \\t escapes\n\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body from a file"
+  },
+  "b.i7k": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Bee in a hive of a glob scope"
+  },
+  "b.j46": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Blocker bee"
+  },
+  "b.jbv": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "percent %s and {braces}"
+  },
+  "b.knp": {
+   "body": "\n\nStarts after blank lines",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Blocked bee"
+  },
+  "b.n44": {
+   "body": "Plain body.",
+   "reference_materials": [
+    {
+     "value": "http://example.com/a---b"
+    }
+   ],
+   "status": "open",
+   "tags": null,
+   "title": "Reference material with three dashes"
+  },
+  "b.n7u": {
+   "body": null,
+   "reference_materials": null,
+   "status": null,
+   "tags": null,
+   "title": "Plain idea"
+  },
+  "b.nwp": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "123"
+  },
+  "b.ogw": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Bee moved to Bugs by 0.8.4"
+  },
+  "b.oq6": {
+   "body": null,
+   "reference_materials": null,
+   "status": "123",
+   "tags": null,
+   "title": "Freeform status 5"
+  },
+  "b.oqp": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "~"
+  },
+  "b.otc": {
+   "body": "Plain body.",
+   "reference_materials": null,
+   "status": "done",
+   "tags": null,
+   "title": "Archived bee"
+  },
+  "b.pef": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "|pipe"
+  },
+  "b.pg3": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "{braced}"
+  },
+  "b.pi9": {
+   "body": "Plain body.",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Bee with a 22-character guid"
+  },
+  "b.q3z": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "key: value"
+  },
+  "b.qai": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "*alias"
+  },
+  "b.qh3": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "..."
+  },
+  "b.qup": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "ends with colon:"
+  },
+  "b.qxp": {
+   "body": "0.8.4 turned these into real characters: \\n and \\t",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body escapes_expanded_by_084"
+  },
+  "b.qyy": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": ">folded"
+  },
+  "b.raq": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": [
+    " spaced ",
+    "null",
+    "2026-10-10",
+    "&a",
+    "*b"
+   ],
+   "title": "Special tags 2"
+  },
+  "b.say": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "back\\slash"
+  },
+  "b.tmj": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "#not a comment"
+  },
+  "b.tv4": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "0o17"
+  },
+  "b.tv6": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": ",comma"
+  },
+  "b.twk": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "reference_materials": null,
+   "status": "done",
+   "tags": null,
+   "title": "Done bug, still live"
+  },
+  "b.u5v": {
+   "body": "source body\n",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Clone source"
+  },
+  "b.uub": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "  padded  "
+  },
+  "b.vf8": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "1.5"
+  },
+  "b.vov": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "unicode ünïcödé 日本語 🐝"
+  },
+  "b.wj8": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "%percent"
+  },
+  "b.wy4": {
+   "body": "---\nstarts with dashes\n---",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body dash_lines"
+  },
+  "b.xp2": {
+   "body": "Plain body.",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body plain"
+  },
+  "b.yed": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "multi\nline title"
+  },
+  "b.yg9": {
+   "body": "First chunk ends with a newline\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body built by appends"
+  },
+  "b.yko": {
+   "body": null,
+   "reference_materials": null,
+   "status": "done",
+   "tags": null,
+   "title": "Archived bee with a 22-character guid"
+  },
+  "b.yq9": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "?question"
+  },
+  "b.yrq": {
+   "body": "old mac\rline",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Body lone_cr"
+  },
+  "b.ywd": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "No"
+  },
+  "b.z5n": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "2026-10-10T12:00:00"
+  },
+  "b.zqe": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "@at"
+  },
+  "b.zws": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": [
+    "日本",
+    "🐝",
+    "a,b",
+    "[x]",
+    "back\\slash"
+   ],
+   "title": "Special tags 1"
+  },
+  "t1.7ku.ub": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": null,
+   "tags": null,
+   "title": "Idea doc"
+  },
+  "t1.7xr.xn": {
+   "body": "Ends with three newlines.\n\n\n",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Plan epic"
+  },
+  "t1.8gq.9f": {
+   "body": "Line one\r\nLine two\r\n",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Epic B"
+  },
+  "t1.8gq.mq": {
+   "body": "Ends with three newlines.\n\n\n",
+   "reference_materials": null,
+   "status": "in_progress",
+   "tags": null,
+   "title": "Epic A"
+  },
+  "t1.cj6.uo": {
+   "body": "   \n\t\n  ",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Epic that waits on Epic A"
+  },
+  "t1.i7k.sy": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Task in the glob-scope hive"
+  },
+  "t1.otc.nx": {
+   "body": "Ends with one newline.\n",
+   "reference_materials": null,
+   "status": "done",
+   "tags": null,
+   "title": "Archived epic"
+  },
+  "t1.pi9.iv": {
+   "body": null,
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Epic with a 22-character guid"
+  },
+  "t1.u5v.fm": {
+   "body": null,
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Clone source epic"
+  },
+  "t2.7xr.xn.2f": {
+   "body": "Line one\r\nLine two\r\n",
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Plan task"
+  },
+  "t2.8gq.mq.kc": {
+   "body": "    Indented first line\nsecond line",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Task under A"
+  },
+  "t2.otc.nx.3f": {
+   "body": null,
+   "reference_materials": null,
+   "status": "done",
+   "tags": null,
+   "title": "Archived task"
+  },
+  "t3.7xr.xn.2f.m1": {
+   "body": null,
+   "reference_materials": null,
+   "status": "draft",
+   "tags": null,
+   "title": "Plan subtask"
+  },
+  "t3.8gq.mq.kc.b2": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "reference_materials": null,
+   "status": "open",
+   "tags": null,
+   "title": "Subtask under task"
+  },
+  "t3.8gq.mq.kc.pr": {
+   "body": "col1\tcol2\n\tindented by tab",
+   "reference_materials": null,
+   "status": "open",
+   "tags": [
+    "日本",
+    "🐝"
+   ],
+   "title": "Second subtask"
+  }
+ },
+ "post_processed": [
+  {
+   "edit": "guid cut to 22 characters (pre-0.1.3 build)",
+   "ticket_id": "b.pi9"
+  },
+  {
+   "edit": "guid cut to 22 characters (pre-0.1.3 build)",
+   "ticket_id": "t1.pi9.iv"
+  },
+  {
+   "edit": "guid cut to 22 characters (pre-0.1.3 build)",
+   "ticket_id": "b.8oe"
+  },
+  {
+   "edit": "guid cut to 22 characters (pre-0.1.3 build)",
+   "ticket_id": "b.yko"
+  },
+  {
+   "edit": "whole file converted to CRLF (git core.autocrlf checkout)",
+   "ticket_id": "b.4se"
+  }
+ ],
+ "roles": {
+  "appended_bee": "b.yg9",
+  "archived_bee": "b.otc",
+  "archived_guid22_bee": "b.yko",
+  "archived_t1": "t1.otc.nx",
+  "archived_t2": "t2.otc.nx.3f",
+  "blocked_bee": "b.knp",
+  "blocker_bee": "b.j46",
+  "body_backslashes": "b.1hr",
+  "body_control": "b.8dc",
+  "body_dash_lines": "b.wy4",
+  "body_escapes_expanded_by_084": "b.qxp",
+  "body_file_bee": "b.i7b",
+  "body_lone_cr": "b.yrq",
+  "body_plain": "b.xp2",
+  "body_trailing_spaces": "b.7k3",
+  "body_yaml_like": "b.9mm",
+  "bug_crlf_file": "b.4se",
+  "bug_cross_hive_dep": "b.a45",
+  "bug_done": "b.twk",
+  "bug_guid22": "b.8oe",
+  "bug_plain": "b.hsx",
+  "clone_source_bee": "b.u5v",
+  "clone_source_t1": "t1.u5v.fm",
+  "cloned_bee": "b.muy",
+  "dash_ref_bee": "b.n44",
+  "dash_tag_bee": "b.gon",
+  "dep_t1": "t1.cj6.uo",
+  "dep_tree_bee": "b.cj6",
+  "guid22_bee": "b.pi9",
+  "guid22_t1": "t1.pi9.iv",
+  "idea_bee": "b.7ku",
+  "idea_plain": "b.n7u",
+  "idea_t1": "t1.7ku.ub",
+  "moved_bee": "b.ogw",
+  "plan_bee": "b.7xr",
+  "plan_dep_bee": "b.3co",
+  "plan_t1": "t1.7xr.xn",
+  "plan_t2": "t2.7xr.xn.2f",
+  "plan_t3": "t3.7xr.xn.2f.m1",
+  "shared_bee": "b.i7k",
+  "shared_t1": "t1.i7k.sy",
+  "status_0": "b.41n",
+  "status_1": "b.9gu",
+  "status_2": "b.4p7",
+  "status_3": "b.cm6",
+  "status_4": "b.97z",
+  "status_5": "b.oq6",
+  "status_6": "b.h8x",
+  "tags_0": "b.4og",
+  "tags_1": "b.zws",
+  "tags_2": "b.raq",
+  "tags_3": "b.1js",
+  "title_00": "b.q3z",
+  "title_01": "b.qup",
+  "title_02": "b.tmj",
+  "title_03": "b.87m",
+  "title_04": "b.8jh",
+  "title_05": "b.2wc",
+  "title_06": "b.6q6",
+  "title_07": "b.pg3",
+  "title_08": "b.6sz",
+  "title_09": "b.qai",
+  "title_10": "b.eth",
+  "title_11": "b.pef",
+  "title_12": "b.qyy",
+  "title_13": "b.zqe",
+  "title_14": "b.cmv",
+  "title_15": "b.wj8",
+  "title_16": "b.yq9",
+  "title_17": "b.tv6",
+  "title_18": "b.72b",
+  "title_19": "b.ywd",
+  "title_20": "b.3de",
+  "title_21": "b.oqp",
+  "title_22": "b.85j",
+  "title_23": "b.nwp",
+  "title_24": "b.vf8",
+  "title_25": "b.4gw",
+  "title_27": "b.tv4",
+  "title_28": "b.ezu",
+  "title_29": "b.z5n",
+  "title_32": "b.2pb",
+  "title_33": "b.uub",
+  "title_35": "b.ej9",
+  "title_36": "b.vov",
+  "title_37": "b.1zj",
+  "title_38": "b.9fp",
+  "title_39": "b.98b",
+  "title_40": "b.say",
+  "title_41": "b.brc",
+  "title_42": "b.jbv",
+  "title_43": "b.qh3",
+  "title_46": "b.hbo",
+  "title_47": "b.2io",
+  "title_48": "b.yed",
+  "tree_bee": "b.8gq",
+  "tree_t1": "t1.8gq.mq",
+  "tree_t1_b": "t1.8gq.9f",
+  "tree_t2": "t2.8gq.mq.kc",
+  "tree_t3": "t3.8gq.mq.kc.b2",
+  "tree_t3_b": "t3.8gq.mq.kc.pr"
+ }
+}

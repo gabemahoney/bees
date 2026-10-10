@@ -1,0 +1,7 @@
+{
+  "normalized_name": "features",
+  "display_name": "Features",
+  "created_at": "2026-10-10T14:58:50.384813",
+  "version": "0.1",
+  "description": "Feature work: every tier, inherits tiers and statuses from the repo scope"
+}

@@ -13,6 +13,7 @@ import asyncio
 import importlib.util
 import json
 import os
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -41,6 +42,55 @@ def backdate(*paths: Path) -> int:
 def tree_snapshot(root: Path) -> dict[str, bytes | None]:
     """Every file (its bytes) and directory (None) below root, hidden ones included, by relative path."""
     return {p.relative_to(root).as_posix(): p.read_bytes() if p.is_file() else None for p in root.rglob("*")}
+
+
+def snapshot_diff(before: dict, after: dict) -> tuple[set[str], set[str], set[str]]:
+    """(added, removed, changed) paths between two tree_snapshot() results."""
+    added = after.keys() - before.keys()
+    removed = before.keys() - after.keys()
+    changed = {p for p in before.keys() & after.keys() if before[p] != after[p]}
+    return set(added), set(removed), changed
+
+
+COMPAT_084_DIR = Path(__file__).parent / "fixtures" / "compat_0_8_4"
+COMPAT_084_ROOT = "{{ROOT}}"
+
+
+def load_compat_084(name: str) -> dict:
+    """manifest.json or expected.json of the bees-md 0.8.4 corpus, with the {{ROOT}} placeholder kept."""
+    return json.loads((COMPAT_084_DIR / f"{name}.json").read_text(encoding="utf-8"))
+
+
+COMPAT_084_HIVE_DIRS = {
+    "features": "repo/features",
+    "bugs": "repo/Bugs",
+    "ideas": "repo/Ideas",
+    "plans": "repo/Ideas/Plans",
+    "shared_hive": "repo/shared-hive",
+}
+
+
+def compat_084_hive_of(rel: str) -> str:
+    """The hive of a corpus path: the one with the longest matching directory (plans is nested in ideas)."""
+    return max((h for h, d in COMPAT_084_HIVE_DIRS.items() if rel.startswith(d + "/")),
+               key=lambda h: len(COMPAT_084_HIVE_DIRS[h]))
+
+
+def compat_084_rels() -> dict[str, str]:
+    """Ticket ID -> path (relative to the corpus root) of every ticket file of the 0.8.4 corpus, archived ones too."""
+    return {
+        (entry["frontmatter"]["id"] if "frontmatter" in entry else Path(rel).stem): rel
+        for rel, entry in load_compat_084("expected")["parse"].items()
+    }
+
+
+def install_compat_084(root: Path, global_bees: Path) -> Path:
+    """Copy the 0.8.4 corpus to root (holding repo/), register its hives in global_bees; return the repo."""
+    shutil.copytree(COMPAT_084_DIR / "tree", root)
+    config = (COMPAT_084_DIR / "global_config.json").read_text(encoding="utf-8")
+    (global_bees / "config.json").write_text(config.replace(COMPAT_084_ROOT, str(root)), encoding="utf-8")
+    (root / "repo" / ".git").mkdir()
+    return root / "repo"
 
 
 def make_body_at_cap(fill_char: str = "a") -> str:

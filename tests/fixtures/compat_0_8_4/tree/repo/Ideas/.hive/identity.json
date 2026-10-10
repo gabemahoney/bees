@@ -1,0 +1,13 @@
+{
+  "normalized_name": "ideas",
+  "display_name": "Ideas",
+  "created_at": "2026-10-10T14:58:50.788787",
+  "version": "0.1",
+  "child_tiers": {
+    "t1": [
+      "Idea Doc",
+      "Idea Docs"
+    ]
+  },
+  "status_values": null
+}

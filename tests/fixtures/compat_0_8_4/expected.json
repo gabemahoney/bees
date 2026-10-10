@@ -1,0 +1,3791 @@
+{
+ "config": {
+  "get_status_values": {
+   "global": [
+    "open",
+    "done"
+   ],
+   "hives": {
+    "bugs": [
+     "draft",
+     "defined",
+     "active",
+     "done"
+    ],
+    "features": null,
+    "ideas": null,
+    "plans": null,
+    "shared_hive": null
+   },
+   "scope": [
+    "draft",
+    "open",
+    "in_progress",
+    "done"
+   ],
+   "status": "success"
+  },
+  "get_types": {
+   "global": {
+    "t1": [
+     "Task",
+     "Tasks"
+    ]
+   },
+   "hives": {
+    "bugs": {},
+    "features": null,
+    "ideas": {
+     "t1": [
+      "Idea Doc",
+      "Idea Docs"
+     ]
+    },
+    "plans": {
+     "t1": [
+      "Epic",
+      "Epics"
+     ],
+     "t2": [
+      "Task",
+      "Tasks"
+     ],
+     "t3": [
+      "Subtask",
+      "Subtasks"
+     ]
+    }
+   },
+   "scope": {
+    "t1": [
+     "Epic",
+     "Epics"
+    ],
+    "t2": [
+     "Task",
+     "Tasks"
+    ],
+    "t3": [
+     "Subtask",
+     "Subtasks"
+    ]
+   },
+   "status": "success"
+  },
+  "list_hives": {
+   "hives": [
+    {
+     "display_name": "Bugs",
+     "normalized_name": "bugs",
+     "path": "{{ROOT}}/repo/Bugs",
+     "scope": "{{ROOT}}/repo"
+    },
+    {
+     "description": "Feature work: every tier, inherits tiers and statuses from the repo scope",
+     "display_name": "Features",
+     "normalized_name": "features",
+     "path": "{{ROOT}}/repo/features",
+     "scope": "{{ROOT}}/repo"
+    },
+    {
+     "display_name": "Ideas",
+     "normalized_name": "ideas",
+     "path": "{{ROOT}}/repo/Ideas",
+     "scope": "{{ROOT}}/repo"
+    },
+    {
+     "display_name": "Plans",
+     "normalized_name": "plans",
+     "path": "{{ROOT}}/repo/Ideas/Plans",
+     "scope": "{{ROOT}}/repo"
+    },
+    {
+     "display_name": "Shared Hive",
+     "normalized_name": "shared_hive",
+     "path": "{{ROOT}}/repo/shared-hive",
+     "scope": "{{ROOT}}/**"
+    }
+   ],
+   "status": "success"
+  },
+  "list_named_queries": {
+   "count": 3,
+   "queries": [
+    {
+     "definition": {
+      "stages": [
+       [
+        "type=bee",
+        "status=done"
+       ]
+      ]
+     },
+     "name": "done_bees",
+     "repo_root": "{{ROOT}}/repo",
+     "scope": "repo"
+    },
+    {
+     "definition": {
+      "stages": [
+       [
+        "type=bee"
+       ],
+       [
+        "children"
+       ]
+      ]
+     },
+     "name": "bees_with_children",
+     "repo_root": "{{ROOT}}/repo",
+     "scope": "repo"
+    },
+    {
+     "definition": {
+      "stages": [
+       [
+        "status=open"
+       ]
+      ]
+     },
+     "name": "global_open",
+     "repo_root": null,
+     "scope": "global"
+    }
+   ],
+   "status": "success"
+  }
+ },
+ "parse": {
+  "repo/Bugs/b.4se/b.4se.md": {
+   "body": "Body line one\nBody line two",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.056982",
+    "guid": "4se78dz3sa6eq891z1jupf548k2g2gwt",
+    "id": "b.4se",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "active",
+    "tags": [
+     "bug"
+    ],
+    "title": "Bug whose file is checked out with CRLF",
+    "type": "bee"
+   }
+  },
+  "repo/Bugs/b.8oe/b.8oe.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.114704",
+    "guid": "8oe917a5bu319et5mzjzdn",
+    "id": "b.8oe",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "defined",
+    "title": "Bug with a 22-character guid",
+    "type": "bee"
+   }
+  },
+  "repo/Bugs/b.a45/b.a45.md": {
+   "body": "Ends with three newlines.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.172157",
+    "guid": "a45qrvshk24xwit292kp7xo336zbwxsb",
+    "id": "b.a45",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Bug blocked by a feature",
+    "type": "bee",
+    "up_dependencies": [
+     "b.j46"
+    ]
+   }
+  },
+  "repo/Bugs/b.hsx/b.hsx.md": {
+   "body": "Plain body.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.999562",
+    "guid": "hsxmgwqo5gst7fcc81iccmj8k6exiang",
+    "id": "b.hsx",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "tags": [
+     "bug",
+     "priority:2"
+    ],
+    "title": "Bug with a plain body",
+    "type": "bee"
+   }
+  },
+  "repo/Bugs/b.ogw/b.ogw.md": {
+   "body": "Ends with one newline.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.941870",
+    "guid": "ogwre3pa7c7qy1h337g82331dhmnrahd",
+    "id": "b.ogw",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Bee moved to Bugs by 0.8.4",
+    "type": "bee"
+   }
+  },
+  "repo/Bugs/b.twk/b.twk.md": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.230702",
+    "guid": "twk8tics8f1ty9mxfqeqbe3wdknxdmox",
+    "id": "b.twk",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "done",
+    "title": "Done bug, still live",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/Plans/b.3co/b.3co.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:04.556669",
+    "guid": "3covwn434npi1797v3bxt9soc6uuc1k6",
+    "id": "b.3co",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Plan blocked by the idea's sibling",
+    "type": "bee",
+    "up_dependencies": [
+     "b.7xr"
+    ]
+   }
+  },
+  "repo/Ideas/Plans/b.7xr/b.7xr.md": {
+   "body": "Indented first line\nsecond line",
+   "frontmatter": {
+    "children": [
+     "t1.7xr.xn"
+    ],
+    "created_at": "2026-10-10T14:59:04.321161",
+    "down_dependencies": [
+     "b.3co"
+    ],
+    "guid": "7xrcx1dpobnd8s229c18pui5whxg2ydg",
+    "id": "b.7xr",
+    "parent": null,
+    "reference_materials": [
+     {
+      "resolver": "bees",
+      "value": "b.7ku"
+     }
+    ],
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Plan in the nested hive",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t1.7xr.xn.md": {
+   "body": "Ends with three newlines.",
+   "frontmatter": {
+    "children": [
+     "t2.7xr.xn.2f"
+    ],
+    "created_at": "2026-10-10T14:59:04.380137",
+    "guid": "7xrxnqvqtmsmoku3ze8eh929p42boeov",
+    "id": "t1.7xr.xn",
+    "parent": "b.7xr",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Plan epic",
+    "type": "t1"
+   }
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t2.7xr.xn.2f/t2.7xr.xn.2f.md": {
+   "body": "Line one\nLine two",
+   "frontmatter": {
+    "children": [
+     "t3.7xr.xn.2f.m1"
+    ],
+    "created_at": "2026-10-10T14:59:04.439163",
+    "guid": "7xrxn2fm7yns3w27uuarfxyudryw42k5",
+    "id": "t2.7xr.xn.2f",
+    "parent": "t1.7xr.xn",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Plan task",
+    "type": "t2"
+   }
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t2.7xr.xn.2f/t3.7xr.xn.2f.m1/t3.7xr.xn.2f.m1.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:04.497088",
+    "guid": "7xrxn2fm18vimnrztb6625wsn2gd2fp4",
+    "id": "t3.7xr.xn.2f.m1",
+    "parent": "t2.7xr.xn.2f",
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Plan subtask",
+    "type": "t3"
+   }
+  },
+  "repo/Ideas/b.41n/b.41n.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.475262",
+    "guid": "41n6gajvra55hbgop9zww97u8j9w4772",
+    "id": "b.41n",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "in review: maybe",
+    "title": "Freeform status 0",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.4p7/b.4p7.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.739381",
+    "guid": "4p7e1xhhsj8it3vx92rtvuksw15vhchr",
+    "id": "b.4p7",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "null",
+    "title": "Freeform status 2",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.7ku/b.7ku.md": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote",
+   "frontmatter": {
+    "children": [
+     "t1.7ku.ub"
+    ],
+    "created_at": "2026-10-10T14:59:03.289257",
+    "guid": "7kuuhm9mf45gfwkv42gtx4tjrwjctift",
+    "id": "b.7ku",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": null,
+    "title": "Idea with a doc",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.7ku/t1.7ku.ub/t1.7ku.ub.md": {
+   "body": "Ends with one newline.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.347529",
+    "guid": "7kuubb81zok4yxdrunr78t9kkgk4bsvn",
+    "id": "t1.7ku.ub",
+    "parent": "b.7ku",
+    "schema_version": "0.1",
+    "status": null,
+    "title": "Idea doc",
+    "type": "t1"
+   }
+  },
+  "repo/Ideas/b.97z/b.97z.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.972701",
+    "guid": "97ze535wse4ohycphwgpjzgk9p5qx3zc",
+    "id": "b.97z",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "#hash",
+    "title": "Freeform status 4",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.9gu/b.9gu.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.623490",
+    "guid": "9gu95qmx8ghyrkqnpa8mtgat1c59ex1w",
+    "id": "b.9gu",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "yes",
+    "title": "Freeform status 1",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.cm6/b.cm6.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.856134",
+    "guid": "cm67m73j3c3bdpcrge6x49anap3d7q2k",
+    "id": "b.cm6",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "~",
+    "title": "Freeform status 3",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.gon/b.gon.md": {
+   "body": "b\nstatus: null\ncreated_at: '2026-10-10T14:59:05.537049'\nschema_version: '0.1'\nreference_materials: null\nguid: gonpg4mat7cb9wsdtdje2nwq8ixhnj1a\n---\n\nEnds with one newline.",
+   "frontmatter": {
+    "id": "b.gon",
+    "tags": [
+     "a"
+    ],
+    "title": "Tag with three dashes",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.h8x/b.h8x.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:04.206146",
+    "guid": "h8xyrudymjf1jo8b697rpf5aih77q7qp",
+    "id": "b.h8x",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "ünïcödé",
+    "title": "Freeform status 6",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.n7u/b.n7u.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:03.406956",
+    "guid": "n7ucbd3ypes8x6brxvpdmnkd8786gvcb",
+    "id": "b.n7u",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": null,
+    "title": "Plain idea",
+    "type": "bee"
+   }
+  },
+  "repo/Ideas/b.oq6/b.oq6.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:04.089645",
+    "guid": "oq6k2jbeuqhtkdhva3egvtj364u83rks",
+    "id": "b.oq6",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "123",
+    "title": "Freeform status 5",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.1hr/b.1hr.md": {
+   "body": "regex \\d+\\s* and C:\\Program Files\\x and \\\\server\\share and trailing \\",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.844929",
+    "guid": "1hrn457jyx7dm2bstzme3xrx5so5p914",
+    "id": "b.1hr",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body backslashes",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.1js/b.1js.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.360871",
+    "guid": "1js5eb9caz3b6c4dgkd8jpeaw6j3mk82",
+    "id": "b.1js",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     "!c",
+     "%d",
+     "@e",
+     "`f`"
+    ],
+    "title": "Special tags 3",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.1zj/b.1zj.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.830525",
+    "guid": "1zjcmj17pe4c62xkd1rjzfvf962ctdmn",
+    "id": "b.1zj",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "rtl עברית",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.2io/b.2io.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:58.117352",
+    "guid": "2ioo1163zqm8gjfwvx8sr575urftk4ir",
+    "id": "b.2io",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "|-",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.2pb/b.2pb.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.189571",
+    "guid": "2pbxnikj9k88ccxotru335dckyt1ggbp",
+    "id": "b.2pb",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "-leading dash",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.2wc/b.2wc.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.830465",
+    "guid": "2wc9wxm2x9s9vqgyu29o9g685e5ym2bd",
+    "id": "b.2wc",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "\"double quoted\"",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.3de/b.3de.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.625940",
+    "guid": "3dec2v2tdegjpw356ncnszkv6d1vmzcb",
+    "id": "b.3de",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "null",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.4gw/b.4gw.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:55.206826",
+    "guid": "4gwyb1b6qpf7c1brznuxy5tqtd44bffw",
+    "id": "b.4gw",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "1e3",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.4og/b.4og.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.187100",
+    "guid": "4ogbiqqj1f8sdcquqs29ig8394shr7g3",
+    "id": "b.4og",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     "priority:1",
+     "key: v",
+     "#tag",
+     "yes",
+     "123"
+    ],
+    "title": "Special tags 0",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.6q6/b.6q6.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.946595",
+    "guid": "6q6gwe3zi4juskaxn4mkzug1drd12itq",
+    "id": "b.6q6",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "[bracketed]",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.6sz/b.6sz.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.177115",
+    "guid": "6sz1chu6jvr4bmdnijghnare83dixcj4",
+    "id": "b.6sz",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "&anchor",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.72b/b.72b.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.395082",
+    "guid": "72bzhi15ynggafnatat8iff1prji5h55",
+    "id": "b.72b",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "yes",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.7k3/b.7k3.md": {
+   "body": "Trailing spaces",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.729484",
+    "guid": "7k3egoxm4dtnmc5egkz3jz5jey2bwndi",
+    "id": "b.7k3",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body trailing_spaces",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.85j/b.85j.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.858520",
+    "guid": "85jeozxy443ijr89groqdowrjvvkq78v",
+    "id": "b.85j",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "true",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.87m/b.87m.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.596887",
+    "guid": "87m4ocm8ftvrc8zt6abcy53zvn63d433",
+    "id": "b.87m",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "a # hash",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.8dc/b.8dc.md": {
+   "body": "bell\u0007 vt\u000b ff\f esc\u001b",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.960854",
+    "guid": "8dcp2uhmmajru53kiq1etng3ecp3bsey",
+    "id": "b.8dc",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body control",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.8gq/b.8gq.md": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote",
+   "frontmatter": {
+    "children": [
+     "t1.8gq.mq",
+     "t1.8gq.9f"
+    ],
+    "created_at": "2026-10-10T14:58:51.077541",
+    "guid": "8gqtfifciz58hzejoj8u8r1h2ete61jx",
+    "id": "b.8gq",
+    "parent": null,
+    "reference_materials": [
+     {
+      "value": "docs/spec.md"
+     },
+     {
+      "resolver": "bees",
+      "value": "b.abc"
+     },
+     {
+      "value": "notes with spaces/and: colon.md"
+     },
+     {
+      "value": "unicode/ünï.md"
+     },
+     {
+      "value": "C:\\Windows\\path.txt"
+     },
+     {
+      "value": "yes"
+     },
+     {
+      "value": "#123 'quoted'"
+     }
+    ],
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     "tree",
+     "priority:1",
+     "updated-by-084"
+    ],
+    "title": "Tree bee with every tier",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.8gq/t1.8gq.9f/t1.8gq.9f.md": {
+   "body": "Line one\nLine two",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.195942",
+    "guid": "8gq9f53qv94shbaaehkszk7e2r2kgca2",
+    "id": "t1.8gq.9f",
+    "parent": "b.8gq",
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Epic B",
+    "type": "t1"
+   }
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t1.8gq.mq.md": {
+   "body": "Ends with three newlines.",
+   "frontmatter": {
+    "children": [
+     "t2.8gq.mq.kc"
+    ],
+    "created_at": "2026-10-10T14:58:51.135943",
+    "down_dependencies": [
+     "t1.cj6.uo"
+    ],
+    "guid": "8gqmqjhwvkg9uf5nw6fp9wkrdjtf5rot",
+    "id": "t1.8gq.mq",
+    "parent": "b.8gq",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "in_progress",
+    "title": "Epic A",
+    "type": "t1"
+   }
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t2.8gq.mq.kc.md": {
+   "body": "Indented first line\nsecond line",
+   "frontmatter": {
+    "children": [
+     "t3.8gq.mq.kc.b2",
+     "t3.8gq.mq.kc.pr"
+    ],
+    "created_at": "2026-10-10T14:58:51.256574",
+    "guid": "8gqmqkcnakuxb1dqggx9odw7c8x9a3dt",
+    "id": "t2.8gq.mq.kc",
+    "parent": "t1.8gq.mq",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "in_progress",
+    "title": "Task under A",
+    "type": "t2"
+   }
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t3.8gq.mq.kc.b2/t3.8gq.mq.kc.b2.md": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.315549",
+    "guid": "8gqmqkcb2x91mb2maa4pzx92bdrcirno",
+    "id": "t3.8gq.mq.kc.b2",
+    "parent": "t2.8gq.mq.kc",
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Subtask under task",
+    "type": "t3"
+   }
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t3.8gq.mq.kc.pr/t3.8gq.mq.kc.pr.md": {
+   "body": "col1\tcol2\n\tindented by tab",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.374231",
+    "guid": "8gqmqkcpr9tp9koo96iu5qtnbo22joq4",
+    "id": "t3.8gq.mq.kc.pr",
+    "parent": "t2.8gq.mq.kc",
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     "日本",
+     "🐝"
+    ],
+    "title": "Second subtask",
+    "type": "t3"
+   }
+  },
+  "repo/features/b.8jh/b.8jh.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.712922",
+    "guid": "8jhh5n3i1xgky5yrqqw3s42jqyvrer6d",
+    "id": "b.8jh",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "'single quoted'",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.98b/b.98b.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:57.063561",
+    "guid": "98b2btih8y12rqehzifjk9xmtnbhps76",
+    "id": "b.98b",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "zero​width",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.9fp/b.9fp.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.945805",
+    "guid": "9fprwrs78929frvopwgj2bigntd9mykq",
+    "id": "b.9fp",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "nbsp inside",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.9mm/b.9mm.md": {
+   "body": "key: value\n- list\n---\nid: fake\nschema_version: '9'",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.076341",
+    "guid": "9mmt9s2j7zhfw2uomjqngsmsh81f91n1",
+    "id": "b.9mm",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body yaml_like",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.brc/b.brc.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:57.300299",
+    "guid": "brc24ryzm4j54f3bk5apfmee85izgw1s",
+    "id": "b.brc",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "ends with backslash\\",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.cj6/b.cj6.md": {
+   "body": "",
+   "frontmatter": {
+    "children": [
+     "t1.cj6.uo"
+    ],
+    "created_at": "2026-10-10T14:58:51.550516",
+    "guid": "cj6tziqnqa2izw2kx8938dr6f6jugdvm",
+    "id": "b.cj6",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Bee with a dependent epic",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.cj6/t1.cj6.uo/t1.cj6.uo.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.612213",
+    "guid": "cj6uoep26ws3kp8ht7hbegsu4ooo9oj2",
+    "id": "t1.cj6.uo",
+    "parent": "b.cj6",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Epic that waits on Epic A",
+    "type": "t1",
+    "up_dependencies": [
+     "t1.8gq.mq"
+    ]
+   }
+  },
+  "repo/features/b.cmv/b.cmv.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.929597",
+    "guid": "cmv11xybyusaxn3nt87e5ijp5he21n7y",
+    "id": "b.cmv",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "`tick`",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.ej9/b.ej9.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.598993",
+    "guid": "ej9x1rmd8t9cv23mo3c8br8bm1e86f4m",
+    "id": "b.ej9",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "quote's",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.eth/b.eth.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.409138",
+    "guid": "eth4g5ho85x1b84vyy7bq165vnjv2qov",
+    "id": "b.eth",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "!tag",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.ezu/b.ezu.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:55.613973",
+    "guid": "ezuc9ti8m576x5gc18w889rz46kzpeep",
+    "id": "b.ezu",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "2026-10-10",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.hbo/b.hbo.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:58.002811",
+    "guid": "hbogixp2e3co5edtrz47ye24ae8k4uwe",
+    "id": "b.hbo",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "!!str",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.i7b/b.i7b.md": {
+   "body": "From --body-file\nwith \n and \t escapes",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.191921",
+    "guid": "i7bcq4pnp94agoduai18uqjwtrensru2",
+    "id": "b.i7b",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body from a file",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.j46/b.j46.md": {
+   "body": "Ends with one newline.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.433644",
+    "down_dependencies": [
+     "b.knp",
+     "b.a45"
+    ],
+    "guid": "j46tn7a372xkmfxtwvwig5p9vh8i3ve7",
+    "id": "b.j46",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Blocker bee",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.jbv/b.jbv.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:57.417657",
+    "guid": "jbvf8kpewk9yebo6xv1yrnmffmbj1nop",
+    "id": "b.jbv",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "percent %s and {braces}",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.knp/b.knp.md": {
+   "body": "Starts after blank lines",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.492243",
+    "guid": "knp44gjcghx1piefj3n4ghewuqmws2a9",
+    "id": "b.knp",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Blocked bee (renamed by 0.8.4)",
+    "type": "bee",
+    "up_dependencies": [
+     "b.j46"
+    ]
+   }
+  },
+  "repo/features/b.muy/b.muy.md": {
+   "body": "source body",
+   "frontmatter": {
+    "children": [
+     "t1.muy.36"
+    ],
+    "created_at": "2026-10-10T14:59:05.199979",
+    "guid": "muyv49319yy6fd8go9qr8fhbgsxeox3c",
+    "id": "b.muy",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Clone source",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.muy/t1.muy.36/t1.muy.36.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:05.200719",
+    "guid": "muy36fm8ptwbn6njne5r8acviexkfdkz",
+    "id": "t1.muy.36",
+    "parent": "b.muy",
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Clone source epic",
+    "type": "t1"
+   }
+  },
+  "repo/features/b.n44/b.n44.md": {
+   "body": "b\nguid: n441a66gheppyrsjdtqtnu3trb4xh3jm\n---\n\nPlain body.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:05.479252",
+    "id": "b.n44",
+    "reference_materials": [
+     {
+      "value": "http://example.com/a"
+     }
+    ],
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Reference material with three dashes",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.nwp/b.nwp.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.975346",
+    "guid": "nwpd3ph1g23vqt4ayvgjbg42fqdobp59",
+    "id": "b.nwp",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "123",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.oqp/b.oqp.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.742430",
+    "guid": "oqp7ffqeto863fsuxuj5jkmjci2jny6w",
+    "id": "b.oqp",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "~",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.pef/b.pef.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.581081",
+    "guid": "pef53htn7414oqx93sjn34jfo3dosgd5",
+    "id": "b.pef",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "|pipe",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.pg3/b.pg3.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.061701",
+    "guid": "pg3yvx3s9hbqt7oe2p2emduqaxrdci3u",
+    "id": "b.pg3",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "{braced}",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.pi9/b.pi9.md": {
+   "body": "Plain body.",
+   "frontmatter": {
+    "children": [
+     "t1.pi9.iv"
+    ],
+    "created_at": "2026-10-10T14:59:02.650985",
+    "guid": "pi96vwpk1k1vfg3gw134t7",
+    "id": "b.pi9",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "in_progress",
+    "title": "Bee with a 22-character guid",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.pi9/t1.pi9.iv/t1.pi9.iv.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.708316",
+    "guid": "pi9ivcen7mk6dg7csqhrah",
+    "id": "t1.pi9.iv",
+    "parent": "b.pi9",
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Epic with a 22-character guid",
+    "type": "t1"
+   }
+  },
+  "repo/features/b.q3z/b.q3z.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.249383",
+    "guid": "q3z2ggj63k1oiu7sz8yqdrkcgyjc9ydh",
+    "id": "b.q3z",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "key: value",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.qai/b.qai.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.293471",
+    "guid": "qai2pjs48tnmt6fxn9s2aik4iwe3stg6",
+    "id": "b.qai",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "*alias",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.qh3/b.qh3.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:57.533889",
+    "guid": "qh3qzhwq3xzny9gcpwnr5vd49heg5evu",
+    "id": "b.qh3",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "...",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.qup/b.qup.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.364465",
+    "guid": "qupaiam59o2s5ecmr8tb874rbg9qw4y8",
+    "id": "b.qup",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "ends with colon:",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.qxp/b.qxp.md": {
+   "body": "0.8.4 turned these into real characters: \n and",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.903251",
+    "guid": "qxp7f6cszdsno7zm5czhxrg6932t7ipv",
+    "id": "b.qxp",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body escapes_expanded_by_084",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.qyy/b.qyy.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.697110",
+    "guid": "qyy96mgp4rrspvb4hi6kb143fmyj3hk5",
+    "id": "b.qyy",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": ">folded",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.raq/b.raq.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.302938",
+    "guid": "raquci9h6rhsio4i8jr1vxd2xt71bjs2",
+    "id": "b.raq",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     " spaced ",
+     "null",
+     "2026-10-10",
+     "&a",
+     "*b"
+    ],
+    "title": "Special tags 2",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.say/b.say.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:57.181233",
+    "guid": "sayyejvi6s1h3eaarmew7utwhggduuzr",
+    "id": "b.say",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "back\\slash",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.tmj/b.tmj.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.481033",
+    "guid": "tmj3aah6gkgf48skbsq1mk1fxzsn5t64",
+    "id": "b.tmj",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "#not a comment",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.tv4/b.tv4.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:55.496372",
+    "guid": "tv4j5tbj7usm2s7efoiqisserb862b3p",
+    "id": "b.tv4",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "0o17",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.tv6/b.tv6.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.278650",
+    "guid": "tv68dbrjy8f58a5tpjtighai8qstkfn8",
+    "id": "b.tv6",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": ",comma",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.u5v/b.u5v.md": {
+   "body": "source body",
+   "frontmatter": {
+    "children": [
+     "t1.u5v.fm"
+    ],
+    "created_at": "2026-10-10T14:59:02.767104",
+    "guid": "u5vfdqb62ratmsqq47eerqfaar183mby",
+    "id": "b.u5v",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Clone source",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.u5v/t1.u5v.fm/t1.u5v.fm.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.824674",
+    "guid": "u5vfm2ckwsg9bq6z77x7gszttkp8kob5",
+    "id": "t1.u5v.fm",
+    "parent": "b.u5v",
+    "schema_version": "0.1",
+    "status": "draft",
+    "title": "Clone source epic",
+    "type": "t1"
+   }
+  },
+  "repo/features/b.uub/b.uub.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.305215",
+    "guid": "uubt1epmyhyo8ko16tsirqr3vzsego3y",
+    "id": "b.uub",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "  padded  ",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.vf8/b.vf8.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:55.090874",
+    "guid": "vf81xqn21jrfqqr9881ih214r6x12ric",
+    "id": "b.vf8",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "1.5",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.vov/b.vov.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:56.714471",
+    "guid": "vov1kwi48erjhv647d28dm1kxj6pij5q",
+    "id": "b.vov",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "unicode ünïcödé 日本語 🐝",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.wj8/b.wj8.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.046462",
+    "guid": "wj8aybf67mtkvcsp2onz64hzuw5xwx5j",
+    "id": "b.wj8",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "%percent",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.wy4/b.wy4.md": {
+   "body": "---\nstarts with dashes\n---",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.018464",
+    "guid": "wy4wa2i9yphqg2h39wzpr9adk2q2koih",
+    "id": "b.wy4",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body dash_lines",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.xp2/b.xp2.md": {
+   "body": "Plain body.",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:52.134304",
+    "guid": "xp2qa6a84t1hdcpit4vwkp24zwqbcotn",
+    "id": "b.xp2",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body plain",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.yed/b.yed.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:58.232310",
+    "guid": "yede82qxcnj6s3gbhdt1sd746rv2yq88",
+    "id": "b.yed",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "multi\nline title",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.yg9/b.yg9.md": {
+   "body": "First chunk ends with a newlineSecond chunk, no newline\nThird chunk ends with two newlinesFourth chunk with \n escape and xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.884290",
+    "guid": "yg9eod1y9vjyc8wdghntuht8nm9x6mz3",
+    "id": "b.yg9",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body built by appends",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.yq9/b.yq9.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.161877",
+    "guid": "yq91ua1xfbkg9gvctg3amus2su15fioz",
+    "id": "b.yq9",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "?question",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.yrq/b.yrq.md": {
+   "body": "old mac\nline",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:51.787160",
+    "guid": "yrqs3tnp9q4wy79hndwxidot1tovisjs",
+    "id": "b.yrq",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Body lone_cr",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.ywd/b.ywd.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:54.510791",
+    "guid": "ywdrxk9nvc2h5pfsmi297dzujesg9epy",
+    "id": "b.ywd",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "No",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.z5n/b.z5n.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:55.729035",
+    "guid": "z5nuoj1ztiahfvx41do893egfia3xe8p",
+    "id": "b.z5n",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "2026-10-10T12:00:00",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.zqe/b.zqe.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:58:53.813369",
+    "guid": "zqecho77sxev4nu5c2ne9xkw6swcp8tq",
+    "id": "b.zqe",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "@at",
+    "type": "bee"
+   }
+  },
+  "repo/features/b.zws/b.zws.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.244882",
+    "guid": "zws8qgme38wado1n8qod547cyryt4rrf",
+    "id": "b.zws",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "tags": [
+     "日本",
+     "🐝",
+     "a,b",
+     "[x]",
+     "back\\slash"
+    ],
+    "title": "Special tags 1",
+    "type": "bee"
+   }
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z.md": {
+   "body": "Plain body.",
+   "frontmatter": {
+    "children": [
+     "t1.otc.nx"
+    ],
+    "created_at": "2026-10-10T14:59:02.418953",
+    "guid": "otcxdbvyeufnk8j2x1955bq6sm44kx1z",
+    "id": "b.otc",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "done",
+    "title": "Archived bee",
+    "type": "bee"
+   }
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/t1.otcnx87oa6q2wqq6idusfagjqorgnrms/t1.otcnx87oa6q2wqq6idusfagjqorgnrms.md": {
+   "body": "Ends with one newline.",
+   "frontmatter": {
+    "children": [
+     "t2.otc.nx.3f"
+    ],
+    "created_at": "2026-10-10T14:59:02.476504",
+    "guid": "otcnx87oa6q2wqq6idusfagjqorgnrms",
+    "id": "t1.otc.nx",
+    "parent": "b.otc",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "done",
+    "title": "Archived epic",
+    "type": "t1"
+   }
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/t1.otcnx87oa6q2wqq6idusfagjqorgnrms/t2.otcnx3f5kxww8ijw8jpq48t1rhg5xy7d/t2.otcnx3f5kxww8ijw8jpq48t1rhg5xy7d.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.535042",
+    "guid": "otcnx3f5kxww8ijw8jpq48t1rhg5xy7d",
+    "id": "t2.otc.nx.3f",
+    "parent": "t1.otc.nx",
+    "schema_version": "0.1",
+    "status": "done",
+    "title": "Archived task",
+    "type": "t2"
+   }
+  },
+  "repo/features/cemetery/b.yko73bb2kha2nzx8wwq681/b.yko73bb2kha2nzx8wwq681.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:02.593357",
+    "guid": "yko73bb2kha2nzx8wwq681",
+    "id": "b.yko",
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "done",
+    "title": "Archived bee with a 22-character guid",
+    "type": "bee"
+   }
+  },
+  "repo/shared-hive/b.i7k/b.i7k.md": {
+   "body": "Ends with one newline.",
+   "frontmatter": {
+    "children": [
+     "t1.i7k.sy"
+    ],
+    "created_at": "2026-10-10T14:59:04.615758",
+    "guid": "i7k6tpf7ee7ue246gs6uzikq1ojtf2py",
+    "id": "b.i7k",
+    "parent": null,
+    "reference_materials": null,
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Bee in a hive of a glob scope",
+    "type": "bee"
+   }
+  },
+  "repo/shared-hive/b.i7k/t1.i7k.sy/t1.i7k.sy.md": {
+   "body": "",
+   "frontmatter": {
+    "created_at": "2026-10-10T14:59:04.672880",
+    "guid": "i7ksyds2s47yjoqr8dkqy5w2i46t6hr7",
+    "id": "t1.i7k.sy",
+    "parent": "b.i7k",
+    "schema_version": "0.1",
+    "status": "open",
+    "title": "Task in the glob-scope hive",
+    "type": "t1"
+   }
+  }
+ },
+ "queries": {
+  "bugs": {
+   "result_count": 6,
+   "stages_executed": 1,
+   "status": "success",
+   "ticket_ids": [
+    "b.4se",
+    "b.8oe",
+    "b.a45",
+    "b.hsx",
+    "b.ogw",
+    "b.twk"
+   ]
+  },
+  "features": {
+   "result_count": 74,
+   "stages_executed": 1,
+   "status": "success",
+   "ticket_ids": [
+    "b.1hr",
+    "b.1js",
+    "b.1zj",
+    "b.2io",
+    "b.2pb",
+    "b.2wc",
+    "b.3de",
+    "b.4gw",
+    "b.4og",
+    "b.6q6",
+    "b.6sz",
+    "b.72b",
+    "b.7k3",
+    "b.85j",
+    "b.87m",
+    "b.8dc",
+    "b.8gq",
+    "b.8jh",
+    "b.98b",
+    "b.9fp",
+    "b.9mm",
+    "b.brc",
+    "b.cj6",
+    "b.cmv",
+    "b.ej9",
+    "b.eth",
+    "b.ezu",
+    "b.hbo",
+    "b.i7b",
+    "b.j46",
+    "b.jbv",
+    "b.knp",
+    "b.muy",
+    "b.n44",
+    "b.nwp",
+    "b.oqp",
+    "b.pef",
+    "b.pg3",
+    "b.pi9",
+    "b.q3z",
+    "b.qai",
+    "b.qh3",
+    "b.qup",
+    "b.qxp",
+    "b.qyy",
+    "b.raq",
+    "b.say",
+    "b.tmj",
+    "b.tv4",
+    "b.tv6",
+    "b.u5v",
+    "b.uub",
+    "b.vf8",
+    "b.vov",
+    "b.wj8",
+    "b.wy4",
+    "b.xp2",
+    "b.yed",
+    "b.yg9",
+    "b.yq9",
+    "b.yrq",
+    "b.ywd",
+    "b.z5n",
+    "b.zqe",
+    "b.zws",
+    "t1.8gq.9f",
+    "t1.8gq.mq",
+    "t1.cj6.uo",
+    "t1.muy.36",
+    "t1.pi9.iv",
+    "t1.u5v.fm",
+    "t2.8gq.mq.kc",
+    "t3.8gq.mq.kc.b2",
+    "t3.8gq.mq.kc.pr"
+   ]
+  },
+  "ideas": {
+   "result_count": 10,
+   "stages_executed": 1,
+   "status": "success",
+   "ticket_ids": [
+    "b.41n",
+    "b.4p7",
+    "b.7ku",
+    "b.97z",
+    "b.9gu",
+    "b.cm6",
+    "b.h8x",
+    "b.n7u",
+    "b.oq6",
+    "t1.7ku.ub"
+   ]
+  },
+  "plans": {
+   "result_count": 5,
+   "stages_executed": 1,
+   "status": "success",
+   "ticket_ids": [
+    "b.3co",
+    "b.7xr",
+    "t1.7xr.xn",
+    "t2.7xr.xn.2f",
+    "t3.7xr.xn.2f.m1"
+   ]
+  },
+  "shared_hive": {
+   "result_count": 2,
+   "stages_executed": 1,
+   "status": "success",
+   "ticket_ids": [
+    "b.i7k",
+    "t1.i7k.sy"
+   ]
+  }
+ },
+ "rewrite": {
+  "repo/Bugs/b.4se/b.4se.md": {
+   "bytes": "---\nid: b.4se\ntype: bee\ntitle: Bug whose file is checked out with CRLF\ntags:\n- bug\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.056982'\nstatus: active\nschema_version: '0.1'\nguid: 4se78dz3sa6eq891z1jupf548k2g2gwt\n---\n\nBody line one\nBody line two\n"
+  },
+  "repo/Bugs/b.8oe/b.8oe.md": {
+   "bytes": "---\nid: b.8oe\ntype: bee\ntitle: Bug with a 22-character guid\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.114704'\nstatus: defined\nschema_version: '0.1'\nguid: 8oe917a5bu319et5mzjzdn\n---\n"
+  },
+  "repo/Bugs/b.a45/b.a45.md": {
+   "bytes": "---\nid: b.a45\ntype: bee\ntitle: Bug blocked by a feature\nup_dependencies:\n- b.j46\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.172157'\nstatus: draft\nschema_version: '0.1'\nguid: a45qrvshk24xwit292kp7xo336zbwxsb\n---\n\nEnds with three newlines.\n"
+  },
+  "repo/Bugs/b.hsx/b.hsx.md": {
+   "bytes": "---\nid: b.hsx\ntype: bee\ntitle: Bug with a plain body\ntags:\n- bug\n- priority:2\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.999562'\nstatus: draft\nschema_version: '0.1'\nguid: hsxmgwqo5gst7fcc81iccmj8k6exiang\n---\n\nPlain body.\n"
+  },
+  "repo/Bugs/b.ogw/b.ogw.md": {
+   "bytes": "---\nid: b.ogw\ntype: bee\ntitle: Bee moved to Bugs by 0.8.4\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.941870'\nstatus: draft\nschema_version: '0.1'\nguid: ogwre3pa7c7qy1h337g82331dhmnrahd\n---\n\nEnds with one newline.\n"
+  },
+  "repo/Bugs/b.twk/b.twk.md": {
+   "bytes": "---\nid: b.twk\ntype: bee\ntitle: Done bug, still live\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.230702'\nstatus: done\nschema_version: '0.1'\nguid: twk8tics8f1ty9mxfqeqbe3wdknxdmox\n---\n\nÜnïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL\n"
+  },
+  "repo/Ideas/Plans/b.3co/b.3co.md": {
+   "bytes": "---\nid: b.3co\ntype: bee\ntitle: Plan blocked by the idea's sibling\nup_dependencies:\n- b.7xr\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:04.556669'\nstatus: draft\nschema_version: '0.1'\nguid: 3covwn434npi1797v3bxt9soc6uuc1k6\n---\n"
+  },
+  "repo/Ideas/Plans/b.7xr/b.7xr.md": {
+   "bytes": null
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t1.7xr.xn.md": {
+   "bytes": null
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t2.7xr.xn.2f/t2.7xr.xn.2f.md": {
+   "bytes": null
+  },
+  "repo/Ideas/Plans/b.7xr/t1.7xr.xn/t2.7xr.xn.2f/t3.7xr.xn.2f.m1/t3.7xr.xn.2f.m1.md": {
+   "bytes": "---\nid: t3.7xr.xn.2f.m1\ntype: t3\ntitle: Plan subtask\nparent: t2.7xr.xn.2f\nreference_materials: null\ncreated_at: '2026-10-10T14:59:04.497088'\nstatus: draft\nschema_version: '0.1'\nguid: 7xrxn2fm18vimnrztb6625wsn2gd2fp4\n---\n"
+  },
+  "repo/Ideas/b.41n/b.41n.md": {
+   "bytes": "---\nid: b.41n\ntype: bee\ntitle: Freeform status 0\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.475262'\nstatus: 'in review: maybe'\nschema_version: '0.1'\nguid: 41n6gajvra55hbgop9zww97u8j9w4772\n---\n"
+  },
+  "repo/Ideas/b.4p7/b.4p7.md": {
+   "bytes": "---\nid: b.4p7\ntype: bee\ntitle: Freeform status 2\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.739381'\nstatus: 'null'\nschema_version: '0.1'\nguid: 4p7e1xhhsj8it3vx92rtvuksw15vhchr\n---\n"
+  },
+  "repo/Ideas/b.7ku/b.7ku.md": {
+   "bytes": null
+  },
+  "repo/Ideas/b.7ku/t1.7ku.ub/t1.7ku.ub.md": {
+   "bytes": "---\nid: t1.7ku.ub\ntype: t1\ntitle: Idea doc\nparent: b.7ku\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.347529'\nstatus: null\nschema_version: '0.1'\nguid: 7kuubb81zok4yxdrunr78t9kkgk4bsvn\n---\n\nEnds with one newline.\n"
+  },
+  "repo/Ideas/b.97z/b.97z.md": {
+   "bytes": "---\nid: b.97z\ntype: bee\ntitle: Freeform status 4\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.972701'\nstatus: '#hash'\nschema_version: '0.1'\nguid: 97ze535wse4ohycphwgpjzgk9p5qx3zc\n---\n"
+  },
+  "repo/Ideas/b.9gu/b.9gu.md": {
+   "bytes": "---\nid: b.9gu\ntype: bee\ntitle: Freeform status 1\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.623490'\nstatus: 'yes'\nschema_version: '0.1'\nguid: 9gu95qmx8ghyrkqnpa8mtgat1c59ex1w\n---\n"
+  },
+  "repo/Ideas/b.cm6/b.cm6.md": {
+   "bytes": "---\nid: b.cm6\ntype: bee\ntitle: Freeform status 3\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.856134'\nstatus: '~'\nschema_version: '0.1'\nguid: cm67m73j3c3bdpcrge6x49anap3d7q2k\n---\n"
+  },
+  "repo/Ideas/b.gon/b.gon.md": {
+   "error": "ValidationError"
+  },
+  "repo/Ideas/b.h8x/b.h8x.md": {
+   "bytes": "---\nid: b.h8x\ntype: bee\ntitle: Freeform status 6\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:04.206146'\nstatus: ünïcödé\nschema_version: '0.1'\nguid: h8xyrudymjf1jo8b697rpf5aih77q7qp\n---\n"
+  },
+  "repo/Ideas/b.n7u/b.n7u.md": {
+   "bytes": "---\nid: b.n7u\ntype: bee\ntitle: Plain idea\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:03.406956'\nstatus: null\nschema_version: '0.1'\nguid: n7ucbd3ypes8x6brxvpdmnkd8786gvcb\n---\n"
+  },
+  "repo/Ideas/b.oq6/b.oq6.md": {
+   "bytes": "---\nid: b.oq6\ntype: bee\ntitle: Freeform status 5\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:04.089645'\nstatus: '123'\nschema_version: '0.1'\nguid: oq6k2jbeuqhtkdhva3egvtj364u83rks\n---\n"
+  },
+  "repo/features/b.1hr/b.1hr.md": {
+   "bytes": "---\nid: b.1hr\ntype: bee\ntitle: Body backslashes\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.844929'\nstatus: open\nschema_version: '0.1'\nguid: 1hrn457jyx7dm2bstzme3xrx5so5p914\n---\n\nregex \\d+\\s* and C:\\Program Files\\x and \\\\server\\share and trailing \\\n"
+  },
+  "repo/features/b.1js/b.1js.md": {
+   "bytes": "---\nid: b.1js\ntype: bee\ntitle: Special tags 3\ntags:\n- '!c'\n- '%d'\n- '@e'\n- '`f`'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.360871'\nstatus: open\nschema_version: '0.1'\nguid: 1js5eb9caz3b6c4dgkd8jpeaw6j3mk82\n---\n"
+  },
+  "repo/features/b.1zj/b.1zj.md": {
+   "bytes": "---\nid: b.1zj\ntype: bee\ntitle: rtl עברית\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.830525'\nstatus: open\nschema_version: '0.1'\nguid: 1zjcmj17pe4c62xkd1rjzfvf962ctdmn\n---\n"
+  },
+  "repo/features/b.2io/b.2io.md": {
+   "bytes": "---\nid: b.2io\ntype: bee\ntitle: '|-'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:58.117352'\nstatus: open\nschema_version: '0.1'\nguid: 2ioo1163zqm8gjfwvx8sr575urftk4ir\n---\n"
+  },
+  "repo/features/b.2pb/b.2pb.md": {
+   "bytes": "---\nid: b.2pb\ntype: bee\ntitle: -leading dash\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.189571'\nstatus: open\nschema_version: '0.1'\nguid: 2pbxnikj9k88ccxotru335dckyt1ggbp\n---\n"
+  },
+  "repo/features/b.2wc/b.2wc.md": {
+   "bytes": "---\nid: b.2wc\ntype: bee\ntitle: '\"double quoted\"'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.830465'\nstatus: open\nschema_version: '0.1'\nguid: 2wc9wxm2x9s9vqgyu29o9g685e5ym2bd\n---\n"
+  },
+  "repo/features/b.3de/b.3de.md": {
+   "bytes": "---\nid: b.3de\ntype: bee\ntitle: 'null'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.625940'\nstatus: open\nschema_version: '0.1'\nguid: 3dec2v2tdegjpw356ncnszkv6d1vmzcb\n---\n"
+  },
+  "repo/features/b.4gw/b.4gw.md": {
+   "bytes": "---\nid: b.4gw\ntype: bee\ntitle: '1e3'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:55.206826'\nstatus: open\nschema_version: '0.1'\nguid: 4gwyb1b6qpf7c1brznuxy5tqtd44bffw\n---\n"
+  },
+  "repo/features/b.4og/b.4og.md": {
+   "bytes": "---\nid: b.4og\ntype: bee\ntitle: Special tags 0\ntags:\n- priority:1\n- 'key: v'\n- '#tag'\n- 'yes'\n- '123'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.187100'\nstatus: open\nschema_version: '0.1'\nguid: 4ogbiqqj1f8sdcquqs29ig8394shr7g3\n---\n"
+  },
+  "repo/features/b.6q6/b.6q6.md": {
+   "bytes": "---\nid: b.6q6\ntype: bee\ntitle: '[bracketed]'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.946595'\nstatus: open\nschema_version: '0.1'\nguid: 6q6gwe3zi4juskaxn4mkzug1drd12itq\n---\n"
+  },
+  "repo/features/b.6sz/b.6sz.md": {
+   "bytes": "---\nid: b.6sz\ntype: bee\ntitle: '&anchor'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.177115'\nstatus: open\nschema_version: '0.1'\nguid: 6sz1chu6jvr4bmdnijghnare83dixcj4\n---\n"
+  },
+  "repo/features/b.72b/b.72b.md": {
+   "bytes": "---\nid: b.72b\ntype: bee\ntitle: 'yes'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.395082'\nstatus: open\nschema_version: '0.1'\nguid: 72bzhi15ynggafnatat8iff1prji5h55\n---\n"
+  },
+  "repo/features/b.7k3/b.7k3.md": {
+   "bytes": "---\nid: b.7k3\ntype: bee\ntitle: Body trailing_spaces\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.729484'\nstatus: open\nschema_version: '0.1'\nguid: 7k3egoxm4dtnmc5egkz3jz5jey2bwndi\n---\n\nTrailing spaces\n"
+  },
+  "repo/features/b.85j/b.85j.md": {
+   "bytes": "---\nid: b.85j\ntype: bee\ntitle: 'true'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.858520'\nstatus: open\nschema_version: '0.1'\nguid: 85jeozxy443ijr89groqdowrjvvkq78v\n---\n"
+  },
+  "repo/features/b.87m/b.87m.md": {
+   "bytes": "---\nid: b.87m\ntype: bee\ntitle: 'a # hash'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.596887'\nstatus: open\nschema_version: '0.1'\nguid: 87m4ocm8ftvrc8zt6abcy53zvn63d433\n---\n"
+  },
+  "repo/features/b.8dc/b.8dc.md": {
+   "bytes": "---\nid: b.8dc\ntype: bee\ntitle: Body control\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.960854'\nstatus: open\nschema_version: '0.1'\nguid: 8dcp2uhmmajru53kiq1etng3ecp3bsey\n---\n\nbell\u0007 vt\u000b ff\f esc\u001b\n"
+  },
+  "repo/features/b.8gq/b.8gq.md": {
+   "bytes": null
+  },
+  "repo/features/b.8gq/t1.8gq.9f/t1.8gq.9f.md": {
+   "bytes": "---\nid: t1.8gq.9f\ntype: t1\ntitle: Epic B\nparent: b.8gq\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.195942'\nstatus: draft\nschema_version: '0.1'\nguid: 8gq9f53qv94shbaaehkszk7e2r2kgca2\n---\n\nLine one\nLine two\n"
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t1.8gq.mq.md": {
+   "bytes": null
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t2.8gq.mq.kc.md": {
+   "bytes": null
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t3.8gq.mq.kc.b2/t3.8gq.mq.kc.b2.md": {
+   "bytes": "---\nid: t3.8gq.mq.kc.b2\ntype: t3\ntitle: Subtask under task\nparent: t2.8gq.mq.kc\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.315549'\nstatus: open\nschema_version: '0.1'\nguid: 8gqmqkcb2x91mb2maa4pzx92bdrcirno\n---\n\nÜnïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL\n"
+  },
+  "repo/features/b.8gq/t1.8gq.mq/t2.8gq.mq.kc/t3.8gq.mq.kc.pr/t3.8gq.mq.kc.pr.md": {
+   "bytes": "---\nid: t3.8gq.mq.kc.pr\ntype: t3\ntitle: Second subtask\ntags:\n- 日本\n- 🐝\nparent: t2.8gq.mq.kc\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.374231'\nstatus: open\nschema_version: '0.1'\nguid: 8gqmqkcpr9tp9koo96iu5qtnbo22joq4\n---\n\ncol1\tcol2\n\tindented by tab\n"
+  },
+  "repo/features/b.8jh/b.8jh.md": {
+   "bytes": "---\nid: b.8jh\ntype: bee\ntitle: '''single quoted'''\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.712922'\nstatus: open\nschema_version: '0.1'\nguid: 8jhh5n3i1xgky5yrqqw3s42jqyvrer6d\n---\n"
+  },
+  "repo/features/b.98b/b.98b.md": {
+   "bytes": "---\nid: b.98b\ntype: bee\ntitle: zero​width\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:57.063561'\nstatus: open\nschema_version: '0.1'\nguid: 98b2btih8y12rqehzifjk9xmtnbhps76\n---\n"
+  },
+  "repo/features/b.9fp/b.9fp.md": {
+   "bytes": "---\nid: b.9fp\ntype: bee\ntitle: nbsp inside\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.945805'\nstatus: open\nschema_version: '0.1'\nguid: 9fprwrs78929frvopwgj2bigntd9mykq\n---\n"
+  },
+  "repo/features/b.9mm/b.9mm.md": {
+   "bytes": "---\nid: b.9mm\ntype: bee\ntitle: Body yaml_like\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.076341'\nstatus: open\nschema_version: '0.1'\nguid: 9mmt9s2j7zhfw2uomjqngsmsh81f91n1\n---\n\nkey: value\n- list\n---\nid: fake\nschema_version: '9'\n"
+  },
+  "repo/features/b.brc/b.brc.md": {
+   "bytes": "---\nid: b.brc\ntype: bee\ntitle: ends with backslash\\\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:57.300299'\nstatus: open\nschema_version: '0.1'\nguid: brc24ryzm4j54f3bk5apfmee85izgw1s\n---\n"
+  },
+  "repo/features/b.cj6/b.cj6.md": {
+   "bytes": null
+  },
+  "repo/features/b.cj6/t1.cj6.uo/t1.cj6.uo.md": {
+   "bytes": null
+  },
+  "repo/features/b.cmv/b.cmv.md": {
+   "bytes": "---\nid: b.cmv\ntype: bee\ntitle: '`tick`'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.929597'\nstatus: open\nschema_version: '0.1'\nguid: cmv11xybyusaxn3nt87e5ijp5he21n7y\n---\n"
+  },
+  "repo/features/b.ej9/b.ej9.md": {
+   "bytes": "---\nid: b.ej9\ntype: bee\ntitle: quote's\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.598993'\nstatus: open\nschema_version: '0.1'\nguid: ej9x1rmd8t9cv23mo3c8br8bm1e86f4m\n---\n"
+  },
+  "repo/features/b.eth/b.eth.md": {
+   "bytes": "---\nid: b.eth\ntype: bee\ntitle: '!tag'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.409138'\nstatus: open\nschema_version: '0.1'\nguid: eth4g5ho85x1b84vyy7bq165vnjv2qov\n---\n"
+  },
+  "repo/features/b.ezu/b.ezu.md": {
+   "bytes": "---\nid: b.ezu\ntype: bee\ntitle: '2026-10-10'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:55.613973'\nstatus: open\nschema_version: '0.1'\nguid: ezuc9ti8m576x5gc18w889rz46kzpeep\n---\n"
+  },
+  "repo/features/b.hbo/b.hbo.md": {
+   "bytes": "---\nid: b.hbo\ntype: bee\ntitle: '!!str'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:58.002811'\nstatus: open\nschema_version: '0.1'\nguid: hbogixp2e3co5edtrz47ye24ae8k4uwe\n---\n"
+  },
+  "repo/features/b.i7b/b.i7b.md": {
+   "bytes": "---\nid: b.i7b\ntype: bee\ntitle: Body from a file\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.191921'\nstatus: open\nschema_version: '0.1'\nguid: i7bcq4pnp94agoduai18uqjwtrensru2\n---\n\nFrom --body-file\nwith \n and \t escapes\n"
+  },
+  "repo/features/b.j46/b.j46.md": {
+   "bytes": null
+  },
+  "repo/features/b.jbv/b.jbv.md": {
+   "bytes": "---\nid: b.jbv\ntype: bee\ntitle: percent %s and {braces}\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:57.417657'\nstatus: open\nschema_version: '0.1'\nguid: jbvf8kpewk9yebo6xv1yrnmffmbj1nop\n---\n"
+  },
+  "repo/features/b.knp/b.knp.md": {
+   "bytes": null
+  },
+  "repo/features/b.muy/b.muy.md": {
+   "bytes": "---\nid: b.muy\ntype: bee\ntitle: Clone source\nparent: null\nchildren:\n- t1.muy.36\nreference_materials: null\ncreated_at: '2026-10-10T14:59:05.199979'\nstatus: draft\nschema_version: '0.1'\nguid: muyv49319yy6fd8go9qr8fhbgsxeox3c\n---\n\nsource body\n"
+  },
+  "repo/features/b.muy/t1.muy.36/t1.muy.36.md": {
+   "bytes": "---\nid: t1.muy.36\ntype: t1\ntitle: Clone source epic\nparent: b.muy\nreference_materials: null\ncreated_at: '2026-10-10T14:59:05.200719'\nstatus: draft\nschema_version: '0.1'\nguid: muy36fm8ptwbn6njne5r8acviexkfdkz\n---\n"
+  },
+  "repo/features/b.n44/b.n44.md": {
+   "bytes": "---\nid: b.n44\ntype: bee\ntitle: Reference material with three dashes\nparent: null\nreference_materials:\n- value: http://example.com/a\ncreated_at: '2026-10-10T14:59:05.479252'\nstatus: open\nschema_version: '0.1'\nguid: null\n---\n\nb\nguid: n441a66gheppyrsjdtqtnu3trb4xh3jm\n---\n\nPlain body.\n"
+  },
+  "repo/features/b.nwp/b.nwp.md": {
+   "bytes": "---\nid: b.nwp\ntype: bee\ntitle: '123'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.975346'\nstatus: open\nschema_version: '0.1'\nguid: nwpd3ph1g23vqt4ayvgjbg42fqdobp59\n---\n"
+  },
+  "repo/features/b.oqp/b.oqp.md": {
+   "bytes": "---\nid: b.oqp\ntype: bee\ntitle: '~'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.742430'\nstatus: open\nschema_version: '0.1'\nguid: oqp7ffqeto863fsuxuj5jkmjci2jny6w\n---\n"
+  },
+  "repo/features/b.pef/b.pef.md": {
+   "bytes": "---\nid: b.pef\ntype: bee\ntitle: '|pipe'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.581081'\nstatus: open\nschema_version: '0.1'\nguid: pef53htn7414oqx93sjn34jfo3dosgd5\n---\n"
+  },
+  "repo/features/b.pg3/b.pg3.md": {
+   "bytes": "---\nid: b.pg3\ntype: bee\ntitle: '{braced}'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.061701'\nstatus: open\nschema_version: '0.1'\nguid: pg3yvx3s9hbqt7oe2p2emduqaxrdci3u\n---\n"
+  },
+  "repo/features/b.pi9/b.pi9.md": {
+   "bytes": null
+  },
+  "repo/features/b.pi9/t1.pi9.iv/t1.pi9.iv.md": {
+   "bytes": "---\nid: t1.pi9.iv\ntype: t1\ntitle: Epic with a 22-character guid\nparent: b.pi9\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.708316'\nstatus: open\nschema_version: '0.1'\nguid: pi9ivcen7mk6dg7csqhrah\n---\n"
+  },
+  "repo/features/b.q3z/b.q3z.md": {
+   "bytes": "---\nid: b.q3z\ntype: bee\ntitle: 'key: value'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.249383'\nstatus: open\nschema_version: '0.1'\nguid: q3z2ggj63k1oiu7sz8yqdrkcgyjc9ydh\n---\n"
+  },
+  "repo/features/b.qai/b.qai.md": {
+   "bytes": "---\nid: b.qai\ntype: bee\ntitle: '*alias'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.293471'\nstatus: open\nschema_version: '0.1'\nguid: qai2pjs48tnmt6fxn9s2aik4iwe3stg6\n---\n"
+  },
+  "repo/features/b.qh3/b.qh3.md": {
+   "bytes": "---\nid: b.qh3\ntype: bee\ntitle: ...\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:57.533889'\nstatus: open\nschema_version: '0.1'\nguid: qh3qzhwq3xzny9gcpwnr5vd49heg5evu\n---\n"
+  },
+  "repo/features/b.qup/b.qup.md": {
+   "bytes": "---\nid: b.qup\ntype: bee\ntitle: 'ends with colon:'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.364465'\nstatus: open\nschema_version: '0.1'\nguid: qupaiam59o2s5ecmr8tb874rbg9qw4y8\n---\n"
+  },
+  "repo/features/b.qxp/b.qxp.md": {
+   "bytes": "---\nid: b.qxp\ntype: bee\ntitle: Body escapes_expanded_by_084\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.903251'\nstatus: open\nschema_version: '0.1'\nguid: qxp7f6cszdsno7zm5czhxrg6932t7ipv\n---\n\n0.8.4 turned these into real characters: \n and\n"
+  },
+  "repo/features/b.qyy/b.qyy.md": {
+   "bytes": "---\nid: b.qyy\ntype: bee\ntitle: '>folded'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.697110'\nstatus: open\nschema_version: '0.1'\nguid: qyy96mgp4rrspvb4hi6kb143fmyj3hk5\n---\n"
+  },
+  "repo/features/b.raq/b.raq.md": {
+   "bytes": "---\nid: b.raq\ntype: bee\ntitle: Special tags 2\ntags:\n- ' spaced '\n- 'null'\n- '2026-10-10'\n- '&a'\n- '*b'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.302938'\nstatus: open\nschema_version: '0.1'\nguid: raquci9h6rhsio4i8jr1vxd2xt71bjs2\n---\n"
+  },
+  "repo/features/b.say/b.say.md": {
+   "bytes": "---\nid: b.say\ntype: bee\ntitle: back\\slash\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:57.181233'\nstatus: open\nschema_version: '0.1'\nguid: sayyejvi6s1h3eaarmew7utwhggduuzr\n---\n"
+  },
+  "repo/features/b.tmj/b.tmj.md": {
+   "bytes": "---\nid: b.tmj\ntype: bee\ntitle: '#not a comment'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.481033'\nstatus: open\nschema_version: '0.1'\nguid: tmj3aah6gkgf48skbsq1mk1fxzsn5t64\n---\n"
+  },
+  "repo/features/b.tv4/b.tv4.md": {
+   "bytes": "---\nid: b.tv4\ntype: bee\ntitle: 0o17\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:55.496372'\nstatus: open\nschema_version: '0.1'\nguid: tv4j5tbj7usm2s7efoiqisserb862b3p\n---\n"
+  },
+  "repo/features/b.tv6/b.tv6.md": {
+   "bytes": "---\nid: b.tv6\ntype: bee\ntitle: ',comma'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.278650'\nstatus: open\nschema_version: '0.1'\nguid: tv68dbrjy8f58a5tpjtighai8qstkfn8\n---\n"
+  },
+  "repo/features/b.u5v/b.u5v.md": {
+   "bytes": null
+  },
+  "repo/features/b.u5v/t1.u5v.fm/t1.u5v.fm.md": {
+   "bytes": "---\nid: t1.u5v.fm\ntype: t1\ntitle: Clone source epic\nparent: b.u5v\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.824674'\nstatus: draft\nschema_version: '0.1'\nguid: u5vfm2ckwsg9bq6z77x7gszttkp8kob5\n---\n"
+  },
+  "repo/features/b.uub/b.uub.md": {
+   "bytes": "---\nid: b.uub\ntype: bee\ntitle: '  padded  '\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.305215'\nstatus: open\nschema_version: '0.1'\nguid: uubt1epmyhyo8ko16tsirqr3vzsego3y\n---\n"
+  },
+  "repo/features/b.vf8/b.vf8.md": {
+   "bytes": "---\nid: b.vf8\ntype: bee\ntitle: '1.5'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:55.090874'\nstatus: open\nschema_version: '0.1'\nguid: vf81xqn21jrfqqr9881ih214r6x12ric\n---\n"
+  },
+  "repo/features/b.vov/b.vov.md": {
+   "bytes": "---\nid: b.vov\ntype: bee\ntitle: unicode ünïcödé 日本語 🐝\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:56.714471'\nstatus: open\nschema_version: '0.1'\nguid: vov1kwi48erjhv647d28dm1kxj6pij5q\n---\n"
+  },
+  "repo/features/b.wj8/b.wj8.md": {
+   "bytes": "---\nid: b.wj8\ntype: bee\ntitle: '%percent'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.046462'\nstatus: open\nschema_version: '0.1'\nguid: wj8aybf67mtkvcsp2onz64hzuw5xwx5j\n---\n"
+  },
+  "repo/features/b.wy4/b.wy4.md": {
+   "bytes": "---\nid: b.wy4\ntype: bee\ntitle: Body dash_lines\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.018464'\nstatus: open\nschema_version: '0.1'\nguid: wy4wa2i9yphqg2h39wzpr9adk2q2koih\n---\n\n---\nstarts with dashes\n---\n"
+  },
+  "repo/features/b.xp2/b.xp2.md": {
+   "bytes": "---\nid: b.xp2\ntype: bee\ntitle: Body plain\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:52.134304'\nstatus: open\nschema_version: '0.1'\nguid: xp2qa6a84t1hdcpit4vwkp24zwqbcotn\n---\n\nPlain body.\n"
+  },
+  "repo/features/b.yed/b.yed.md": {
+   "bytes": "---\nid: b.yed\ntype: bee\ntitle: |-\n  multi\n  line title\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:58.232310'\nstatus: open\nschema_version: '0.1'\nguid: yede82qxcnj6s3gbhdt1sd746rv2yq88\n---\n"
+  },
+  "repo/features/b.yg9/b.yg9.md": {
+   "bytes": null
+  },
+  "repo/features/b.yq9/b.yq9.md": {
+   "bytes": "---\nid: b.yq9\ntype: bee\ntitle: '?question'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.161877'\nstatus: open\nschema_version: '0.1'\nguid: yq91ua1xfbkg9gvctg3amus2su15fioz\n---\n"
+  },
+  "repo/features/b.yrq/b.yrq.md": {
+   "bytes": "---\nid: b.yrq\ntype: bee\ntitle: Body lone_cr\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:51.787160'\nstatus: open\nschema_version: '0.1'\nguid: yrqs3tnp9q4wy79hndwxidot1tovisjs\n---\n\nold mac\nline\n"
+  },
+  "repo/features/b.ywd/b.ywd.md": {
+   "bytes": "---\nid: b.ywd\ntype: bee\ntitle: 'No'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:54.510791'\nstatus: open\nschema_version: '0.1'\nguid: ywdrxk9nvc2h5pfsmi297dzujesg9epy\n---\n"
+  },
+  "repo/features/b.z5n/b.z5n.md": {
+   "bytes": "---\nid: b.z5n\ntype: bee\ntitle: '2026-10-10T12:00:00'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:55.729035'\nstatus: open\nschema_version: '0.1'\nguid: z5nuoj1ztiahfvx41do893egfia3xe8p\n---\n"
+  },
+  "repo/features/b.zqe/b.zqe.md": {
+   "bytes": "---\nid: b.zqe\ntype: bee\ntitle: '@at'\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:58:53.813369'\nstatus: open\nschema_version: '0.1'\nguid: zqecho77sxev4nu5c2ne9xkw6swcp8tq\n---\n"
+  },
+  "repo/features/b.zws/b.zws.md": {
+   "bytes": "---\nid: b.zws\ntype: bee\ntitle: Special tags 1\ntags:\n- 日本\n- 🐝\n- a,b\n- '[x]'\n- back\\slash\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.244882'\nstatus: open\nschema_version: '0.1'\nguid: zws8qgme38wado1n8qod547cyryt4rrf\n---\n"
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z.md": {
+   "bytes": null
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/t1.otcnx87oa6q2wqq6idusfagjqorgnrms/t1.otcnx87oa6q2wqq6idusfagjqorgnrms.md": {
+   "bytes": null
+  },
+  "repo/features/cemetery/b.otcxdbvyeufnk8j2x1955bq6sm44kx1z/t1.otcnx87oa6q2wqq6idusfagjqorgnrms/t2.otcnx3f5kxww8ijw8jpq48t1rhg5xy7d/t2.otcnx3f5kxww8ijw8jpq48t1rhg5xy7d.md": {
+   "bytes": "---\nid: t2.otc.nx.3f\ntype: t2\ntitle: Archived task\nparent: t1.otc.nx\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.535042'\nstatus: done\nschema_version: '0.1'\nguid: otcnx3f5kxww8ijw8jpq48t1rhg5xy7d\n---\n"
+  },
+  "repo/features/cemetery/b.yko73bb2kha2nzx8wwq681/b.yko73bb2kha2nzx8wwq681.md": {
+   "bytes": "---\nid: b.yko\ntype: bee\ntitle: Archived bee with a 22-character guid\nparent: null\nreference_materials: null\ncreated_at: '2026-10-10T14:59:02.593357'\nstatus: done\nschema_version: '0.1'\nguid: yko73bb2kha2nzx8wwq681\n---\n"
+  },
+  "repo/shared-hive/b.i7k/b.i7k.md": {
+   "bytes": null
+  },
+  "repo/shared-hive/b.i7k/t1.i7k.sy/t1.i7k.sy.md": {
+   "bytes": "---\nid: t1.i7k.sy\ntype: t1\ntitle: Task in the glob-scope hive\nparent: b.i7k\nreference_materials: null\ncreated_at: '2026-10-10T14:59:04.672880'\nstatus: open\nschema_version: '0.1'\nguid: i7ksyds2s47yjoqr8dkqy5w2i46t6hr7\n---\n"
+  }
+ },
+ "show": {
+  "b.1hr": {
+   "body": "regex \\d+\\s* and C:\\Program Files\\x and \\\\server\\share and trailing \\",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.844929",
+   "down_dependencies": [],
+   "guid": "1hrn457jyx7dm2bstzme3xrx5so5p914",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.1hr",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body backslashes",
+   "up_dependencies": []
+  },
+  "b.1js": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.360871",
+   "down_dependencies": [],
+   "guid": "1js5eb9caz3b6c4dgkd8jpeaw6j3mk82",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "!c",
+    "%d",
+    "@e",
+    "`f`"
+   ],
+   "ticket_id": "b.1js",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Special tags 3",
+   "up_dependencies": []
+  },
+  "b.1zj": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.830525",
+   "down_dependencies": [],
+   "guid": "1zjcmj17pe4c62xkd1rjzfvf962ctdmn",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.1zj",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "rtl עברית",
+   "up_dependencies": []
+  },
+  "b.2io": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:58.117352",
+   "down_dependencies": [],
+   "guid": "2ioo1163zqm8gjfwvx8sr575urftk4ir",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.2io",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "|-",
+   "up_dependencies": []
+  },
+  "b.2pb": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.189571",
+   "down_dependencies": [],
+   "guid": "2pbxnikj9k88ccxotru335dckyt1ggbp",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.2pb",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "-leading dash",
+   "up_dependencies": []
+  },
+  "b.2wc": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.830465",
+   "down_dependencies": [],
+   "guid": "2wc9wxm2x9s9vqgyu29o9g685e5ym2bd",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.2wc",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "\"double quoted\"",
+   "up_dependencies": []
+  },
+  "b.3co": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:04.556669",
+   "down_dependencies": [],
+   "guid": "3covwn434npi1797v3bxt9soc6uuc1k6",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.3co",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Plan blocked by the idea's sibling",
+   "up_dependencies": [
+    "b.7xr"
+   ]
+  },
+  "b.3de": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.625940",
+   "down_dependencies": [],
+   "guid": "3dec2v2tdegjpw356ncnszkv6d1vmzcb",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.3de",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "null",
+   "up_dependencies": []
+  },
+  "b.41n": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.475262",
+   "down_dependencies": [],
+   "guid": "41n6gajvra55hbgop9zww97u8j9w4772",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.41n",
+   "ticket_status": "in review: maybe",
+   "ticket_type": "bee",
+   "title": "Freeform status 0",
+   "up_dependencies": []
+  },
+  "b.4gw": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:55.206826",
+   "down_dependencies": [],
+   "guid": "4gwyb1b6qpf7c1brznuxy5tqtd44bffw",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.4gw",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "1e3",
+   "up_dependencies": []
+  },
+  "b.4og": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.187100",
+   "down_dependencies": [],
+   "guid": "4ogbiqqj1f8sdcquqs29ig8394shr7g3",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "priority:1",
+    "key: v",
+    "#tag",
+    "yes",
+    "123"
+   ],
+   "ticket_id": "b.4og",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Special tags 0",
+   "up_dependencies": []
+  },
+  "b.4p7": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.739381",
+   "down_dependencies": [],
+   "guid": "4p7e1xhhsj8it3vx92rtvuksw15vhchr",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.4p7",
+   "ticket_status": "null",
+   "ticket_type": "bee",
+   "title": "Freeform status 2",
+   "up_dependencies": []
+  },
+  "b.4se": {
+   "body": "Body line one\nBody line two",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.056982",
+   "down_dependencies": [],
+   "guid": "4se78dz3sa6eq891z1jupf548k2g2gwt",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "bug"
+   ],
+   "ticket_id": "b.4se",
+   "ticket_status": "active",
+   "ticket_type": "bee",
+   "title": "Bug whose file is checked out with CRLF",
+   "up_dependencies": []
+  },
+  "b.6q6": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.946595",
+   "down_dependencies": [],
+   "guid": "6q6gwe3zi4juskaxn4mkzug1drd12itq",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.6q6",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "[bracketed]",
+   "up_dependencies": []
+  },
+  "b.6sz": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.177115",
+   "down_dependencies": [],
+   "guid": "6sz1chu6jvr4bmdnijghnare83dixcj4",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.6sz",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "&anchor",
+   "up_dependencies": []
+  },
+  "b.72b": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.395082",
+   "down_dependencies": [],
+   "guid": "72bzhi15ynggafnatat8iff1prji5h55",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.72b",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "yes",
+   "up_dependencies": []
+  },
+  "b.7k3": {
+   "body": "Trailing spaces",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.729484",
+   "down_dependencies": [],
+   "guid": "7k3egoxm4dtnmc5egkz3jz5jey2bwndi",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.7k3",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body trailing_spaces",
+   "up_dependencies": []
+  },
+  "b.7ku": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote",
+   "children": [
+    "t1.7ku.ub"
+   ],
+   "created_at": "2026-10-10T14:59:03.289257",
+   "down_dependencies": [],
+   "guid": "7kuuhm9mf45gfwkv42gtx4tjrwjctift",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.7ku",
+   "ticket_status": null,
+   "ticket_type": "bee",
+   "title": "Idea with a doc",
+   "up_dependencies": []
+  },
+  "b.7xr": {
+   "body": "Indented first line\nsecond line",
+   "children": [
+    "t1.7xr.xn"
+   ],
+   "created_at": "2026-10-10T14:59:04.321161",
+   "down_dependencies": [
+    "b.3co"
+   ],
+   "guid": "7xrcx1dpobnd8s229c18pui5whxg2ydg",
+   "parent": null,
+   "reference_materials": [
+    {
+     "resolved": {
+      "status": "success",
+      "value": "b.7ku"
+     },
+     "resolver": "bees",
+     "value": "b.7ku"
+    }
+   ],
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.7xr",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Plan in the nested hive",
+   "up_dependencies": []
+  },
+  "b.85j": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.858520",
+   "down_dependencies": [],
+   "guid": "85jeozxy443ijr89groqdowrjvvkq78v",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.85j",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "true",
+   "up_dependencies": []
+  },
+  "b.87m": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.596887",
+   "down_dependencies": [],
+   "guid": "87m4ocm8ftvrc8zt6abcy53zvn63d433",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.87m",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "a # hash",
+   "up_dependencies": []
+  },
+  "b.8dc": {
+   "body": "bell\u0007 vt\u000b ff\f esc\u001b",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.960854",
+   "down_dependencies": [],
+   "guid": "8dcp2uhmmajru53kiq1etng3ecp3bsey",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.8dc",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body control",
+   "up_dependencies": []
+  },
+  "b.8gq": {
+   "body": "# Heading\n\n- item\n- item\n\n```python\nprint('---')\n```\n\n---\n\n> quote",
+   "children": [
+    "t1.8gq.mq",
+    "t1.8gq.9f"
+   ],
+   "created_at": "2026-10-10T14:58:51.077541",
+   "down_dependencies": [],
+   "guid": "8gqtfifciz58hzejoj8u8r1h2ete61jx",
+   "parent": null,
+   "reference_materials": [
+    {
+     "resolved": {
+      "error": "path does not exist: docs/spec.md",
+      "raw_value": "docs/spec.md",
+      "status": "error"
+     },
+     "value": "docs/spec.md"
+    },
+    {
+     "resolved": {
+      "status": "success",
+      "value": "b.abc"
+     },
+     "resolver": "bees",
+     "value": "b.abc"
+    },
+    {
+     "resolved": {
+      "error": "path does not exist: notes with spaces/and: colon.md",
+      "raw_value": "notes with spaces/and: colon.md",
+      "status": "error"
+     },
+     "value": "notes with spaces/and: colon.md"
+    },
+    {
+     "resolved": {
+      "error": "path does not exist: unicode/ünï.md",
+      "raw_value": "unicode/ünï.md",
+      "status": "error"
+     },
+     "value": "unicode/ünï.md"
+    },
+    {
+     "resolved": {
+      "error": "path does not exist: C:\\Windows\\path.txt",
+      "raw_value": "C:\\Windows\\path.txt",
+      "status": "error"
+     },
+     "value": "C:\\Windows\\path.txt"
+    },
+    {
+     "resolved": {
+      "error": "path does not exist: yes",
+      "raw_value": "yes",
+      "status": "error"
+     },
+     "value": "yes"
+    },
+    {
+     "resolved": {
+      "error": "path does not exist: #123 'quoted'",
+      "raw_value": "#123 'quoted'",
+      "status": "error"
+     },
+     "value": "#123 'quoted'"
+    }
+   ],
+   "schema_version": "0.1",
+   "tags": [
+    "tree",
+    "priority:1",
+    "updated-by-084"
+   ],
+   "ticket_id": "b.8gq",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Tree bee with every tier",
+   "up_dependencies": []
+  },
+  "b.8jh": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.712922",
+   "down_dependencies": [],
+   "guid": "8jhh5n3i1xgky5yrqqw3s42jqyvrer6d",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.8jh",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "'single quoted'",
+   "up_dependencies": []
+  },
+  "b.8oe": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.114704",
+   "down_dependencies": [],
+   "guid": "8oe917a5bu319et5mzjzdn",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.8oe",
+   "ticket_status": "defined",
+   "ticket_type": "bee",
+   "title": "Bug with a 22-character guid",
+   "up_dependencies": []
+  },
+  "b.97z": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.972701",
+   "down_dependencies": [],
+   "guid": "97ze535wse4ohycphwgpjzgk9p5qx3zc",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.97z",
+   "ticket_status": "#hash",
+   "ticket_type": "bee",
+   "title": "Freeform status 4",
+   "up_dependencies": []
+  },
+  "b.98b": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:57.063561",
+   "down_dependencies": [],
+   "guid": "98b2btih8y12rqehzifjk9xmtnbhps76",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.98b",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "zero​width",
+   "up_dependencies": []
+  },
+  "b.9fp": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.945805",
+   "down_dependencies": [],
+   "guid": "9fprwrs78929frvopwgj2bigntd9mykq",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.9fp",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "nbsp inside",
+   "up_dependencies": []
+  },
+  "b.9gu": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.623490",
+   "down_dependencies": [],
+   "guid": "9gu95qmx8ghyrkqnpa8mtgat1c59ex1w",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.9gu",
+   "ticket_status": "yes",
+   "ticket_type": "bee",
+   "title": "Freeform status 1",
+   "up_dependencies": []
+  },
+  "b.9mm": {
+   "body": "key: value\n- list\n---\nid: fake\nschema_version: '9'",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.076341",
+   "down_dependencies": [],
+   "guid": "9mmt9s2j7zhfw2uomjqngsmsh81f91n1",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.9mm",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body yaml_like",
+   "up_dependencies": []
+  },
+  "b.a45": {
+   "body": "Ends with three newlines.",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.172157",
+   "down_dependencies": [],
+   "guid": "a45qrvshk24xwit292kp7xo336zbwxsb",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.a45",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Bug blocked by a feature",
+   "up_dependencies": [
+    "b.j46"
+   ]
+  },
+  "b.brc": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:57.300299",
+   "down_dependencies": [],
+   "guid": "brc24ryzm4j54f3bk5apfmee85izgw1s",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.brc",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "ends with backslash\\",
+   "up_dependencies": []
+  },
+  "b.cj6": {
+   "body": "",
+   "children": [
+    "t1.cj6.uo"
+   ],
+   "created_at": "2026-10-10T14:58:51.550516",
+   "down_dependencies": [],
+   "guid": "cj6tziqnqa2izw2kx8938dr6f6jugdvm",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.cj6",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Bee with a dependent epic",
+   "up_dependencies": []
+  },
+  "b.cm6": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.856134",
+   "down_dependencies": [],
+   "guid": "cm67m73j3c3bdpcrge6x49anap3d7q2k",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.cm6",
+   "ticket_status": "~",
+   "ticket_type": "bee",
+   "title": "Freeform status 3",
+   "up_dependencies": []
+  },
+  "b.cmv": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.929597",
+   "down_dependencies": [],
+   "guid": "cmv11xybyusaxn3nt87e5ijp5he21n7y",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.cmv",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "`tick`",
+   "up_dependencies": []
+  },
+  "b.ej9": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.598993",
+   "down_dependencies": [],
+   "guid": "ej9x1rmd8t9cv23mo3c8br8bm1e86f4m",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.ej9",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "quote's",
+   "up_dependencies": []
+  },
+  "b.eth": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.409138",
+   "down_dependencies": [],
+   "guid": "eth4g5ho85x1b84vyy7bq165vnjv2qov",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.eth",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "!tag",
+   "up_dependencies": []
+  },
+  "b.ezu": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:55.613973",
+   "down_dependencies": [],
+   "guid": "ezuc9ti8m576x5gc18w889rz46kzpeep",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.ezu",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "2026-10-10",
+   "up_dependencies": []
+  },
+  "b.gon": {
+   "error": "crash"
+  },
+  "b.h8x": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:04.206146",
+   "down_dependencies": [],
+   "guid": "h8xyrudymjf1jo8b697rpf5aih77q7qp",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.h8x",
+   "ticket_status": "ünïcödé",
+   "ticket_type": "bee",
+   "title": "Freeform status 6",
+   "up_dependencies": []
+  },
+  "b.hbo": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:58.002811",
+   "down_dependencies": [],
+   "guid": "hbogixp2e3co5edtrz47ye24ae8k4uwe",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.hbo",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "!!str",
+   "up_dependencies": []
+  },
+  "b.hsx": {
+   "body": "Plain body.",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.999562",
+   "down_dependencies": [],
+   "guid": "hsxmgwqo5gst7fcc81iccmj8k6exiang",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "bug",
+    "priority:2"
+   ],
+   "ticket_id": "b.hsx",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Bug with a plain body",
+   "up_dependencies": []
+  },
+  "b.i7b": {
+   "body": "From --body-file\nwith \n and \t escapes",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.191921",
+   "down_dependencies": [],
+   "guid": "i7bcq4pnp94agoduai18uqjwtrensru2",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.i7b",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body from a file",
+   "up_dependencies": []
+  },
+  "b.i7k": {
+   "body": "Ends with one newline.",
+   "children": [
+    "t1.i7k.sy"
+   ],
+   "created_at": "2026-10-10T14:59:04.615758",
+   "down_dependencies": [],
+   "guid": "i7k6tpf7ee7ue246gs6uzikq1ojtf2py",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.i7k",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Bee in a hive of a glob scope",
+   "up_dependencies": []
+  },
+  "b.j46": {
+   "body": "Ends with one newline.",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.433644",
+   "down_dependencies": [
+    "b.knp",
+    "b.a45"
+   ],
+   "guid": "j46tn7a372xkmfxtwvwig5p9vh8i3ve7",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.j46",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Blocker bee",
+   "up_dependencies": []
+  },
+  "b.jbv": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:57.417657",
+   "down_dependencies": [],
+   "guid": "jbvf8kpewk9yebo6xv1yrnmffmbj1nop",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.jbv",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "percent %s and {braces}",
+   "up_dependencies": []
+  },
+  "b.knp": {
+   "body": "Starts after blank lines",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.492243",
+   "down_dependencies": [],
+   "guid": "knp44gjcghx1piefj3n4ghewuqmws2a9",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.knp",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Blocked bee (renamed by 0.8.4)",
+   "up_dependencies": [
+    "b.j46"
+   ]
+  },
+  "b.muy": {
+   "body": "source body",
+   "children": [
+    "t1.muy.36"
+   ],
+   "created_at": "2026-10-10T14:59:05.199979",
+   "down_dependencies": [],
+   "guid": "muyv49319yy6fd8go9qr8fhbgsxeox3c",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.muy",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Clone source",
+   "up_dependencies": []
+  },
+  "b.n44": {
+   "body": "b\nguid: n441a66gheppyrsjdtqtnu3trb4xh3jm\n---\n\nPlain body.",
+   "children": [],
+   "created_at": "2026-10-10T14:59:05.479252",
+   "down_dependencies": [],
+   "guid": null,
+   "parent": null,
+   "reference_materials": [
+    {
+     "resolved": {
+      "error": "path does not exist: http://example.com/a",
+      "raw_value": "http://example.com/a",
+      "status": "error"
+     },
+     "value": "http://example.com/a"
+    }
+   ],
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.n44",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Reference material with three dashes",
+   "up_dependencies": []
+  },
+  "b.n7u": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.406956",
+   "down_dependencies": [],
+   "guid": "n7ucbd3ypes8x6brxvpdmnkd8786gvcb",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.n7u",
+   "ticket_status": null,
+   "ticket_type": "bee",
+   "title": "Plain idea",
+   "up_dependencies": []
+  },
+  "b.nwp": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.975346",
+   "down_dependencies": [],
+   "guid": "nwpd3ph1g23vqt4ayvgjbg42fqdobp59",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.nwp",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "123",
+   "up_dependencies": []
+  },
+  "b.ogw": {
+   "body": "Ends with one newline.",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.941870",
+   "down_dependencies": [],
+   "guid": "ogwre3pa7c7qy1h337g82331dhmnrahd",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.ogw",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Bee moved to Bugs by 0.8.4",
+   "up_dependencies": []
+  },
+  "b.oq6": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:04.089645",
+   "down_dependencies": [],
+   "guid": "oq6k2jbeuqhtkdhva3egvtj364u83rks",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.oq6",
+   "ticket_status": "123",
+   "ticket_type": "bee",
+   "title": "Freeform status 5",
+   "up_dependencies": []
+  },
+  "b.oqp": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.742430",
+   "down_dependencies": [],
+   "guid": "oqp7ffqeto863fsuxuj5jkmjci2jny6w",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.oqp",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "~",
+   "up_dependencies": []
+  },
+  "b.pef": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.581081",
+   "down_dependencies": [],
+   "guid": "pef53htn7414oqx93sjn34jfo3dosgd5",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.pef",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "|pipe",
+   "up_dependencies": []
+  },
+  "b.pg3": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.061701",
+   "down_dependencies": [],
+   "guid": "pg3yvx3s9hbqt7oe2p2emduqaxrdci3u",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.pg3",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "{braced}",
+   "up_dependencies": []
+  },
+  "b.pi9": {
+   "body": "Plain body.",
+   "children": [
+    "t1.pi9.iv"
+   ],
+   "created_at": "2026-10-10T14:59:02.650985",
+   "down_dependencies": [],
+   "guid": "pi96vwpk1k1vfg3gw134t7",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.pi9",
+   "ticket_status": "in_progress",
+   "ticket_type": "bee",
+   "title": "Bee with a 22-character guid",
+   "up_dependencies": []
+  },
+  "b.q3z": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.249383",
+   "down_dependencies": [],
+   "guid": "q3z2ggj63k1oiu7sz8yqdrkcgyjc9ydh",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.q3z",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "key: value",
+   "up_dependencies": []
+  },
+  "b.qai": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.293471",
+   "down_dependencies": [],
+   "guid": "qai2pjs48tnmt6fxn9s2aik4iwe3stg6",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.qai",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "*alias",
+   "up_dependencies": []
+  },
+  "b.qh3": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:57.533889",
+   "down_dependencies": [],
+   "guid": "qh3qzhwq3xzny9gcpwnr5vd49heg5evu",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.qh3",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "...",
+   "up_dependencies": []
+  },
+  "b.qup": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.364465",
+   "down_dependencies": [],
+   "guid": "qupaiam59o2s5ecmr8tb874rbg9qw4y8",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.qup",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "ends with colon:",
+   "up_dependencies": []
+  },
+  "b.qxp": {
+   "body": "0.8.4 turned these into real characters: \n and",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.903251",
+   "down_dependencies": [],
+   "guid": "qxp7f6cszdsno7zm5czhxrg6932t7ipv",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.qxp",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body escapes_expanded_by_084",
+   "up_dependencies": []
+  },
+  "b.qyy": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.697110",
+   "down_dependencies": [],
+   "guid": "qyy96mgp4rrspvb4hi6kb143fmyj3hk5",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.qyy",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": ">folded",
+   "up_dependencies": []
+  },
+  "b.raq": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.302938",
+   "down_dependencies": [],
+   "guid": "raquci9h6rhsio4i8jr1vxd2xt71bjs2",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    " spaced ",
+    "null",
+    "2026-10-10",
+    "&a",
+    "*b"
+   ],
+   "ticket_id": "b.raq",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Special tags 2",
+   "up_dependencies": []
+  },
+  "b.say": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:57.181233",
+   "down_dependencies": [],
+   "guid": "sayyejvi6s1h3eaarmew7utwhggduuzr",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.say",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "back\\slash",
+   "up_dependencies": []
+  },
+  "b.tmj": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.481033",
+   "down_dependencies": [],
+   "guid": "tmj3aah6gkgf48skbsq1mk1fxzsn5t64",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.tmj",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "#not a comment",
+   "up_dependencies": []
+  },
+  "b.tv4": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:55.496372",
+   "down_dependencies": [],
+   "guid": "tv4j5tbj7usm2s7efoiqisserb862b3p",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.tv4",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "0o17",
+   "up_dependencies": []
+  },
+  "b.tv6": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.278650",
+   "down_dependencies": [],
+   "guid": "tv68dbrjy8f58a5tpjtighai8qstkfn8",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.tv6",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": ",comma",
+   "up_dependencies": []
+  },
+  "b.twk": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.230702",
+   "down_dependencies": [],
+   "guid": "twk8tics8f1ty9mxfqeqbe3wdknxdmox",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.twk",
+   "ticket_status": "done",
+   "ticket_type": "bee",
+   "title": "Done bug, still live",
+   "up_dependencies": []
+  },
+  "b.u5v": {
+   "body": "source body",
+   "children": [
+    "t1.u5v.fm"
+   ],
+   "created_at": "2026-10-10T14:59:02.767104",
+   "down_dependencies": [],
+   "guid": "u5vfdqb62ratmsqq47eerqfaar183mby",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.u5v",
+   "ticket_status": "draft",
+   "ticket_type": "bee",
+   "title": "Clone source",
+   "up_dependencies": []
+  },
+  "b.uub": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.305215",
+   "down_dependencies": [],
+   "guid": "uubt1epmyhyo8ko16tsirqr3vzsego3y",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.uub",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "  padded  ",
+   "up_dependencies": []
+  },
+  "b.vf8": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:55.090874",
+   "down_dependencies": [],
+   "guid": "vf81xqn21jrfqqr9881ih214r6x12ric",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.vf8",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "1.5",
+   "up_dependencies": []
+  },
+  "b.vov": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:56.714471",
+   "down_dependencies": [],
+   "guid": "vov1kwi48erjhv647d28dm1kxj6pij5q",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.vov",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "unicode ünïcödé 日本語 🐝",
+   "up_dependencies": []
+  },
+  "b.wj8": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.046462",
+   "down_dependencies": [],
+   "guid": "wj8aybf67mtkvcsp2onz64hzuw5xwx5j",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.wj8",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "%percent",
+   "up_dependencies": []
+  },
+  "b.wy4": {
+   "body": "---\nstarts with dashes\n---",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.018464",
+   "down_dependencies": [],
+   "guid": "wy4wa2i9yphqg2h39wzpr9adk2q2koih",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.wy4",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body dash_lines",
+   "up_dependencies": []
+  },
+  "b.xp2": {
+   "body": "Plain body.",
+   "children": [],
+   "created_at": "2026-10-10T14:58:52.134304",
+   "down_dependencies": [],
+   "guid": "xp2qa6a84t1hdcpit4vwkp24zwqbcotn",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.xp2",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body plain",
+   "up_dependencies": []
+  },
+  "b.yed": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:58.232310",
+   "down_dependencies": [],
+   "guid": "yede82qxcnj6s3gbhdt1sd746rv2yq88",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.yed",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "multi\nline title",
+   "up_dependencies": []
+  },
+  "b.yg9": {
+   "body": "First chunk ends with a newlineSecond chunk, no newline\nThird chunk ends with two newlinesFourth chunk with \n escape and xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.884290",
+   "down_dependencies": [],
+   "guid": "yg9eod1y9vjyc8wdghntuht8nm9x6mz3",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.yg9",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body built by appends",
+   "up_dependencies": []
+  },
+  "b.yq9": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.161877",
+   "down_dependencies": [],
+   "guid": "yq91ua1xfbkg9gvctg3amus2su15fioz",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.yq9",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "?question",
+   "up_dependencies": []
+  },
+  "b.yrq": {
+   "body": "old mac\nline",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.787160",
+   "down_dependencies": [],
+   "guid": "yrqs3tnp9q4wy79hndwxidot1tovisjs",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.yrq",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Body lone_cr",
+   "up_dependencies": []
+  },
+  "b.ywd": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:54.510791",
+   "down_dependencies": [],
+   "guid": "ywdrxk9nvc2h5pfsmi297dzujesg9epy",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.ywd",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "No",
+   "up_dependencies": []
+  },
+  "b.z5n": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:55.729035",
+   "down_dependencies": [],
+   "guid": "z5nuoj1ztiahfvx41do893egfia3xe8p",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.z5n",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "2026-10-10T12:00:00",
+   "up_dependencies": []
+  },
+  "b.zqe": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:53.813369",
+   "down_dependencies": [],
+   "guid": "zqecho77sxev4nu5c2ne9xkw6swcp8tq",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "b.zqe",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "@at",
+   "up_dependencies": []
+  },
+  "b.zws": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.244882",
+   "down_dependencies": [],
+   "guid": "zws8qgme38wado1n8qod547cyryt4rrf",
+   "parent": null,
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "日本",
+    "🐝",
+    "a,b",
+    "[x]",
+    "back\\slash"
+   ],
+   "ticket_id": "b.zws",
+   "ticket_status": "open",
+   "ticket_type": "bee",
+   "title": "Special tags 1",
+   "up_dependencies": []
+  },
+  "t1.7ku.ub": {
+   "body": "Ends with one newline.",
+   "children": [],
+   "created_at": "2026-10-10T14:59:03.347529",
+   "down_dependencies": [],
+   "guid": "7kuubb81zok4yxdrunr78t9kkgk4bsvn",
+   "parent": "b.7ku",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.7ku.ub",
+   "ticket_status": null,
+   "ticket_type": "t1",
+   "title": "Idea doc",
+   "up_dependencies": []
+  },
+  "t1.7xr.xn": {
+   "body": "Ends with three newlines.",
+   "children": [
+    "t2.7xr.xn.2f"
+   ],
+   "created_at": "2026-10-10T14:59:04.380137",
+   "down_dependencies": [],
+   "guid": "7xrxnqvqtmsmoku3ze8eh929p42boeov",
+   "parent": "b.7xr",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.7xr.xn",
+   "ticket_status": "open",
+   "ticket_type": "t1",
+   "title": "Plan epic",
+   "up_dependencies": []
+  },
+  "t1.8gq.9f": {
+   "body": "Line one\nLine two",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.195942",
+   "down_dependencies": [],
+   "guid": "8gq9f53qv94shbaaehkszk7e2r2kgca2",
+   "parent": "b.8gq",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.8gq.9f",
+   "ticket_status": "draft",
+   "ticket_type": "t1",
+   "title": "Epic B",
+   "up_dependencies": []
+  },
+  "t1.8gq.mq": {
+   "body": "Ends with three newlines.",
+   "children": [
+    "t2.8gq.mq.kc"
+   ],
+   "created_at": "2026-10-10T14:58:51.135943",
+   "down_dependencies": [
+    "t1.cj6.uo"
+   ],
+   "guid": "8gqmqjhwvkg9uf5nw6fp9wkrdjtf5rot",
+   "parent": "b.8gq",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.8gq.mq",
+   "ticket_status": "in_progress",
+   "ticket_type": "t1",
+   "title": "Epic A",
+   "up_dependencies": []
+  },
+  "t1.cj6.uo": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.612213",
+   "down_dependencies": [],
+   "guid": "cj6uoep26ws3kp8ht7hbegsu4ooo9oj2",
+   "parent": "b.cj6",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.cj6.uo",
+   "ticket_status": "open",
+   "ticket_type": "t1",
+   "title": "Epic that waits on Epic A",
+   "up_dependencies": [
+    "t1.8gq.mq"
+   ]
+  },
+  "t1.i7k.sy": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:04.672880",
+   "down_dependencies": [],
+   "guid": "i7ksyds2s47yjoqr8dkqy5w2i46t6hr7",
+   "parent": "b.i7k",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.i7k.sy",
+   "ticket_status": "open",
+   "ticket_type": "t1",
+   "title": "Task in the glob-scope hive",
+   "up_dependencies": []
+  },
+  "t1.muy.36": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:05.200719",
+   "down_dependencies": [],
+   "guid": "muy36fm8ptwbn6njne5r8acviexkfdkz",
+   "parent": "b.muy",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.muy.36",
+   "ticket_status": "draft",
+   "ticket_type": "t1",
+   "title": "Clone source epic",
+   "up_dependencies": []
+  },
+  "t1.pi9.iv": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.708316",
+   "down_dependencies": [],
+   "guid": "pi9ivcen7mk6dg7csqhrah",
+   "parent": "b.pi9",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.pi9.iv",
+   "ticket_status": "open",
+   "ticket_type": "t1",
+   "title": "Epic with a 22-character guid",
+   "up_dependencies": []
+  },
+  "t1.u5v.fm": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:02.824674",
+   "down_dependencies": [],
+   "guid": "u5vfm2ckwsg9bq6z77x7gszttkp8kob5",
+   "parent": "b.u5v",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t1.u5v.fm",
+   "ticket_status": "draft",
+   "ticket_type": "t1",
+   "title": "Clone source epic",
+   "up_dependencies": []
+  },
+  "t2.7xr.xn.2f": {
+   "body": "Line one\nLine two",
+   "children": [
+    "t3.7xr.xn.2f.m1"
+   ],
+   "created_at": "2026-10-10T14:59:04.439163",
+   "down_dependencies": [],
+   "guid": "7xrxn2fm7yns3w27uuarfxyudryw42k5",
+   "parent": "t1.7xr.xn",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t2.7xr.xn.2f",
+   "ticket_status": "draft",
+   "ticket_type": "t2",
+   "title": "Plan task",
+   "up_dependencies": []
+  },
+  "t2.8gq.mq.kc": {
+   "body": "Indented first line\nsecond line",
+   "children": [
+    "t3.8gq.mq.kc.b2",
+    "t3.8gq.mq.kc.pr"
+   ],
+   "created_at": "2026-10-10T14:58:51.256574",
+   "down_dependencies": [],
+   "guid": "8gqmqkcnakuxb1dqggx9odw7c8x9a3dt",
+   "parent": "t1.8gq.mq",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t2.8gq.mq.kc",
+   "ticket_status": "in_progress",
+   "ticket_type": "t2",
+   "title": "Task under A",
+   "up_dependencies": []
+  },
+  "t3.7xr.xn.2f.m1": {
+   "body": "",
+   "children": [],
+   "created_at": "2026-10-10T14:59:04.497088",
+   "down_dependencies": [],
+   "guid": "7xrxn2fm18vimnrztb6625wsn2gd2fp4",
+   "parent": "t2.7xr.xn.2f",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t3.7xr.xn.2f.m1",
+   "ticket_status": "draft",
+   "ticket_type": "t3",
+   "title": "Plan subtask",
+   "up_dependencies": []
+  },
+  "t3.8gq.mq.kc.b2": {
+   "body": "Ünïcödé 日本語 🐝🍯 עברית nbsp ​zw  LS  PS NEL",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.315549",
+   "down_dependencies": [],
+   "guid": "8gqmqkcb2x91mb2maa4pzx92bdrcirno",
+   "parent": "t2.8gq.mq.kc",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [],
+   "ticket_id": "t3.8gq.mq.kc.b2",
+   "ticket_status": "open",
+   "ticket_type": "t3",
+   "title": "Subtask under task",
+   "up_dependencies": []
+  },
+  "t3.8gq.mq.kc.pr": {
+   "body": "col1\tcol2\n\tindented by tab",
+   "children": [],
+   "created_at": "2026-10-10T14:58:51.374231",
+   "down_dependencies": [],
+   "guid": "8gqmqkcpr9tp9koo96iu5qtnbo22joq4",
+   "parent": "t2.8gq.mq.kc",
+   "reference_materials": null,
+   "schema_version": "0.1",
+   "tags": [
+    "日本",
+    "🐝"
+   ],
+   "ticket_id": "t3.8gq.mq.kc.pr",
+   "ticket_status": "open",
+   "ticket_type": "t3",
+   "title": "Second subtask",
+   "up_dependencies": []
+  }
+ }
+}

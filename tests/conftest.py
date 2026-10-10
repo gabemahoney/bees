@@ -818,6 +818,18 @@ def hive_env(tmp_path, monkeypatch, mock_global_bees_dir):
 
 
 @pytest.fixture
+def compat_084(tmp_path, monkeypatch, mock_global_bees_dir):
+    """A registered copy of the bees-md 0.8.4 corpus (tests/fixtures/compat_0_8_4), cwd at its repo; yields its root."""
+    from tests.helpers import install_compat_084
+
+    root = tmp_path / "root"
+    repo = install_compat_084(root, mock_global_bees_dir)
+    monkeypatch.chdir(repo)
+    with repo_root_context(repo):
+        yield root
+
+
+@pytest.fixture
 def cli_runner(capsys):
     """Invoke src.cli.main() with a given argv list; returns (stdout_str, exit_code)."""
 

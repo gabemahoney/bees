@@ -1,0 +1,98 @@
+{
+  "scopes": {
+    "{{ROOT}}/repo": {
+      "hives": {
+        "features": {
+          "path": "{{ROOT}}/repo/features",
+          "display_name": "Features",
+          "created_at": "2026-10-10T14:58:50.384813",
+          "description": "Feature work: every tier, inherits tiers and statuses from the repo scope"
+        },
+        "bugs": {
+          "path": "{{ROOT}}/repo/Bugs",
+          "display_name": "Bugs",
+          "created_at": "2026-10-10T14:58:50.730948"
+        },
+        "ideas": {
+          "path": "{{ROOT}}/repo/Ideas",
+          "display_name": "Ideas",
+          "created_at": "2026-10-10T14:58:50.788787"
+        },
+        "plans": {
+          "path": "{{ROOT}}/repo/Ideas/Plans",
+          "display_name": "Plans",
+          "created_at": "2026-10-10T14:58:50.846185"
+        }
+      },
+      "child_tiers": {
+        "t1": [
+          "Epic",
+          "Epics"
+        ],
+        "t2": [
+          "Task",
+          "Tasks"
+        ],
+        "t3": [
+          "Subtask",
+          "Subtasks"
+        ]
+      },
+      "status_values": [
+        "draft",
+        "open",
+        "in_progress",
+        "done"
+      ],
+      "queries": {
+        "done_bees": {
+          "stages": [
+            [
+              "type=bee",
+              "status=done"
+            ]
+          ]
+        },
+        "bees_with_children": {
+          "stages": [
+            [
+              "type=bee"
+            ],
+            [
+              "children"
+            ]
+          ]
+        }
+      }
+    },
+    "{{ROOT}}/**": {
+      "hives": {
+        "shared_hive": {
+          "path": "{{ROOT}}/repo/shared-hive",
+          "display_name": "Shared Hive",
+          "created_at": "2026-10-10T14:58:50.903377"
+        }
+      }
+    }
+  },
+  "schema_version": "4.0",
+  "child_tiers": {
+    "t1": [
+      "Task",
+      "Tasks"
+    ]
+  },
+  "status_values": [
+    "open",
+    "done"
+  ],
+  "queries": {
+    "global_open": {
+      "stages": [
+        [
+          "status=open"
+        ]
+      ]
+    }
+  }
+}

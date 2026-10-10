@@ -79,7 +79,9 @@ Also available: `setup_child_tiers()`, `assert_ticket_id_format()`, `assert_rela
 
 `backdate(*paths)` sets each file's atime and mtime to one stamp a minute in the past and returns that stamp (ns). The ticket, global config, and identity caches re-read a file modified within the last 3 seconds on every lookup (see [caching.md](caching.md#freshness-check)), so a test that expects a cache hit right after writing a file must backdate the file first.
 
-`tree_snapshot(root)` maps every file (its bytes) and directory below `root`, hidden ones included, by relative path; compare two snapshots to assert that a refused operation changed nothing on disk.
+`tree_snapshot(root)` maps every file (its bytes) and directory below `root`, hidden ones included, by relative path; compare two snapshots to assert that a refused operation changed nothing on disk. `snapshot_diff(before, after)` gives the `(added, removed, changed)` paths between two snapshots.
+
+For the upgrade compatibility tests: the `compat_084` fixture (conftest) installs a copy of the bees-md 0.8.4 corpus, `load_compat_084(name)` reads its `manifest.json` or `expected.json`, and `compat_084_rels()` maps every ticket ID to its file in the corpus (see [Upgrade Compatibility Tests](#upgrade-compatibility-tests)).
 
 For end-to-end tests over both interfaces: `cli_success(cli_runner, *argv)` runs a bees command through conftest's `cli_runner` fixture, asserts exit 0 and status `success`, and returns the parsed JSON; `mcp_success(coro)` runs an MCP tool function's coroutine (`src/mcp_server.py`), asserts status `success`, and returns the result.
 
@@ -145,9 +147,10 @@ Create constants for complex formats used in 5+ places. Inline simple strings li
 | Dynamic tiers | `test_tier_hierarchy_validation.py`, `test_dynamic_tier_validation.py`, `test_parent_requirement_logic.py` | |
 | CI scripts and `/ci` skill | `test_check_bees_server.py`, `test_ci_bug_filing.py`, `test_ci_skill.py`, `test_integration_phases.py`, `test_ci_claude_stream.py` | See "Integration Testing Deep Dive" |
 | Packaging | `test_package_entry_point.py` | `bees` entry point; `serve` extra caps fastmcp and mcp below their next major and matches the Poetry pins |
+| Upgrade compatibility | `test_upgrade_compat.py`, `test_upgrade_compat_ops.py` | Reads, re-saves and operates on hives written by the released bees-md 0.8.4; see [Upgrade Compatibility Tests](#upgrade-compatibility-tests) |
 | Test isolation | `test_conftest.py` | `TestRealHomeIsolation`: runs an inner pytest session on this conftest with `HOME` set to a stand-in real home. A concurrent change to its `~/.bees/config.json` is kept; a write into it (swallowed, at import, or relative to a cwd in that home) is blocked and fails the run, keeping a worse exit status; a leaked `HOME` fails the test; child processes keep the original user base; the temp home is deleted, also after `pytest --version` |
 
-**Current**: ~3,525 tests across 81 files.
+**Current**: ~4,200 tests across 83 files.
 
 ### Test Execution
 
@@ -156,6 +159,29 @@ poetry run pytest tests/ -v                              # all tests
 poetry run pytest tests/test_create_ticket.py -v         # specific file
 poetry run pytest tests/ --cov=src --cov-report=term-missing  # with coverage
 ```
+
+## Upgrade Compatibility Tests
+
+CI's other tests build fresh hives with the current code. These check that the current code reads, re-saves and changes hives that an older release wrote, as users' hives are. They run in the unit suite (`poetry run pytest tests/`), so CI runs them.
+
+### The 0.8.4 corpus
+
+`tests/fixtures/compat_0_8_4/` was written by the released bees-md 0.8.4 from synthetic content only, never a copy of a real hive:
+
+- `tree/repo/`: the repo with hives `features` (every tier, inheriting tiers and statuses from the repo scope), `Bugs` (bees only, hive-level status values), `Ideas` (free-text statuses) with `Plans` nested in it (its own tiers), and `shared-hive` (registered in a `/**` glob scope). It holds bodies with and without trailing newlines, CRLF and lone CR, tabs, backslashes (and `\n`/`\t` sequences 0.8.4 expanded), leading spaces, whitespace-only, control characters and unicode; titles, tags and free-text statuses with YAML-special text that 0.8.4 writes and reads back; dependencies within a hive, between epics and across hives; reference materials; a `cemetery/` made by the 0.8.4 undertaker; a bee moved and a bee cloned by 0.8.4; bodies built by appends; `index.md` files; and `---` inside a reference material and a tag (b.5yy), which 0.8.4 misreads.
+- `global_config.json`: the `~/.bees/config.json` 0.8.4 wrote (global, repo scope and glob scope levels, named queries at the global and repo scope levels), with the generation root as `{{ROOT}}`. The generator adds the repo-scope queries after the last colonize-hive, which drops them (b.4eb). The `compat_084` fixture copies `tree/` into `tmp_path`, writes this config with `{{ROOT}}` replaced into the test's global bees dir, and makes the repo the cwd.
+- `manifest.json`: ticket roles (`tree_bee`, `guid22_t1`, ...) to IDs, the inputs given to 0.8.4, the hand edits, and the special values dropped because 0.8.4 could not read them back.
+- `expected.json`: what 0.8.4 reads, recorded by 0.8.4 itself: `parse_frontmatter` of every ticket file (cemetery included), show-ticket of every live ticket, `list-hives`, `get-types`, `get-status-values`, `list-named-queries`, a query per hive, and the bytes of 0.8.4's own read-and-save-unchanged of every ticket file.
+- Two kinds of hand edit, which 0.8.4 cannot make and `manifest.json` lists: four 22-character guids (pre-0.1.3 builds), made before the 0.8.4 operations ran on them, and one file converted to CRLF (a `core.autocrlf` checkout). `.gitattributes` turns off line-ending conversion for the corpus.
+
+`scripts/generate_compat_fixtures.py` rebuilds the corpus. Run it with the python of a throwaway venv that holds bees-md 0.8.4 from PyPI (it checks the version and that `src` is not this checkout's): `python3 -m venv <scratch>/venv084`, `<scratch>/venv084/bin/pip install bees-md==0.8.4`, `<scratch>/venv084/bin/python scripts/generate_compat_fixtures.py`. It works in a temp dir with its own `HOME`. A rebuild gives new IDs, guids and timestamps, so the tests look tickets up by role, never by ID. The lists of intended changes are by role, so a rebuild that changes which tickets 0.8.4 rewrote can change them.
+
+### What the tests check
+
+- **Compat** (`test_upgrade_compat.py`): every ticket file parses, and every live ticket shows (resolved reference materials included), exactly as in 0.8.4, except the intended changes listed one by one, by role, in `INTENDED_READ_CHANGES`: b.pp8 (a body keeps the leading and trailing whitespace 0.8.4 stripped) and b.5yy (a `---` inside a value no longer cuts the frontmatter; those tickets must read with the values given to 0.8.4, their own guid and body). Values cut off by the b.5yy misread count as that change only where 0.8.4 lost or cut them. A body reads back as 0.8.4 stored it from the create input, unless a later 0.8.4 save had already stripped it on disk (`BODY_STRIPPED_BY_084_SAVE`: 0.8.4 strips the body each time it saves a ticket, for example when a child is added). The config reads match, and a query per hive lists the same tickets plus any b.5yy ticket 0.8.4 left out.
+- **Round trip** (`test_upgrade_compat.py`): reading and saving every ticket file with no change leaves it byte-identical, unless `_rewrite_reasons` finds one of `REWRITE_REASONS`: the keys are not in Ticket field order with unset `parent`, `reference_materials` and `status` written as null (create-ticket writes its own order), or the file holds a CR. Then no value may change, a second save must change nothing, and the file must be what 0.8.4's own save wrote (for a b.pp8 ticket, whose body 0.8.4 stripped, only the frontmatter). `update-ticket` with the ticket's own title writes the same bytes and touches no other file.
+- **Operations** (`test_upgrade_compat_ops.py`), each on a fresh copy, compared through `tree_snapshot` before and after: update (`--add-tags` on every live ticket, a dependency replacement), append (every live ticket), move-bee, the undertaker, delete (with `delete_with_dependencies` off and on), rename-hive, sanitize-hive and the linter without auto-fix. Each test states which paths may be added, removed or changed and what may change in a changed ticket, and that the global config does not change unless the operation changes it. Moved and archived files must keep their bytes; the existing cemetery and the nested hive must stay untouched; sanitize and the linter must report exactly `EXPECTED_LINT` per hive (leaving out only the b.fvn reports on the two tickets that name a built-in resolver) and write nothing. rename-hive must change only the hive's config entry (its key, display name and path), named queries aside (b.4eb).
+- **Known bugs**: a case that hits an open bug is a strict xfail whose reason names the bug (b.4eb, b.23h, b.zcw, b.fvn). It turns into a failure when the bug is fixed: drop the mark then.
 
 ## Integration Testing Deep Dive
 Integration tests are describe in plain English in a Bee in the Testplans hive called b.qi9.

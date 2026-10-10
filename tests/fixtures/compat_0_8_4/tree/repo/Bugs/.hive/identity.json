@@ -1,0 +1,13 @@
+{
+  "normalized_name": "bugs",
+  "display_name": "Bugs",
+  "created_at": "2026-10-10T14:58:50.730948",
+  "version": "0.1",
+  "child_tiers": {},
+  "status_values": [
+    "draft",
+    "defined",
+    "active",
+    "done"
+  ]
+}

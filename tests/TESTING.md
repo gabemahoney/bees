@@ -96,6 +96,13 @@ For tests of the `docker/` CI scripts that talk HTTP, without a real server or n
 - URL of a `127.0.0.1` port that nothing listens on
 - Use to test a connection failure
 
+### Upgrade Compatibility Fixture
+
+#### 14. compat_084
+- A copy of the bees-md 0.8.4 corpus (`tests/fixtures/compat_0_8_4/tree`) in `tmp_path/root`, its hives registered in the test's global config (`global_config.json` with `{{ROOT}}` replaced), cwd and repo context at `root/repo`
+- Yields the root; ticket files are at the paths `compat_084_rels()` gives, relative to it
+- Used by `test_upgrade_compat.py` and `test_upgrade_compat_ops.py`; see "Upgrade Compatibility Tests" in `docs/architecture/testing.md`
+
 ### Removed Deprecated Fixtures
 The following fixtures were removed from conftest.py and migrated to parameterized alternatives:
 - `single_hive` -> `hive_tier_config`
