@@ -21,6 +21,7 @@ SCOPE - Tests that belong here:
   and the host-address test, also where any address can be bound
 - CI scripts use one configurable port and the identity check, not /health,
   at the bind host and from a container
+- test_runner.sh starts Claude in Phase 4 only once the phase's own HTTP server passes the identity check
 - the /ci skill stops the bees server a /ci run started, and only that one, when the run ends,
   and launches each phase as its own command
 - CI files work on any machine: no machine-specific paths; run_test.sh passes the host's bugs
@@ -525,6 +526,41 @@ def test_run_test_checks_bees_from_a_container_before_the_phase():
     # The probe sees the host the way the phase container does: one shared --add-host mapping.
     assert all('"${ADD_HOST_ARGS[@]}"' in commands[i] for i in (probes[0], phase))
     assert sum(command.count("--add-host") for command in commands) == 1
+
+
+def _resolve(text, variables):
+    """``text`` with each $NAME or ${NAME} that ``variables`` has replaced by its value."""
+    return re.sub(r"\$\{?(\w+)\}?", lambda m: variables.get(m[1], m[0]), text)
+
+
+def test_phase_4_starts_claude_only_once_its_http_server_answers_as_bees():
+    """Regression b.mqm: test_runner.sh waited 10 s for /health, then registered bees-http and started Claude even
+    if the server never came up. Claude found no bees-http tools and gave up, and the phase hung."""
+    lines = (REPO_ROOT / "docker" / "test_runner.sh").read_text().splitlines()
+    start = lines.index('if [[ "$PHASE" == "4" ]]; then')
+    block = [line for line in lines[start + 1 : lines.index("fi", start)] if not line.lstrip().startswith("#")]
+    text = "\n".join(block)
+    variables = dict(re.findall(r'^\s*(\w+)="?([^"\s]*)"?$', text, re.M))
+    [serve] = [i for i, line in enumerate(block) if re.search(r"\bbees serve --http\b", line)]
+    checks = [i for i, line in enumerate(block) if "check_bees_server.py" in line]
+    [register] = [i for i, line in enumerate(block) if re.search(r"\bclaude mcp add\b.*\bbees-http\b", line)]
+
+    assert not re.search(r"curl[^\n]*/health", text), "a /health answer does not show the MCP endpoint works"
+    assert len(checks) == 1 and serve < checks[0] < register
+    # It checks the server Claude is given, the one bees serve started
+    port = re.search(r"--port (\d+)", block[serve])[1]
+    checked = _resolve(re.search(r'check_bees_server\.py "?([^"\s]+)', block[checks[0]])[1], variables)
+    assert checked == re.search(r"bees-http (\S+)/mcp\b", block[register])[1] == f"http://127.0.0.1:{port}"
+    # Retried while the server starts, a set number of times: a server that never comes up must end the phase fast
+    loop = max((i for i in range(checks[0]) if re.match(r"\s*(?:for|while|until)\b", block[i])), default=0)
+    tries = re.fullmatch(r'\s*for \w+ in \$\(seq 1 "?([^")\s]+)"?\); do', block[loop])
+    count = _resolve(tries[1], variables) if tries else ""
+    assert count.isdigit() and 0 < int(count) <= 120, f"retry in a for loop over $(seq 1 N): {block[loop]}"
+    assert any(re.match(r"\s*sleep\b", line) for line in block[loop:register])
+    # A server that does not answer as bees stops the phase before Claude starts, with a crash line /ci reads at once
+    stop = next((i for i in range(checks[0], register) if re.fullmatch(r"\s*exit [1-9]\d*", block[i])), None)
+    assert stop is not None, "a failed check must stop test_runner.sh before bees-http is registered"
+    assert any(re.match(r'\s*echo "TEST RUNNER EXITED: ', line) for line in block[checks[0] : stop])
 
 
 def _skill_section(heading_prefix):

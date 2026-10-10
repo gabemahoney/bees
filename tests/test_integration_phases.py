@@ -12,13 +12,18 @@ run them: integration.sh overwrites the global bees config. Only `bash -n` (pars
 SCOPE - Tests that belong here:
 - integration.sh: every test section is tagged with one of its phases, the phase is checked before any
   test runs, run_test skips the tests of other phases, and the pass and fail lines name the phase
+- integration.sh: an error outside the assert helpers fails the running test through fail_test (ERR and
+  EXIT traps), and fail_test ends in a bug filing line even when file_bug.py prints none
 - the sections each phase runs
 - test_runner.sh: requires a phase number, passes it on, and runs integration.sh's phases with it
+- test_runner.sh: a failing setup command ends it with a crash line naming the command (ERR trap), and the trap
+  is cleared before integration.sh or Claude starts
 - every phase of the plan runs under one runner, and the MCP server phases under Claude
 
 SCOPE - Tests that DON'T belong here:
 - the result lines /ci polls for, ports and portability of the CI files -> test_check_bees_server.py
 - how /ci reads the plan (ci_plan.py) -> test_ci_skill.py
+- how test_runner.sh runs Claude and ends a Claude phase (ci_claude_stream.py) -> test_ci_claude_stream.py
 """
 
 import re
@@ -50,6 +55,10 @@ _DEFAULT_PHASE = re.compile(r"\$\{PHASE:-[^}]")
 # "$A" != "$B", quotes and ${} braces optional: the names of the two variables
 _VAR = r'"?\$\{?(\w+)\}?"?'
 _NOT_EQUAL = re.compile(rf"{_VAR}\s+!=\s+{_VAR}")
+# trap '<handler> <args>' <signal>, or trap <handler> <signal>; `trap - <signal>` (removing one) does not match
+_TRAP = re.compile(r"trap '?(?P<handler>\w+)(?P<args>[^']*)'? (?P<signal>[A-Z]+)")
+# set -E, alone or with other options (set -eE, set -Eeuo pipefail), or set -o errtrace
+_ERRTRACE = re.compile(r"set -[a-zA-Z]*E[a-zA-Z]*(?: \w+)?|set -o errtrace")
 
 # The sections each phase runs, as the b.qi9 epics describe the phases. Asserted by name, not by test count:
 # a count changes with every test added, while a section moves to another phase only by a decision about the plan.
@@ -118,8 +127,8 @@ def _calls(numbered_lines, command):
     return [(number, m[1]) for number, line in numbered_lines if (m := re.fullmatch(rf"\s*{command}\s+(\S+)", line))]
 
 
-def _function_body(name):
-    lines = INTEGRATION.read_text().splitlines()
+def _function_body(name, script=INTEGRATION):
+    lines = script.read_text().splitlines()
     start = lines.index(f"{name}() {{")
     return lines[start + 1 : lines.index("}", start)]
 
@@ -129,6 +138,39 @@ def _script_phases():
     found = re.findall(r"^SCRIPT_PHASES=\(([\d ]*)\)$", INTEGRATION.read_text(), re.M)
     assert len(found) == 1, f"integration.sh must list its phases in one SCRIPT_PHASES=(...) line, found {len(found)}"
     return {int(phase) for phase in found[0].split()}
+
+
+def _first_test_index(lines):
+    return min(i for i, line in enumerate(lines) if line.startswith("run_test "))
+
+
+def _traps(signal, script=INTEGRATION):
+    """(line index, match) of each trap ``script`` sets for ``signal``."""
+    lines = script.read_text().splitlines()
+    return [(i, m) for i, line in enumerate(lines) if (m := _TRAP.fullmatch(line.strip())) and m["signal"] == signal]
+
+
+def _trap_in_effect(lines, index, signal):
+    """The last `trap ... <signal>` before lines[index] at its indentation, in its block: the one set when it runs."""
+    indent = len(lines[index]) - len(lines[index].lstrip())
+    for line in reversed(lines[:index]):
+        level = len(line) - len(line.lstrip())
+        if not line.strip() or line.lstrip().startswith("#") or level > indent:
+            continue
+        if level < indent:
+            return None
+        if re.fullmatch(rf"trap .+ {signal}", line.strip()):
+            return line.strip()
+    return None
+
+
+def _top_level_start(lines, index):
+    """Where lines[index] starts to run: the call of the function it is in, else the line itself."""
+    functions = [i for i in range(index) if re.fullmatch(r"\w+\(\) \{", lines[i]) and lines.index("}", i) > index]
+    if not functions:
+        return index
+    name = lines[functions[-1]].split("(")[0]
+    return next(i for i, line in enumerate(lines) if re.fullmatch(rf"{name}\b(?!\().*", line))
 
 
 def _test_runner_phase_blocks():
@@ -299,6 +341,138 @@ def test_a_phase_passes_only_if_one_of_its_tests_ran():
 
     assert guard < passed, "SUCCESS SIGNAL must check RUN_COUNT before the pass line"
     assert any(_EXIT_ERROR.fullmatch(line) for line in lines[guard:passed])
+
+
+def test_fail_test_ends_in_a_bug_filing_line_when_file_bug_py_prints_none():
+    """file_bug.py prints BUG FILED: or BUG FILING FAILED:, unless it crashes first (e.g. on an import): then /ci
+    saw a bare crash, not a failed test whose bug was not filed."""
+    body = [line.strip() for line in _function_body("fail_test")]
+    filing = next(i for i, line in enumerate(body) if "file_bug.py" in line)
+    failed = next(i for i, line in enumerate(body) if "RELEASE TEST PHASE" in line)
+    fallback = [i for i, line in enumerate(body) if line.startswith('echo "BUG FILING FAILED: ')]
+
+    assert len(fallback) == 1 and filing < fallback[0] < failed
+    # Only when file_bug.py's output has neither line
+    condition = body[fallback[0] - 1]
+    pattern = re.search(r"grep -q?E '([^']+)'", condition)
+    assert condition.startswith("if ! ") and "$bug_out" in condition and pattern, condition
+    outputs = {"BUG FILED: b.x7k": True, "Traceback\nBUG FILING FAILED: no hive": True, "ImportError: x": False}
+    assert {out: bool(re.search(pattern[1], out, re.M)) for out in outputs} == outputs
+
+
+# ---------------------------------------------------------------------------
+# integration.sh: an error outside the assert helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "signal, guard",
+    [
+        pytest.param("ERR", [], id="ERR"),
+        # A status of 128 and above is a signal from outside (e.g. the session closing), not a test failure
+        pytest.param("EXIT", [r'\$\{?status\}?"? -lt 128\b'], id="EXIT"),
+    ],
+)
+def test_an_error_outside_the_checks_fails_the_running_test(signal, guard):
+    """Regression b.mqm: under set -e, a command failing outside the assert helpers (Test 173's `kill` of a server
+    that had died) ended Phase 5 with no FAIL line and no bug. The ERR trap catches a failing command, the EXIT trap
+    an error that ends the script without one (e.g. an unset variable under set -u)."""
+    lines = INTEGRATION.read_text().splitlines()
+    traps = _traps(signal)
+    run_test = [line.strip() for line in _function_body("run_test")]
+    call = run_test.index('"$fn"')
+
+    assert len(traps) == 1, f"integration.sh must set one {signal} trap: setting another replaces it"
+    [(at, trap)] = traps
+    assert at < _first_test_index(lines) and not lines[at].startswith(" "), "set it before the first test"
+    body = [line.strip() for line in _function_body(trap["handler"])]
+    report = next((i for i, line in enumerate(body) if line.startswith('fail_test "$CURRENT_TEST"')), None)
+    # As the assert helpers do (FAIL line, bug, RELEASE TEST PHASE N FAILED), only during a test, and only once
+    assert report is not None, f"{trap['handler']} must report through fail_test"
+    guards = [line for line in body[:report] if line.startswith("if ")]
+    terms = [r"\$CURRENT_TEST", r"\$FAIL_COUNT", *guard]
+    assert any(all(re.search(term, line) for term in terms) for line in guards), guards
+    # With the ERR trap still set, a failure while reporting would report again
+    assert "trap - ERR" in body[:report]
+    # run_test names the test only while it runs: a failure between tests is no test's
+    assert run_test[call - 1 : call + 2] == ['CURRENT_TEST="$fn"', '"$fn"', 'CURRENT_TEST=""']
+
+
+def test_err_trap_fires_in_the_tests_and_reports_from_the_main_shell_only():
+    """Without set -E, bash runs no ERR trap inside a function, and every test is one. Subshells and command
+    substitutions inherit it too: a report there would land in a captured output, and the failure reaches the main
+    shell anyway, as the failure of the command that ran it."""
+    lines = INTEGRATION.read_text().splitlines()
+    errtrace = [i for i, line in enumerate(lines) if _ERRTRACE.fullmatch(line)]
+    traps = _traps("ERR")
+
+    assert errtrace and errtrace[0] < _first_test_index(lines), "set -E must come before the tests"
+    assert len(traps) == 1
+    [(_, trap)] = traps
+    # The FAIL line says where the test stopped and which command failed
+    assert {'"$LINENO"', '"$BASH_COMMAND"'} <= set(trap["args"].split()), trap[0]
+    body = [line.strip() for line in _function_body(trap["handler"])]
+    guard = next(i for i, line in enumerate(body) if line.startswith("if "))
+    assert "$BASHPID" in body[guard] and "$$" in body[guard] and re.fullmatch(r"return(?: 0)?", body[guard + 1])
+    assert all(line.startswith("local ") for line in body[:guard]), "nothing may print before the main-shell check"
+
+
+@pytest.mark.parametrize(
+    "script, signal, arguments, first",
+    [
+        pytest.param(INTEGRATION, "ERR", ['"$?"'], 'local status="$1"', id="integration_sh_ERR"),
+        pytest.param(INTEGRATION, "EXIT", [], "local status=$?", id="integration_sh_EXIT"),
+        pytest.param(TEST_RUNNER, "ERR", ['"$?"'], 'local status="$1"', id="test_runner_sh_ERR"),
+    ],
+)
+def test_trap_handler_takes_the_failing_status_first(script, signal, arguments, first):
+    """Each command run before $? is read resets it, and the report would give that command's status. An ERR trap
+    hands it to its handler as the first argument."""
+    [(_, trap)] = _traps(signal, script)
+    body = [line.strip() for line in _function_body(trap["handler"], script) if not line.lstrip().startswith("#")]
+
+    assert trap["args"].split()[:1] == arguments, trap[0]
+    assert body[0] == first
+
+
+# ---------------------------------------------------------------------------
+# test_runner.sh: a failing setup command
+# ---------------------------------------------------------------------------
+
+
+def test_test_runner_names_a_failing_setup_command():
+    """Regression b.mqm: under set -e, a failing setup command (a `claude mcp add`, say) ended the phase with only
+    entrypoint.sh's TEST RUNNER EXITED (status N): no reason. The ERR trap prints the crash line, naming the command."""
+    lines = TEST_RUNNER.read_text().splitlines()
+    traps = _traps("ERR", TEST_RUNNER)
+    first_setup = min(i for i, line in enumerate(lines) if re.match(r"\s*(?:claude|bees|python3)\s", line))
+
+    assert len(traps) == 1
+    [(at, trap)] = traps
+    assert not lines[at].startswith(" ") and at < first_setup, "set it before the first setup command"
+    assert '"$BASH_COMMAND"' in trap["args"].split(), trap[0]
+    body = [line.strip() for line in _function_body(trap["handler"], TEST_RUNNER) if not line.lstrip().startswith("#")]
+    crash = [i for i, line in enumerate(body) if line.startswith('echo "TEST RUNNER EXITED: ')]
+    # Then exits with the failing command's status: never 0, as the trap fires only on a failure
+    assert crash and crash[-1] < len(body) - 1 and re.fullmatch(r'exit "?\$\{?status\}?"?', body[-1]), body
+
+
+@pytest.mark.parametrize(
+    "start",
+    [
+        pytest.param(r"\s*exec bash \S*tests/integration\.sh\b.*", id="integration_sh"),
+        # `claude mcp` only registers a server
+        pytest.param(r"\s*(?:exec\s+)?claude\s+(?!mcp\b).*", id="claude_run"),
+    ],
+)
+def test_test_runner_clears_the_setup_trap_before_the_tests_start(start):
+    """integration.sh and the Claude run report their own ends. A Claude run without a result line returns 1: with
+    the trap still set, a second crash line would call that a setup failure."""
+    lines = TEST_RUNNER.read_text().splitlines()
+    starts = [i for i, line in enumerate(lines) if re.fullmatch(start, line)]
+
+    assert len(starts) == 1, [lines[i] for i in starts]
+    assert _trap_in_effect(lines, _top_level_start(lines, starts[0]), "ERR") == "trap - ERR"
 
 
 @pytest.mark.parametrize("script", [INTEGRATION, TEST_RUNNER], ids=lambda path: path.name)

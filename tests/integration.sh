@@ -4,6 +4,8 @@ set -euo pipefail
 # === CONFIGURATION ===
 REPO=/test-repo
 TEST_NUM=0
+# Function name of the test running now, set by run_test; empty between tests
+CURRENT_TEST=""
 RUN_COUNT=0
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -43,11 +45,16 @@ fail_test() {
     FAIL_COUNT=$((FAIL_COUNT + 1))
     echo "[FAIL] Test $TEST_NUM: $reason"
     local bug_out
+    local bug_status=0
     bug_out=$(python3 /usr/local/bin/file_bug.py \
         --url "$BUG_SERVER_URL/mcp" \
         --title "CI Test $TEST_NUM: $name" \
-        --description "$reason" 2>&1) || true
+        --description "$reason" 2>&1) || bug_status=$?
     echo "$bug_out"
+    # file_bug.py ends in one of the two lines /ci acts on, unless it crashed first (e.g. on an import)
+    if ! grep -qE '^BUG (FILED|FILING FAILED):' <<< "$bug_out"; then
+        echo "BUG FILING FAILED: file_bug.py exited with status $bug_status without filing the bug (its output is above)"
+    fi
     echo "RELEASE TEST PHASE $PHASE FAILED"
     exit 1
 }
@@ -75,7 +82,9 @@ run_test() {
         return
     fi
     RUN_COUNT=$((RUN_COUNT + 1))
+    CURRENT_TEST="$fn"
     "$fn"
+    CURRENT_TEST=""
 }
 
 check_json() {
@@ -128,6 +137,56 @@ capture_cmd() {
     CMD_ERR=$(cat "$_err_file")
     rm -f "$_err_file"
 }
+
+# The ERR trap. Under set -e, a command that fails outside the assert helpers (e.g. a `kill` of a
+# server that already died) ends the script with no FAIL line and no bug. This reports it as the
+# failure of the running test, through fail_test, as the assert helpers do.
+# - set -E (below) lets the tests, which are functions, inherit the trap. Subshells and command
+#   substitutions inherit it too, but only the main shell reports: a failure inside one reaches the
+#   main shell as the failure of the command that ran it.
+# - Like set -e, the trap does not fire for a command tested by if, while, until, ! or && / ||.
+# - It reports with the trap and set -e off, so a failure while reporting cannot loop. A failure
+#   inside fail_test itself (FAIL_COUNT already counted) only ends the script.
+# - Outside a test, no test failed: it prints an ERROR line instead and files no bug.
+on_unexpected_error() {
+    local status="$1"
+    local line="$2"
+    local command="$3"
+    if [ "$BASHPID" != "$$" ]; then
+        return 0
+    fi
+    trap - ERR
+    set +e
+    # One line of at most 200 characters: the command may be a multi-line python3 -c
+    command="${command//$'\n'/ }"
+    if [ "${#command}" -gt 200 ]; then
+        command="${command:0:200}..."
+    fi
+    if [ "$FAIL_COUNT" -eq 0 ] && [ -n "$CURRENT_TEST" ]; then
+        fail_test "$CURRENT_TEST" "$CURRENT_TEST stopped at tests/integration.sh line $line, outside its checks: '$command' exited with status $status"
+    fi
+    if [ "$FAIL_COUNT" -eq 0 ]; then
+        echo "ERROR: tests/integration.sh line $line, outside any test: '$command' exited with status $status"
+    fi
+    exit "$status"
+}
+
+# The EXIT trap. Some errors end the script without a failing command, so without the ERR trap: an
+# unset variable under set -u, a bad substitution. During a test, this reports them through fail_test,
+# unless fail_test already reported a failure. Status 128 and above is a signal from outside (e.g.
+# the session closing), not a test failure. Keep this the script's only EXIT trap, or merge into it.
+on_exit() {
+    local status=$?
+    if [ "$status" -gt 0 ] && [ "$status" -lt 128 ] && [ "$FAIL_COUNT" -eq 0 ] && [ -n "$CURRENT_TEST" ]; then
+        trap - ERR
+        set +e
+        fail_test "$CURRENT_TEST" "$CURRENT_TEST stopped with status $status outside its checks (the error is printed above)"
+    fi
+}
+
+set -E
+trap 'on_unexpected_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
+trap on_exit EXIT
 
 # === PHASE SELECTION ===
 # Stop before any test runs: a run without a valid phase must never run every section.

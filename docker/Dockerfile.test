@@ -44,11 +44,9 @@ RUN pip install --no-cache-dir cffi \
         || { echo "Attempt $i failed, retrying in 30s..."; sleep 30; }; \
     done
 
-# Copy skills and auto-approve script (no source mounted at runtime)
+# Copy skills (no source mounted at runtime)
 # Test plan is copied from the host testplans hive into /test-repo before Claude starts
 COPY .claude/skills /test-repo/.claude/skills
-COPY auto_approve.sh /usr/local/bin/auto_approve.sh
-RUN chmod +x /usr/local/bin/auto_approve.sh
 
 # Non-root user — simulates real user environment
 RUN useradd -m -s /bin/bash testuser \
@@ -64,8 +62,11 @@ COPY docker/test_runner.sh /usr/local/bin/test_runner.sh
 COPY docker/file_bug.py /usr/local/bin/file_bug.py
 # file_bug.py imports it to pick the bugs hive when BEES_BUGS_HIVE is not set
 COPY docker/ci_bugs_hive.py /usr/local/bin/ci_bugs_hive.py
-# Bees server identity check; run_test.sh runs it in a throwaway container before each phase
+# Bees server identity check; run_test.sh runs it in a throwaway container before each phase,
+# test_runner.sh against the Phase 4 HTTP server before Claude starts
 COPY docker/check_bees_server.py /usr/local/bin/check_bees_server.py
+# test_runner.sh pipes the headless Claude run through it: shows the run, finds its result lines
+COPY docker/ci_claude_stream.py /usr/local/bin/ci_claude_stream.py
 # The in-container Claude's settings; entrypoint.sh installs it as testuser's ~/.claude/settings.json
 COPY docker/claude-settings.json /usr/local/share/bees-ci/claude-settings.json
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/test_runner.sh

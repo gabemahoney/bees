@@ -395,11 +395,23 @@ The only reliable way to detect completion is by reading the tmux pane content.
 Poll using `tmux capture-pane -t bees-ci-<N> -p -S -50` and grep for these signals. The first
 two are results: check them first, since the others can appear below them.
 - **`RELEASE TEST PHASE N PASSED`** — phase passed
-- **`BUG FILED:`** — a test failed and a bug was filed
+- **`BUG FILED:`** — a test failed and a bug was filed. In a bash phase this also covers a
+  command that failed outside the test's checks: the `[FAIL]` line above it says where the test
+  stopped and, when there is one, which command failed.
 - **`BUG FILING FAILED:`** — a test failed, but its bug could not be filed (the line says why): crash
-- **`TEST RUNNER EXITED`** — the test runner ended without either result: crash
+- **`TEST RUNNER EXITED`** — the test runner ended without either result: crash. The line may
+  carry a reason after a colon (`TEST RUNNER EXITED: <reason>`), printed by the test runner
+  before it exits: a phase setup command that failed, so no test ran (the line names the
+  command and its exit status); Phase 4 setup whose bees HTTP server did not come up, so Claude
+  was not started; a Claude run that ended without printing a result line; or a crash of the
+  script that shows the Claude run in the pane, so whether Claude printed a result line is not
+  known. A `TEST RUNNER EXITED (status N)` line follows it.
 - **`--- Phase N exited`** — the host session lost the container's session (for example the
   container stopped): crash
+
+In a Claude-run phase, the result lines it printed are repeated as the last lines of the pane,
+under `=== Result lines of this run ===`, so they stay within the captured lines however long
+the run's output.
 
 Then compare the time (`date +%s`) with the phase's deadline. A phase with none of these
 signals at or past its deadline has timed out: crash.
@@ -433,6 +445,8 @@ stopped container, or the deadline passed with no result):
    - Bug filing failed: "Phase N failed, but its bug could not be filed: <the reason on the
      `BUG FILING FAILED:` line>. Output above."
    - Timeout: "Phase N timed out: no result after <timeout-minutes> minutes. Output above."
+   - A `TEST RUNNER EXITED: <reason>` line: "Phase N crashed: <the reason on that line>.
+     Output above."
    - Otherwise: "Phase N crashed. Output above."
 5. Continue monitoring remaining phases — do NOT stop them.
 
