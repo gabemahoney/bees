@@ -598,8 +598,34 @@ class TestSerializeBeesConfigToScope:
 
     def test_empty_config(self):
         scope = serialize_bees_config_to_scope(BeesConfig())
-        assert scope["hives"] == {}
-        assert "child_tiers" not in scope  # None = omitted from output
+        assert scope == {"hives": {}}  # None-valued child_tiers/status_values are omitted from output
+
+    def test_child_tiers_and_status_values_dropped_when_none(self):
+        existing = {"hives": {}, "child_tiers": {"t1": ["Task", "Tasks"]}, "status_values": ["open"]}
+
+        scope = serialize_bees_config_to_scope(BeesConfig(hives={}), existing)
+
+        assert "child_tiers" not in scope
+        assert "status_values" not in scope
+
+    def test_child_tiers_and_status_values_come_from_config_when_set(self):
+        existing = {"hives": {}, "child_tiers": {"t1": ["Old", "Olds"]}, "status_values": ["old"]}
+        config = BeesConfig(
+            hives={}, child_tiers={"t1": ChildTierConfig("Task", "Tasks")}, status_values=["open", "closed"]
+        )
+
+        scope = serialize_bees_config_to_scope(config, existing)
+
+        assert scope["child_tiers"] == {"t1": ["Task", "Tasks"]}
+        assert scope["status_values"] == ["open", "closed"]
+
+    def test_existing_scope_dict_is_not_mutated(self):
+        existing = {"hives": {}, "child_tiers": {"t1": ["Task", "Tasks"]}, "queries": {}}
+        snapshot = json.loads(json.dumps(existing))
+
+        serialize_bees_config_to_scope(BeesConfig(hives={"x": _make_hive()}), existing)
+
+        assert existing == snapshot
 
     def test_empty_child_tiers_serialized(self):
         config = BeesConfig(child_tiers={})
@@ -907,6 +933,26 @@ class TestSaveBeesConfig:
         loaded_global = json.loads((mock_global_bees_dir / "config.json").read_text())
         assert "/other/repo" in loaded_global["scopes"]
         assert "other" in loaded_global["scopes"]["/other/repo"]["hives"]
+
+    def test_save_keeps_scope_keys_beesconfig_does_not_model(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """Regression b.4eb: saving rewrites hives but keeps the scope's named queries, schema_version and unknown keys."""
+        monkeypatch.chdir(tmp_path)
+        queries = {"my_query": {"stages": [["status=open"]]}}
+        scope = {
+            "hives": {"old": {"path": "/old", "display_name": "Old", "created_at": TS}},
+            "queries": queries,
+            "schema_version": "2.0",
+            "future_key": {"keep": True},
+        }
+        write_multi_scope_config(mock_global_bees_dir, {str(tmp_path): scope})
+
+        save_bees_config(BeesConfig(hives={"backend": _make_hive()}), str(tmp_path))
+
+        saved = json.loads((mock_global_bees_dir / "config.json").read_text())["scopes"][str(tmp_path)]
+        assert set(saved["hives"]) == {"backend"}
+        assert saved["queries"] == queries
+        assert saved["schema_version"] == "2.0"
+        assert saved["future_key"] == {"keep": True}
 
     def test_save_atomic_no_partial_on_failure(self, tmp_path, monkeypatch, mock_global_bees_dir):
         from unittest.mock import patch

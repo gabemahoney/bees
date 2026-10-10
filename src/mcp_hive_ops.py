@@ -35,7 +35,6 @@ from .config import (
     get_all_scopes_config,
     get_scope_key_for_hive,
     invalidate_identity_cache,
-    load_bees_config,
     load_global_config,
     load_resolver_registry,
     match_scope_pattern,
@@ -472,7 +471,7 @@ async def colonize_hive_core(
                         )
                         existing_config.hives[normalized_name] = new_hive
                         global_config["scopes"][canonical_scope] = serialize_bees_config_to_scope(
-                            existing_config
+                            existing_config, global_config["scopes"][canonical_scope]
                         )
                     else:
                         # New scope — create entry with this hive
@@ -486,10 +485,9 @@ async def colonize_hive_core(
                     pattern = _find_exact_scope(repo_root, global_config)
 
                     if pattern is not None:
-                        # Scope exists — load it, add hive, save back
-                        config = load_bees_config()
-                        if config is None:
-                            config = BeesConfig()
+                        # Scope exists — parse only this scope's own data (not the merge of
+                        # all matching scopes), add hive, save back keeping its other keys
+                        config = parse_scope_to_bees_config(global_config["scopes"][pattern])
                         config.hives[normalized_name] = new_hive
                         save_bees_config(config, pattern)
                     else:

@@ -452,7 +452,10 @@ class TestRenameHiveMultiScope:
         assert (mock_global_bees_dir / "config.json").read_text() == config_before
 
     async def test_rename_hive_inherited_scope_succeeds(self, tmp_path, mock_global_bees_dir):
-        """Hive in one non-conflicting broader scope → success, only owning scope's config entry updated."""
+        """Hive in one non-conflicting broader scope → success, only owning scope's config entry updated.
+
+        Regression b.4eb: the owning scope keeps its named queries and unknown keys.
+        """
         hive_dir = tmp_path / HIVE_BACKEND
         hive_dir.mkdir()
         hive_marker = hive_dir / ".hive"
@@ -461,15 +464,17 @@ class TestRenameHiveMultiScope:
             json.dumps({"normalized_name": HIVE_BACKEND, "display_name": "Backend", "created_at": "2026-01-01T00:00:00"})
         )
 
+        queries = {"my_query": {"stages": [["status=open"]]}}
+        exact_scope = {"hives": {}, "child_tiers": {}, "queries": {"other": {"stages": [["status=closed"]]}}}
+
         write_multi_scope_config(mock_global_bees_dir, {
             SCOPE_PATTERN_WILDCARD_PARENT: {
                 "hives": {HIVE_BACKEND: {"path": str(hive_dir), "display_name": "Backend"}},
                 "child_tiers": {},
+                "queries": queries,
+                "future_key": {"keep": True},
             },
-            SCOPE_PATTERN_EXACT_CHILD: {
-                "hives": {},
-                "child_tiers": {},
-            },
+            SCOPE_PATTERN_EXACT_CHILD: exact_scope,
         })
 
         with repo_root_context(Path("/Users/dev/projects/bees")):
@@ -477,12 +482,12 @@ class TestRenameHiveMultiScope:
 
         assert result["status"] == RESULT_STATUS_SUCCESS
 
-        config_data = json.loads((mock_global_bees_dir / "config.json").read_text())
-        wildcard_hives = config_data["scopes"][SCOPE_PATTERN_WILDCARD_PARENT]["hives"]
-        exact_hives = config_data["scopes"][SCOPE_PATTERN_EXACT_CHILD]["hives"]
-        assert "api_layer" in wildcard_hives
-        assert HIVE_BACKEND not in wildcard_hives
-        assert exact_hives == {}
+        scopes = json.loads((mock_global_bees_dir / "config.json").read_text())["scopes"]
+        owning = scopes[SCOPE_PATTERN_WILDCARD_PARENT]
+        assert set(owning["hives"]) == {"api_layer"}
+        assert owning["queries"] == queries
+        assert owning["future_key"] == {"keep": True}
+        assert scopes[SCOPE_PATTERN_EXACT_CHILD] == exact_scope
 
     async def test_rename_hive_not_visible_to_current_repo(self, tmp_path, mock_global_bees_dir):
         """Hive in scope not matching current repo_root → hive_not_found."""

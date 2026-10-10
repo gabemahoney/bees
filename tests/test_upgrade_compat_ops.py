@@ -281,12 +281,6 @@ def test_delete_with_dependencies_cleans_dependents(corpus, cli_runner, tmp_path
 
 # --- rename-hive ---------------------------------------------------------------------------
 
-SCOPE_REWRITE_BUG = (
-    "b.4eb: rename-hive and colonize-hive rewrite the scope without its named queries, and colonize-hive "
-    "copies in the hives of other matching scopes"
-)
-
-
 @pytest.mark.parametrize(
     "old,new,new_dir,flags",
     [
@@ -311,12 +305,8 @@ def test_rename_hive_keeps_every_ticket(corpus, cli_runner, old, new, new_dir, f
     assert all(corpus.after[to] == corpus.before[frm] for frm, to in moved.items() if frm != identity)
     identity_after = json.loads(corpus.after[moved[identity]])
     assert identity_after["display_name"] == new
-    # The config changes only by the hive's entry: its key, display name and path. The scope's named
-    # queries are left out of the comparison: rename drops them (b.4eb, the xfail below)
+    # The config changes only by the hive's entry: its key, display name and path
     before, after = json.loads(corpus.config_before), json.loads(corpus.config_path.read_text())
-    for config in (before, after):
-        for scope in config["scopes"].values():
-            scope.pop("queries", None)
     (repo_scope,) = [k for k in before["scopes"] if k.endswith("/repo")]
     entry = before["scopes"][repo_scope]["hives"].pop(old)
     before["scopes"][repo_scope]["hives"][normalize_hive_name(new)] = {
@@ -325,20 +315,6 @@ def test_rename_hive_keeps_every_ticket(corpus, cli_runner, old, new, new_dir, f
     assert after == before
 
 
-@pytest.mark.xfail(strict=True, reason=SCOPE_REWRITE_BUG)
-def test_rename_hive_changes_only_its_config_entry(corpus, cli_runner):
-    """The config changes only by the renamed hive's entry: the scope keeps its named queries."""
-    cli_success(cli_runner, "rename-hive", "--old-name", "bugs", "--new-name", "Defects", "--no-rename-folder")
-
-    before, after = json.loads(corpus.config_before), json.loads(corpus.config_path.read_text())
-    (repo_scope,) = [k for k in before["scopes"] if k.endswith("/repo")]
-    before["scopes"][repo_scope]["hives"]["defects"] = before["scopes"][repo_scope]["hives"].pop("bugs")
-    after["scopes"][repo_scope]["hives"]["defects"].pop("display_name")
-    before["scopes"][repo_scope]["hives"]["defects"].pop("display_name")
-    assert after == before
-
-
-@pytest.mark.xfail(strict=True, reason=SCOPE_REWRITE_BUG)
 def test_colonize_keeps_named_queries_and_other_scopes_hives(corpus, cli_runner):
     """Adding a hive to the repo scope keeps its named queries and leaves every other command working."""
     cli_success(cli_runner, "colonize-hive", "--name", "Extra", "--path", str(corpus.root / "repo" / "extra"))

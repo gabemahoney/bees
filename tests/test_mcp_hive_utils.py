@@ -33,7 +33,7 @@ from src.config import set_test_config_override
 from src.hive_utils import get_hive_config, load_hives_config
 from src.mcp_hive_utils import scan_for_hive, validate_hive_path
 from src.repo_context import repo_root_context
-from tests.conftest import write_scoped_config
+from tests.conftest import write_multi_scope_config, write_scoped_config
 
 # Tests for validate_hive_path()
 
@@ -126,19 +126,23 @@ def test_validate_hive_path_handles_symlinks(tmp_path):
 # Tests for scan_for_hive()
 
 
-def _setup_hive_with_marker(mock_global_bees_dir, repo_root, hive_dir, normalized_name, display_name):
-    """Helper to create a hive with .hive marker and scoped config."""
-    hive_dir.mkdir(parents=True, exist_ok=True)
+def _write_marker(hive_dir, normalized_name, display_name=None):
+    """Helper to create hive_dir with its .hive/identity.json marker."""
     hive_marker = hive_dir / ".hive"
-    hive_marker.mkdir(exist_ok=True)
+    hive_marker.mkdir(parents=True, exist_ok=True)
     identity_data = {
         "normalized_name": normalized_name,
-        "display_name": display_name,
+        "display_name": display_name or normalized_name,
         "created_at": "2026-02-03T12:00:00",
         "version": "0.1",
     }
     with open(hive_marker / "identity.json", "w") as f:
         json.dump(identity_data, f)
+
+
+def _setup_hive_with_marker(mock_global_bees_dir, repo_root, hive_dir, normalized_name, display_name):
+    """Helper to create a hive with .hive marker and scoped config."""
+    _write_marker(hive_dir, normalized_name, display_name)
 
     scope_data = {
         "hives": {
@@ -165,6 +169,44 @@ def test_scan_for_hive_finds_hive_with_marker(tmp_path, monkeypatch, mock_global
 
     result = scan_for_hive("backend")
     assert result == hive_dir
+
+
+def _stale_hive_entry(path):
+    return {"path": str(path), "display_name": "Entry", "created_at": "2026-02-03T12:00:00"}
+
+
+@pytest.mark.parametrize("owner", ["glob", "exact"])
+@pytest.mark.needs_real_git_check
+def test_scan_for_hive_recovers_path_in_owning_scope_only(tmp_path, monkeypatch, mock_global_bees_dir, owner):
+    """Regression b.4eb: a recovered path is written to the scope that owns the hive. That scope keeps its
+    named queries and unknown keys, and the other matching scope is neither copied into it nor changed."""
+    repo_root = tmp_path / "repo"
+    (repo_root / ".git").mkdir(parents=True)
+    monkeypatch.chdir(repo_root)
+    glob_pattern = str(tmp_path) + "/*"
+    exact_pattern = str(repo_root)
+    moved_dir = repo_root / "moved" / "tickets"
+    _write_marker(moved_dir, "mine")
+    stale = repo_root / "stale"
+
+    owning = {
+        "hives": {"mine": _stale_hive_entry(stale)},
+        "queries": {"my_query": {"stages": [["status=open"]]}},
+        "future_key": {"keep": True},
+    }
+    other = {
+        "hives": {"other": _stale_hive_entry(repo_root / "other")},
+        "queries": {"other_query": {"stages": [["status=closed"]]}},
+    }
+    owning_pattern, other_pattern = (glob_pattern, exact_pattern) if owner == "glob" else (exact_pattern, glob_pattern)
+    write_multi_scope_config(mock_global_bees_dir, {owning_pattern: owning, other_pattern: other})
+
+    with repo_root_context(repo_root):
+        assert scan_for_hive("mine") == moved_dir
+
+    scopes = json.loads((mock_global_bees_dir / "config.json").read_text())["scopes"]
+    assert scopes[owning_pattern] == {**owning, "hives": {"mine": _stale_hive_entry(moved_dir)}}
+    assert scopes[other_pattern] == other
 
 
 @pytest.mark.needs_real_git_check

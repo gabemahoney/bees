@@ -993,11 +993,18 @@ def _serialize_child_tiers(child_tiers: dict[str, ChildTierConfig]) -> dict:
     }
 
 
-def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
+def serialize_bees_config_to_scope(config: BeesConfig, existing_scope: dict | None = None) -> dict:
     """Serialize a BeesConfig into a scope dict for storage in the global config.
+
+    BeesConfig models only ``hives``, ``child_tiers`` and ``status_values``. When rewriting a
+    scope that already exists, pass its current dict as ``existing_scope`` so every key
+    BeesConfig does not model (named ``queries``, ``schema_version``, unknown keys) survives.
+    The three modeled keys always come from ``config``: ``child_tiers`` and ``status_values``
+    are dropped when None.
 
     Args:
         config: BeesConfig object to serialize
+        existing_scope: The scope's current dict, whose unmodeled keys are kept (default None)
 
     Returns:
         Dict suitable for storing as a scope value in the global config
@@ -1028,17 +1035,20 @@ def serialize_bees_config_to_scope(config: BeesConfig) -> dict:
             hive_entry["allowed_resolvers"] = hive_config.allowed_resolvers
         hives_dict[name] = hive_entry
 
-    scope_dict = {
-        "hives": hives_dict,
-    }
+    scope_dict = dict(existing_scope) if existing_scope else {}
+    scope_dict["hives"] = hives_dict
 
     # Only include scope-level child_tiers if not None
     if config.child_tiers is not None:
         scope_dict["child_tiers"] = _serialize_child_tiers(config.child_tiers)
+    else:
+        scope_dict.pop("child_tiers", None)
 
     # Only include scope-level status_values if not None
     if config.status_values is not None:
         scope_dict["status_values"] = config.status_values
+    else:
+        scope_dict.pop("status_values", None)
 
     return scope_dict
 
@@ -1095,10 +1105,15 @@ def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
     """Save BeesConfig to the specified scope in ~/.bees/config.json.
 
     Writes directly to the given scope_pattern key in global config.
-    Uses atomic write for crash safety.
+    Uses atomic write for crash safety. Keys of the scope that BeesConfig does not model
+    (named ``queries`` and others) are preserved.
+
+    ``config`` must hold only the target scope's own data (e.g. from
+    ``parse_scope_to_bees_config``), never the merged view from ``load_bees_config()``:
+    saving a merge would copy other scopes' hives into this scope.
 
     Args:
-        config: BeesConfig object to save
+        config: BeesConfig object holding the scope's own data to save
         scope_pattern: The scope pattern key to write to (must already exist
             in global config scopes)
 
@@ -1114,7 +1129,9 @@ def save_bees_config(config: BeesConfig, scope_pattern: str) -> None:
             "Use colonize_hive to create a scope entry first."
         )
 
-    global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(config)
+    global_config["scopes"][scope_pattern] = serialize_bees_config_to_scope(
+        config, global_config["scopes"][scope_pattern]
+    )
     save_global_config(global_config)
 
 
