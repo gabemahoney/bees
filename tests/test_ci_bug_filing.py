@@ -19,7 +19,8 @@ SCOPE - Tests that belong here:
   ranking agreeing with bees' own, for any pattern a config may hold (ci_plan.py shares them)
 - the ci_bugs_hive.py command line on `bees list-hives` output
 - file_bug.py: where the hive and the repo root come from (option, env var, discovery) and the
-  ticket it files
+  ticket it files, with the status it takes from the hive's status values; its copy of bees' hive
+  name normalization agreeing with bees'
 - file_bug.py failures, including a server that stops answering: each one prints
   "BUG FILING FAILED:" and exits 1
 
@@ -43,7 +44,10 @@ import pytest
 from fastmcp.client.transports import FastMCPTransport
 
 from src.config import compute_scope_specificity, match_scope_pattern
+from src.id_utils import normalize_hive_name
+from src.mcp_hive_ops import write_identity
 from src.mcp_server import mcp as bees_mcp
+from src.parser import parse_frontmatter
 from tests.conftest import write_multi_scope_config, write_queen_repos_config
 from tests.helpers import load_script, mcp_initialize_response
 
@@ -70,9 +74,11 @@ def repo_with_hives(isolated_bees_env):
     """Factory: register hives in the scope of the repo root tmp_path, and in ``other_scopes``; returns the root.
 
     ``other_scopes`` maps scope patterns ({repo} and {parent}: the root and its parent) to hive names.
+    ``status_values`` maps "global", "scope" (the root's) or one of ``names`` (None: freeform) to status values.
     """
 
-    def register(*names, other_scopes=None, queen=False):
+    def register(*names, other_scopes=None, queen=False, status_values=None):
+        levels = status_values or {}
         root = isolated_bees_env.base_path
         hive_names = {str(root): names}
         for pattern, other_names in (other_scopes or {}).items():
@@ -87,9 +93,20 @@ def repo_with_hives(isolated_bees_env):
             }
             for pattern, names_in_scope in hive_names.items()
         }
+        if "scope" in levels:
+            scopes[str(root)]["status_values"] = levels["scope"]
         write_multi_scope_config(isolated_bees_env.global_bees_dir, scopes)
         if queen:
             write_queen_repos_config(isolated_bees_env.global_bees_dir, [(str(root), None)])
+        if "global" in levels:
+            config_path = isolated_bees_env.global_bees_dir / "config.json"
+            config = json.loads(config_path.read_text())
+            config_path.write_text(json.dumps({**config, "status_values": levels["global"]}))
+        for name in set(names) & levels.keys():
+            marker = root / name / ".hive"
+            marker.mkdir()
+            identity = {"normalized_name": name, "display_name": name.title(), "status_values": levels[name]}
+            write_identity(marker, {**identity, "status_values_explicitly_null": levels[name] is None})
         return root
 
     return register
@@ -365,6 +382,50 @@ def test_file_bug_files_into_the_hosts_bugs_hive(
     assert "CI Test 7: list hives" in ticket.read_text()
 
 
+# No level offers "open", the status file_bug.py used to send, so each case would fail on it.
+@pytest.mark.parametrize(
+    "status_values, args, expected_status",
+    [
+        pytest.param({"team_bugs": ["draft", "defined", "active", "done"]}, [], "draft", id="apiary_bugs_hive"),
+        pytest.param(
+            {"team_bugs": ["draft", "done"], "scope": ["triaged", "fixed"], "global": ["new", "closed"]},
+            [],
+            "draft",
+            id="hive_over_scope_and_global",
+        ),
+        pytest.param(
+            {"team_bugs": [], "scope": ["triaged", "fixed"], "global": ["new", "closed"]},
+            [],
+            "triaged",
+            id="empty_hive_list_falls_through_to_scope",
+        ),
+        pytest.param({"global": ["new", "closed"]}, [], "new", id="global_values"),
+        pytest.param({"team_bugs": None, "scope": ["triaged"]}, [], "triaged", id="freeform_hive_takes_scope_value"),
+        pytest.param({}, [], None, id="freeform_everywhere_no_status"),
+        pytest.param({"team_bugs": ["draft", "done"]}, ["--hive", "Team-Bugs"], "draft", id="hive_name_not_normalized"),
+    ],
+)
+def test_file_bug_gives_the_bug_the_hives_first_status(
+    bees_server, repo_with_hives, monkeypatch, capsys, status_values, args, expected_status
+):
+    """Regression b.oax: file_bug.py sent status "open", which the Apiary Bugs hive (draft, defined, ...) refused."""
+    repo_root = repo_with_hives("team_bugs", "triage", status_values=status_values)
+
+    code, out, err = _file_bug(monkeypatch, capsys, args, {"BEES_REPO_ROOT": str(repo_root)})
+
+    filed = re.fullmatch(r"BUG FILED: (\S+)\n", out)
+    assert code == 0 and filed, err
+    [ticket] = (repo_root / "team_bugs").rglob(f"{filed[1]}.md")
+    assert parse_frontmatter(ticket)[0].get("status") == expected_status
+
+
+def test_hive_name_normalization_agrees_with_bees():
+    """file_bug.py runs without bees installed, so it copies bees' hive name normalization: they must agree."""
+    names = ["team_bugs", "Team-Bugs", "My Bugs", "BUGS!", "9_bugs", "_bugs", "--", "", "Ünïcode-Bugs"]
+
+    assert {name: fb.normalize_hive_name(name) for name in names} == {name: normalize_hive_name(name) for name in names}
+
+
 @pytest.mark.parametrize(
     "hive_names, args, env, cause",
     [
@@ -378,6 +439,13 @@ def test_file_bug_files_into_the_hosts_bugs_hive(
             {"BEES_REPO_ROOT": "{repo}"},
             "hive_not_found",
             id="server_rejects_ticket",
+        ),
+        pytest.param(
+            ["team_bugs"],
+            ["--hive", "team_bugs"],
+            {"BEES_REPO_ROOT": "{repo}/elsewhere"},
+            "get_status_values",
+            id="status_values_unavailable",
         ),
         pytest.param(
             ["team_bugs"],

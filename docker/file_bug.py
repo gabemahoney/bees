@@ -10,6 +10,10 @@ container as BEES_BUGS_HIVE and BEES_REPO_ROOT.
 - Repo root: --repo-root, else $BEES_REPO_ROOT. Required: the server picks the hives by it.
 - Hive: --hive, else $BEES_BUGS_HIVE, else asked from the server: list_hives for the repo root,
   then the same rule as run_test.sh (ci_bugs_hive.py, which goes by each hive's scope).
+- Status: asked from the server too (get_status_values for the repo root), as status names differ
+  between hives. The bug gets the first of the hive's status values (draft in an Apiary Bugs hive),
+  and no status when the hive's status is freeform: bees refuses a status not among the values,
+  and a missing one when there are values.
 
 The whole exchange with the server gets FILE_BUG_TIMEOUT_SECONDS: a server that accepts the
 connection but never answers must not hold the phase until /ci's deadline.
@@ -26,6 +30,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 from typing import NoReturn
 
@@ -35,7 +40,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 DEFAULT_BUG_SERVER_URL = "http://host.docker.internal:8473"
-# Time for the whole exchange with the server: connect, initialize, list_hives, create_ticket.
+# Time for the whole exchange with the server: connect, initialize, list_hives, get_status_values, create_ticket.
 FILE_BUG_TIMEOUT_SECONDS = 60
 
 
@@ -71,6 +76,32 @@ async def _discover_bugs_hive(session: ClientSession, repo_root: str) -> str:
     return hive
 
 
+def normalize_hive_name(hive_name: str) -> str:
+    """bees' normalized form of a hive name (id_utils.normalize_hive_name), as the server keys its hives.
+
+    Copied unchanged in behavior, like ci_bugs_hive.py's scope rule: the docker scripts do not import bees.
+    """
+    normalized = re.sub(r"[^a-z0-9_]", "", hive_name.lower().replace(" ", "_").replace("-", "_"))
+    if normalized and not normalized[0].isalpha() and normalized[0] != "_":
+        normalized = "_" + normalized
+    return normalized
+
+
+async def _new_bug_status(session: ClientSession, repo_root: str, hive: str) -> str | None:
+    """Return the first of ``hive``'s status values, or None when its status is freeform.
+
+    The values are resolved as bees does (config.resolve_status_values_for_hive): the hive's own,
+    else the scope's, else the global ones. get_status_values shows a hive whose status_values is
+    null (freeform, nothing inherited) like one without any, so such a hive gets the scope's or
+    global first value, which its freeform status accepts.
+    """
+    levels = await _call_tool(session, "get_status_values", {"repo_root": repo_root})
+    for values in (levels.get("hives", {}).get(normalize_hive_name(hive)), levels.get("scope"), levels.get("global")):
+        if values:
+            return values[0]
+    return None
+
+
 async def file_bug(url: str, title: str, description: str, repo_root: str, hive: str | None = None) -> str:
     """File the bug and return its ticket ID. Raises BugFilingError when the server rejects it."""
     async with streamablehttp_client(url) as (read_stream, write_stream, _):
@@ -80,18 +111,17 @@ async def file_bug(url: str, title: str, description: str, repo_root: str, hive:
             try:
                 if hive is None:
                     hive = await _discover_bugs_hive(session, repo_root)
-                created = await _call_tool(
-                    session,
-                    "create_ticket",
-                    {
-                        "ticket_type": "bee",
-                        "title": title,
-                        "hive": hive,
-                        "status": "open",
-                        "body": description,
-                        "repo_root": repo_root,
-                    },
-                )
+                ticket = {
+                    "ticket_type": "bee",
+                    "title": title,
+                    "hive": hive,
+                    "body": description,
+                    "repo_root": repo_root,
+                }
+                status = await _new_bug_status(session, repo_root, hive)
+                if status is not None:
+                    ticket["status"] = status
+                created = await _call_tool(session, "create_ticket", ticket)
             except BugFilingError as exc:
                 error = exc
             else:
