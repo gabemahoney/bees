@@ -12,6 +12,7 @@ SCOPE - Tests that belong here:
 - Empty/None/exception failure modes
 - Multi-root selection (uses first)
 - Logging output during root detection
+- colonize_hive adapter: the repo root it passes on (roots, repo_root param, hive path)
 
 SCOPE - Tests that DON'T belong here:
 - Filesystem path detection -> test_repo_utils.py
@@ -25,19 +26,23 @@ RELATED FILES:
 """
 
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastmcp.exceptions import NotFoundError
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
 
 from src.mcp_roots import get_client_repo_root, get_repo_root
 
 
-def _make_mock_ctx(uri=None, empty=False, none_roots=False, raises=False):
-    """Helper to create mock MCP context."""
+def _make_mock_ctx(uri=None, empty=False, none_roots=False, raises=False, error=None):
+    """Helper to create mock MCP context. `error` is an exception for list_roots() to raise."""
     ctx = Mock()
 
     async def mock_list_roots():
+        if error is not None:
+            raise error
         if raises:
             raise NotFoundError("Method not found (-32601)")
         if none_roots:
@@ -181,3 +186,80 @@ async def test_logging_output(caplog, scenario, ctx_factory, expected_log):
         await get_client_repo_root(ctx_factory())
 
     assert any(expected_log in record.message for record in caplog.records)
+
+
+# Tests for the colonize_hive MCP adapter's repo root resolution
+
+
+def _roots_ctx(client_root):
+    return _make_mock_ctx(uri=f"file://{client_root}")
+
+
+def _empty_roots_ctx(_client_root):
+    return _make_mock_ctx(empty=True)
+
+
+def _mcp_error_ctx(_client_root):
+    return _make_mock_ctx(error=McpError(ErrorData(code=-32601, message="Method not found")))
+
+
+def _unexpected_error_ctx(_client_root):
+    return _make_mock_ctx(error=RuntimeError("connection lost"))
+
+
+class TestColonizeHiveAdapterRepoRoot:
+    """The colonize_hive MCP adapter passes the right repo root to the queen guard and _colonize_hive.
+
+    Directories: the client's roots root (`client`), the repo_root param (`param`), and a
+    directory outside both (`elsewhere`). Expected root `hive` is the hive path itself.
+    """
+
+    @pytest.mark.parametrize(
+        "ctx_factory,pass_repo_root,hive_in,expected",
+        [
+            pytest.param(_roots_ctx, False, "client", "client", id="roots_hive_inside_roots_root"),
+            pytest.param(_roots_ctx, False, "elsewhere", "hive", id="roots_hive_outside_roots_root"),
+            pytest.param(_roots_ctx, True, "client", "client", id="roots_beat_repo_root_param"),
+            pytest.param(_mcp_error_ctx, False, "param", "hive", id="no_roots_mcp_error_no_repo_root"),
+            pytest.param(_empty_roots_ctx, False, "param", "hive", id="no_roots_empty_list_no_repo_root"),
+            # Regression b.vtq: a client without roots support passes repo_root and it is used
+            pytest.param(_mcp_error_ctx, True, "param", "param", id="no_roots_mcp_error_repo_root_used"),
+            pytest.param(_empty_roots_ctx, True, "param", "param", id="no_roots_empty_list_repo_root_used"),
+            pytest.param(_mcp_error_ctx, True, "elsewhere", "hive", id="no_roots_hive_outside_repo_root"),
+            pytest.param(_unexpected_error_ctx, False, "param", "hive", id="list_roots_unexpected_error_no_repo_root"),
+            pytest.param(
+                _unexpected_error_ctx, True, "param", "param", id="list_roots_unexpected_error_repo_root_used"
+            ),
+            pytest.param(
+                _unexpected_error_ctx,
+                True,
+                "elsewhere",
+                "hive",
+                id="list_roots_unexpected_error_hive_outside_repo_root",
+            ),
+            pytest.param(None, True, "param", "param", id="no_ctx_repo_root_used"),
+            pytest.param(None, False, "param", "hive", id="no_ctx_no_repo_root"),
+        ],
+    )
+    async def test_resolved_repo_root(self, tmp_path, ctx_factory, pass_repo_root, hive_in, expected):
+        """colonize_hive resolves roots first, then repo_root, falling back to the hive path."""
+        from src.mcp_server import colonize_hive
+
+        dirs = {name: tmp_path / name for name in ("client", "param", "elsewhere")}
+        hive_path = dirs[hive_in] / "hive"
+        expected_root = {
+            "client": dirs["client"].resolve(),
+            "param": dirs["param"],
+            "hive": hive_path.resolve(),
+        }[expected]
+        ctx = ctx_factory(dirs["client"]) if ctx_factory else None
+        repo_root = str(dirs["param"]) if pass_repo_root else None
+
+        with (
+            patch("src.mcp_server._guard_queen_write", return_value=None) as mock_guard,
+            patch("src.mcp_server._colonize_hive", new_callable=AsyncMock) as mock_colonize,
+        ):
+            await colonize_hive(name="Test Hive", path=str(hive_path), ctx=ctx, repo_root=repo_root)
+
+        mock_guard.assert_called_once_with(expected_root)
+        assert mock_colonize.call_args.kwargs["repo_root"] == expected_root

@@ -59,6 +59,7 @@ Repository root resolution follows an adapter pattern. `mcp_server.py` owns this
 - **Client compatibility**:
   - Roots-enabled clients (Claude Desktop, OpenCode): Never need to provide `repo_root` parameter
   - Basic MCP clients without roots support: Must provide `repo_root` parameter explicitly
+  - Exception: `colonize_hive` also resolves with `resolve_repo_root`, but uses the hive path itself as the repo root when neither the roots protocol nor `repo_root` gives a root or the hive path lies outside the root, so `repo_root` is optional for it even without roots support (see "colonize_hive Parameters" in `configuration.md`)
 
 **MCP Adapter Layer**:
 - Each tool registered in `mcp_server.py` is a thin adapter: it accepts `ctx` and optional `repo_root` from the MCP client, resolves the repo root, and delegates to a core function

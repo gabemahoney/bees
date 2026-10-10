@@ -21,7 +21,7 @@ SCOPE - Tests that DON'T belong here:
 - Config registry operations -> test_config_registration.py
 - Hive renaming -> test_mcp_rename_hive.py
 - Hive sanitization/linting -> test_sanitize_hive.py
-- MCP colonize_hive tool wrapper -> test_mcp_hive_*.py
+- MCP colonize_hive tool wrapper -> test_mcp_adapter.py (TestColonizeHiveAdapterRepoRoot)
 
 RELATED FILES:
 - test_mcp_scan_validate.py: Hive scanning and path validation
@@ -31,7 +31,7 @@ RELATED FILES:
 
 import json
 from pathlib import Path
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -393,7 +393,6 @@ class TestColonizeHiveOrchestrationUnit:
     @patch("src.mcp_hive_ops.save_bees_config")
     @patch("src.mcp_hive_ops.load_bees_config")
     @patch("src.mcp_hive_ops.validate_hive_path")
-    @patch("src.mcp_server.get_repo_root")
     @patch("src.mcp_hive_ops.normalize_hive_name")
     @patch("pathlib.Path.mkdir")
     @patch("src.mcp_hive_ops.write_identity")
@@ -404,7 +403,6 @@ class TestColonizeHiveOrchestrationUnit:
         mock_write_identity,
         mock_mkdir,
         mock_normalize,
-        mock_get_repo,
         mock_validate_path,
         mock_load_config,
         mock_save_config,
@@ -413,7 +411,6 @@ class TestColonizeHiveOrchestrationUnit:
     ):
         """Test that colonize_hive calls normalize_hive_name from config system."""
         mock_normalize.return_value = "back_end"
-        mock_get_repo.return_value = Path("/repo")
         mock_validate_path.return_value = Path("/repo/tickets")
         mock_load_config.return_value = None
         mock_load_global.return_value = {"scopes": {}, "schema_version": "3.0"}

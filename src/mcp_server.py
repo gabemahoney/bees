@@ -622,33 +622,32 @@ async def colonize_hive(
                            Each name must exist in the resolver registry or be "default".
     """
     # Special colonize_hive fallback logic:
-    # 1. Try MCP Roots protocol via get_repo_root(ctx)
-    # 2. If roots succeeds, validate the hive path is within that repo
-    # 3. If hive path is outside detected repo, fall back to path-based detection
-    # 4. If roots fails entirely, use path-based detection
+    # 1. With ctx, resolve the repo root via resolve_repo_root(ctx, repo_root):
+    #    MCP Roots protocol first, then the explicit repo_root parameter
+    # 2. If that raises (no roots and no repo_root, or list_roots() failed
+    #    unexpectedly before repo_root was reached), use repo_root if given,
+    #    else path-based detection from the hive path
+    # 3. If the hive path is outside the root from 1 or 2, use path-based detection
+    #    (validate_hive_path rejects a hive outside the repo root)
+    # 4. Without ctx (direct Python calls), use repo_root if given, else the hive path
     hive_path = Path(path)
-    resolved_root = None
 
     if ctx:
         try:
-            roots_root = await get_repo_root(ctx)
-            if roots_root:
-                logger.info(f"colonize_hive adapter: Got repo root from MCP context: {roots_root}")
-                # Verify the hive path is within the detected repo root
-                try:
-                    hive_path.resolve(strict=False).relative_to(roots_root.resolve())
-                    resolved_root = roots_root
-                except ValueError:
-                    # Hive path is outside detected repo root — use hive path
-                    logger.warning(
-                        f"colonize_hive adapter: Hive path {hive_path} outside repo root {roots_root}, "
-                        "using hive path"
-                    )
-                    resolved_root = get_repo_root_from_path(hive_path)
-            else:
-                logger.warning("colonize_hive adapter: Roots protocol unavailable, using hive path")
-                resolved_root = get_repo_root_from_path(hive_path)
-        except Exception:
+            candidate_root = await resolve_repo_root(ctx, repo_root)
+            logger.info(f"colonize_hive adapter: Resolved repo root: {candidate_root}")
+        except Exception as e:
+            logger.warning(f"colonize_hive adapter: Repo root resolution failed ({e}), using repo_root or hive path")
+            candidate_root = Path(repo_root) if repo_root else get_repo_root_from_path(hive_path)
+        # Verify the hive path is within the candidate root
+        try:
+            hive_path.resolve(strict=False).relative_to(candidate_root.resolve())
+            resolved_root = candidate_root
+        except ValueError:
+            # Hive path is outside the candidate root — use hive path
+            logger.warning(
+                f"colonize_hive adapter: Hive path {hive_path} outside repo root {candidate_root}, using hive path"
+            )
             resolved_root = get_repo_root_from_path(hive_path)
     elif repo_root:
         resolved_root = Path(repo_root)
