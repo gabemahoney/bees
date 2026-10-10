@@ -174,9 +174,9 @@ The linter validates ticket structure and relationships through a two-phase scan
 **Schema Validation**:
 - ID format validation: matches `{type_prefix}.{shortID}` pattern with length validation
   - Bee: `b.XXX` (3-char shortID)
-  - Tier N: `t{N}.{N+3 char shortID}`
-  - Charset: Base58-style (58 chars: 1-9, A-H, J-N, P-Z, a-k, m-z)
-  - Excludes visually ambiguous: 0, O, I, l
+  - Tier N: `t{N}.XXX.YY...` (shortID of 3 + 2N chars: the 3-char Bee shortID, then N 2-char segments, each after a period, e.g. `t1.qi9.de`, `t2.qi9.de.7z`)
+  - Charset: 34 chars, lowercase only: 1-9, a-k, m-z
+  - Excludes 0, l and all uppercase letters
   - Reuses `is_valid_ticket_id()` from `src/id_utils.py` for consistency
   - Error: `invalid_id` - ID does not match type-prefixed format
 - Path/ID consistency validation: ticket directory name and filename stem must match the ticket's `id` field
@@ -199,11 +199,12 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Every ticket must have a `guid` field (32-char globally unique identifier)
   - Generated at ticket creation from the ticket's short_id + random ID_CHARSET suffix
   - GUID_LENGTH: 32 characters
-  - GUID prefix must match the ticket's short_id (portion after the dot in ticket ID)
-  - Error: `missing_guid` - Ticket has no guid field (guid is None)
+  - GUID prefix must match the ticket's short_id (the ticket ID after its first dot, dots removed: `t1.qi9.de` gives `qi9de`)
+  - Error: `missing_guid` - Ticket has no guid field (guid is None); in auto-fix mode a guid is generated instead (`add_guid`)
   - Error: `invalid_guid_length` - GUID length is not 32 characters
-  - Error: `invalid_guid_charset` - GUID contains characters not in GUID_CHARSET (0, O, I, l)
+  - Error: `invalid_guid_charset` - GUID contains characters not in ID_CHARSET
   - Error: `invalid_guid_prefix` - GUID does not start with the ticket's short_id
+  - The linter never replaces an existing guid: a guid with the wrong length, characters or prefix stays as it is, even in auto-fix mode, and must be fixed by hand
 - GUID is immutable after ticket creation (enforced by `_update_ticket()`)
 
 **Type/Value Validation**:
@@ -525,8 +526,8 @@ def write_ticket_file(ticket_id: str, ticket_type: TicketType, ...):
     ...
 ```
 
-**validate_id_format() Function** (`src/validator.py:104-124`):
-- Validates ticket ID matches type-prefixed format: `^(b\.[1-9A-HJ-NP-Za-km-z]{3}|t(\d+)\.[1-9A-HJ-NP-Za-km-z]+)$`
+**validate_id_format() Function** (`src/validator.py`):
+- Validates ticket ID format and length by delegating to `is_valid_ticket_id()` in `src/id_utils.py` (see [Schema Validation](#validation-rules) for the format)
 - Rejects path traversal attempts: `../etc/passwd`, `../../sensitive/file`
 - Rejects malformed IDs: `b.OOOL`, `invalid-format`, empty strings
 - Returns boolean: `True` for valid format, `False` for invalid

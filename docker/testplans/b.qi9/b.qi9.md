@@ -13,7 +13,7 @@ children:
 created_at: '2026-02-24T22:45:16.267582'
 status: pupa
 schema_version: '0.1'
-guid: qi96ctjcb5fu4bovny9ibn
+guid: qi96ctjcb5fu4bovny9ibn3thexarxcg
 reference_materials: null
 ---
 Comprehensive end-to-end release test for bees. Runs in Docker against a clean environment. CLI-first, then MCP server transports.

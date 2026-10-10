@@ -28,6 +28,8 @@ SCOPE - Tests that belong here:
 - test_runner.sh: a failing setup command ends it with a crash line naming the command (ERR trap), and the trap
   is cleared before integration.sh or Claude starts
 - every phase of the plan runs under one runner, and the MCP server phases under Claude
+- the plan's ticket files: every ticket in docker/testplans has a guid bees's linter accepts (read with bees's reader,
+  checked with Linter.validate_guid without auto-fix, so no plan file is written)
 
 SCOPE - Tests that DON'T belong here:
 - the result lines /ci polls for, ports and portability of the CI files -> test_check_bees_server.py
@@ -44,6 +46,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.linter import Linter
+from src.linter_report import LinterReport
+from src.paths import iter_ticket_files_deep
+from src.reader import read_ticket
 from tests.helpers import load_script
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -514,6 +520,26 @@ def test_ci_starts_the_phase_that_runs_the_test():
     assert runs
     wrong = {number: (phase, runs[number]) for number, phase in started.items() if {phase} != runs[number]}
     assert wrong == {}, "test number: (phase /ci starts, phases that run the test)"
+
+
+# ---------------------------------------------------------------------------
+# The plan's ticket files
+# ---------------------------------------------------------------------------
+
+
+def test_every_plan_ticket_has_a_guid_the_linter_accepts():
+    """Every ticket's guid passes bees's own rule: GUID_LENGTH long, all in ID_CHARSET, starting with its short ID.
+    Regression b.est: 40 b.qi9 tickets had 22-character guids from a build before GUID_LENGTH was 32, which
+    sanitize-hive reports as invalid_guid_length and cannot fix. Without auto-fix the linter only reports."""
+    linter, report = Linter(tickets_dir=str(TESTPLANS), auto_fix=False), LinterReport()
+    # Read as the linter's scanner reads them, but a ticket bees cannot read fails here instead of being skipped
+    tickets = [read_ticket(path.stem, file_path=path) for path in iter_ticket_files_deep(TESTPLANS)]
+    for ticket in tickets:
+        linter.validate_guid(ticket, report)
+
+    assert cp.PLAN_ID in {ticket.id for ticket in tickets}
+    rejected = [f"{error.ticket_id}: {error.message}" for error in report.errors]
+    assert rejected == [], f"{len(rejected)} of {len(tickets)} plan tickets have a guid the linter rejects"
 
 
 # ---------------------------------------------------------------------------

@@ -1164,10 +1164,10 @@ Returns:
 | `invalid_schema_version` | error | No | Not valid semver |
 | `missing_date` | warning | No | `created_at` null or missing |
 | `invalid_date_format` | warning | No | `created_at` not parseable ISO 8601 |
-| `missing_guid` | warning | Yes (generates) | No GUID field |
-| `invalid_guid_length` | warning | Yes (regenerates) | Not 32 chars |
-| `invalid_guid_charset` | warning | Yes (regenerates) | Invalid chars |
-| `invalid_guid_prefix` | warning | Yes (regenerates) | Doesn't start with short_id |
+| `missing_guid` | error | Yes (generates) | No GUID field |
+| `invalid_guid_length` | error | No | Not 32 chars |
+| `invalid_guid_charset` | error | No | Invalid chars |
+| `invalid_guid_prefix` | error | No | Doesn't start with short_id |
 | `disallowed_field` | error | No | `owner`, `priority`, etc. in frontmatter |
 | `invalid_field_type` | error | No | Status not string; `reference_materials` invalid format |
 | `invalid_status` | error | No | Status not in configured `status_values` |

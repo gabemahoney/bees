@@ -185,7 +185,7 @@ def generate_guid(short_id: str) -> str:
         short_id: The ticket's short ID (e.g., "amx" from "b.amx")
 
     Returns:
-        A 22-character string starting with short_id, all chars in ID_CHARSET
+        A GUID_LENGTH (32)-character string starting with short_id, all chars in ID_CHARSET
 
     Examples:
         >>> guid = generate_guid("amx")
