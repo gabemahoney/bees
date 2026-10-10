@@ -6,6 +6,7 @@ REPO=/test-repo
 TEST_NUM=0
 # Function name of the test running now, set by run_test; empty between tests
 CURRENT_TEST=""
+# Tests that ran, and tests that passed (not checks: a test may pass several checks)
 RUN_COUNT=0
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -14,6 +15,13 @@ START_TEST="${1:-0}"
 # The phases of test plan b.qi9 this script runs. Each section below belongs to one of them
 # (phase_section), and a run runs only the sections of the phase in $PHASE. Claude runs the
 # other phases with /release-test (docker/test_runner.sh routes them).
+# The sections are grouped by phase, in SCRIPT_PHASES order, so each phase's tests have
+# contiguous numbers: the "Tests in this phase: <first>-<last>" range of its b.qi9 epic, which
+# /ci uses to find a test's phase. The test bees of this script's phases carry no numbers in
+# their titles or bodies, so adding or removing a test, which shifts the numbers after it,
+# means updating only the "Tests in this phase:" ranges of this script's phases. The Claude
+# phases' titles start at "Test 301:", so they need no renumbering; this script's numbers
+# must stay below 301.
 SCRIPT_PHASES=(1 2 5 6)
 PHASE="${PHASE:-}"
 # Phase of the section being declared, set by phase_section
@@ -35,7 +43,6 @@ CMD_EXIT=0
 
 pass_test() {
     local name="$1"
-    PASS_COUNT=$((PASS_COUNT + 1))
     echo "[PASS] Test $TEST_NUM: $name"
 }
 
@@ -85,6 +92,8 @@ run_test() {
     CURRENT_TEST="$fn"
     "$fn"
     CURRENT_TEST=""
+    # A test that returns passed: every failure ends the script
+    PASS_COUNT=$((PASS_COUNT + 1))
 }
 
 check_json() {
@@ -1572,237 +1581,106 @@ run_test test_nq_execute_repo
 run_test test_nq_delete_repo
 run_test test_nq_delete_global
 
-# === PHASE 6: REFERENCE MATERIALS ===
-phase_section 6
+# === PHASE 2: BODY FILE / CHUNK FILE ===
+phase_section 2
 
-REF_BEE1=""
-REF_BEE2=""
-REF_BEE3=""
+BODY_FILE_BEE=""
+CHUNK_FILE_BEE=""
 
-test_ref_setup() {
-    capture_cmd bees colonize-hive \
-        --name "Ref Hive" \
-        --path "$REPO/tickets/ref_hive"
+test_body_file_create() {
+    echo "hello from file" > /tmp/test_body.txt
+    capture_cmd bees create-ticket --ticket-type bee --title "Body File Bee" \
+        --hive crud_hive --body-file /tmp/test_body.txt
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Ref setup" "exit $CMD_EXIT: $CMD_OUT"
+        fail_test "create-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    assert_no_traceback "$CMD_OUT" "Ref setup"
-    pass_test "Ref setup"
+    assert_no_traceback "$CMD_OUT" "create-ticket --body-file"
+    BODY_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "hello from file" ]; then
+        fail_test "create-ticket --body-file" "Expected body='hello from file', got '$body'"
+    fi
+    pass_test "create-ticket --body-file"
 }
 
-test_ref_single_entry() {
-    echo "hello" > /tmp/ref_test_file
-    capture_cmd bees create-ticket --ticket-type bee --title "Single Ref Bee" \
-        --hive ref_hive --reference-materials '[{"value":"/tmp/ref_test_file"}]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Single reference_materials entry" "Create failed: $CMD_OUT"
+test_body_file_mutual_exclusion() {
+    capture_cmd bees create-ticket --ticket-type bee --title "X" \
+        --hive crud_hive --body "inline" --body-file /tmp/test_body.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--body/--body-file mutual exclusion" "Expected non-zero exit but got 0"
     fi
-    REF_BEE1=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$REF_BEE1"
-    local ref_val
-    ref_val=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
-    if [ "$ref_val" != "/tmp/ref_test_file" ]; then
-        fail_test "Single reference_materials entry" "Expected value='/tmp/ref_test_file', got '$ref_val'"
-    fi
-    pass_test "Single reference_materials entry"
+    assert_no_traceback "$CMD_OUT" "--body/--body-file mutual exclusion"
+    pass_test "--body/--body-file mutual exclusion"
 }
 
-test_ref_null_clear() {
-    capture_cmd bees create-ticket --ticket-type bee --title "Null Ref Bee" \
-        --hive ref_hive --reference-materials 'null'
+test_body_file_update() {
+    echo "updated body" > /tmp/test_body2.txt
+    capture_cmd bees update-ticket --ids "$BODY_FILE_BEE" --body-file /tmp/test_body2.txt
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Null reference_materials" "Create failed: $CMD_OUT"
+        fail_test "update-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    REF_BEE2=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$REF_BEE2"
-    local ref_val
-    ref_val=$(check_json "$CMD_OUT" "d['tickets'][0].get('reference_materials')")
-    if [ "$ref_val" != "None" ]; then
-        fail_test "Null reference_materials" "Expected reference_materials=None, got '$ref_val'"
+    assert_no_traceback "$CMD_OUT" "update-ticket --body-file"
+    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "updated body" ]; then
+        fail_test "update-ticket --body-file" "Expected body='updated body', got '$body'"
     fi
-    pass_test "Null reference_materials"
+    pass_test "update-ticket --body-file"
 }
 
-test_ref_multi_entry() {
-    echo "val1" > /tmp/ref_file1
-    echo "val2" > /tmp/ref_file2
-    capture_cmd bees create-ticket --ticket-type bee --title "Multi Ref Bee" \
-        --hive ref_hive \
-        --reference-materials '[{"value":"/tmp/ref_file1"},{"value":"/tmp/ref_file2"}]'
+test_chunk_file_append() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Append Bee" \
+        --hive crud_hive --body "start"
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Multi-entry reference_materials" "Create failed: $CMD_OUT"
+        fail_test "append-ticket-body --chunk-file" "Create failed: $CMD_OUT"
     fi
-    REF_BEE3=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$REF_BEE3"
-    local ref_count ref_val1 ref_val2
-    ref_count=$(check_json "$CMD_OUT" "len(d['tickets'][0].get('reference_materials') or [])")
-    ref_val1=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
-    ref_val2=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{},{}])[1].get('value','')")
-    if [ "$ref_count" != "2" ]; then
-        fail_test "Multi-entry reference_materials" "Expected 2 entries, got $ref_count"
+    CHUNK_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
+    printf " appended" > /tmp/test_chunk.txt
+    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
+        --chunk-file /tmp/test_chunk.txt
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "append-ticket-body --chunk-file" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    if [ "$ref_val1" != "/tmp/ref_file1" ]; then
-        fail_test "Multi-entry reference_materials" "Expected first value=/tmp/ref_file1, got '$ref_val1'"
+    assert_no_traceback "$CMD_OUT" "append-ticket-body --chunk-file"
+    capture_cmd bees show-ticket --ids "$CHUNK_FILE_BEE"
+    local body
+    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
+    if [ "$body" != "start appended" ]; then
+        fail_test "append-ticket-body --chunk-file" "Expected body='start appended', got '$body'"
     fi
-    if [ "$ref_val2" != "/tmp/ref_file2" ]; then
-        fail_test "Multi-entry reference_materials" "Expected second value=/tmp/ref_file2, got '$ref_val2'"
-    fi
-    pass_test "Multi-entry reference_materials"
+    pass_test "append-ticket-body --chunk-file"
 }
 
-test_ref_custom_resolver() {
-    mkdir -p "$REPO/scripts"
-    cat > "$REPO/scripts/test_resolver.sh" << 'RESOLVER'
-#!/bin/bash
-# Parse --value argument
-VALUE=""
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --value) VALUE="$2"; shift 2 ;;
-        --repo-root) shift 2 ;;
-        *) shift ;;
-    esac
-done
-echo "{\"resolved\": true, \"original\": \"$VALUE\"}"
-RESOLVER
-
-    capture_cmd bees set-resolver --name test_resolver \
-        --path "$REPO/scripts/test_resolver.sh"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Custom ref resolver" "set-resolver failed: $CMD_OUT"
+test_chunk_file_mutual_exclusion() {
+    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
+        --chunk "inline" --chunk-file /tmp/test_chunk.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--chunk/--chunk-file mutual exclusion" "Expected non-zero exit but got 0"
     fi
-    assert_no_traceback "$CMD_OUT" "Custom ref resolver"
-
-    capture_cmd bees colonize-hive \
-        --name "Resolver Hive" \
-        --path "$REPO/tickets/resolver_hive" \
-        --allowed-resolvers '["test_resolver"]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Custom ref resolver" "Colonize failed: $CMD_OUT"
-    fi
-
-    capture_cmd bees create-ticket --ticket-type bee --title "Resolved Bee" \
-        --hive resolver_hive \
-        --reference-materials '[{"value":"test_value","resolver":"test_resolver"}]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Custom ref resolver" "Create failed: $CMD_OUT"
-    fi
-    local res_bee
-    res_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
-
-    capture_cmd bees show-ticket --ids "$res_bee"
-    local resolved
-    resolved=$(check_json "$CMD_OUT" \
-        "d['tickets'][0].get('reference_materials',[{}])[0].get('resolved',{}).get('resolved',False)")
-    if [ "$resolved" != "True" ]; then
-        fail_test "Custom ref resolver" "Expected resolved=True in reference_materials output"
-    fi
-    pass_test "Custom ref resolver"
+    assert_no_traceback "$CMD_OUT" "--chunk/--chunk-file mutual exclusion"
+    pass_test "--chunk/--chunk-file mutual exclusion"
 }
 
-test_ref_resolver_timeout() {
-    cat > "$REPO/scripts/slow_resolver.sh" << 'RESOLVER'
-#!/bin/bash
-sleep 60
-echo '{"never":"reached"}'
-RESOLVER
-
-    capture_cmd bees set-resolver --name slow_resolver \
-        --path "$REPO/scripts/slow_resolver.sh" --timeout 2
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Ref resolver timeout" "set-resolver failed: $CMD_OUT"
+test_body_file_not_found() {
+    capture_cmd bees create-ticket --ticket-type bee --title "X" \
+        --hive crud_hive --body-file /tmp/no_such_file.txt
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        fail_test "--body-file nonexistent" "Expected non-zero exit but got 0"
     fi
-
-    capture_cmd bees colonize-hive \
-        --name "Timeout Hive" \
-        --path "$REPO/tickets/timeout_hive" \
-        --allowed-resolvers '["slow_resolver"]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Ref resolver timeout" "Colonize failed: $CMD_OUT"
-    fi
-
-    capture_cmd bees create-ticket --ticket-type bee --title "Timeout Bee" \
-        --hive timeout_hive \
-        --reference-materials '[{"value":"test","resolver":"slow_resolver"}]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Ref resolver timeout" "Create failed: $CMD_OUT"
-    fi
-    local to_bee
-    to_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
-
-    capture_cmd bees show-ticket --ids "$to_bee"
-    assert_no_traceback "$CMD_OUT" "Ref resolver timeout"
-    local ticket_count
-    ticket_count=$(check_json "$CMD_OUT" "len(d.get('tickets',[]))")
-    if [ "$ticket_count" != "1" ]; then
-        fail_test "Ref resolver timeout" "Expected 1 ticket returned, got $ticket_count"
-    fi
-    # Timeout errors are surfaced inside reference_materials[0]["resolved"], not in top-level errors
-    local resolved_status resolved_error
-    resolved_status=$(check_json "$CMD_OUT" \
-        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('status','')")
-    resolved_error=$(check_json "$CMD_OUT" \
-        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('error','')")
-    if [ "$resolved_status" != "error" ]; then
-        fail_test "Ref resolver timeout" "Expected resolved.status=error for timeout, got '$resolved_status'"
-    fi
-    if [[ "$resolved_error" != *"timed out"* ]]; then
-        fail_test "Ref resolver timeout" "Expected 'timed out' in resolved.error, got '$resolved_error'"
-    fi
-    pass_test "Ref resolver timeout"
+    assert_no_traceback "$CMD_OUT" "--body-file nonexistent"
+    rm -f /tmp/test_body.txt /tmp/test_body2.txt /tmp/test_chunk.txt
+    pass_test "--body-file nonexistent"
 }
 
-run_test test_ref_setup
-run_test test_ref_single_entry
-run_test test_ref_null_clear
-run_test test_ref_multi_entry
-run_test test_ref_custom_resolver
-run_test test_ref_resolver_timeout
-
-# === PHASE 6: UPDATE CONFIG ===
-phase_section 6
-
-test_update_config() {
-    capture_cmd bees update-config
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "update-config" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    assert_no_traceback "$CMD_OUT" "update-config"
-    local status
-    status=$(check_json "$CMD_OUT" "d['status']")
-    if [ "$status" != "success" ]; then
-        fail_test "update-config" "Expected status=success, got $status"
-    fi
-    local msg
-    msg=$(check_json "$CMD_OUT" "d.get('message','')")
-    if [ -z "$msg" ]; then
-        fail_test "update-config" "Expected non-empty message in response"
-    fi
-    pass_test "update-config"
-}
-
-test_update_config_details() {
-    capture_cmd bees update-config --details
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "update-config --details" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    assert_no_traceback "$CMD_OUT" "update-config --details"
-    local status
-    status=$(check_json "$CMD_OUT" "d['status']")
-    if [ "$status" != "success" ]; then
-        fail_test "update-config --details" "Expected status=success, got $status"
-    fi
-    # Must have pending_hops key (list, possibly empty if already up to date)
-    local has_hops_key
-    has_hops_key=$(check_json "$CMD_OUT" "'pending_hops' in d")
-    if [ "$has_hops_key" != "True" ]; then
-        fail_test "update-config --details" "Expected pending_hops key in response"
-    fi
-    pass_test "update-config --details"
-}
-
-run_test test_update_config
-run_test test_update_config_details
+run_test test_body_file_create
+run_test test_body_file_mutual_exclusion
+run_test test_body_file_update
+run_test test_chunk_file_append
+run_test test_chunk_file_mutual_exclusion
+run_test test_body_file_not_found
 
 # === PHASE 5: INDEX GENERATION ===
 phase_section 5
@@ -3855,106 +3733,373 @@ run_test test_list_named_queries_works
 run_test test_t9_cap
 run_test test_http_port_config
 
-# === PHASE 2: BODY FILE / CHUNK FILE ===
-phase_section 2
+# === PHASE 5: HIVE PORTABILITY: IDENTITY.JSON (b.f6y) ===
+phase_section 5
 
-BODY_FILE_BEE=""
-CHUNK_FILE_BEE=""
+HP_HIVE_PATH="$REPO/tickets/hp_hive"
 
-test_body_file_create() {
-    echo "hello from file" > /tmp/test_body.txt
-    capture_cmd bees create-ticket --ticket-type bee --title "Body File Bee" \
-        --hive crud_hive --body-file /tmp/test_body.txt
+test_hp_identity_written() {
+    # colonize-hive must write identity.json with normalized_name and child_tiers
+    capture_cmd bees colonize-hive \
+        --name "HP Hive" \
+        --path "$HP_HIVE_PATH" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
     if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "create-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
+        fail_test "Identity.json written on colonize" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    assert_no_traceback "$CMD_OUT" "create-ticket --body-file"
-    BODY_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
-    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
-    local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "hello from file" ]; then
-        fail_test "create-ticket --body-file" "Expected body='hello from file', got '$body'"
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    if [ ! -f "$identity_file" ]; then
+        fail_test "Identity.json written on colonize" "identity.json not found at $identity_file"
     fi
-    pass_test "create-ticket --body-file"
+    local norm_name has_tiers
+    norm_name=$(python3 -c "import json; d=json.load(open('$identity_file')); print(d.get('normalized_name',''))")
+    if [ "$norm_name" != "hp_hive" ]; then
+        fail_test "Identity.json written on colonize" "Expected normalized_name=hp_hive, got $norm_name"
+    fi
+    has_tiers=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
+    if [ "$has_tiers" != "True" ]; then
+        fail_test "Identity.json written on colonize" "child_tiers.t1 missing from identity.json"
+    fi
+    pass_test "Identity.json written on colonize"
 }
 
-test_body_file_mutual_exclusion() {
-    capture_cmd bees create-ticket --ticket-type bee --title "X" \
-        --hive crud_hive --body "inline" --body-file /tmp/test_body.txt
+test_hp_colonize_no_name_uses_marker() {
+    # Abandon first so colonize-hive re-adopts from the on-disk marker (no --name)
+    capture_cmd bees abandon-hive --hive "HP Hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Colonize no --name uses marker" "abandon-hive failed: $CMD_OUT"
+    fi
+    capture_cmd bees colonize-hive --path "$HP_HIVE_PATH"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Colonize no --name uses marker" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local norm_name
+    norm_name=$(check_json "$CMD_OUT" "d.get('normalized_name','')")
+    assert_eq "$norm_name" "hp_hive" "Colonize no --name uses marker"
+}
+
+test_hp_colonize_no_name_no_marker_fails() {
+    # --name is required when no identity.json marker exists
+    local hive_path="$REPO/tickets/hp_new_hive_no_name"
+    mkdir -p "$hive_path"
+    capture_cmd bees colonize-hive --path "$hive_path"
     if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "--body/--body-file mutual exclusion" "Expected non-zero exit but got 0"
+        fail_test "Colonize no --name no marker" "Expected failure but got success"
     fi
-    assert_no_traceback "$CMD_OUT" "--body/--body-file mutual exclusion"
-    pass_test "--body/--body-file mutual exclusion"
+    assert_no_traceback "$CMD_OUT" "Colonize no --name no marker"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    assert_eq "$error_type" "validation_error" "Colonize no --name no marker"
 }
 
-test_body_file_update() {
-    echo "updated body" > /tmp/test_body2.txt
-    capture_cmd bees update-ticket --ids "$BODY_FILE_BEE" --body-file /tmp/test_body2.txt
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "update-ticket --body-file" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    assert_no_traceback "$CMD_OUT" "update-ticket --body-file"
-    capture_cmd bees show-ticket --ids "$BODY_FILE_BEE"
-    local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "updated body" ]; then
-        fail_test "update-ticket --body-file" "Expected body='updated body', got '$body'"
-    fi
-    pass_test "update-ticket --body-file"
-}
-
-test_chunk_file_append() {
-    capture_cmd bees create-ticket --ticket-type bee --title "Append Bee" \
-        --hive crud_hive --body "start"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "append-ticket-body --chunk-file" "Create failed: $CMD_OUT"
-    fi
-    CHUNK_FILE_BEE=$(check_json "$CMD_OUT" "d['ticket_id']")
-    printf " appended" > /tmp/test_chunk.txt
-    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
-        --chunk-file /tmp/test_chunk.txt
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "append-ticket-body --chunk-file" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    assert_no_traceback "$CMD_OUT" "append-ticket-body --chunk-file"
-    capture_cmd bees show-ticket --ids "$CHUNK_FILE_BEE"
-    local body
-    body=$(check_json "$CMD_OUT" "d['tickets'][0]['body']")
-    if [ "$body" != "start appended" ]; then
-        fail_test "append-ticket-body --chunk-file" "Expected body='start appended', got '$body'"
-    fi
-    pass_test "append-ticket-body --chunk-file"
-}
-
-test_chunk_file_mutual_exclusion() {
-    capture_cmd bees append-ticket-body --ticket-id "$CHUNK_FILE_BEE" \
-        --chunk "inline" --chunk-file /tmp/test_chunk.txt
+test_hp_colonize_corrupt_marker() {
+    # Corrupt identity.json must return error; file must not be modified
+    local hive_path="$REPO/tickets/hp_corrupt_hive"
+    mkdir -p "$hive_path/.hive"
+    printf '{{not valid json' > "$hive_path/.hive/identity.json"
+    capture_cmd bees colonize-hive --name "Corrupt Hive" --path "$hive_path"
     if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "--chunk/--chunk-file mutual exclusion" "Expected non-zero exit but got 0"
+        fail_test "Colonize corrupt marker" "Expected failure but got success"
     fi
-    assert_no_traceback "$CMD_OUT" "--chunk/--chunk-file mutual exclusion"
-    pass_test "--chunk/--chunk-file mutual exclusion"
+    assert_no_traceback "$CMD_OUT" "Colonize corrupt marker"
+    local error_type
+    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+    if [ "$error_type" != "corrupt_marker" ]; then
+        fail_test "Colonize corrupt marker" "Expected error_type=corrupt_marker, got $error_type"
+    fi
+    local content
+    content=$(cat "$hive_path/.hive/identity.json")
+    if [ "$content" != "{{not valid json" ]; then
+        fail_test "Colonize corrupt marker" "Corrupt file was modified: $content"
+    fi
+    pass_test "Colonize corrupt marker"
 }
 
-test_body_file_not_found() {
-    capture_cmd bees create-ticket --ticket-type bee --title "X" \
-        --hive crud_hive --body-file /tmp/no_such_file.txt
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "--body-file nonexistent" "Expected non-zero exit but got 0"
+test_hp_set_status_values_writes_identity() {
+    # hive-scope set-status-values must write to identity.json
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    capture_cmd bees set-status-values --scope hive --hive "HP Hive" \
+        --status-values '["open","done"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "set-status-values writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
     fi
-    assert_no_traceback "$CMD_OUT" "--body-file nonexistent"
-    rm -f /tmp/test_body.txt /tmp/test_body2.txt /tmp/test_chunk.txt
-    pass_test "--body-file nonexistent"
+    local sv_in_identity
+    sv_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('done' in (d.get('status_values') or []))")
+    if [ "$sv_in_identity" != "True" ]; then
+        fail_test "set-status-values writes identity.json" "status_values not found in identity.json"
+    fi
+    pass_test "set-status-values writes identity.json"
 }
 
-run_test test_body_file_create
-run_test test_body_file_mutual_exclusion
-run_test test_body_file_update
-run_test test_chunk_file_append
-run_test test_chunk_file_mutual_exclusion
-run_test test_body_file_not_found
+test_hp_set_types_writes_identity() {
+    # hive-scope set-types must write to identity.json
+    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
+    capture_cmd bees set-types --scope hive --hive "HP Hive" \
+        --child-tiers '{"t1":["Epic","Epics"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "set-types writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local ct_in_identity
+    ct_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
+    if [ "$ct_in_identity" != "True" ]; then
+        fail_test "set-types writes identity.json" "child_tiers.t1 not found in identity.json"
+    fi
+    pass_test "set-types writes identity.json"
+}
+
+test_hp_update_config_no_pending_migrations() {
+    # Fresh v4 install should have no pending migration hops
+    capture_cmd bees update-config --details
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config no pending migrations" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local pending_count
+    pending_count=$(check_json "$CMD_OUT" "len(d.get('pending_hops',[]))")
+    if [ "$pending_count" != "0" ]; then
+        fail_test "update-config no pending migrations" "Expected 0 pending hops, got $pending_count"
+    fi
+    pass_test "update-config no pending migrations"
+}
+
+run_test test_hp_identity_written
+run_test test_hp_colonize_no_name_uses_marker
+run_test test_hp_colonize_no_name_no_marker_fails
+run_test test_hp_colonize_corrupt_marker
+run_test test_hp_set_status_values_writes_identity
+run_test test_hp_set_types_writes_identity
+run_test test_hp_update_config_no_pending_migrations
+
+# === PHASE 6: REFERENCE MATERIALS ===
+phase_section 6
+
+REF_BEE1=""
+REF_BEE2=""
+REF_BEE3=""
+
+test_ref_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Ref Hive" \
+        --path "$REPO/tickets/ref_hive"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Ref setup" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Ref setup"
+    pass_test "Ref setup"
+}
+
+test_ref_single_entry() {
+    echo "hello" > /tmp/ref_test_file
+    capture_cmd bees create-ticket --ticket-type bee --title "Single Ref Bee" \
+        --hive ref_hive --reference-materials '[{"value":"/tmp/ref_test_file"}]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Single reference_materials entry" "Create failed: $CMD_OUT"
+    fi
+    REF_BEE1=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE1"
+    local ref_val
+    ref_val=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
+    if [ "$ref_val" != "/tmp/ref_test_file" ]; then
+        fail_test "Single reference_materials entry" "Expected value='/tmp/ref_test_file', got '$ref_val'"
+    fi
+    pass_test "Single reference_materials entry"
+}
+
+test_ref_null_clear() {
+    capture_cmd bees create-ticket --ticket-type bee --title "Null Ref Bee" \
+        --hive ref_hive --reference-materials 'null'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Null reference_materials" "Create failed: $CMD_OUT"
+    fi
+    REF_BEE2=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE2"
+    local ref_val
+    ref_val=$(check_json "$CMD_OUT" "d['tickets'][0].get('reference_materials')")
+    if [ "$ref_val" != "None" ]; then
+        fail_test "Null reference_materials" "Expected reference_materials=None, got '$ref_val'"
+    fi
+    pass_test "Null reference_materials"
+}
+
+test_ref_multi_entry() {
+    echo "val1" > /tmp/ref_file1
+    echo "val2" > /tmp/ref_file2
+    capture_cmd bees create-ticket --ticket-type bee --title "Multi Ref Bee" \
+        --hive ref_hive \
+        --reference-materials '[{"value":"/tmp/ref_file1"},{"value":"/tmp/ref_file2"}]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Multi-entry reference_materials" "Create failed: $CMD_OUT"
+    fi
+    REF_BEE3=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees show-ticket --ids "$REF_BEE3"
+    local ref_count ref_val1 ref_val2
+    ref_count=$(check_json "$CMD_OUT" "len(d['tickets'][0].get('reference_materials') or [])")
+    ref_val1=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{}])[0].get('value','')")
+    ref_val2=$(check_json "$CMD_OUT" "(d['tickets'][0].get('reference_materials') or [{},{}])[1].get('value','')")
+    if [ "$ref_count" != "2" ]; then
+        fail_test "Multi-entry reference_materials" "Expected 2 entries, got $ref_count"
+    fi
+    if [ "$ref_val1" != "/tmp/ref_file1" ]; then
+        fail_test "Multi-entry reference_materials" "Expected first value=/tmp/ref_file1, got '$ref_val1'"
+    fi
+    if [ "$ref_val2" != "/tmp/ref_file2" ]; then
+        fail_test "Multi-entry reference_materials" "Expected second value=/tmp/ref_file2, got '$ref_val2'"
+    fi
+    pass_test "Multi-entry reference_materials"
+}
+
+test_ref_custom_resolver() {
+    mkdir -p "$REPO/scripts"
+    cat > "$REPO/scripts/test_resolver.sh" << 'RESOLVER'
+#!/bin/bash
+# Parse --value argument
+VALUE=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --value) VALUE="$2"; shift 2 ;;
+        --repo-root) shift 2 ;;
+        *) shift ;;
+    esac
+done
+echo "{\"resolved\": true, \"original\": \"$VALUE\"}"
+RESOLVER
+
+    capture_cmd bees set-resolver --name test_resolver \
+        --path "$REPO/scripts/test_resolver.sh"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom ref resolver" "set-resolver failed: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "Custom ref resolver"
+
+    capture_cmd bees colonize-hive \
+        --name "Resolver Hive" \
+        --path "$REPO/tickets/resolver_hive" \
+        --allowed-resolvers '["test_resolver"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom ref resolver" "Colonize failed: $CMD_OUT"
+    fi
+
+    capture_cmd bees create-ticket --ticket-type bee --title "Resolved Bee" \
+        --hive resolver_hive \
+        --reference-materials '[{"value":"test_value","resolver":"test_resolver"}]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Custom ref resolver" "Create failed: $CMD_OUT"
+    fi
+    local res_bee
+    res_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+
+    capture_cmd bees show-ticket --ids "$res_bee"
+    local resolved
+    resolved=$(check_json "$CMD_OUT" \
+        "d['tickets'][0].get('reference_materials',[{}])[0].get('resolved',{}).get('resolved',False)")
+    if [ "$resolved" != "True" ]; then
+        fail_test "Custom ref resolver" "Expected resolved=True in reference_materials output"
+    fi
+    pass_test "Custom ref resolver"
+}
+
+test_ref_resolver_timeout() {
+    cat > "$REPO/scripts/slow_resolver.sh" << 'RESOLVER'
+#!/bin/bash
+sleep 60
+echo '{"never":"reached"}'
+RESOLVER
+
+    capture_cmd bees set-resolver --name slow_resolver \
+        --path "$REPO/scripts/slow_resolver.sh" --timeout 2
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Ref resolver timeout" "set-resolver failed: $CMD_OUT"
+    fi
+
+    capture_cmd bees colonize-hive \
+        --name "Timeout Hive" \
+        --path "$REPO/tickets/timeout_hive" \
+        --allowed-resolvers '["slow_resolver"]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Ref resolver timeout" "Colonize failed: $CMD_OUT"
+    fi
+
+    capture_cmd bees create-ticket --ticket-type bee --title "Timeout Bee" \
+        --hive timeout_hive \
+        --reference-materials '[{"value":"test","resolver":"slow_resolver"}]'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Ref resolver timeout" "Create failed: $CMD_OUT"
+    fi
+    local to_bee
+    to_bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+
+    capture_cmd bees show-ticket --ids "$to_bee"
+    assert_no_traceback "$CMD_OUT" "Ref resolver timeout"
+    local ticket_count
+    ticket_count=$(check_json "$CMD_OUT" "len(d.get('tickets',[]))")
+    if [ "$ticket_count" != "1" ]; then
+        fail_test "Ref resolver timeout" "Expected 1 ticket returned, got $ticket_count"
+    fi
+    # Timeout errors are surfaced inside reference_materials[0]["resolved"], not in top-level errors
+    local resolved_status resolved_error
+    resolved_status=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('status','')")
+    resolved_error=$(check_json "$CMD_OUT" \
+        "(d['tickets'][0].get('reference_materials') or [{}])[0].get('resolved',{}).get('error','')")
+    if [ "$resolved_status" != "error" ]; then
+        fail_test "Ref resolver timeout" "Expected resolved.status=error for timeout, got '$resolved_status'"
+    fi
+    if [[ "$resolved_error" != *"timed out"* ]]; then
+        fail_test "Ref resolver timeout" "Expected 'timed out' in resolved.error, got '$resolved_error'"
+    fi
+    pass_test "Ref resolver timeout"
+}
+
+run_test test_ref_setup
+run_test test_ref_single_entry
+run_test test_ref_null_clear
+run_test test_ref_multi_entry
+run_test test_ref_custom_resolver
+run_test test_ref_resolver_timeout
+
+# === PHASE 6: UPDATE CONFIG ===
+phase_section 6
+
+test_update_config() {
+    capture_cmd bees update-config
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-config"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "update-config" "Expected status=success, got $status"
+    fi
+    local msg
+    msg=$(check_json "$CMD_OUT" "d.get('message','')")
+    if [ -z "$msg" ]; then
+        fail_test "update-config" "Expected non-empty message in response"
+    fi
+    pass_test "update-config"
+}
+
+test_update_config_details() {
+    capture_cmd bees update-config --details
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "update-config --details" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    assert_no_traceback "$CMD_OUT" "update-config --details"
+    local status
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "update-config --details" "Expected status=success, got $status"
+    fi
+    # Must have pending_hops key (list, possibly empty if already up to date)
+    local has_hops_key
+    has_hops_key=$(check_json "$CMD_OUT" "'pending_hops' in d")
+    if [ "$has_hops_key" != "True" ]; then
+        fail_test "update-config --details" "Expected pending_hops key in response"
+    fi
+    pass_test "update-config --details"
+}
+
+run_test test_update_config
+run_test test_update_config_details
 
 # === PHASE 6: RESOLVER REGISTRY ===
 phase_section 6
@@ -4126,142 +4271,6 @@ run_test test_p6_unset_resolver
 run_test test_p6_colonize_allowed_resolvers
 run_test test_p6_reject_unregistered_resolver
 run_test test_p6_reject_unset_referenced_resolver
-
-# === PHASE 5: HIVE PORTABILITY: IDENTITY.JSON (b.f6y) ===
-phase_section 5
-
-HP_HIVE_PATH="$REPO/tickets/hp_hive"
-
-test_hp_identity_written() {
-    # colonize-hive must write identity.json with normalized_name and child_tiers
-    capture_cmd bees colonize-hive \
-        --name "HP Hive" \
-        --path "$HP_HIVE_PATH" \
-        --child-tiers '{"t1":["Task","Tasks"]}'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Identity.json written on colonize" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
-    if [ ! -f "$identity_file" ]; then
-        fail_test "Identity.json written on colonize" "identity.json not found at $identity_file"
-    fi
-    local norm_name has_tiers
-    norm_name=$(python3 -c "import json; d=json.load(open('$identity_file')); print(d.get('normalized_name',''))")
-    if [ "$norm_name" != "hp_hive" ]; then
-        fail_test "Identity.json written on colonize" "Expected normalized_name=hp_hive, got $norm_name"
-    fi
-    has_tiers=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
-    if [ "$has_tiers" != "True" ]; then
-        fail_test "Identity.json written on colonize" "child_tiers.t1 missing from identity.json"
-    fi
-    pass_test "Identity.json written on colonize"
-}
-
-test_hp_colonize_no_name_uses_marker() {
-    # Abandon first so colonize-hive re-adopts from the on-disk marker (no --name)
-    capture_cmd bees abandon-hive --hive "HP Hive"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Colonize no --name uses marker" "abandon-hive failed: $CMD_OUT"
-    fi
-    capture_cmd bees colonize-hive --path "$HP_HIVE_PATH"
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "Colonize no --name uses marker" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    local norm_name
-    norm_name=$(check_json "$CMD_OUT" "d.get('normalized_name','')")
-    assert_eq "$norm_name" "hp_hive" "Colonize no --name uses marker"
-}
-
-test_hp_colonize_no_name_no_marker_fails() {
-    # --name is required when no identity.json marker exists
-    local hive_path="$REPO/tickets/hp_new_hive_no_name"
-    mkdir -p "$hive_path"
-    capture_cmd bees colonize-hive --path "$hive_path"
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "Colonize no --name no marker" "Expected failure but got success"
-    fi
-    assert_no_traceback "$CMD_OUT" "Colonize no --name no marker"
-    local error_type
-    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
-    assert_eq "$error_type" "validation_error" "Colonize no --name no marker"
-}
-
-test_hp_colonize_corrupt_marker() {
-    # Corrupt identity.json must return error; file must not be modified
-    local hive_path="$REPO/tickets/hp_corrupt_hive"
-    mkdir -p "$hive_path/.hive"
-    printf '{{not valid json' > "$hive_path/.hive/identity.json"
-    capture_cmd bees colonize-hive --name "Corrupt Hive" --path "$hive_path"
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "Colonize corrupt marker" "Expected failure but got success"
-    fi
-    assert_no_traceback "$CMD_OUT" "Colonize corrupt marker"
-    local error_type
-    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
-    if [ "$error_type" != "corrupt_marker" ]; then
-        fail_test "Colonize corrupt marker" "Expected error_type=corrupt_marker, got $error_type"
-    fi
-    local content
-    content=$(cat "$hive_path/.hive/identity.json")
-    if [ "$content" != "{{not valid json" ]; then
-        fail_test "Colonize corrupt marker" "Corrupt file was modified: $content"
-    fi
-    pass_test "Colonize corrupt marker"
-}
-
-test_hp_set_status_values_writes_identity() {
-    # hive-scope set-status-values must write to identity.json
-    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
-    capture_cmd bees set-status-values --scope hive --hive "HP Hive" \
-        --status-values '["open","done"]'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "set-status-values writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    local sv_in_identity
-    sv_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('done' in (d.get('status_values') or []))")
-    if [ "$sv_in_identity" != "True" ]; then
-        fail_test "set-status-values writes identity.json" "status_values not found in identity.json"
-    fi
-    pass_test "set-status-values writes identity.json"
-}
-
-test_hp_set_types_writes_identity() {
-    # hive-scope set-types must write to identity.json
-    local identity_file="$HP_HIVE_PATH/.hive/identity.json"
-    capture_cmd bees set-types --scope hive --hive "HP Hive" \
-        --child-tiers '{"t1":["Epic","Epics"]}'
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "set-types writes identity.json" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    local ct_in_identity
-    ct_in_identity=$(python3 -c "import json; d=json.load(open('$identity_file')); print('t1' in (d.get('child_tiers') or {}))")
-    if [ "$ct_in_identity" != "True" ]; then
-        fail_test "set-types writes identity.json" "child_tiers.t1 not found in identity.json"
-    fi
-    pass_test "set-types writes identity.json"
-}
-
-test_hp_update_config_no_pending_migrations() {
-    # Fresh v4 install should have no pending migration hops
-    capture_cmd bees update-config --details
-    if [ "$CMD_EXIT" -ne 0 ]; then
-        fail_test "update-config no pending migrations" "exit $CMD_EXIT: $CMD_OUT"
-    fi
-    local pending_count
-    pending_count=$(check_json "$CMD_OUT" "len(d.get('pending_hops',[]))")
-    if [ "$pending_count" != "0" ]; then
-        fail_test "update-config no pending migrations" "Expected 0 pending hops, got $pending_count"
-    fi
-    pass_test "update-config no pending migrations"
-}
-
-run_test test_hp_identity_written
-run_test test_hp_colonize_no_name_uses_marker
-run_test test_hp_colonize_no_name_no_marker_fails
-run_test test_hp_colonize_corrupt_marker
-run_test test_hp_set_status_values_writes_identity
-run_test test_hp_set_types_writes_identity
-run_test test_hp_update_config_no_pending_migrations
 
 # === SUCCESS SIGNAL ===
 # A phase never passes without running a test (e.g. START_TEST past its last test)
