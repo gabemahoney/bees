@@ -27,7 +27,7 @@ You are now ready to start using bees. See the [Advanced Usage](#advanced-usage)
 
 🐝 **Simple but powerful YAML query pipeline designed for your agent**
 - Traverse parent/child and peer dependency relationships
-- Filter by status, ticket type, tags, title, hive, parent, and ID
+- Filter by status, ticket type, tags, title, hive, parent, ID, and priority (e.g. `priority<=1`, `priority=none`)
 - Return the ticket fields you choose (title, status, tags, ...) instead of bare IDs
 - Save named queries for reuse across sessions
 

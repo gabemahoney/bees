@@ -69,7 +69,7 @@ bees update-ticket --ids b.amx --priority null       # clear it
 
 The MCP `create_ticket` and `update_ticket` tools take `priority` as an integer or `null`; a string, a float, or a boolean is rejected rather than converted.
 
-**Mixed versions.** Bees 0.8.4 and earlier do not know the field: they drop `priority` whenever they rewrite a ticket (for example on an update or a status change), and their linter reports it as `disallowed_field`. If some machines or agents on a shared hive run an older bees, upgrade them all before relying on priority.
+**Mixed versions.** Bees 0.8.4 and earlier do not know the field: they drop `priority` whenever they rewrite a ticket (for example on an update or a status change), and their linter reports it as `disallowed_field`. They also cannot run a saved named query that uses priority terms. If some machines or agents on a shared hive run an older bees, upgrade them all before relying on priority.
 
 ## Ticket Status
 
@@ -505,6 +505,14 @@ Double-quote a term that contains `,` `[` `]` `{` `}` `:` or `#`, e.g. `'{stages
 | `title~REGEX` | Regex match on title |
 | `tag~REGEX` | Regex match on any tag |
 | `hive~REGEX` | Regex match on hive name |
+| `priority=N`, `priority!=N`, `priority<N`, `priority<=N`, `priority>N`, `priority>=N` | Compare priority with the integer N (negatives allowed, e.g. `priority<=0`, `priority>-2`) |
+| `priority=none` | Tickets with no priority (lowercase `none`, `=` only) |
+
+A ticket with no priority never matches a numeric priority term, including `priority!=N`; use `priority=none` to find those tickets. `priority=none` matches only unset tickets, never a priority of 0. A hand-edited priority that is not an integer matches no priority term. A malformed term (such as `priority=abc`, `priority=1.5`, `priority<none`, or `priority=None`) is rejected with a `parse_error`; nothing is run or saved, and an undertaker schedule with such a query errors and archives nothing.
+
+```bash
+bees execute-freeform-query --query-yaml '{stages: [[type=bee, priority<=1]], report: [title, priority]}'
+```
 
 ### Graph Terms
 
@@ -523,7 +531,7 @@ Without `report`, a query returns `ticket_ids`: a sorted list of matching ticket
 bees execute-freeform-query --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
 ```
 
-Reportable fields: `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies`.
+Reportable fields: `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `priority`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies`. `priority` is `null` for a ticket with none.
 
 `ticket_id` is always included, so don't list it. `body` and `reference_materials` are not reportable; read them with `bees show-ticket`.
 

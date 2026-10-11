@@ -777,6 +777,18 @@ Queries are passed as a single string (`--query-yaml` on the CLI, `query_yaml` o
 | `title~regex` | Regex match on title (case-insensitive) |
 | `tag~regex` | Regex match on any tag (case-insensitive) |
 | `hive~regex` | Regex match on hive name (case-insensitive) |
+| `priority=N` | Priority equals the integer N |
+| `priority!=N` | Priority is set and not N |
+| `priority<N`, `priority<=N`, `priority>N`, `priority>=N` | Numeric comparison of priority with N |
+| `priority=none` | Ticket has no priority (lowercase `none`, `=` only) |
+
+Priority term rules:
+- `N` is an integer literal: an optional leading `-`, then ASCII digits; negatives and zero are allowed and leading zeros are accepted (`priority=007` is 7). A `+` sign, whitespace, a decimal, or an empty value is not an integer.
+- A ticket with no priority never matches a numeric term, including `priority!=N`. `priority=none` matches only tickets with no priority, never a priority of 0.
+- A stored priority that is not a valid integer (a hand-edited string, float, or boolean) matches no priority term; the linter flags it.
+- `none` is accepted only as `priority=none`: `priority!=none`, `priority<none`, and `priority=None` are malformed.
+- Priority terms are search terms: they combine by AND with the other search terms in a stage and cannot share a stage with a graph term.
+- A malformed priority term (an unknown operator, a non-integer value, or `none` with another operator) fails with a `parse_error` of the form `Invalid query structure: ...`. Nothing is run or saved, and an undertaker schedule whose query is malformed errors and archives nothing.
 
 ### 12.3 Graph Traversal Terms
 
@@ -822,7 +834,7 @@ The optional `report` key is a list of field names. Without it, a query returns 
 
 | Field group | Fields |
 |-------------|--------|
-| Reportable | `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies` |
+| Reportable | `children`, `created_at`, `down_dependencies`, `guid`, `hive`, `parent`, `priority`, `schema_version`, `tags`, `ticket_status`, `ticket_type`, `title`, `up_dependencies` |
 | Not reportable | `body`, `reference_materials` — read with `show_ticket` |
 
 Validation (`parse_error` on failure):
@@ -1404,7 +1416,7 @@ Logic:
 2. Scan Claude config locations for bees MCP server entry → if found, exit 0 silently
 3. If no MCP detected: print CLI reference to stdout and exit 0
 
-The CLI reference lists the commands and a query quick reference: both one-line flow-style `--query-yaml` examples, what `report` changes in the result, the reportable fields, and the non-reportable fields (`body`, `reference_materials`, read with `show-ticket`). The examples and field lists come from the same constants as `execute-freeform-query -h`.
+The CLI reference lists the commands and a query quick reference: both one-line flow-style `--query-yaml` examples, what `report` changes in the result, the reportable fields (including `priority`), the non-reportable fields (`body`, `reference_materials`, read with `show-ticket`), and the priority search terms. The examples, field lists and priority terms come from the same constants as `execute-freeform-query -h`.
 
 MCP entry detection regex: `(?i)(?:^|[-_])bees(?:$|[-_])` (matches `bees`, `bees-mcp` but not `frisbees`)
 
@@ -1742,9 +1754,17 @@ Register a named query for reuse. See execute_freeform_query for query syntax.
 
 The query YAML may include an optional "report" key (list of field names). When present, execute_named_query returns "tickets" (list of dicts, one per match, holding ticket_id plus the listed fields) instead of "ticket_ids" (list of strings). ticket_id is always included and should not be listed.
 
-Reportable fields: children, created_at, down_dependencies, guid, hive, parent, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
+Reportable fields: children, created_at, down_dependencies, guid, hive, parent, priority, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
 
 Not reportable: body, reference_materials — not available in query results; use show_ticket.
+
+Priority search terms (see execute_freeform_query):
+    priority=N | priority!=N | priority<N | priority<=N | priority>N | priority>=N
+        compare priority with the integer N (negatives allowed, e.g. priority<=0, priority>-2)
+    priority=none
+        tickets with no priority (lowercase "none", "=" only)
+    A ticket with no priority never matches a numeric term, including priority!=N;
+    use priority=none to find those tickets.
 
 Args:
 - `name`: Name for the query (used to execute it later).
@@ -1778,6 +1798,14 @@ Search stages — filter tickets (AND logic within stage):
 - `hive=<name>` — exact match on hive name
 - `hive~<regex>` — regex match on hive name
 
+Priority terms (search stages, AND logic with the other search terms):
+    priority=N | priority!=N | priority<N | priority<=N | priority>N | priority>=N
+        compare priority with the integer N (negatives allowed, e.g. priority<=0, priority>-2)
+    priority=none
+        tickets with no priority (lowercase "none", "=" only)
+    A ticket with no priority never matches a numeric term, including priority!=N;
+    use priority=none to find those tickets.
+
 Graph stages — traverse relationships from current result set:
 - `parent` — get parent of each ticket
 - `children` — get children of each ticket
@@ -1785,7 +1813,7 @@ Graph stages — traverse relationships from current result set:
 - `down_dependencies` — get downstream dependents of each ticket
 
 Report projection (optional): add a "report" key with a list of field names to return structured ticket data instead of a plain ID list. ticket_id is always included automatically and should not be listed.
-- Reportable fields: children, created_at, down_dependencies, guid, hive, parent, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
+- Reportable fields: children, created_at, down_dependencies, guid, hive, parent, priority, schema_version, tags, ticket_status, ticket_type, title, up_dependencies
 - Not reportable: body, reference_materials — not available in query results; use show_ticket.
 - Example: `{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}`
 - Without report → response includes "ticket_ids" (list of strings). With report → response includes "tickets" (list of dicts, one per match, sorted by ticket_id). Unset fields come back empty ([] or "") or null.
@@ -2071,6 +2099,14 @@ written the same way as for execute-freeform-query (run
 execute-freeform-query -h for every search and graph term). Example:
   bees add-named-query --query-name pupa-titles --query-yaml '{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}'
 
+Priority terms (search stages, AND logic with the other search terms):
+  priority=N | priority!=N | priority<N | priority<=N | priority>N | priority>=N
+      compare priority with the integer N (negatives allowed, e.g. priority<=0, priority>-2)
+  priority=none
+      tickets with no priority (lowercase "none", "=" only)
+  A ticket with no priority never matches a numeric term, including priority!=N;
+  use priority=none to find those tickets.
+
 In the report notes below, "the result" is what execute-named-query returns
 when it runs the saved query; add-named-query itself only confirms the save.
 
@@ -2106,7 +2142,7 @@ Pass the query as one single-quoted argument in YAML flow style:
 Double-quote a term that contains , [ ] { } : or #, e.g. ["title~p[0-4]"].
 Inside double quotes, write each regex backslash twice: ["title~\\[bug\\]"].
 
-Search stages / Graph stages — term lists as in execute_freeform_query (Appendix E)
+Search stages / Priority terms / Graph stages — term lists as in execute_freeform_query (Appendix E)
 
 Report (optional) — return ticket fields instead of bare IDs:
   Without "report", the result has "ticket_ids": a sorted list of ticket IDs.
@@ -2115,8 +2151,8 @@ Report (optional) — return ticket fields instead of bare IDs:
   empty ([] or "") or null.
   ticket_id is always included; don't list it.
   Reportable fields:
-    children, created_at, down_dependencies, guid, hive, parent, schema_version,
-    tags, ticket_status, ticket_type, title, up_dependencies
+    children, created_at, down_dependencies, guid, hive, parent, priority,
+    schema_version, tags, ticket_status, ticket_type, title, up_dependencies
   Not reportable: body, reference_materials. Read them with show-ticket.
 
   --query-yaml YAML     YAML dict with a "stages" key and an optional "report" key.
