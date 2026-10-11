@@ -52,6 +52,14 @@ def snapshot_diff(before: dict, after: dict) -> tuple[set[str], set[str], set[st
     return set(added), set(removed), changed
 
 
+def break_config_with_trailing_comma(config_path: Path) -> bytes:
+    """Make a global config.json malformed (b.cyd): a trailing comma before its closing brace. Returns the new bytes."""
+    text = config_path.read_text().rstrip()
+    assert text.endswith("}"), text
+    config_path.write_text(text[:-1].rstrip() + ",\n}\n")
+    return config_path.read_bytes()
+
+
 COMPAT_084_DIR = Path(__file__).parent / "fixtures" / "compat_0_8_4"
 COMPAT_084_ROOT = "{{ROOT}}"
 

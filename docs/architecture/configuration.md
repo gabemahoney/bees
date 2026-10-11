@@ -388,7 +388,7 @@ Hive names are normalized to ensure consistent identification across the system 
 The config module provides a type-safe dataclass API for all config operations.
 
 **Global Config (low-level)**:
-- `load_global_config() -> dict`: Read entire `~/.bees/config.json` as raw dict
+- `load_global_config() -> dict`: Read entire `~/.bees/config.json` as raw dict. A missing file returns the default empty config; a file that exists but cannot be loaded raises `ConfigLoadError` (see [Unloadable Config File](#unloadable-config-file))
 - `save_global_config(global_config: dict)`: Atomically write entire global config
 
 **Read cache**: `load_global_config()` keeps the parsed config in memory, keyed on the config file's signature with the racy-timestamp guard described in [caching.md](caching.md#freshness-check): a config file modified within the last 3 seconds is re-read on every call. `set_config_path()` clears the cache when the config path changes, and `save_global_config()` clears it after each write. Each hive's `.hive/identity.json` is cached per hive path with the same check. `write_identity()` (`src/mcp_hive_ops.py`) calls `invalidate_identity_cache(hive_path)` after each write, which drops that hive's entries, matching cache keys by resolved path.
@@ -400,6 +400,30 @@ The config module provides a type-safe dataclass API for all config operations.
 - `serialize_bees_config_to_scope(config: BeesConfig, existing_scope: dict | None = None) -> dict`: Serialize BeesConfig to scope dict. `BeesConfig` models only `hives`, `child_tiers` and `status_values`. With `existing_scope` (the scope's current dict) the result starts from it, so every other key survives; the three modeled keys always come from `config`, and `child_tiers` and `status_values` are dropped when None.
 
 **Context Management**: `repo_root` flows through Python's `contextvars.ContextVar` (see `src/repo_context.py`), eliminating the need to thread it through function parameters. MCP entry points set the context via `repo_root_context(resolved_root)`.
+
+## Unloadable Config File
+
+A config file that exists but cannot be loaded is an error, never an empty config; every config change is load-modify-save, so a failed load fails before any write.
+
+**What counts**: `load_global_config()` raises `ConfigLoadError` (a `ValueError` subclass with a `path` attribute) when the file has malformed JSON (an empty file included), when its top-level value is not a JSON object, or when it cannot be read: invalid UTF-8, a directory at the path, or any other OS error, such as `~/.bees` not being readable. The message names the file and the problem; for a parse error or a wrong top-level type it also says bees will not overwrite the file. These cases are not errors and return the default empty config: a missing file, a missing `~/.bees` directory, and `~/.bees` being a regular file. The first save creates the file. A file that parses but holds an invalid global setting still raises a plain `ValueError`, not a `ConfigLoadError`.
+
+**No save after a failed load**: Each read-modify-write path loads before it writes, so it fails before the first write and leaves `config.json` byte for byte unchanged. `colonize_hive` fails before it writes the `.hive` marker or the config. The file is never repaired automatically; the user fixes it by hand.
+
+**Recovery**: A load that raises `ConfigLoadError` drops the read cache and caches nothing. Once the file is fixed, the next call loads it, with no restart of a running server. `--test-config` is unaffected, since its in-memory override never reads the file.
+
+**Result shape**: `config_load_error_result()` builds the structured error `{"status": "error", "error_type": "config_load_error", "message": ..., "path": ...}`. Each entry point reports it its own way:
+
+| Entry point | Behavior |
+|---|---|
+| CLI subcommands (except `bees sting`) | `main()` prints the error JSON to stdout and exits 1 |
+| `bees serve --http` | Prints the error JSON and exits 1 at startup, before the server starts |
+| `bees serve --stdio` | Starts anyway; tool calls return the error until the file is fixed (see [mcp_server.md](mcp_server.md#available-mcp-tools)) |
+| `check_for_config_conflicts()` and `check_schema_version()` | Return the error dict |
+| Undertaker scheduler | `_fire` catches any `ValueError` from loading the config (a `ConfigLoadError`, or an invalid setting such as `"delete_with_dependencies": "yes"`), logs it and skips that run, so the scheduler thread keeps going; the next interval re-reads the file and resumes once it is fixed |
+| `bees sting` (session hook) | Prints `bees sting: <message>` to stderr, prints nothing to stdout, and exits 1. Claude Code never shows stderr from a hook that exits 0, while exit 1 is a non-blocking hook error: the message is shown, session start still proceeds and nothing is injected into the session |
+| Directory walks (`walk_hive()`, `find_nested_hive_root()`, `find_enclosing_hive_root()` and their callers, see [storage.md](storage.md)) | Raise `ConfigLoadError`. Each reads registered hive roots from the config to skip nested hives, and an empty set would let it enter one |
+
+**Implementation**: See `ConfigLoadError`, `config_load_error_result()` and `load_global_config()` in `src/config.py`.
 
 ## Reference Materials Resolution
 

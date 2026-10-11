@@ -536,11 +536,15 @@ def check_for_config_conflicts(resolved_root: Path | None = None) -> dict | None
 
     Returns:
         None if no conflicts; otherwise a dict with keys
-        ``status``, ``error_type``, and ``message``.
+        ``status``, ``error_type``, and ``message``. An unloadable config
+        file gives the ``config_load_error`` dict.
     """
     if resolved_root is None:
         resolved_root = get_repo_root()
-    global_config = load_global_config()
+    try:
+        global_config = load_global_config()
+    except ConfigLoadError as e:
+        return config_load_error_result(e)
     matching = find_all_matching_scopes(resolved_root, global_config)
     conflicts = detect_hive_conflicts(matching)
     if not conflicts:
@@ -569,10 +573,14 @@ def check_schema_version() -> dict | None:
 
     Returns:
         None if schema is up to date; otherwise a dict with keys
-        ``status``, ``error_type``, and ``message``.
+        ``status``, ``error_type``, and ``message``. An unloadable config
+        file gives the ``config_load_error`` dict.
     """
     try:
         global_config = load_global_config()
+    except ConfigLoadError as e:
+        # An unloadable config is an error, not "no pending migrations"
+        return config_load_error_result(e)
     except Exception:
         logger.warning("Failed to load config for schema check", exc_info=True)
         return None
@@ -636,6 +644,35 @@ def check_scope_conflict(pattern: str, global_config: dict) -> str | None:
     return None
 
 
+class ConfigLoadError(ValueError):
+    """The global config file exists but could not be loaded.
+
+    Raised instead of falling back to an empty config: every read-modify-write
+    path saves what it loaded, so a fallback would overwrite the user's file.
+    The message names the file and the problem. A ValueError subclass, like the
+    other invalid-config errors raised by load_global_config().
+
+    Attributes:
+        path: The config file that failed to load.
+    """
+
+    error_type = "config_load_error"
+
+    def __init__(self, path: Path | str, message: str) -> None:
+        super().__init__(message)
+        self.path = str(path)
+
+
+def config_load_error_result(exc: ConfigLoadError) -> dict:
+    """Build the structured error dict (CLI JSON / MCP result) for a ConfigLoadError."""
+    return {
+        "status": "error",
+        "error_type": ConfigLoadError.error_type,
+        "message": str(exc),
+        "path": exc.path,
+    }
+
+
 def load_global_config() -> dict:
     """Load the entire global config from ~/.bees/config.json.
 
@@ -647,7 +684,13 @@ def load_global_config() -> dict:
 
     Returns:
         The global config dict. Returns empty scopes structure if file missing.
-        Returns default structure on JSON errors with logged warning.
+
+    Raises:
+        ConfigLoadError: The file exists but could not be loaded (unreadable,
+            malformed JSON, or not a JSON object). Never falls back to the
+            default structure in that case, because a later save would
+            overwrite the user's file. Any cached value is dropped.
+        ValueError: The file parses but a global setting is invalid.
     """
     global _GLOBAL_CONFIG_CACHE, _GLOBAL_CONFIG_CACHE_SIGNATURE
 
@@ -661,29 +704,52 @@ def load_global_config() -> dict:
         config_path = get_global_config_path()
     default_struct = {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
 
-    if not config_path.exists():
-        _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
-        return default_struct
-
+    # No exists() pre-check: it raises PermissionError itself when the directory cannot be entered.
+    stat_error: OSError | None = None
     try:
-        current_signature = file_signature(config_path)
-    except OSError:
-        _GLOBAL_CONFIG_CACHE = None
-        _GLOBAL_CONFIG_CACHE_SIGNATURE = None
-        return default_struct
+        current_signature: FileSignature | None = file_signature(config_path)
+    except (FileNotFoundError, NotADirectoryError):
+        # Missing (or its parent is not a directory): use the defaults
+        current_signature = None
+    except OSError as e:
+        # The file may exist but cannot be inspected. It must not look like an empty
+        # config, or the next save would overwrite it.
+        current_signature = None
+        stat_error = e
 
-    if _GLOBAL_CONFIG_CACHE is not None and _GLOBAL_CONFIG_CACHE_SIGNATURE == current_signature:
-        return _GLOBAL_CONFIG_CACHE
+    if current_signature is not None and _GLOBAL_CONFIG_CACHE is not None:
+        if _GLOBAL_CONFIG_CACHE_SIGNATURE == current_signature:
+            return _GLOBAL_CONFIG_CACHE
+
+    # Every path from here either stores a fresh cache entry or raises/returns defaults,
+    # so drop the stale entry once.
+    _GLOBAL_CONFIG_CACHE = None
+    _GLOBAL_CONFIG_CACHE_SIGNATURE = None
+
+    if stat_error is not None:
+        raise ConfigLoadError(config_path, f"Cannot read {config_path}: {stat_error}") from stat_error
+    if current_signature is None:
+        return default_struct
 
     # Decide whether the signature can be trusted before reading the contents
     cache_signature = trusted_signature(current_signature)
     try:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        logger.warning(f"Malformed JSON in {config_path}: {e}. Returning default structure.")
-        return default_struct
+        raise ConfigLoadError(
+            config_path,
+            f"Malformed JSON in {config_path}: {e}. Fix the file by hand; bees will not overwrite it.",
+        ) from e
+    except (OSError, UnicodeDecodeError) as e:
+        raise ConfigLoadError(config_path, f"Cannot read {config_path}: {e}") from e
+
+    if not isinstance(data, dict):
+        raise ConfigLoadError(
+            config_path,
+            f"Invalid config in {config_path}: the top-level value must be a JSON object, "
+            f"got {type(data).__name__}. Fix the file by hand; bees will not overwrite it.",
+        )
 
     # Ensure scopes key exists
     if "scopes" not in data:

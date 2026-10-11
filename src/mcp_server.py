@@ -6,6 +6,8 @@ This module owns the MCP adapter layer: resolving repo_root from context and
 injecting it into the pure core functions.
 """
 
+import functools
+import inspect
 import logging
 import textwrap
 from pathlib import Path
@@ -15,7 +17,9 @@ from fastmcp import Context, FastMCP
 from pydantic import Field, StrictInt
 
 from .config import (  # noqa: F401 - re-exported for test mocking
+    ConfigLoadError,
     check_queen_write_access,
+    config_load_error_result,
     load_bees_config,
     load_global_config,
 )
@@ -109,6 +113,36 @@ def _inject_query_help(fn):
         lines.append(line)
     fn.__doc__ = "\n".join(lines)
     return fn
+
+
+def _config_errors_as_result(fn):
+    """Return a ConfigLoadError raised inside a tool as a structured error result.
+
+    An unloadable ~/.bees/config.json is a domain error, so it takes the second tier of
+    the error model (an error dict) instead of surfacing as a raw exception. Nothing was
+    saved: every tool loads the config before it writes. Apply below @mcp.tool().
+    """
+    if inspect.iscoroutinefunction(fn):
+
+        @functools.wraps(fn)
+        async def async_wrapper(*args, **kwargs):
+            try:
+                return await fn(*args, **kwargs)
+            except ConfigLoadError as e:
+                logger.error(f"{fn.__name__}: cannot load global config: {e}")
+                return config_load_error_result(e)
+
+        return async_wrapper
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except ConfigLoadError as e:
+            logger.error(f"{fn.__name__}: cannot load global config: {e}")
+            return config_load_error_result(e)
+
+    return wrapper
 
 
 def _guard_queen_write(resolved_root: Path) -> dict | None:
@@ -218,6 +252,7 @@ def health_check() -> dict[str, Any]:
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def create_ticket(
     ticket_type: str,
     title: str,
@@ -299,6 +334,7 @@ async def create_ticket(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def update_ticket(
     ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
@@ -381,6 +417,7 @@ async def update_ticket(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def append_ticket_body(
     ticket_id: str,
     chunk: Annotated[str, Field(max_length=BODY_MAX_LENGTH)] | None = None,
@@ -443,6 +480,7 @@ async def append_ticket_body(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def delete_ticket(
     ticket_ids: str | list[str],
     ctx: Context | None = None,
@@ -477,6 +515,7 @@ async def delete_ticket(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def show_ticket(
     ticket_ids: list[str],
     ctx: Context | None = None,
@@ -501,6 +540,7 @@ async def show_ticket(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def get_types(
     ctx: Context | None = None,
     repo_root: str | None = None,
@@ -517,6 +557,7 @@ async def get_types(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def set_types(
     scope: str,
     ctx: Context | None = None,
@@ -564,6 +605,7 @@ async def set_types(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def set_status_values(
     scope: str,
     ctx: Context | None = None,
@@ -610,6 +652,7 @@ async def set_status_values(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def get_status_values(
     ctx: Context | None = None,
     repo_root: str | None = None,
@@ -629,6 +672,7 @@ async def get_status_values(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def colonize_hive(
     name: str,
     path: str,
@@ -703,6 +747,7 @@ async def colonize_hive(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def list_hives(
     ctx: Context | None = None,
     repo_root: str | None = None,
@@ -721,6 +766,7 @@ async def list_hives(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def abandon_hive(
     hive: str,
     ctx: Context | None = None,
@@ -745,6 +791,7 @@ async def abandon_hive(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def rename_hive(
     old_name: str,
     new_name: str,
@@ -775,6 +822,7 @@ async def rename_hive(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def sanitize_hive(
     hive: str,
     ctx: Context | None = None,
@@ -800,6 +848,7 @@ async def sanitize_hive(
 
 @mcp.tool()
 @_inject_query_help
+@_config_errors_as_result
 async def add_named_query(
     name: str,
     query_yaml: str,
@@ -842,6 +891,7 @@ async def add_named_query(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def execute_named_query(
     query_name: str,
     ctx: Context | None = None,
@@ -873,6 +923,7 @@ async def execute_named_query(
 
 @mcp.tool()
 @_inject_query_help
+@_config_errors_as_result
 async def execute_freeform_query(
     query_yaml: str,
     ctx: Context | None = None,
@@ -947,6 +998,7 @@ async def execute_freeform_query(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def delete_named_query(
     name: str,
     ctx: Context | None = None,
@@ -968,6 +1020,7 @@ async def delete_named_query(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def list_named_queries(
     ctx: Context | None = None,
     repo_root: str | None = None,
@@ -982,6 +1035,7 @@ async def list_named_queries(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def generate_index(
     hive: str | None = None,
     ctx: Context | None = None,
@@ -1006,6 +1060,7 @@ async def generate_index(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def undertaker(
     hive: str,
     query_yaml: str | None = None,
@@ -1056,6 +1111,7 @@ async def undertaker(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def move_bee(
     bee_ids: list[str],
     hive: str,
@@ -1089,6 +1145,7 @@ async def move_bee(
 
 
 @mcp.tool()
+@_config_errors_as_result
 async def clone_bee(
     bee_id: str,
     hive: str | None = None,
@@ -1126,6 +1183,7 @@ async def clone_bee(
 
 
 @mcp.tool()
+@_config_errors_as_result
 def set_resolver(
     name: str,
     path: str | None = None,
@@ -1153,6 +1211,7 @@ def set_resolver(
 
 
 @mcp.tool()
+@_config_errors_as_result
 def get_resolvers() -> dict[str, Any]:
     """Return all registered resolvers plus the built-in default.
 
@@ -1164,6 +1223,7 @@ def get_resolvers() -> dict[str, Any]:
 
 
 @mcp.tool()
+@_config_errors_as_result
 def update_config(details_only: bool = False) -> dict[str, Any]:
     """Apply pending schema migrations to the global bees configuration.
 

@@ -37,7 +37,7 @@ import pytest
 
 from src.parser import parse_frontmatter
 from tests.conftest import write_multi_scope_config
-from tests.helpers import snapshot_diff, tree_snapshot
+from tests.helpers import break_config_with_trailing_comma, snapshot_diff, tree_snapshot
 from tests.test_constants import (
     HIVE_FEATURES,
     INVALID_PRIORITY_CLI_ARGS,
@@ -971,6 +971,45 @@ class TestTestConfigFlag:
             ]
         )
         assert exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# Malformed global config (b.cyd)
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedGlobalConfig:
+    """A global config that cannot be loaded is a JSON error with exit 1, and the file is never rewritten."""
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            pytest.param(["colonize-hive", "--name", "Beta", "--path", "{base}/beta"], id="colonize_hive"),
+            pytest.param(["abandon-hive", "--hive", "testhive"], id="abandon_hive"),
+            pytest.param(["add-named-query", "--query-name", "q", "--query-yaml", "stages:\n- ['type=bee']"], id="add_named_query"),
+            pytest.param(["create-ticket", "--ticket-type", "bee", "--title", "T", "--hive", "testhive"], id="create_ticket"),
+            pytest.param(["list-hives"], id="list_hives"),
+            pytest.param(["get-types"], id="get_types"),
+        ],
+    )
+    def test_command_errors_and_leaves_config_unchanged(self, cli_runner, isolated_bees_env, mock_global_bees_dir, argv):
+        """Every command that loads the config reports config_load_error naming the file, exit 1, no save."""
+        isolated_bees_env.create_hive("testhive", "Test Hive")
+        isolated_bees_env.write_config()
+        config_path = mock_global_bees_dir / "config.json"
+        damaged = break_config_with_trailing_comma(config_path)
+        before = tree_snapshot(isolated_bees_env.base_path)
+
+        stdout, exit_code = cli_runner([a.format(base=isolated_bees_env.base_path) for a in argv])
+
+        assert exit_code == 1
+        result = json.loads(stdout)  # the whole stdout is one JSON document
+        assert result["status"] == "error"
+        assert result["error_type"] == "config_load_error"
+        assert result["path"] == str(config_path)
+        assert str(config_path) in result["message"]
+        assert config_path.read_bytes() == damaged
+        assert tree_snapshot(isolated_bees_env.base_path) == before
 
 
 # ---------------------------------------------------------------------------

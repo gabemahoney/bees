@@ -15,7 +15,15 @@ import sys
 import textwrap
 from pathlib import Path
 
-from .config import GLOBAL_SCHEMA_VERSION, check_queen_write_access, load_global_config, set_config_path, set_test_config_override
+from .config import (
+    GLOBAL_SCHEMA_VERSION,
+    ConfigLoadError,
+    check_queen_write_access,
+    config_load_error_result,
+    load_global_config,
+    set_config_path,
+    set_test_config_override,
+)
 from .constants import BODY_MAX_LENGTH
 from .mcp_clone_bee import _clone_bee
 from .mcp_hive_ops import _abandon_hive, _list_hives, _rename_hive, _sanitize_hive, colonize_hive_core
@@ -707,6 +715,14 @@ def handle_serve(args):
             logger.error(f"Failed to start server: Missing dependency - {e}")
             logger.error("Please install required dependencies with: poetry install")
             sys.exit(1)
+
+        # Fail at startup, with a clear message, on a config file that cannot be loaded
+        # (otherwise the first MCP call or undertaker run would find out)
+        try:
+            load_global_config()
+        except ConfigLoadError as e:
+            logger.error(f"Failed to start server: {e}")
+            _output_result(config_load_error_result(e))
 
         # Nested helpers defined here to avoid top-level starlette/logging deps
         async def health_endpoint(request: Request) -> JSONResponse:
@@ -1436,7 +1452,12 @@ def main():
             resolved = _resolve_test_config(args.test_config)
             set_test_config_override(resolved)
             logger.info("Test mode active: running with in-memory config, no changes will be persisted")
-    args.func(args)
+    try:
+        args.func(args)
+    except ConfigLoadError as e:
+        # ~/.bees/config.json is unreadable or malformed. Every handler loads it before any
+        # write, so nothing was saved. Report as JSON on stdout with a non-zero exit.
+        _output_result(config_load_error_result(e))
 
 
 if __name__ == "__main__":

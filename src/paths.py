@@ -41,10 +41,13 @@ def _registered_hive_roots_inside(top: str) -> frozenset[str]:
     Hive roots come from every scope of the global config, loaded once per call.
     top is matched both as given and with symlinks resolved.
     """
-    from .config import load_global_config
+    from .config import ConfigLoadError, load_global_config
 
     try:
         global_config = load_global_config()
+    except ConfigLoadError:
+        # Not a degraded-mode case: an empty set would let a walk enter a nested hive
+        raise
     except (OSError, ValueError) as e:
         logger.warning(f"Cannot read registered hive roots from the global config: {e}")
         return frozenset()

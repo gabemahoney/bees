@@ -101,6 +101,8 @@ All configuration can be done by the LLM through bees commands. The following is
 
 Bees uses a single global config file at `~/.bees/config.json`, auto-created when you create your first hive.
 
+If the file is not valid JSON or cannot be read, bees commands fail with a `config_load_error` that names the file and the problem, and bees never overwrites it. Fix the file and the next command works; a running server needs no restart.
+
 ### Scopes
 
 Scopes map repository paths to their settings. When you run a bees command, bees finds the most specific scope whose path pattern matches your current repo.
@@ -330,7 +332,7 @@ HTTP mode supports scheduled auto-archival. Add an `undertaker_schedule` block t
 }
 ```
 
-The scheduler starts automatically when `bees serve --http` starts, for the hives in the scopes that match the directory the server is started from. `bees serve --stdio` does not run it. Use `query_name` instead of `query_yaml` to reference a named query.
+The scheduler starts automatically when `bees serve --http` starts, for the hives in the scopes that match the directory the server is started from. `bees serve --stdio` does not run it. If `~/.bees/config.json` cannot be loaded when a run is due (not valid JSON, unreadable, or an invalid setting), that run is skipped with an error in the log, and the schedule resumes at the next interval once the file is fixed. Use `query_name` instead of `query_yaml` to reference a named query.
 
 ### delete_with_dependencies
 

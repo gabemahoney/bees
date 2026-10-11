@@ -24,6 +24,7 @@ from typing import Any
 from .builtin_resolvers import BUILTIN_RESOLVER_NAMES
 from .config import (
     BeesConfig,
+    ConfigLoadError,
     HiveConfig,
     canonicalize_scope_pattern,
     check_for_config_conflicts,
@@ -31,6 +32,7 @@ from .config import (
     check_schema_version,
     check_scope_conflict,
     compute_scope_specificity,
+    config_load_error_result,
     find_all_matching_scopes,
     find_matching_scope,
     get_all_scopes_config,
@@ -529,6 +531,10 @@ async def colonize_hive_core(
                 result["allowed_resolvers"] = allowed_resolvers
             return result
 
+    except ConfigLoadError as e:
+        # Raised by load_global_config() before the .hive marker or the config is written
+        logger.error(f"Cannot load global config in colonize_hive: {e}")
+        return config_load_error_result(e)
     except ValueError as e:
         logger.error(f"Config validation error in colonize_hive: {e}")
         return {"status": "error", "error_type": "invalid_config", "message": str(e)}

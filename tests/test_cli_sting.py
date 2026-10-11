@@ -6,7 +6,7 @@ PURPOSE:
   printed exactly when expected.
 
 SCOPE - Tests that belong here:
-  - Step 1: scope detection (no config, no match, match)
+  - Step 1: scope detection (no config, no match, match, config that cannot be loaded)
   - Step 2: MCP detection in each of the four config locations
   - Step 2: pattern edge cases (frisbees, bees-mcp, different-project)
   - Step 2: malformed JSON skipped silently
@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 from src.sting import handle_sting, _CLI_REFERENCE
 
@@ -90,6 +91,22 @@ class TestScopeDetection:
 
         assert code == 0
         assert out == ""
+
+    def test_unloadable_config_reports_on_stderr_and_exits_one(self, capsys, mock_global_bees_dir):
+        """b.cyd: a malformed global config is named on stderr and the command exits 1; stdout stays empty (it is injected into the session)."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text("{invalid json")
+
+        with patch("src.sting.get_repo_root_from_path", return_value=MOCK_REPO_ROOT):
+            with pytest.raises(SystemExit) as exc_info:
+                handle_sting(_make_args())
+
+        captured = capsys.readouterr()
+        assert exc_info.value.code == 1
+        assert captured.out == ""
+        assert captured.err.startswith("bees sting: ")
+        assert f"Malformed JSON in {config_path}" in captured.err
+        assert config_path.read_text() == "{invalid json"
 
     def test_matching_scope_continues(self, capsys, tmp_path):
         """Scope matches → continues to MCP detection (no MCP → outputs reference)."""

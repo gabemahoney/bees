@@ -5,6 +5,13 @@ When invoked:
   2. Scan known Claude config locations for a bees MCP server entry.
      Match in global or current-project scope → MCP mode → silent exit 0.
   3. Otherwise print the plain-text CLI reference and exit 0.
+
+A config file that cannot be loaded (malformed JSON, unreadable) is reported on
+stderr and the command exits 1 with empty stdout. This runs as a session hook:
+Claude Code never shows stderr from a hook that exits 0, but treats exit 1 as a
+non-blocking error and shows the first stderr line, so the message names the
+file and the problem on its first line. Session start still proceeds, and
+nothing is injected into the session. It never writes the config.
 """
 
 import json
@@ -14,7 +21,7 @@ import sys
 import textwrap
 from pathlib import Path
 
-from .config import find_matching_scope, load_global_config
+from .config import ConfigLoadError, find_matching_scope, load_global_config
 from .query_parser import (
     NON_REPORTABLE_FIELDS,
     PRIORITY_TERMS_HELP,
@@ -160,7 +167,11 @@ def handle_sting(args):
     """Handle the `bees sting` command."""
     # Step 1 — Scope detection
     repo_root = get_repo_root_from_path(Path.cwd())
-    global_config = load_global_config()
+    try:
+        global_config = load_global_config()
+    except ConfigLoadError as e:
+        print(f"bees sting: {e}", file=sys.stderr)
+        sys.exit(1)
     matching_scope = find_matching_scope(repo_root, global_config)
     if matching_scope is None:
         sys.exit(0)

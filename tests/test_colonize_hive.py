@@ -40,6 +40,7 @@ from src.mcp_hive_ops import _list_hives, colonize_hive_core as colonize_hive
 from src.mcp_hive_utils import scan_for_hive
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config
+from tests.helpers import break_config_with_trailing_comma
 from tests.test_constants import (
     RESULT_STATUS_ERROR,
     RESULT_STATUS_SUCCESS,
@@ -1399,3 +1400,26 @@ class TestColonizeHiveDualWrite:
         assert identity2["child_tiers"] == tiers
         assert identity2["status_values"] == sv
         assert identity2["created_at"] == created_at
+
+
+class TestColonizeHiveMalformedGlobalConfig:
+    """colonize-hive on a global config that cannot be loaded fails and never overwrites it (b.cyd)."""
+
+    async def test_colonize_errors_and_leaves_config_unchanged(self, git_repo_tmp_path, mock_global_bees_dir):
+        """With a hive registered and the file then damaged, a second colonize is a config_load_error and no save happens."""
+        alpha = git_repo_tmp_path / "alpha"
+        alpha.mkdir()
+        assert (await colonize_hive("alpha", str(alpha)))["status"] == RESULT_STATUS_SUCCESS
+        config_path = mock_global_bees_dir / "config.json"
+        damaged = break_config_with_trailing_comma(config_path)
+        beta = git_repo_tmp_path / "beta"
+        beta.mkdir()
+
+        result = await colonize_hive("beta", str(beta))
+
+        assert result["status"] == RESULT_STATUS_ERROR
+        assert result["error_type"] == "config_load_error"
+        assert result["path"] == str(config_path)
+        assert str(config_path) in result["message"]
+        assert config_path.read_bytes() == damaged
+        assert not (beta / ".hive").exists()
