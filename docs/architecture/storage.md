@@ -178,7 +178,14 @@ created_at: 2026-02-01T12:00:00
 ---
 ```
 
-**Deprecated Fields**: The following fields were removed in schema cleanup (SR-6.3) and are disallowed in ticket frontmatter: `owner`, `priority`, `description`, `created_by`, `updated_at`, `bees_version`. The linter detects these fields and generates validation errors. See [Disallowed Fields Detection](validation.md#disallowed-fields-detection) for details.
+**Deprecated Fields**: The following fields were removed in schema cleanup (SR-6.3) and are disallowed in ticket frontmatter: `owner`, `description`, `created_by`, `updated_at`, `bees_version`. The linter detects these fields and generates validation errors. See [Disallowed Fields Detection](validation.md#disallowed-fields-detection) for details.
+
+**Priority Field**: `priority` is an optional field on every tier (the `Ticket` model carries it for bees and child tiers alike).
+
+- **Stored value**: an integer when set. The reader is permissive like every other field: it passes the stored value through unvalidated, so a non-integer value loads as written and is reported by the linter (see [Type/Value Validation](validation.md#typevalue-validation)).
+- **Unset**: an unset priority is never written to the file. A `null` or empty-string value reads as unset, and the writer drops it on both serializer paths (the fast serializer and the `yaml.dump` fallback), so a ticket with a null or empty priority is rewritten without the key. Any other value is written exactly as stored.
+- **Rewrite paths**: every operation that rewrites a ticket file keeps the priority, because rewrites serialize the whole `Ticket` model rather than a field subset. `move-bee` moves the ticket directories, so the files are untouched. `clone-bee` copies the priority to every copy in the cloned subtree.
+- **Output**: `show-ticket` returns `priority`, `null` when the ticket has none.
 
 ### Validation
 

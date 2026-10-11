@@ -19,6 +19,7 @@ from tests.test_constants import (
     HIVE_FRONTEND,
     HIVE_OTHER_SCOPE,
     HIVE_TEST,
+    PRIORITY_FRONTMATTER,
     SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_CORRUPT_BEE,
@@ -227,6 +228,32 @@ def test_move_bee_child_tickets_present_in_destination(isolated_bees_env):
 
     assert result["moved"] == [TICKET_ID_MOVE_BEE_1]
     assert (dest_dir / TICKET_ID_MOVE_BEE_1 / TICKET_ID_MOVE_BEE_2).exists()
+
+
+@pytest.mark.parametrize("raw,stored,_", [(None, None, None), *PRIORITY_FRONTMATTER.values()],
+                         ids=["absent", *PRIORITY_FRONTMATTER])
+def test_move_bee_keeps_priority_at_every_tier(isolated_bees_env, raw, stored, _):
+    """The moved bee and its t1 and t2 descendants keep their priority, valid or not, byte for byte (b.1zh)."""
+    env = isolated_bees_env
+    source_dir = env.create_hive(HIVE_TEST)
+    dest_dir = env.create_hive(HIVE_DESTINATION)
+    env.write_config(child_tiers={"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]})
+    fields = {"raw_fields": {"priority": raw}} if raw is not None else {}
+    tiers = [("bee", "b.mv1", {"children": ["t1.mv1.ab"]}), ("t1", "t1.mv1.ab", {"parent": "b.mv1", "children": ["t2.mv1.ab.cd"]}),
+             ("t2", "t2.mv1.ab.cd", {"parent": "t1.mv1.ab"})]
+    directory, before = source_dir, {}
+    for ticket_type, ticket_id, relations in tiers:
+        before[ticket_id] = write_ticket_file(directory, ticket_id, type=ticket_type, **relations, **fields).read_bytes()
+        directory = directory / ticket_id
+
+    result = _move_bee_core(["b.mv1"], HIVE_DESTINATION)
+
+    assert result["moved"] == ["b.mv1"]
+    for _type, ticket_id, _relations in tiers:
+        moved = next(dest_dir.rglob(f"{ticket_id}.md"))
+        assert moved.read_bytes() == before[ticket_id]
+        ticket = read_ticket(ticket_id, file_path=moved)
+        assert ticket.priority == stored and type(ticket.priority) is type(stored)
 
 
 def test_move_bee_already_in_destination_skipped(isolated_bees_env):

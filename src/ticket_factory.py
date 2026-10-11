@@ -28,6 +28,7 @@ def _write_bee(
     status: str | None = None,
     reference_materials: list[dict[str, Any]] | None = None,
     guid: str | None = None,
+    priority: Any = None,
 ) -> tuple[str, str]:
     """
     Internal: build frontmatter and write a bee ticket file.
@@ -49,6 +50,8 @@ def _write_bee(
     }
     short_id = ticket_id.split(".", 1)[1] if "." in ticket_id else ticket_id
     frontmatter_data["guid"] = guid if guid is not None else generate_guid(short_id)
+    if priority is not None:
+        frontmatter_data["priority"] = priority
 
     # Compute bee file path directly (O(1)) — bees always live at hive_root/ticket_id/ticket_id.md
     config = load_bees_config()
@@ -81,6 +84,7 @@ def _write_child_tier(
     down_dependencies: list[str] | None = None,
     status: str | None = None,
     guid: str | None = None,
+    priority: Any = None,
 ) -> tuple[str, str]:
     """
     Internal: build frontmatter and write a child-tier ticket file.
@@ -104,6 +108,8 @@ def _write_child_tier(
     }
     short_id = ticket_id.split(".", 1)[1] if "." in ticket_id else ticket_id
     frontmatter_data["guid"] = guid if guid is not None else generate_guid(short_id)
+    if priority is not None:
+        frontmatter_data["priority"] = priority
 
     write_ticket_file(
         ticket_id=ticket_id,
@@ -286,6 +292,7 @@ def _create_bee_with_id(
         status=kwargs.pop("status", None),
         reference_materials=kwargs.pop("reference_materials", None),
         guid=kwargs.pop("guid", None),
+        priority=kwargs.pop("priority", None),
     )
 
 
@@ -329,4 +336,5 @@ def _create_child_tier_with_id(
         down_dependencies=kwargs.pop("down_dependencies", None),
         status=kwargs.pop("status", None),
         guid=kwargs.pop("guid", None),
+        priority=kwargs.pop("priority", None),
     )

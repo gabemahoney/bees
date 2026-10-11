@@ -452,6 +452,8 @@ async def show_ticket(
 ) -> dict[str, Any]:
     """Retrieve one or more tickets by ID.
 
+    Every ticket entry includes `priority`: the integer, or null when unset.
+
     Args:
         ticket_ids: List of ticket IDs to retrieve (e.g., ["b.amx", "b.xyz"]).
     """

@@ -56,6 +56,10 @@ class Ticket:
     status: str | None = None
     schema_version: str | None = None
     guid: str | None = None
+    # Optional integer priority on every tier. Permissive like every other field: the
+    # reader passes the stored value through unvalidated (the linter flags non-integers),
+    # and None means unset (no frontmatter key is written).
+    priority: Any = None
 
     def __post_init__(self):
         """Permissive post-init - allows any type value and parent configuration.

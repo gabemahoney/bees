@@ -252,6 +252,10 @@ def _clone_bee_core(
                 id_map.get(d, d) for d in source.down_dependencies
             ]
 
+        # priority: copied on every ticket at every tier; an unset source gets no key
+        # (the writer omits a None priority)
+        frontmatter["priority"] = source.priority
+
         # reference_materials: copy on root bee only; omit on child tier tickets
         if old_id == bee_id:
             frontmatter["reference_materials"] = source.reference_materials
@@ -303,6 +307,7 @@ async def _clone_bee(
         - IDs and GUIDs are freshly generated (no reuse)
         - created_at is set to current time (not copied from source)
         - schema_version uses current constant (not copied from source)
+        - priority is copied on every ticket at every tier (unset stays unset)
         - reference_materials field is copied on root bee only, omitted on child tiers
 
     Args:

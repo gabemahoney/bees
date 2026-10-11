@@ -21,6 +21,7 @@ from tests.test_constants import (
     DANGLING_BEE_ID,
     GUID_EXAMPLE_T1,
     HIVE_BACKEND,
+    INVALID_PRIORITY_FRONTMATTER,
     SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_ABC,
@@ -2126,7 +2127,6 @@ class TestDisallowedFieldsDetection:
         "field_name",
         [
             "owner",
-            "priority",
             "description",
             "created_by",
             "updated_at",
@@ -2150,16 +2150,14 @@ class TestDisallowedFieldsDetection:
             TICKET_ID_ABC,
             title="Test",
             owner="test_user",
-            priority="high",
             created_by="admin",
         )
 
         report = Linter(str(tmp_path)).run()
         errors = report.get_errors(error_type="disallowed_field", ticket_id=TICKET_ID_ABC)
-        assert len(errors) == 3
+        assert len(errors) == 2
         error_messages = " ".join(e.message for e in errors)
         assert "owner" in error_messages
-        assert "priority" in error_messages
         assert "created_by" in error_messages
 
     def test_allowed_fields_pass(self, tmp_path):
@@ -2185,32 +2183,32 @@ class TestDisallowedFieldsDetection:
         assert len(errors) == 1
         assert "owner" in errors[0].message
 
-    def test_disallowed_field_with_integer_value(self, tmp_path):
-        """Disallowed field with integer value triggers error."""
-        bees_dir = tmp_path / "bees"
-        bees_dir.mkdir()
 
-        # Create ticket file manually with integer priority to ensure proper YAML
-        ticket_dir = bees_dir / TICKET_ID_ABC
-        ticket_dir.mkdir()
-        ticket_file = ticket_dir / f"{TICKET_ID_ABC}.md"
-        content = """---
-id: b.abc
-schema_version: '0.1'
-title: Test
-type: bee
-status: open
-reference_materials: null
-priority: 5
----
+class TestPriorityFieldValidation:
+    """Priority is an optional integer on every tier; a present non-integer is one invalid_field_type error (b.1zh)."""
 
-Test body."""
-        ticket_file.write_text(content)
+    @pytest.fixture(params=[("bee", TICKET_ID_ABC), ("t1", TICKET_ID_LINTER_TASK_MAIN)], ids=["bee", "t1"])
+    def lint_priority(self, request, tmp_path):
+        """Lint one ticket of the tier with the given raw priority YAML (None = no key); return its priority errors."""
+        ticket_type, ticket_id = request.param
 
-        report = Linter(str(tmp_path)).run()
-        errors = report.get_errors(error_type="disallowed_field", ticket_id=TICKET_ID_ABC)
-        assert len(errors) == 1
-        assert "priority" in errors[0].message
+        def run(raw=None):
+            write_ticket_file(tmp_path, ticket_id, type=ticket_type, raw_fields={} if raw is None else {"priority": raw})
+            report = Linter(str(tmp_path)).run()
+            assert report.get_errors(error_type="disallowed_field", ticket_id=ticket_id) == []
+            return [e for e in report.get_errors(error_type="invalid_field_type", ticket_id=ticket_id) if "priority" in e.message]
+
+        return run
+
+    @pytest.mark.parametrize("raw", [None, "0", "5", "-3", str(2**70)], ids=["absent", "zero", "positive", "negative", "beyond_64_bit"])
+    def test_integer_or_absent_priority_has_no_error(self, lint_priority, raw):
+        """An integer priority, of any sign or size, and an absent one give no error."""
+        assert lint_priority(raw) == []
+
+    @pytest.mark.parametrize("raw,_,type_name", INVALID_PRIORITY_FRONTMATTER.values(), ids=list(INVALID_PRIORITY_FRONTMATTER))
+    def test_non_integer_priority_is_one_error(self, lint_priority, raw, _, type_name):
+        """Each non-integer form, a null or empty value included, gives exactly one error naming the type."""
+        assert [e.message for e in lint_priority(raw)] == [f"Field 'priority' must be integer, got {type_name}"]
 
 
 class TestDisallowedFieldsUnit:
@@ -2225,7 +2223,7 @@ class TestDisallowedFieldsUnit:
 
     @pytest.mark.parametrize(
         "disallowed_key",
-        ["owner", "priority", "description", "created_by", "updated_at", "bees_version"],
+        ["owner", "description", "created_by", "updated_at", "bees_version"],
     )
     def test_detects_disallowed_key_via_raw_keys(self, disallowed_key):
         """Each disallowed key in _raw_keys triggers an error without disk access."""

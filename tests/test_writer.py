@@ -10,6 +10,7 @@ SCOPE - Tests that belong here:
 - YAML correctness (parseable, round-trips expected values)
 - Format specifics (block lists, literal block strings, quoting rules)
 - Fallback path behavior for unsupported types
+- The optional priority field: written as a plain integer when set, never when unset (b.1zh)
 
 SCOPE - Tests that DON'T belong here:
 - write_ticket_file() filesystem operations -> test_writer_factory.py
@@ -18,14 +19,17 @@ SCOPE - Tests that DON'T belong here:
 
 import random
 import re
+from dataclasses import asdict
 from datetime import datetime
 
 import pytest
 import yaml
 
 from src.parser import ParseError, parse_frontmatter
-from src.writer import fast_serialize_frontmatter, serialize_frontmatter
-from tests.test_constants import DASH_VALUES, QUOTING_VALUES
+from src.reader import read_ticket
+from src.writer import fast_serialize_frontmatter, serialize_frontmatter, write_ticket_file
+from tests.helpers import make_ticket
+from tests.test_constants import DASH_VALUES, QUOTING_VALUES, TICKET_ID_ABC
 
 # Every line break a ticket file reader sees: universal newlines ("\r\n", "\r", "\n") and YAML (also NEL, LS, PS)
 _LINE_BREAK = re.compile("\r\n|[\n\r\x85\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
@@ -248,3 +252,85 @@ class TestSerializeFrontmatter:
                 failures.append((value, text))
 
         assert failures == []
+
+
+# Both serializer paths: the fast path, and the yaml.dump fallback (a nested dict forces it)
+_SERIALIZERS = [
+    pytest.param(fast_serialize_frontmatter, {}, id="fast_path"),
+    pytest.param(serialize_frontmatter, {"meta": {"k": "v"}}, id="yaml_fallback"),
+]
+
+
+def _save(path, ticket, body=""):
+    """Write a ticket the way the update paths do: asdict(ticket) without body, body kept apart."""
+    frontmatter = asdict(ticket)
+    frontmatter.pop("body", None)
+    write_ticket_file(ticket.id, ticket.type, frontmatter, body, file_path=path)
+
+
+class TestPriorityField:
+    """The optional priority field: a plain integer when set, no key when unset (b.1zh)."""
+
+    @pytest.mark.parametrize("serializer,extra", _SERIALIZERS)
+    @pytest.mark.parametrize("priority", [0, 3, -4, 2**70, -(2**70)],
+                             ids=["zero", "positive", "negative", "beyond_64_bit", "negative_beyond_64_bit"])
+    def test_set_priority_written_as_plain_integer(self, serializer, extra, priority):
+        """A set integer priority is a bare number on its own line and reads back as the same int."""
+        result = serializer({"id": "b.abc", "priority": priority, **extra})
+
+        assert f"\npriority: {priority}\n" in result
+        parsed = _parse_fm(result)
+        assert parsed["priority"] == priority
+        assert type(parsed["priority"]) is int
+
+    @pytest.mark.parametrize("serializer,extra", _SERIALIZERS)
+    @pytest.mark.parametrize("unset", [None, ""], ids=["none", "empty_string"])
+    def test_unset_priority_never_written(self, serializer, extra, unset):
+        """A None or empty priority leaves no key at all (not 'priority: null'); other keys are kept."""
+        result = serializer({"id": "b.abc", "priority": unset, "parent": None, **extra})
+
+        assert "priority" not in result
+        assert "id: b.abc\n" in result
+
+    @pytest.mark.parametrize("serializer,extra", _SERIALIZERS)
+    @pytest.mark.parametrize("value,expected", [
+        pytest.param("2", "priority: '2'\n", id="string"),
+        pytest.param(True, "priority: true\n", id="boolean"),
+        pytest.param(1.5, "priority: 1.5\n", id="float"),
+        pytest.param(1.0, "priority: 1.0\n", id="whole_float"),
+    ])
+    def test_invalid_priority_written_as_stored(self, serializer, extra, value, expected):
+        """A stored non-integer priority is written back unchanged and reads back equal (never coerced)."""
+        result = serializer({"id": "b.abc", "priority": value, **extra})
+
+        assert expected in result
+        parsed = _parse_fm(result)["priority"]
+        assert parsed == value and type(parsed) is type(value)
+
+    @pytest.mark.parametrize("ticket_type", ["bee", "t1", "t2"])
+    def test_ticket_without_priority_byte_identical_after_read_and_save(self, tmp_path, ticket_type):
+        """Reading a ticket with no priority and saving it again changes no byte of the file."""
+        parent = None if ticket_type == "bee" else {"t1": "b.abc", "t2": "t1.abc.de"}[ticket_type]
+        ticket = make_ticket(id=TICKET_ID_ABC, type=ticket_type, parent=parent, tags=["x"])
+        path = tmp_path / "ticket.md"
+        _save(path, ticket, "Body text.")
+        before = path.read_bytes()
+        assert b"priority" not in before
+
+        saved = read_ticket(TICKET_ID_ABC, file_path=path)
+        _save(path, saved, saved.body)
+
+        assert path.read_bytes() == before
+
+    @pytest.mark.parametrize("priority", [3, -4, 2**70], ids=["positive", "negative", "beyond_64_bit"])
+    def test_priority_round_trips_through_save_and_read(self, tmp_path, priority):
+        """A ticket saved with an integer priority reads back with the same value, and a second save is identical."""
+        path = tmp_path / "ticket.md"
+        _save(path, make_ticket(id=TICKET_ID_ABC, priority=priority), "Body text.")
+        before = path.read_bytes()
+
+        saved = read_ticket(TICKET_ID_ABC, file_path=path)
+        _save(path, saved, saved.body)
+
+        assert saved.priority == priority
+        assert path.read_bytes() == before

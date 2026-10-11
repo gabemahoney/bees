@@ -12,6 +12,7 @@ SCOPE - Tests that belong here:
 - Linter directory enforcement and empty ticket dir cleanup on the enclosing hive, including a move whose
   target directory is, or holds, another hive, and one whose ticket directory holds another hive
 - fixes_applied against disk: failed writes, no rewrite of a ticket whose write failed, a fix to a misplaced ticket
+- A non-integer priority: reported in errors_remaining, never auto-fixed (b.1zh)
 
 SCOPE - Tests that DON'T belong here:
 - Walker pruning (walk_hive, iter_ticket_files*, find_ticket_file, find_*_hive_root) -> test_paths.py
@@ -33,6 +34,7 @@ from src.reader import read_ticket
 from src.repo_context import repo_root_context
 from tests.conftest import write_scoped_config
 from tests.helpers import write_ticket_file
+from tests.test_constants import INVALID_PRIORITY_FRONTMATTER
 
 # Tickets of the nested hive built by the nested_hives fixture
 NESTED_IDS = ["b.ppp", "t1.ppp.ab", "t2.ppp.ab.cd", "t3.ppp.ab.cd.ef", "b.qqq"]
@@ -336,3 +338,28 @@ class TestFixesAppliedMatchDisk:
         assert fixes == {("b.bbb", "add_down_dependency"), ("b.bbb", "move_directory")}
         assert list(backend.rglob("b.bbb.md")) == [backend / "b.bbb" / "b.bbb.md"]
         assert read_ticket("b.bbb", file_path=backend / "b.bbb" / "b.bbb.md").down_dependencies == ["b.aaa"]
+
+
+class TestInvalidPriority:
+    """A non-integer priority is reported by sanitize_hive and left exactly as stored (b.1zh)."""
+
+    @pytest.mark.parametrize("ticket_type,ticket_id", [("bee", "b.par"), ("t1", "t1.par.aa")])
+    @pytest.mark.parametrize("raw,_,type_name", INVALID_PRIORITY_FRONTMATTER.values(), ids=list(INVALID_PRIORITY_FRONTMATTER))
+    async def test_invalid_priority_remains_unfixed(self, isolated_bees_env, ticket_type, ticket_id, raw, _, type_name):
+        """The invalid priority is in errors_remaining, the hive is corrupt, and the ticket file is unchanged."""
+        hive_dir = isolated_bees_env.create_hive("backend")
+        isolated_bees_env.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+        fields = {"raw_fields": {"priority": raw}}
+        bee = write_ticket_file(hive_dir, "b.par", children=["t1.par.aa"], **(fields if ticket_type == "bee" else {}))
+        task = write_ticket_file(hive_dir / "b.par", "t1.par.aa", type="t1", parent="b.par",
+                                 **(fields if ticket_type == "t1" else {}))
+        target = bee if ticket_type == "bee" else task
+        before = target.read_bytes()
+
+        result = await _sanitize_hive("backend")
+
+        errors = [e for e in result["errors_remaining"] if e["ticket_id"] == ticket_id and "priority" in e["message"]]
+        assert [e["error_type"] for e in errors] == ["invalid_field_type"]
+        assert type_name in errors[0]["message"]
+        assert result["is_corrupt"] is True
+        assert target.read_bytes() == before

@@ -452,3 +452,27 @@ TICKET_ID_CLONE_BEE_ROOT = "b.cn1"  # Root bee for clone tests
 TICKET_ID_CLONE_T1_1 = "t1.cn1.ab"  # First t1 child sharing cn1 prefix (period-separated: 3+2 chars)
 TICKET_ID_CLONE_T1_2 = "t1.cn1.cd"  # Second t1 child sharing cn1 prefix (period-separated: 3+2 chars)
 HIVE_CLONE_DEST = "clone_dest"  # Destination hive for clone tests
+
+# ============================================================================
+# Priority field frontmatter values that are not integers
+# ============================================================================
+# {pytest id: (raw YAML text after "priority:", value as the reader returns it, type name in the linter error)}.
+# Parametrize with the items; write the raw text with write_ticket_file(raw_fields={"priority": raw}).
+INVALID_PRIORITY_FRONTMATTER = {
+    "boolean": ("true", True, "bool"),  # a bool is an int in Python but not an integer priority
+    "float": ("1.5", 1.5, "float"),
+    "whole_float": ("1.0", 1.0, "float"),  # reads as a float, not as the integer 1
+    "quoted_string": ("'2'", "2", "str"),  # the quotes keep YAML from reading it as an integer
+    "null": ("null", None, "NoneType"),  # a present key with no value: the reader reads it as unset
+    "empty": ("", None, "NoneType"),
+    "list": ("[1, 2]", [1, 2], "list"),
+}
+
+# Every priority frontmatter form, same shape as INVALID_PRIORITY_FRONTMATTER ("int" for the valid forms)
+PRIORITY_FRONTMATTER = {
+    "zero": ("0", 0, "int"),
+    "positive": ("3", 3, "int"),
+    "negative": ("-4", -4, "int"),
+    "beyond_64_bit": (str(2**70), 2**70, "int"),
+    **INVALID_PRIORITY_FRONTMATTER,
+}

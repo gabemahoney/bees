@@ -33,7 +33,7 @@ from src.writer import write_ticket_file
 
 logger = logging.getLogger(__name__)
 
-DISALLOWED_FIELDS = {"owner", "priority", "description", "created_by", "updated_at", "bees_version", "ticket_status"}
+DISALLOWED_FIELDS = {"owner", "description", "created_by", "updated_at", "bees_version", "ticket_status"}
 
 
 class TicketScanner:
@@ -279,7 +279,7 @@ class Linter:
                 )
 
     def validate_field_types(self, ticket: Ticket, report: LinterReport) -> None:
-        """Validate that list fields are lists of strings and parent is string or None.
+        """Validate that list fields are lists of strings, parent is string or None, and priority is an integer.
 
         Args:
             ticket: Ticket to validate
@@ -319,6 +319,19 @@ class Linter:
                 message=f"Field 'parent' must be string or None, got {type(ticket.parent).__name__}",
                 severity="error",
             )
+
+        # Validate priority: an integer when the key is present (booleans are not integers).
+        # A present key with a null or empty value is an error too; the reader reads both as
+        # None, so the raw keys tell it apart from an absent key.
+        if "priority" in getattr(ticket, "_raw_keys", frozenset()) or ticket.priority is not None:
+            priority = ticket.priority
+            if isinstance(priority, bool) or not isinstance(priority, int):
+                report.add_error(
+                    ticket_id=ticket.id,
+                    error_type="invalid_field_type",
+                    message=f"Field 'priority' must be integer, got {type(priority).__name__}",
+                    severity="error",
+                )
 
     def validate_bee_constraints(self, ticket: Ticket, report: LinterReport) -> None:
         """Validate that bees do not have parent field set.

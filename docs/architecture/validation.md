@@ -218,10 +218,17 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Validates `reference_materials` is a list of dicts, each with a `value` key (error: `invalid_field_type`)
 - Null/None `reference_materials` value is valid
 
+*Priority Validator*:
+- Applies to every tier; `priority` is optional, so a ticket without the key is valid
+- When the key is present, the value must be an integer. A boolean is not an integer.
+- A non-integer value (string, float, boolean, list, or an explicit null or empty value) generates one `invalid_field_type` error: "Field 'priority' must be integer, got <type>"
+- Detect-only, no auto-fix: the linter never rewrites or removes a priority
+- The model loads `priority` permissively (any stored value passes through, null or empty reads as unset), so the linter is where a bad value is caught
+
 **Disallowed Fields Detection**:
 - Scans raw YAML frontmatter for deprecated fields removed in schema cleanup (SR-6.3)
 - Accesses raw frontmatter via `parse_frontmatter()` since Ticket model filters these fields
-- Disallowed fields: `owner`, `priority`, `description`, `created_by`, `updated_at`, `bees_version`
+- Disallowed fields: `owner`, `description`, `created_by`, `updated_at`, `bees_version` (`priority` is a valid field, see Priority Validator)
 - Each disallowed field generates a separate error: `disallowed_field`
 - Detect-only, no auto-removal
 

@@ -13,6 +13,7 @@ from tests.helpers import write_ticket_file
 from tests.test_constants import (
     HIVE_CLONE_DEST,
     HIVE_TEST,
+    PRIORITY_FRONTMATTER,
     SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_WILDCARD_PARENT,
     TICKET_ID_CLONE_BEE_ROOT,
@@ -134,6 +135,37 @@ def test_clone_tree_with_children(isolated_bees_env):
         assert cloned_child.guid != ""
         assert cloned_child.id != TICKET_ID_CLONE_T1_1
         assert cloned_child.id != TICKET_ID_CLONE_T1_2
+
+
+@pytest.mark.parametrize("raw,stored,_", [(None, None, None), *PRIORITY_FRONTMATTER.values()],
+                         ids=["absent", *PRIORITY_FRONTMATTER])
+def test_clone_copies_priority_to_every_copy(isolated_bees_env, raw, stored, _):
+    """Every copy, at every tier, gets the source priority as stored (invalid too); an unset source gets no key (b.1zh)."""
+    env = isolated_bees_env
+    hive_dir = env.create_hive(HIVE_TEST)
+    env.write_config(child_tiers={"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]})
+    fields = {"raw_fields": {"priority": raw}} if raw is not None else {}
+    t2_id = "t2.cn1.ab.cd"
+    tiers = [("bee", TICKET_ID_CLONE_BEE_ROOT, {"children": [TICKET_ID_CLONE_T1_1]}),
+             ("t1", TICKET_ID_CLONE_T1_1, {"parent": TICKET_ID_CLONE_BEE_ROOT, "children": [t2_id]}),
+             ("t2", t2_id, {"parent": TICKET_ID_CLONE_T1_1})]
+    directory = hive_dir
+    for ticket_type, ticket_id, relations in tiers:
+        write_ticket_file(directory, ticket_id, type=ticket_type, **relations, **fields)
+        directory = directory / ticket_id
+
+    result = _clone_bee_core(TICKET_ID_CLONE_BEE_ROOT)
+
+    assert result["status"] == "success" and result["written"] == 3
+    copies = {}  # tier -> the copy's file
+    for path in hive_dir.rglob("*.md"):
+        if path.stem not in (TICKET_ID_CLONE_BEE_ROOT, TICKET_ID_CLONE_T1_1, t2_id):
+            copies[path.stem.split(".")[0]] = path
+    assert sorted(copies) == ["b", "t1", "t2"]
+    for path in copies.values():
+        ticket = read_ticket(path.stem, file_path=path)
+        assert ticket.priority == stored and type(ticket.priority) is type(stored)
+        assert ("priority" in path.read_text(encoding="utf-8").split("---")[1]) == (stored is not None)
 
 
 def test_clone_preserves_external_cross_references(isolated_bees_env):

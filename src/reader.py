@@ -206,6 +206,7 @@ def _filter_ticket_fields(data: dict[str, Any]) -> dict[str, Any]:
         "status",
         "schema_version",
         "guid",
+        "priority",
     }
 
     result = {k: v for k, v in data.items() if k in known_fields}
@@ -218,5 +219,10 @@ def _filter_ticket_fields(data: dict[str, Any]) -> dict[str, Any]:
         if egg_value is not None:
             result["reference_materials"] = [{"value": egg_value}]
         # egg_value is None → leave reference_materials absent (defaults to None)
+
+    # A null or empty priority reads as unset; any other value passes through unvalidated.
+    # (_raw_keys still records the key, so the linter can tell it from an absent one.)
+    if isinstance(result.get("priority"), str) and result["priority"] == "":
+        result["priority"] = None
 
     return result

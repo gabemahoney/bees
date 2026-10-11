@@ -16,6 +16,7 @@ from tests.helpers import write_ticket_file
 from tests.test_constants import (
     DASH_VALUES,
     GUID_EXAMPLE_BEE,
+    INVALID_PRIORITY_FRONTMATTER,
     TICKET_ID_ABC,
     TICKET_ID_INVALID_TOOLONG,
     TICKET_ID_INVALID_UPPER_PREFIX,
@@ -452,11 +453,49 @@ class TestRawKeysCapture:
     def test_raw_keys_includes_disallowed_fields(self, tmp_path):
         """_raw_keys should capture disallowed fields present in frontmatter."""
         file_path = write_ticket_file(
-            tmp_path, TICKET_ID_ABC, title="Test", owner="someone", priority="high"
+            tmp_path, TICKET_ID_ABC, title="Test", owner="someone", created_by="someone"
         )
         ticket = read_ticket(TICKET_ID_ABC, file_path=file_path)
         assert "owner" in ticket._raw_keys
+        assert "created_by" in ticket._raw_keys
+
+
+class TestPriorityRead:
+    """Tests for the optional priority field in read_ticket()."""
+
+    @pytest.mark.parametrize("ticket_type", ["bee", "t1", "t2"])
+    @pytest.mark.parametrize("priority", [0, 3, -4, 2**70], ids=["zero", "positive", "negative", "beyond_64_bit"])
+    def test_integer_priority_read_as_stored(self, tmp_path, ticket_type, priority):
+        """An integer priority reads back unchanged on every tier."""
+        file_path = write_ticket_file(tmp_path, TICKET_ID_ABC, type=ticket_type, priority=priority)
+
+        ticket = read_ticket(TICKET_ID_ABC, file_path=file_path)
+
+        assert ticket.priority == priority
+        assert type(ticket.priority) is int
         assert "priority" in ticket._raw_keys
+
+    @pytest.mark.parametrize("ticket_type", ["bee", "t1"])
+    @pytest.mark.parametrize("raw,stored,_", INVALID_PRIORITY_FRONTMATTER.values(), ids=list(INVALID_PRIORITY_FRONTMATTER))
+    def test_priority_read_without_validation(self, tmp_path, ticket_type, raw, stored, _):
+        """A non-integer priority loads as stored (the linter flags it); null and empty read as unset."""
+        file_path = write_ticket_file(tmp_path, TICKET_ID_ABC, type=ticket_type, raw_fields={"priority": raw})
+
+        ticket = read_ticket(TICKET_ID_ABC, file_path=file_path)
+
+        assert ticket.priority == stored
+        assert type(ticket.priority) is type(stored)
+        assert "priority" in ticket._raw_keys
+
+    @pytest.mark.parametrize("ticket_type", ["bee", "t1"])
+    def test_absent_priority_is_unset(self, tmp_path, ticket_type):
+        """A ticket without the key reads as unset and does not record the key."""
+        file_path = write_ticket_file(tmp_path, TICKET_ID_ABC, type=ticket_type)
+
+        ticket = read_ticket(TICKET_ID_ABC, file_path=file_path)
+
+        assert ticket.priority is None
+        assert "priority" not in ticket._raw_keys
 
 
 

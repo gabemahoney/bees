@@ -314,6 +314,7 @@ def make_ticket(
     schema_version: str = "0.1",
     reference_materials=None,
     guid: str | None = "__AUTO__",
+    priority=None,
 ):
     """
     Create a Ticket object with sensible defaults.
@@ -348,6 +349,7 @@ def make_ticket(
         schema_version: Schema version (default: "0.1")
         reference_materials: Reference materials list (default: None). List of dicts with "value" key, or None.
         guid: GUID string (default: "__AUTO__" = auto-generate from id). Pass None to omit.
+        priority: Priority value, stored as given, valid or not (default: None = unset)
 
     Returns:
         Ticket: Ticket object with all fields populated
@@ -397,6 +399,7 @@ def make_ticket(
         schema_version=schema_version,
         reference_materials=reference_materials,
         guid=resolved_guid,
+        priority=priority,
     )
 
 
@@ -411,6 +414,7 @@ def write_ticket_file(
     omit_reference_materials: bool = False,
     children: list[str] | None = None,
     parent: str | None = None,
+    raw_fields: dict[str, str] | None = None,
     **overrides,
 ) -> Path:
     """
@@ -451,6 +455,8 @@ def write_ticket_file(
              in frontmatter for bee tickets. Child tier tickets (t1, t2, t3) do NOT get the field.
         omit_reference_materials: If True, omit reference_materials field from bee ticket frontmatter
                   (default: False). Used for testing malformed bee tickets missing the required field.
+        raw_fields: {key: YAML text} written verbatim as ``key: text`` after the other fields, for values
+                  the writer would quote or drop (``"'2'"`` for a quoted string, ``""`` for an empty value).
         **overrides: Additional frontmatter fields to override defaults
                     (parent, children, tags, dependencies, etc.)
 
@@ -571,6 +577,7 @@ def write_ticket_file(
                         yaml_lines.append(f"  - {item}")
         else:
             yaml_lines.append(f"{key}: {value}")
+    yaml_lines.extend(f"{key}: {text}".rstrip() for key, text in (raw_fields or {}).items())
     yaml_lines.append("---")
 
     # Add body if provided

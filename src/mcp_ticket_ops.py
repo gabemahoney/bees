@@ -1598,7 +1598,8 @@ async def _show_ticket(
                         "created_at": str,
                         "schema_version": str,
                         "reference_materials": list | None,
-                        "guid": str
+                        "guid": str,
+                        "priority": int | None  # null when unset; an invalid stored value is returned as read
                     },
                     ...
                 ],
@@ -1687,6 +1688,7 @@ async def _show_ticket(
                 "schema_version": ticket.schema_version,
                 "reference_materials": resolved_reference_materials,
                 "guid": ticket.guid,
+                "priority": ticket.priority,
             }
             tickets.append(ticket_data)
             logger.info(f"Successfully retrieved ticket: {ticket_id}")

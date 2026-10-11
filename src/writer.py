@@ -161,6 +161,11 @@ def _serialize_list_item(item: Any, parts: list[str]) -> None:
         raise ValueError(f"Unsupported list item type: {type(item).__name__}")
 
 
+def _is_unset_priority(key: str, value: Any) -> bool:
+    """Return True for a null or empty ``priority``: an unset priority is never written."""
+    return key == "priority" and (value is None or (isinstance(value, str) and value == ""))
+
+
 def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
     """
     Fast hand-written YAML frontmatter serializer for typical ticket data.
@@ -192,6 +197,8 @@ def fast_serialize_frontmatter(data: dict[str, Any]) -> str:
     """
     parts: list[str] = ["---\n"]
     for key, value in data.items():
+        if _is_unset_priority(key, value):
+            continue
         if value is None:
             parts.append(f"{key}: null\n")
         elif isinstance(value, bool):
@@ -254,6 +261,9 @@ def serialize_frontmatter(data: dict[str, Any]) -> str:
     # Fallback: yaml.dump for complex types (nested dicts, etc.)
     serializable_data = {}
     for key, value in data.items():
+        if _is_unset_priority(key, value):
+            # An unset priority is never written (no "priority: null")
+            continue
         if isinstance(value, datetime):
             serializable_data[key] = value.isoformat()
         elif value is None:
