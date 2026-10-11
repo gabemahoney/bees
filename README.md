@@ -23,6 +23,7 @@ You are now ready to start using bees. See the [Advanced Usage](#advanced-usage)
 - Human-readable and editable
 - No database required
 - Human-navigable `index.md` per hive (with optional Mermaid dependency graphs)
+- Tickets can carry an optional integer priority
 
 🐝 **Simple but powerful YAML query pipeline designed for your agent**
 - Traverse parent/child and peer dependency relationships

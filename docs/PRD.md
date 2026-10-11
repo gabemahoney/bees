@@ -102,6 +102,7 @@ A special directory within each hive (`{hive_root}/cemetery/`) where archived ti
 | `up_dependencies` | list[string] | No | [] | Tickets that block this one; same-type constraint |
 | `down_dependencies` | list[string] | No | [] | Tickets this one blocks; auto-synced bidirectionally |
 | `reference_materials` | list[dict] \| null | No | null | **Bee tickets only**; list of `{value, resolver?}` entries |
+| `priority` | int \| null | No | null | Optional on every tier; zero and negative allowed; null means no priority and the key is omitted from the file. Must be an integer (a boolean is not); the linter flags anything else |
 | `guid` | string | No | generated | 32-char; auto-generated at creation; **immutable** |
 | `created_at` | string (ISO 8601) | No | generated | Set at creation time; **never modified on update** |
 | `schema_version` | string | Yes | `"0.1"` | Auto-injected on write; presence validates file as a bees ticket |
@@ -109,7 +110,7 @@ A special directory within each hive (`{hive_root}/cemetery/`) where archived ti
 
 ### 3.2 Allowed Frontmatter Fields
 
-Only the fields listed in section 3.1 are permitted in ticket frontmatter: `id`, `type`, `title`, `status`, `tags`, `parent`, `children`, `up_dependencies`, `down_dependencies`, `reference_materials`, `guid`, `created_at`, `schema_version`. The `description` field is stored in the Markdown body (after the closing `---`), not in frontmatter. Any other field present in frontmatter is flagged as a linter error.
+Only the fields listed in section 3.1 are permitted in ticket frontmatter: `id`, `type`, `title`, `status`, `tags`, `parent`, `children`, `up_dependencies`, `down_dependencies`, `reference_materials`, `priority`, `guid`, `created_at`, `schema_version`. The `description` field is stored in the Markdown body (after the closing `---`), not in frontmatter. Any other field present in frontmatter is flagged as a linter error.
 
 ---
 
@@ -241,6 +242,7 @@ The closing delimiter is the first line after the opening `---` that starts with
 | `'` inside a single-quoted string | doubled: `key: 'it''s: here'` |
 | datetime | `key: '2024-06-15T10:30:00'` (single-quoted ISO) |
 | empty list | **OMITTED entirely** from frontmatter |
+| `priority` that is null or empty | **OMITTED entirely** from frontmatter, never written as `priority: null`. A file with `priority: null` or an empty value reads as unset and is rewritten without the key. A set priority is kept on every rewrite of the ticket |
 | non-empty list | block style: `key:\n- item1\n- item2`; each item quoted by the string rules above |
 | multi-line string (no trailing newline) | literal block `\|-` |
 | multi-line string (exactly one trailing newline) | literal block `\|` |
@@ -1127,7 +1129,7 @@ Process:
 4. Build ID remapping table (old → new)
 5. For each ticket: remap `parent`, `children`, `up_dependencies`, `down_dependencies` to new IDs
 6. Preserve external references (to tickets outside the subtree) unchanged
-7. Copy: `title`, `status`, `tags`, `reference_materials` (root only), `description`
+7. Copy: `title`, `status`, `tags`, `priority` (every ticket at every tier; unset stays unset), `reference_materials` (root only), `description`
 8. Generate new: `id`, `guid`, `created_at`, `schema_version`
 9. Write each ticket file
 
@@ -1187,8 +1189,8 @@ Returns:
 | `invalid_guid_length` | error | No | Not 32 chars |
 | `invalid_guid_charset` | error | No | Invalid chars |
 | `invalid_guid_prefix` | error | No | Doesn't start with short_id |
-| `disallowed_field` | error | No | `owner`, `priority`, etc. in frontmatter |
-| `invalid_field_type` | error | No | Status not string; `reference_materials` invalid format |
+| `disallowed_field` | error | No | `owner`, `created_by`, etc. in frontmatter (`priority` is a valid field) |
+| `invalid_field_type` | error | No | Status not string; `reference_materials` invalid format; `priority` present but not an integer (string, float, boolean, list, or an explicit null or empty value) |
 | `invalid_status` | error | No | Status not in configured `status_values` |
 | `unknown_tier` | error | No | Undefined tier type for hive |
 | `invalid_tier_parent` | error | No | Parent is wrong tier for child |

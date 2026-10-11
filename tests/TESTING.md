@@ -217,6 +217,25 @@ def test_ticket_relationships(ticket_hierarchy):
         assert tickets["task"] in bee["children"]
 ```
 
+### Tickets With a Priority
+
+`priority` is optional and the reader passes any stored value through unvalidated, so tests build tickets holding valid, invalid and unset priorities:
+
+- `make_ticket(priority=...)` (`tests/helpers.py`) puts the value on the `Ticket` object exactly as given, valid or not. The default `None` is unset.
+- `write_ticket_file(..., raw_fields={"priority": "<YAML text>"})` writes `priority: <YAML text>` verbatim after the other fields. Use it for values the writer would quote or drop: `"'2'"` is a quoted string, `""` an empty value, `"null"` an explicit null, `"true"` a boolean. Leave `raw_fields` out for a ticket without the key. Passing `priority=2` as an override also works for a plain integer.
+- `create_bee` and `create_child_tier` (`src/ticket_factory.py`) take `priority=<int>`, and `_create_bee_with_id` and `_create_child_tier_with_id` forward a `priority` keyword. `None` writes no key.
+
+Shared case tables live in `tests/test_constants.py`. Parametrize over `.values()` and take `ids=` from the dict itself:
+
+| Constant | Shape | Holds |
+|----------|-------|-------|
+| `INVALID_PRIORITY_FRONTMATTER` | `{id: (raw YAML text, value the reader returns, type name in the linter error)}` | Frontmatter forms that are not integers: boolean, float, whole float, quoted string, null, empty, list. Null and empty read as `None` (unset) but the linter still flags the present key. Write the raw text with `write_ticket_file(raw_fields={"priority": raw})` |
+| `PRIORITY_FRONTMATTER` | same shape | The invalid forms above plus valid integers: zero, positive, negative, beyond 64-bit (type name `int`) |
+| `INVALID_PRIORITY_INPUTS` | `{id: Python value}` | Values create and update must reject with `invalid_priority`, as the ticket operations and MCP receive them: `True`, `False`, floats, numeric string, word, list |
+| `INVALID_PRIORITY_CLI_ARGS` | `{id: argument string}` | `--priority` arguments the CLI must reject: float, `true`, word, exponent, underscore, plus sign, leading space, empty, `NULL` |
+
+`tests/test_priority_field.py` has the pattern for a rewrite test: a ticket per case, a rewrite action, then the frontmatter re-read with `parse_frontmatter` (not the ticket cache), compared by value and type, with a sentinel for "no key".
+
 ---
 
 ## Mock Patching Strategy
