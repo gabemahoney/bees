@@ -65,6 +65,8 @@ Two pieces of query help are not built from the constants and are checked separa
 - `hive~` - Regex match on the hive's normalized name
 - `priority=`, `priority!=`, `priority<`, `priority<=`, `priority>`, `priority>=` - Integer comparison on the ticket's priority, plus `priority=none` for tickets with no priority (see Priority Terms)
 
+The executor reads a term's operator as whichever of `=` and `~` comes first, so a regex pattern may contain `=` (`title~a=b`) and an exact value may contain `~` (`hive=a~b`).
+
 **Graph Terms** (traversal):
 - `parent` - Traverse to parent ticket
 - `children` - Traverse to child tickets

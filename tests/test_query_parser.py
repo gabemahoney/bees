@@ -115,6 +115,10 @@ class TestSearchTermValidation:
             pytest.param([["hive=backend"]], id="hive_exact"),
             pytest.param([["hive~back.*"]], id="hive_regex"),
             pytest.param([["hive=backend", "type=bee"]], id="hive_with_type"),
+            pytest.param([["title~a=b"]], id="title_regex_with_eq"),
+            pytest.param([["tag~k=v"]], id="tag_regex_with_eq"),
+            pytest.param([["hive~h=1"]], id="hive_regex_with_eq"),
+            pytest.param([["hive=a~b"]], id="hive_exact_with_tilde"),
         ],
     )
     def test_valid_search_terms(self, query):

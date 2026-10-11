@@ -440,6 +440,25 @@ class TestExecute:
         assert executor.execute(tickets, ["priority=1"]) == {"b.pri"}
         assert executor.execute(tickets, ["priority=none"]) == {"b.tag"}
 
+    @pytest.mark.parametrize(
+        "terms,expected",
+        [
+            pytest.param(["title~a=b"], {"b.eqt"}, id="title_regex_with_eq"),
+            pytest.param(["tag~k=v"], {"b.eqg"}, id="tag_regex_with_eq"),
+            pytest.param(["hive~h=1"], {"b.eqh"}, id="hive_regex_with_eq"),
+            pytest.param(["hive=a~b"], {"b.tld"}, id="hive_exact_with_tilde"),
+        ],
+    )
+    def test_operator_is_first_of_eq_and_tilde(self, executor, terms, expected):
+        """The first of '=' and '~' is the operator; a later one belongs to the value or pattern."""
+        tickets = {
+            "b.eqt": {"id": "b.eqt", "title": "x a=b y", "hive": "z"},
+            "b.eqg": {"id": "b.eqg", "title": "plain", "tags": ["k=v"], "hive": "z"},
+            "b.eqh": {"id": "b.eqh", "title": "plain", "hive": "h=1"},
+            "b.tld": {"id": "b.tld", "title": "tilde", "hive": "a~b"},
+        }
+        assert executor.execute(tickets, terms) == expected
+
     def test_invalid_regex_in_execute(self, executor, sample_tickets):
         with pytest.raises(re.error):
             executor.execute(sample_tickets, ["title~[invalid("])

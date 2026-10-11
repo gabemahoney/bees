@@ -266,11 +266,16 @@ class SearchExecutor:
 
         # Apply each filter sequentially (AND logic via intersection)
         for term in search_terms:
+            # The operator is whichever of "=" and "~" comes first, so a later
+            # occurrence in the value (title~a=b, hive=a~b) is not mistaken for it
+            eq_pos = term.find("=")
+            tilde_pos = term.find("~")
+
             if is_priority_term(term):
                 # Checked first: "!=", "<=" and ">=" contain "=" but are not exact-match terms
                 matching_ids = self.filter_by_priority(tickets, term)
 
-            elif "=" in term:
+            elif eq_pos != -1 and (tilde_pos == -1 or eq_pos < tilde_pos):
                 # Exact match terms: type=, id=, parent=
                 term_name, term_value = term.split("=", 1)
 
@@ -289,8 +294,8 @@ class SearchExecutor:
                 else:
                     raise ValueError(f"Unknown exact match term: {term_name}")
 
-            elif "~" in term:
-                # Regex match terms: title~, tag~
+            elif tilde_pos != -1:
+                # Regex match terms: title~, tag~, hive~ ("~" comes before any "=")
                 term_name, regex_pattern = term.split("~", 1)
 
                 if term_name == "title":
