@@ -192,6 +192,66 @@ def test_freeform_query_matches_084(compat_084, cli_runner, hive):
     assert set(new["ticket_ids"]) == set(old["ticket_ids"]) | unreadable_in_084
 
 
+# --- PRIORITY (b.1zh) ---------------------------------------------------------------------
+# 0.8.4 has no priority field: its tickets have no priority, and its priority:N tags stay tags.
+
+# Live tickets carrying a priority:N tag, and those tags
+PRIORITY_TAGGED = {
+    t: tags
+    for t, shown in EXPECTED["show"].items()
+    if (tags := [tag for tag in shown.get("tags") or [] if re.fullmatch(r"priority:-?\d+", tag)])
+}
+
+
+def _query(cli_runner, *stage: str) -> set[str]:
+    terms = ", ".join(f"'{term}'" for term in stage)
+    return set(cli_success(cli_runner, "execute-freeform-query", "--query-yaml", f"stages:\n  - [{terms}]\n")["ticket_ids"])
+
+
+def test_084_tickets_have_no_priority(compat_084, cli_runner):
+    """No 0.8.4 ticket file holds a priority key, and show-ticket gives every live ticket priority null."""
+    shown = cli_success(cli_runner, "show-ticket", "--ids", *EXPECTED["show"])
+
+    assert (shown["not_found"], shown["errors"]) == ([], [])
+    assert {t["ticket_id"]: t["priority"] for t in shown["tickets"]} == dict.fromkeys(EXPECTED["show"])
+    assert not [rel for rel in EXPECTED["parse"] if "priority" in parse_frontmatter(compat_084 / rel)[0]]
+
+
+def test_084_priority_tags_corpus():
+    """The corpus holds old priority:N tags on more than one hive, so the tag tests below test something."""
+    assert len({compat_084_hive_of(ID_TO_REL[t]) for t in PRIORITY_TAGGED}) > 1
+
+
+@pytest.mark.parametrize("hive", sorted(EXPECTED["queries"]))
+def test_priority_none_matches_every_084_ticket(compat_084, cli_runner, hive):
+    """priority=none lists every ticket of each 0.8.4 hive, every tier, as a query without it does."""
+    every = _query(cli_runner, f"hive={hive}")
+
+    assert every and _query(cli_runner, f"hive={hive}", "priority=none") == every
+
+
+@pytest.mark.parametrize(
+    "term",
+    ["priority=1", "priority=2", "priority!=1", "priority<100", "priority<=0", "priority>-100", "priority>=0"],
+)
+def test_numeric_priority_terms_match_no_084_ticket(compat_084, cli_runner, term):
+    """No numeric priority term, priority!=N included, matches a 0.8.4 ticket, nor one with a priority:N tag."""
+    assert _query(cli_runner, term) == set()
+
+
+@pytest.mark.parametrize("ticket_id", sorted(PRIORITY_TAGGED))
+def test_084_priority_tag_stays_a_tag(compat_084, cli_runner, ticket_id):
+    """A 0.8.4 priority:N tag is a plain tag: shown and matched as a tag, never read as the priority field."""
+    (shown,) = cli_success(cli_runner, "show-ticket", "--ids", ticket_id)["tickets"]
+    (tag,) = PRIORITY_TAGGED[ticket_id]
+    value = tag.split(":", 1)[1]
+
+    assert (shown["priority"], shown["tags"]) == (None, EXPECTED["show"][ticket_id]["tags"])
+    assert ticket_id in _query(cli_runner, f"tag~{tag}")
+    assert ticket_id in _query(cli_runner, f"tag~{tag}", "priority=none")
+    assert ticket_id not in _query(cli_runner, f"priority={value}") | _query(cli_runner, f"priority>={value}")
+
+
 # --- ROUND TRIP --------------------------------------------------------------------------
 
 # Why a ticket file may change when it is read and saved with no change. 0.8.4 makes the same

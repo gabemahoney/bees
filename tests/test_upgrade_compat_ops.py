@@ -18,6 +18,7 @@ from src.parser import parse_frontmatter
 from tests.helpers import (
     COMPAT_084_HIVE_DIRS,
     cli_success,
+    compat_084_hive_of,
     compat_084_rels,
     load_compat_084,
     snapshot_diff,
@@ -372,3 +373,167 @@ def test_sanitize_accepts_builtin_resolvers(corpus, cli_runner):
     result = json.loads(cli_runner(["sanitize-hive", "--hive", "plans"])[0])
 
     assert result["errors_remaining"] == []
+
+
+# --- priority (b.1zh) -----------------------------------------------------------------------
+# 0.8.4 tickets have no priority. Each test gives some a priority with this code first.
+
+
+def _hive_of(ticket_id: str) -> str:
+    return compat_084_hive_of(REL[ticket_id])
+
+
+def _tree(bee: str) -> list[str]:
+    """The live tickets of a bee's tree, the bee first."""
+    return [t for t in LIVE if REL[t].startswith(_dir(bee) + "/")]
+
+
+def _shown_priorities(cli_runner, ticket_ids) -> dict:
+    tickets = cli_success(cli_runner, "show-ticket", "--ids", *ticket_ids)["tickets"]
+    return {t["ticket_id"]: t["priority"] for t in tickets}
+
+
+def _set_priorities(cli_runner, priorities: dict) -> None:
+    for ticket_id, priority in priorities.items():
+        if priority is not None:
+            cli_success(cli_runner, "update-ticket", "--ids", ticket_id, f"--priority={priority}")
+
+
+def _tree_priorities(bee: str) -> dict:
+    """Priorities for every ticket of a bee's tree: -1, 0, 1, ... in order, the last ticket left unset unless it is
+    the bee itself."""
+    tree = _tree(bee)
+    return {t: (None if i and i == len(tree) - 1 else i - 1) for i, t in enumerate(tree)}
+
+
+@pytest.mark.parametrize("ticket_id", LIVE)
+def test_priority_set_change_and_clear(corpus, cli_runner, tmp_path, ticket_id):
+    """Each priority update of a 0.8.4 ticket rewrites only that ticket and changes only its priority key;
+    cleared, the key is gone and every other value and the body read as before (a file already in the order
+    bees saves keys in is then byte-identical to the original again)."""
+    rel = REL[ticket_id]
+    before_fm, before_body = _read(corpus.before[rel], tmp_path)
+
+    for value, expected in (("3", 3), ("-2", -2), ("null", None)):
+        cli_success(cli_runner, "update-ticket", "--ids", ticket_id, f"--priority={value}")
+
+        added, removed, changed = corpus.diff()
+        assert (added, removed) == (set(), set())
+        assert changed == {rel} if expected is not None else changed <= {rel}
+        after_fm, after_body = _read(corpus.after[rel], tmp_path)
+        assert ("priority" in after_fm, after_fm.pop("priority", None)) == (expected is not None, expected)
+        assert _same_values(before_fm, after_fm) and after_body == before_body
+        assert _shown_priorities(cli_runner, [ticket_id]) == {ticket_id: expected}
+    assert not corpus.config_changed()
+
+
+def test_batch_priority_across_084_hives(corpus, cli_runner, tmp_path):
+    """One batch update sets, then clears, the priority of every live 0.8.4 ticket in every hive, keeping
+    every other value and body."""
+    cli_success(cli_runner, "update-ticket", "--ids", *LIVE, "--priority=0")
+
+    assert _shown_priorities(cli_runner, LIVE) == dict.fromkeys(LIVE, 0)
+    added, removed, changed = corpus.diff()
+    assert (added, removed) == (set(), set()) and {REL[t] for t in LIVE} <= changed
+    cli_success(cli_runner, "update-ticket", "--ids", *LIVE, "--priority", "null")
+
+    assert _shown_priorities(cli_runner, LIVE) == dict.fromkeys(LIVE)
+    corpus.diff()
+    for ticket_id in LIVE:
+        before_fm, before_body = _read(corpus.before[REL[ticket_id]], tmp_path)
+        after_fm, after_body = _read(corpus.after[REL[ticket_id]], tmp_path)
+        assert "priority" not in after_fm
+        assert _same_values(before_fm, after_fm) and after_body == before_body
+
+
+@pytest.mark.parametrize(
+    "role,destination",
+    [
+        pytest.param("tree_bee", "plans", id="every_tier_into_nested_hive"),
+        pytest.param("idea_bee", "features", id="bee_with_child_from_outer_hive"),
+        pytest.param("moved_bee", "features", id="bee_moved_by_084_back"),
+    ],
+)
+def test_move_bee_keeps_priority(corpus, cli_runner, role, destination):
+    """move-bee moves 0.8.4 tickets given a priority byte for byte: each keeps its priority, an unset one stays unset."""
+    bee = ROLES[role]
+    priorities = _tree_priorities(bee)
+    _set_priorities(cli_runner, priorities)
+    corpus.before = tree_snapshot(corpus.root)
+    src = _dir(bee)
+
+    cli_success(cli_runner, "move-bee", "--ids", bee, "--hive", destination, "--force")
+
+    added, removed, changed = corpus.diff()
+    dest = f"{HIVE_DIRS[destination]}/{bee}"
+    assert (removed, changed) == (_under(corpus.before, src), set())
+    assert all(corpus.after[dest + p[len(src):]] == corpus.before[p] for p in removed)
+    assert _shown_priorities(cli_runner, priorities) == priorities
+
+
+@pytest.mark.parametrize("role", ["tree_bee", "clone_source_bee", "cloned_bee"])
+def test_clone_keeps_priority(corpus, cli_runner, tmp_path, role):
+    """clone gives every copy of a 0.8.4 ticket given a priority the same priority, and leaves an unset one unset."""
+    bee = ROLES[role]
+    priorities = _tree_priorities(bee)
+    _set_priorities(cli_runner, priorities)
+    titles = {t: _read((corpus.root / REL[t]).read_bytes(), tmp_path)[0]["title"] for t in priorities}
+    assert len(set(titles.values())) == len(titles)
+
+    clone = cli_success(cli_runner, "clone", "--bee-id", bee)["ticket_id"]
+
+    copies = [_read(p.read_bytes(), tmp_path)[0] for p in (corpus.root / _dir(bee)).parent.joinpath(clone).rglob("*.md")]
+    assert {fm["title"]: fm.get("priority") for fm in copies} == {titles[t]: p for t, p in priorities.items()}
+    assert _shown_priorities(cli_runner, priorities) == priorities
+
+
+# {pytest id: the CLI arguments of an update of something other than the priority}
+PRIORITY_KEEPING_UPDATES = {
+    "title": lambda t: ["update-ticket", "--ids", t, "--title", "Renamed after the upgrade"],
+    "body": lambda t: ["update-ticket", "--ids", t, "--body", "New body.\n"],
+    "add_tags": lambda t: ["update-ticket", "--ids", t, "--add-tags", '["after-upgrade"]'],
+    # done: every target hive allows it, and no target ticket has it
+    "status": lambda t: ["update-ticket", "--ids", t, "--status", "done"],
+    "append": lambda t: ["append-ticket-body", "--ticket-id", t, "--chunk", "More.\n"],
+}
+
+
+@pytest.mark.parametrize("update", sorted(PRIORITY_KEEPING_UPDATES))
+@pytest.mark.parametrize("role", ["tree_t1", "bug_crlf_file", "dash_tag_bee", "guid22_bee", "plan_t3", "shared_bee"])
+def test_other_updates_keep_priority(corpus, cli_runner, tmp_path, role, update):
+    """Updating anything else on a 0.8.4 ticket given a priority keeps the priority."""
+    ticket_id = ROLES[role]
+    _set_priorities(cli_runner, {ticket_id: -5})
+
+    cli_success(cli_runner, *PRIORITY_KEEPING_UPDATES[update](ticket_id))
+
+    assert _read((corpus.root / REL[ticket_id]).read_bytes(), tmp_path)[0]["priority"] == -5
+    assert _shown_priorities(cli_runner, [ticket_id]) == {ticket_id: -5}
+
+
+def test_dependency_sync_keeps_priority(corpus, cli_runner):
+    """Replacing a 0.8.4 ticket's up_dependencies rewrites the tickets it unlinks and links: they keep their priority."""
+    blocked, blocker, new_blocker = ROLES["blocked_bee"], ROLES["blocker_bee"], ROLES["dep_tree_bee"]
+    priorities = {blocked: 1, blocker: 0, new_blocker: -1}
+    _set_priorities(cli_runner, priorities)
+    corpus.before = tree_snapshot(corpus.root)
+
+    cli_success(cli_runner, "update-ticket", "--ids", blocked, "--up-deps", json.dumps([new_blocker]))
+
+    assert corpus.diff()[2] == {REL[t] for t in priorities}
+    assert _shown_priorities(cli_runner, priorities) == priorities
+
+
+@pytest.mark.parametrize("hive", sorted(EXPECTED_LINT))
+def test_linter_accepts_priority_on_084_tickets(corpus, cli_runner, hive):
+    """With a priority on every ticket of a 0.8.4 hive, sanitize-hive still finds only the expected problems
+    and writes nothing."""
+    tickets = [t for t in LIVE if _hive_of(t) == hive]
+    cli_success(cli_runner, "update-ticket", "--ids", *tickets, "--priority=-1")
+    corpus.before = tree_snapshot(corpus.root)
+
+    result = json.loads(cli_runner(["sanitize-hive", "--hive", hive])[0])
+
+    assert result["fixes_applied"] == []
+    assert _lint_set(result["errors_remaining"]) == EXPECTED_LINT[hive]
+    assert corpus.diff() == (set(), set(), set())
