@@ -9,7 +9,6 @@ Per PRD: Frontmatter is source of truth, filesystem structure is derived.
 import errno
 import os
 import re
-import shutil
 from pathlib import Path
 
 import pytest
@@ -20,7 +19,7 @@ from src.mcp_hive_ops import _sanitize_hive
 from src.reader import read_ticket
 from src.repo_context import repo_root_context
 from tests.conftest import write_scoped_config
-from tests.helpers import write_ticket_file
+from tests.helpers import fail_nth_move, write_ticket_file
 from tests.test_constants import TICKET_ID_LINTER_CHILD1, TICKET_ID_LINTER_CHILD_SUBTASK
 
 
@@ -79,37 +78,6 @@ def _build(hive: Path, tickets: list, other_files: dict[str, str]) -> None:
 def _lint(hive: Path) -> LinterReport:
     """Run the auto-fixing linter on hive `test_hive` at hive."""
     return Linter(str(hive), hive_name="test_hive", auto_fix=True).run()
-
-
-def _fail_move(monkeypatch, call: int) -> None:
-    """Make shutil.move, as src.linter uses it, raise OSError on its call-th call only."""
-    real_move = shutil.move
-    calls = []
-
-    def move(src, dst, *args, **kwargs):
-        calls.append(src)
-        if len(calls) == call:
-            raise OSError(errno.EIO, "injected move failure", src)
-        return real_move(src, dst, *args, **kwargs)
-
-    monkeypatch.setattr("src.linter.shutil.move", move)
-
-
-@pytest.fixture
-def make_hive(tmp_path, monkeypatch, mock_global_bees_dir):
-    """Factory: make_hive(dirname) registers tmp_path/dirname as hive `test_hive` (tiers t1, t2), returns its path."""
-    monkeypatch.chdir(tmp_path)
-
-    def make(dirname: str = "hive") -> Path:
-        hive_path = tmp_path / dirname
-        hive_path.mkdir()
-        hives = {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}}
-        tiers = {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]}
-        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": hives, "child_tiers": tiers})
-        return hive_path
-
-    with repo_root_context(tmp_path):
-        yield make
 
 
 class TestEnforceDirectoryStructureBees:
@@ -754,7 +722,7 @@ class TestEnforceDirectoryStructureExistingTarget:
         _build(hive, DEEP_BEE_TICKETS, {f"{DEEP_BEE}/notes.txt": "mine"})
         before = _tree(hive)
         ticket_files = {name: before[f"{DEEP_BEE}/{name}"] for name in DEEP_BEE_TICKET_FILES}
-        _fail_move(monkeypatch, failing_call)
+        fail_nth_move(monkeypatch, failing_call)
 
         report = _lint(hive)
 
@@ -772,7 +740,7 @@ class TestEnforceDirectoryStructureExistingTarget:
         """When removing the temp dir fails after a failed move, the move's own error is still the one reported."""
         hive = make_hive()
         _build(hive, DEEP_BEE_TICKETS, {})
-        _fail_move(monkeypatch, 1)
+        fail_nth_move(monkeypatch, 1)
         real_rmdir = Path.rmdir
 
         def rmdir(path: Path) -> None:

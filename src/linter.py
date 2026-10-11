@@ -11,7 +11,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Generator
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,8 @@ from src.id_utils import generate_guid, is_ticket_id, is_valid_ticket_id
 from src.linter_report import LinterReport, ValidationError
 from src.models import Ticket
 from src.paths import (
+    ForeignSubtree,
+    find_foreign_subtrees,
     find_ticket_file,
     hive_crossing_reason,
     iter_ticket_files_deep,
@@ -44,6 +46,11 @@ class TicketScanner:
     skips hidden directories (.hive/), evicted/ and cemetery/, and never
     enters another hive nested inside this one (a subdirectory with its own
     .hive/ or a registered hive root).
+
+    Tickets in a foreign subtree are not part of the hive and are not yielded:
+    a ticket folder can hold arbitrary content, e.g. a test fixture with a
+    copy of another hive's tickets (see find_foreign_subtrees()). The subtrees
+    skipped by the latest scan are in foreign_subtrees.
     """
 
     def __init__(self, tickets_dir: str = "tickets", hive_name: str = "default"):
@@ -55,13 +62,16 @@ class TicketScanner:
         """
         self.tickets_dir = Path(tickets_dir)
         self.hive_name = hive_name
+        # Foreign subtrees by root, replaced by each scan
+        self.foreign_subtrees: dict[Path, ForeignSubtree] = {}
 
     def scan_all(self) -> Generator[Ticket, None, None]:
         """Scan and yield all tickets from the filesystem.
 
         Uses deep directory traversal via iter_ticket_files_deep — enters all
         directories except hidden ones (.hive/), evicted/, /cemetery, and other
-        hives nested inside this one.
+        hives nested inside this one, but yields no ticket from a foreign
+        subtree (see foreign_subtrees).
         This broader scan allows the linter to find misplaced and invalid tickets.
 
         Yields:
@@ -80,6 +90,11 @@ class TicketScanner:
         directories except hidden ones (.hive/), evicted/, /cemetery, and other
         hives nested inside this one.
 
+        Whether a ticket is foreign depends on its ancestors, so every ticket
+        file is read before the first is yielded. Tickets in a foreign subtree
+        are left out, and their load failures are not logged; the subtrees are
+        recorded in foreign_subtrees before the first ticket is yielded.
+
         Yields:
             Tuples of (Ticket, Path) for each ticket file found
 
@@ -89,14 +104,45 @@ class TicketScanner:
         if not self.tickets_dir.exists():
             raise FileNotFoundError(f"Tickets directory not found: {self.tickets_dir}")
 
+        loaded: list[tuple[Path, Ticket | Exception]] = []
         for md_file in iter_ticket_files_deep(self.tickets_dir):
             try:
-                ticket_id = md_file.stem
-                ticket = read_ticket(ticket_id, file_path=md_file)
-                yield ticket, md_file
+                loaded.append((md_file, read_ticket(md_file.stem, file_path=md_file)))
             except Exception as e:
-                logger.error(f"Error loading ticket {md_file}: {e}")
+                loaded.append((md_file, e))
+
+        # A parent that is not a string is a field-type error for the linter to report, not an ancestor
+        parent_of_file = {
+            md_file: result.parent
+            for md_file, result in loaded
+            if not isinstance(result, Exception) and isinstance(result.parent, str)
+        }
+        # For a duplicate ID the shallowest file wins, as a copy inside a fixture lies deeper than the original
+        parent_of_id: dict[str, str] = {}
+        for md_file in sorted(parent_of_file, key=lambda f: len(f.parts)):
+            parent_of_id.setdefault(md_file.stem, parent_of_file[md_file])
+        children_of_file = {
+            md_file: result.children
+            for md_file, result in loaded
+            if not isinstance(result, Exception) and isinstance(result.children, list)
+        }
+        foreign_subtrees = find_foreign_subtrees(
+            self.tickets_dir,
+            [md_file for md_file, _ in loaded],
+            parent_of_file.get,
+            parent_of_id.get,
+            children_of_file.get,
+        )
+        self.foreign_subtrees = {subtree.root: subtree for subtree in foreign_subtrees}
+        foreign_files = {md_file for subtree in foreign_subtrees for md_file in subtree.files}
+
+        for md_file, result in loaded:
+            if md_file in foreign_files:
                 continue
+            if isinstance(result, Exception):
+                logger.error(f"Error loading ticket {md_file}: {result}")
+                continue
+            yield result, md_file
 
 
 class Linter:
@@ -115,6 +161,7 @@ class Linter:
         auto_fix: bool = False,
         all_scope_ticket_map: dict[str, "Ticket"] | None = None,
         auto_fix_dangling_refs: bool = False,
+        foreign_ticket_roots: dict[str, Path] | None = None,
     ):
         """Initialize linter.
 
@@ -127,6 +174,10 @@ class Linter:
                 in the current repo scope. None if any hive failed to load.
             auto_fix_dangling_refs: If True, automatically remove dangling dependency/parent
                 references instead of reporting them as errors (default: False)
+            foreign_ticket_roots: Ticket ID -> root of the foreign subtree holding it, for the
+                foreign subtrees of the other hives in scope (see TicketScanner.foreign_subtrees).
+                A reference to one of these is reported, never cleared, like one into this hive's
+                own foreign subtrees, which run() adds. None if the caller has none (default: None)
         """
         if auto_fix_dangling_refs and not auto_fix:
             raise ValueError("auto_fix_dangling_refs requires auto_fix=True")
@@ -141,6 +192,13 @@ class Linter:
         self._ticket_paths: dict[str, Path] = {}
         # IDs of tickets whose auto-fix write failed in this run; they are not written again
         self._unwritten_ids: set[str] = set()
+        # Foreign subtrees found in run(), their roots re-pointed as directory enforcement moves them
+        self._foreign_subtrees: list[ForeignSubtree] = []
+        # Every spelling a foreign subtree's root has had or may have in run(); no search or cleanup enters them
+        self._foreign_roots: list[Path] = []
+        # ID of a ticket file found only in a foreign subtree -> the subtree's root, for dangling reference checks
+        self._extra_foreign_ticket_roots = dict(foreign_ticket_roots or {})
+        self._foreign_ticket_roots: dict[str, Path] = dict(self._extra_foreign_ticket_roots)
 
     def run(self, detect_only: bool = False) -> LinterReport:
         """Run linter validation on all tickets.
@@ -167,6 +225,14 @@ class Linter:
         # Last one wins for a duplicate ID, matching the ticket maps the validators build
         self._ticket_paths = {t.id: p for t, p in ticket_path_pairs}
         self._unwritten_ids = set()
+        self._foreign_subtrees = [replace(subtree) for subtree in self.scanner.foreign_subtrees.values()]
+        self._foreign_roots = [subtree.root for subtree in self._foreign_subtrees]
+        own_ticket_roots: dict[str, Path] = {}
+        for subtree in self._foreign_subtrees:
+            for ticket_id in subtree.ticket_ids:
+                own_ticket_roots.setdefault(ticket_id, subtree.root)
+        # This hive's own subtrees are named by where they are in this run, so they win over the caller's
+        self._foreign_ticket_roots = {**self._extra_foreign_ticket_roots, **own_ticket_roots}
 
         # Run per-ticket validation checks
         for ticket, file_path in ticket_path_pairs:
@@ -188,6 +254,9 @@ class Linter:
         # Detect empty ticket dirs — runs in all modes; auto_fix controls whether dirs are removed
         self.detect_empty_ticket_dirs(report)
 
+        # Warn about foreign subtrees where they are now, after enforcement moved their owners
+        self.report_foreign_subtrees(self._foreign_subtrees, report)
+
         # Run cycle detection
         cycle_errors = self.detect_cycles(tickets)
         for error in cycle_errors:
@@ -198,6 +267,32 @@ class Linter:
         )
 
         return report
+
+    @staticmethod
+    def report_foreign_subtrees(foreign_subtrees: list[ForeignSubtree], report: LinterReport) -> None:
+        """Warn once per foreign subtree about the ticket files the scan left out.
+
+        A foreign subtree is a tree of ticket files inside another ticket's
+        folder, under a non-ticket directory (see find_foreign_subtrees()). The
+        linter leaves it and its tickets untouched: they are not validated,
+        rewritten or moved, and the directory is not cleaned up.
+
+        Args:
+            foreign_subtrees: The subtrees the scanner skipped
+            report: LinterReport to collect the warnings into
+        """
+        for subtree in foreign_subtrees:
+            shown = ", ".join(subtree.ticket_ids[:5])
+            if len(subtree.ticket_ids) > 5:
+                shown += f", and {len(subtree.ticket_ids) - 5} more"
+            report.add_error(
+                ticket_id=subtree.owner_id,
+                error_type="foreign_ticket_subtree",
+                message=f"Directory '{subtree.root}' in the folder of ticket '{subtree.owner_id}' holds "
+                f"{len(subtree.ticket_ids)} ticket file(s) that the linter treats as foreign to this hive "
+                f"(not claimed by '{subtree.owner_id}' or its lineage) ({shown}); skipped and left untouched",
+                severity="warning",
+            )
 
     def validate_ticket(self, ticket: Ticket, report: LinterReport, file_path: Path | None = None) -> None:
         """Run validation checks on a single ticket.
@@ -821,7 +916,9 @@ class Linter:
 
         # Check for dangling parent reference across all hives in scope
         if self.all_scope_ticket_map is not None and parent_id not in self.all_scope_ticket_map:
-            if self.auto_fix_dangling_refs and modified_tickets is not None:
+            if parent_id in self._foreign_ticket_roots:
+                self._report_ref_in_foreign_subtree(ticket, "dangling_parent", "parent", parent_id, report)
+            elif self.auto_fix_dangling_refs and modified_tickets is not None:
                 ticket.parent = None
                 modified_tickets.add(ticket.id)
                 report.add_fix(
@@ -850,6 +947,32 @@ class Linter:
                 message=f"Ticket '{ticket.id}' references non-existent parent: '{parent_id}'",
                 severity="error",
             )
+
+    def _report_ref_in_foreign_subtree(
+        self, ticket: Ticket, error_type: str, field: str, ref_id: str, report: LinterReport
+    ) -> None:
+        """Report an error for a reference to a ticket found only in one of this hive's foreign subtrees.
+
+        The ticket may be one the hive lost track of rather than a missing one
+        (e.g. hand-placed under a non-ticket directory in another ticket's
+        folder), so the reference is never cleared, even with auto_fix_dangling_refs.
+
+        Args:
+            ticket: Ticket holding the reference
+            error_type: Error type to report
+            field: Name of the field holding the reference
+            ref_id: The referenced ticket ID
+            report: LinterReport to collect the error into
+        """
+        report.add_error(
+            ticket_id=ticket.id,
+            error_type=error_type,
+            message=(
+                f"Ticket '{ticket.id}' {field} references '{ref_id}', which was found only in "
+                f"foreign subtree '{self._foreign_ticket_roots[ref_id]}'; not cleared"
+            ),
+            severity="error",
+        )
 
     def validate_children_field(self, ticket: Ticket, report: LinterReport, ticket_map: dict[str, Ticket]) -> None:
         """Validate children field format and types.
@@ -927,7 +1050,11 @@ class Linter:
 
             # Check for dangling reference across all hives in scope
             if self.all_scope_ticket_map is not None and upstream_id not in self.all_scope_ticket_map:
-                if self.auto_fix_dangling_refs and modified_tickets is not None:
+                if upstream_id in self._foreign_ticket_roots:
+                    self._report_ref_in_foreign_subtree(
+                        ticket, "dangling_dependency", "up_dependencies", upstream_id, report
+                    )
+                elif self.auto_fix_dangling_refs and modified_tickets is not None:
                     ticket.up_dependencies.remove(upstream_id)
                     modified_tickets.add(ticket.id)
                     report.add_fix(
@@ -985,7 +1112,11 @@ class Linter:
 
             # Check for dangling reference across all hives in scope
             if self.all_scope_ticket_map is not None and downstream_id not in self.all_scope_ticket_map:
-                if self.auto_fix_dangling_refs and modified_tickets is not None:
+                if downstream_id in self._foreign_ticket_roots:
+                    self._report_ref_in_foreign_subtree(
+                        ticket, "dangling_dependency", "down_dependencies", downstream_id, report
+                    )
+                elif self.auto_fix_dangling_refs and modified_tickets is not None:
                     ticket.down_dependencies.remove(downstream_id)
                     modified_tickets.add(ticket.id)
                     report.add_fix(
@@ -1266,7 +1397,8 @@ class Linter:
 
         Directories newer than 10 minutes are skipped to avoid racing in-flight
         ticket creation. Every directory below the hive root is checked except
-        those of another hive nested inside this one.
+        those of another hive nested inside this one and foreign subtrees (see
+        report_foreign_subtrees()), which are neither reported nor removed.
 
         In auto-fix mode, orphaned directories are removed via dir_path.rmdir().
         In report-only mode, each orphaned directory is added as a LinterError.
@@ -1280,7 +1412,7 @@ class Linter:
 
         cutoff = time.time() - 600  # 10 minutes
 
-        for dirpath, _dirs, files in walk_hive(tickets_dir):
+        for dirpath, _dirs, files in walk_hive(tickets_dir, skip_dirs=self._foreign_roots):
             dir_path = Path(dirpath)
             if dir_path == tickets_dir:
                 continue
@@ -1347,7 +1479,9 @@ class Linter:
         nested inside this one, one that would carry such a hive along with the
         ticket's directory, or one into an existing directory holding such a
         hive, is never made; it is reported as a cross_hive_move_blocked error
-        instead.
+        instead. Files are located without entering a foreign subtree (see
+        report_foreign_subtrees()), so a copy of a ticket inside one is never
+        taken for the ticket's file or its parent's directory.
 
         Args:
             tickets: List of all tickets to check
@@ -1362,7 +1496,7 @@ class Linter:
             try:
                 # Find this ticket's file within the linter's own hive
                 # Use deep=True to find misplaced tickets in non-standard directories
-                ticket_path = find_ticket_file(hive_path, ticket.id, deep=True)
+                ticket_path = find_ticket_file(hive_path, ticket.id, deep=True, skip_dirs=self._foreign_roots)
 
                 if not ticket_path:
                     logger.warning(f"Could not find file for ticket {ticket.id}, skipping directory enforcement")
@@ -1382,7 +1516,7 @@ class Linter:
                         continue
 
                     # Find parent's path (also deep search since parent may also be misplaced)
-                    parent_path = find_ticket_file(hive_path, ticket.parent, deep=True)
+                    parent_path = find_ticket_file(hive_path, ticket.parent, deep=True, skip_dirs=self._foreign_roots)
                     if not parent_path:
                         # Parent file not found - skip enforcement
                         continue
@@ -1561,20 +1695,52 @@ class Linter:
             )
             return False
 
-        if not expected_dir.exists():
-            shutil.move(str(current_dir), str(expected_dir))
-        elif current_dir.is_relative_to(expected_dir):
-            staging_root = Path(tempfile.mkdtemp(prefix=f"{ticket_id}.moving-", dir=expected_dir.parent))
-            staged_dir = staging_root / current_dir.name
-            try:
-                shutil.move(str(current_dir), str(staged_dir))
-                self._merge_dir_into(staged_dir, expected_dir)
-            finally:
-                self._remove_staging_leftovers(staging_root, current_dir, expected_dir)
-        else:
-            self._merge_dir_into(current_dir, expected_dir)
+        staged_dir: Path | None = None
+        try:
+            if not expected_dir.exists():
+                shutil.move(str(current_dir), str(expected_dir))
+            elif current_dir.is_relative_to(expected_dir):
+                staging_root = Path(tempfile.mkdtemp(prefix=f"{ticket_id}.moving-", dir=expected_dir.parent))
+                staged_dir = staging_root / current_dir.name
+                try:
+                    shutil.move(str(current_dir), str(staged_dir))
+                    self._merge_dir_into(staged_dir, expected_dir)
+                finally:
+                    self._remove_staging_leftovers(staging_root, current_dir, expected_dir)
+            else:
+                self._merge_dir_into(current_dir, expected_dir)
+        finally:
+            # Also after a failed move: part of the directory may already have moved
+            self._repoint_foreign_subtrees(current_dir, expected_dir, staged_dir)
         cache.evict(ticket_id)
         return True
+
+    def _repoint_foreign_subtrees(self, current_dir: Path, expected_dir: Path, staged_dir: Path | None) -> None:
+        """Follow the foreign subtrees inside current_dir to where a move of it left them.
+
+        A foreign subtree goes with the directory holding it, so after a move,
+        or a move that failed partway, it may be at its old place, under
+        expected_dir, or under the temporary directory of a staged move.
+        _foreign_roots keeps every one of these spellings, so no search or
+        cleanup enters the subtree wherever it is; a path that does not exist is
+        harmless there. Each subtree in _foreign_subtrees, which the warnings
+        name, takes the first spelling that exists.
+
+        Args:
+            current_dir: The ticket's directory before the move
+            expected_dir: Directory the ticket's directory was moved or merged into
+            staged_dir: The ticket's directory inside the temporary directory of
+                a staged move, or None if the move was not staged
+        """
+        for subtree in self._foreign_subtrees:
+            if not subtree.root.is_relative_to(current_dir):
+                continue
+            rel = subtree.root.relative_to(current_dir)
+            spellings = [subtree.root, expected_dir / rel]
+            if staged_dir is not None:
+                spellings.append(staged_dir / rel)
+            self._foreign_roots.extend(path for path in spellings if path not in self._foreign_roots)
+            subtree.root = next((path for path in spellings if path.exists()), subtree.root)
 
     @staticmethod
     def _find_move_conflict(current_dir: Path, expected_dir: Path) -> str | None:

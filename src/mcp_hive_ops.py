@@ -1149,6 +1149,9 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
 
     # Build a map of all tickets across all hives in scope for cross-hive validation
     all_scope_ticket_map: dict | None = {}
+    # Tickets the scans left out as foreign (see TicketScanner.foreign_subtrees) -> their subtree's root,
+    # so a reference to one of them in any hive is reported rather than cleared as dangling
+    foreign_ticket_roots: dict[str, Path] = {}
     hive_load_errors = []
     for scan_hive_name, scan_hive_config in config.hives.items():
         if all_scope_ticket_map is None:
@@ -1158,6 +1161,9 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
             scanner = TicketScanner(str(scan_hive_path), scan_hive_name)
             for ticket in scanner.scan_all():
                 all_scope_ticket_map[ticket.id] = ticket
+            for subtree in scanner.foreign_subtrees.values():
+                for ticket_id in subtree.ticket_ids:
+                    foreign_ticket_roots.setdefault(ticket_id, subtree.root)
         except Exception as e:
             all_scope_ticket_map = None
             hive_load_errors.append({
@@ -1178,6 +1184,7 @@ async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> d
             auto_fix=True,
             all_scope_ticket_map=all_scope_ticket_map,
             auto_fix_dangling_refs=auto_fix_dangling_refs,
+            foreign_ticket_roots=foreign_ticket_roots,
         )
 
         report = linter.run()

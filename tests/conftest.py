@@ -854,6 +854,26 @@ def hive_env(tmp_path, monkeypatch, mock_global_bees_dir):
 
 
 @pytest.fixture
+def make_hive(tmp_path, monkeypatch, mock_global_bees_dir):
+    """Factory: make_hive(dirname) registers tmp_path/dirname as hive `test_hive` (tiers t1, t2), returns its path.
+
+    Unlike hive_env there is no .git or .hive marker, and the hive sits directly in tmp_path. cwd is tmp_path.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    def make(dirname: str = "hive") -> Path:
+        hive_path = tmp_path / dirname
+        hive_path.mkdir()
+        hives = {"test_hive": {"path": str(hive_path), "display_name": "Test Hive"}}
+        tiers = {"t1": ["Task", "Tasks"], "t2": ["Subtask", "Subtasks"]}
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": hives, "child_tiers": tiers})
+        return hive_path
+
+    with repo_root_context(tmp_path):
+        yield make
+
+
+@pytest.fixture
 def compat_084(tmp_path, monkeypatch, mock_global_bees_dir):
     """A registered copy of the bees-md 0.8.4 corpus (tests/fixtures/compat_0_8_4), cwd at its repo; yields its root."""
     from tests.helpers import install_compat_084

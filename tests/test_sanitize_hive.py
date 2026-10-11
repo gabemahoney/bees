@@ -50,8 +50,10 @@ def _files(directory: Path) -> dict[str, bytes]:
     return {p.relative_to(directory).as_posix(): p.read_bytes() for p in directory.rglob("*") if p.is_file()}
 
 
-def _find_ticket_file_unpruned(hive_root: Path, ticket_id: str, deep: bool = False) -> Path | None:
-    """Stand-in for find_ticket_file whose walk, like the one before b.x6n, enters nested hives."""
+def _find_ticket_file_unpruned(
+    hive_root: Path, ticket_id: str, deep: bool = False, skip_dirs: tuple = ()
+) -> Path | None:
+    """Stand-in for find_ticket_file whose walk, like the one before b.x6n, enters nested hives (and skips no dir)."""
     for dirpath, dirs, files in os.walk(hive_root):
         dirs[:] = sorted(d for d in dirs if not d.startswith("."))
         if os.path.basename(dirpath) == ticket_id and f"{ticket_id}.md" in files:
