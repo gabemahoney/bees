@@ -13,6 +13,7 @@ __all__ = [
     "ParsedQuery",
     "QueryParser",
     "QueryValidationError",
+    "PRIORITY_TERMS_HELP",
     "VALID_REPORT_FIELDS",
     "is_priority_term",
     "parse_priority_term",
@@ -41,6 +42,18 @@ NON_REPORTABLE_FIELDS: frozenset[str] = frozenset({"body", "reference_materials"
 # They work typed into a shell inside single quotes, with no newline escapes.
 QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa], [children]]}"
 REPORT_QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}"
+
+# Help for the priority search terms, shared by the CLI help, the sting reference and the
+# MCP tool descriptions so they can't drift. Plain lines with no indent; callers indent them.
+# Deliberately holds no runnable "bees ..." example line.
+PRIORITY_TERMS_HELP = (
+    "priority=N | priority!=N | priority<N | priority<=N | priority>N | priority>=N\n"
+    "    compare priority with the integer N (negatives allowed, e.g. priority<=0, priority>-2)\n"
+    "priority=none\n"
+    '    tickets with no priority (lowercase "none", "=" only)\n'
+    "A ticket with no priority never matches a numeric term, including priority!=N;\n"
+    "use priority=none to find those tickets."
+)
 
 
 # Priority terms: ``priority`` + operator + value. Longest operators first so "<=" is never read as "<".

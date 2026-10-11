@@ -548,12 +548,7 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
 
 @pytest.fixture
 def priority_tickets(isolated_bees_env):
-    """Tickets with priorities for query tests, in one hive ("test_hive") of the isolated env.
-
-    Four bees and four t1 children carry priorities 2, 0, -1 and unset; a fifth bee has no
-    priority but the tag ``priority:1``. Returns {ticket_id: priority}, None when unset.
-    ``b.pt1`` (PRIORITY_TAGGED_BEE_ID in tests.test_constants) is the tagged bee.
-    """
+    """Priority-bearing bees and t1 children for query tests; returns {ticket_id: priority} (see tests/TESTING.md)."""
     from tests.test_constants import PRIORITY_TAGGED_BEE_ID
 
     helper = isolated_bees_env

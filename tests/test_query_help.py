@@ -10,6 +10,7 @@ SCOPE - Tests that belong here:
   - Each surface documents "report", lists exactly VALID_REPORT_FIELDS as
     reportable and NON_REPORTABLE_FIELDS as not reportable (read with show-ticket),
     shows both example queries from query_parser, and has no literal backslash-n
+  - Each surface contains the PRIORITY_TERMS_HELP reference and lists priority as reportable
   - Every query example in the rendered CLI help and sting output, tokenized as a
     shell would, is one --query-yaml argument and runs against a test hive
   - The double-quoted regex term with doubled backslashes in the CLI and MCP
@@ -34,6 +35,7 @@ from src import mcp_undertaker
 from src.mcp_server import mcp
 from src.query_parser import (
     NON_REPORTABLE_FIELDS,
+    PRIORITY_TERMS_HELP,
     QUERY_YAML_EXAMPLE,
     REPORT_QUERY_YAML_EXAMPLE,
     VALID_REPORT_FIELDS,
@@ -117,6 +119,15 @@ def test_help_documents_report_fields_and_examples(cli_runner, query_env, surfac
     assert QUERY_YAML_EXAMPLE in text
     assert REPORT_QUERY_YAML_EXAMPLE in text
     assert "\\n" not in raw, "a literal backslash-n is not a newline when typed into a shell"
+
+
+@pytest.mark.parametrize("surface", CLI_SURFACES + MCP_SURFACES)
+def test_help_documents_priority_terms_and_reportable_priority(cli_runner, query_env, surface):
+    """Each surface carries the single-source priority term reference and lists priority as reportable."""
+    text = " ".join(_surface_text(cli_runner, surface).split())
+
+    assert " ".join(PRIORITY_TERMS_HELP.split()) in text
+    assert "priority" in _listed_fields(text, "Reportable fields:")
 
 
 @pytest.mark.parametrize("surface", CLI_SURFACES)

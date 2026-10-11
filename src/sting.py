@@ -11,10 +11,17 @@ import json
 import logging
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 from .config import find_matching_scope, load_global_config
-from .query_parser import NON_REPORTABLE_FIELDS, QUERY_YAML_EXAMPLE, REPORT_QUERY_YAML_EXAMPLE, VALID_REPORT_FIELDS
+from .query_parser import (
+    NON_REPORTABLE_FIELDS,
+    PRIORITY_TERMS_HELP,
+    QUERY_YAML_EXAMPLE,
+    REPORT_QUERY_YAML_EXAMPLE,
+    VALID_REPORT_FIELDS,
+)
 from .repo_utils import get_repo_root_from_path
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,8 @@ Without report, a query returns "ticket_ids". With report, it returns "tickets":
 per match with ticket_id plus the listed fields.
 Reportable fields: {", ".join(sorted(VALID_REPORT_FIELDS))}
 Not reportable: {", ".join(sorted(NON_REPORTABLE_FIELDS))}. Read them with show-ticket.
+Priority search terms:
+{textwrap.indent(PRIORITY_TERMS_HELP, "  ")}
 Run bees execute-freeform-query -h for every search and graph term."""
 
 

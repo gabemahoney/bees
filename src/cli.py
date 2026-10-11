@@ -42,7 +42,13 @@ from .mcp_ticket_ops import (
 )
 from .mcp_undertaker import _undertaker
 from .migrations.runner import preview_pending_migrations, run_pending_migrations
-from .query_parser import NON_REPORTABLE_FIELDS, QUERY_YAML_EXAMPLE, REPORT_QUERY_YAML_EXAMPLE, VALID_REPORT_FIELDS
+from .query_parser import (
+    NON_REPORTABLE_FIELDS,
+    PRIORITY_TERMS_HELP,
+    QUERY_YAML_EXAMPLE,
+    REPORT_QUERY_YAML_EXAMPLE,
+    VALID_REPORT_FIELDS,
+)
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
@@ -888,6 +894,11 @@ _QUERY_YAML_HELP = (
     f"  '{REPORT_QUERY_YAML_EXAMPLE}'"
 )
 
+# The priority search terms, shared by execute-freeform-query and add-named-query help.
+_QUERY_PRIORITY_HELP = "Priority terms (search stages, AND logic with the other search terms):\n" + textwrap.indent(
+    PRIORITY_TERMS_HELP, "  "
+)
+
 # The "report" section of the query help. Field lists come from query_parser so they can't drift.
 _QUERY_REPORT_HELP = (
     "Report (optional) — return ticket fields instead of bare IDs:\n"
@@ -1096,6 +1107,8 @@ def build_parser():
             "written the same way as for execute-freeform-query (run\n"
             "execute-freeform-query -h for every search and graph term). Example:\n"
             f"  bees add-named-query --query-name pupa-titles --query-yaml '{REPORT_QUERY_YAML_EXAMPLE}'\n\n"
+            + _QUERY_PRIORITY_HELP
+            + "\n\n"
             'In the report notes below, "the result" is what execute-named-query returns\n'
             "when it runs the saved query; add-named-query itself only confirms the save.\n\n"
             + _QUERY_REPORT_HELP
@@ -1142,6 +1155,8 @@ def build_parser():
             "  guid=<guid>                         exact match on GUID\n"
             "  hive=<name>                         exact match on hive name\n"
             "  hive~<regex>                        regex match on hive name\n\n"
+            + _QUERY_PRIORITY_HELP
+            + "\n\n"
             "Graph stages — traverse relationships from current result set:\n"
             "  parent              get parent of each ticket\n"
             "  children            get children of each ticket\n"

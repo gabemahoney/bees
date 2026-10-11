@@ -40,6 +40,23 @@ def test_priority_param_present(command_name: str):
     assert "priority" in get_param_names(cmd), f"priority should appear in {command_name}"
 
 
+@pytest.mark.parametrize(
+    "section",
+    [
+        pytest.param(lambda: _help.__doc__, id="get_help_docstring"),
+        pytest.param(lambda: _help()["concepts"], id="concepts"),
+    ],
+)
+def test_queries_sections_list_priority_terms(section):
+    """Both QUERIES sections list the six priority terms, negatives and priority=none."""
+    text = " ".join(section().split())
+
+    for term in ("priority=N", "priority!=N", "priority<N", "priority<=N", "priority>N", "priority>=N"):
+        assert term in text
+    assert "negatives allowed" in text
+    assert "priority=none" in text
+
+
 def test_reference_materials_param_in_create_ticket():
     """Verify reference_materials parameter is present in create_ticket."""
     result = _help()

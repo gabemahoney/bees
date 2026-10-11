@@ -7,6 +7,7 @@ injecting it into the pure core functions.
 """
 
 import logging
+import textwrap
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -53,6 +54,7 @@ from .mcp_ticket_ops import (
 )
 from .mcp_undertaker import _undertaker
 from .migrations.runner import preview_pending_migrations, run_pending_migrations
+from .query_parser import PRIORITY_TERMS_HELP, VALID_REPORT_FIELDS
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - re-exported
 
@@ -86,6 +88,27 @@ _server_running = False
 
 # Sentinel for __UNSET__ pattern
 _UNSET: Literal["__UNSET__"] = "__UNSET__"
+
+
+def _inject_query_help(fn):
+    """Fill the query help placeholders in a tool docstring from query_parser.
+
+    The tool description is built from the docstring, so substituting here keeps the
+    reportable fields and priority terms single-sourced. Apply below @mcp.tool().
+    A placeholder line keeps its indent; multi-line text is indented to match.
+    """
+    fields = textwrap.fill(", ".join(sorted(VALID_REPORT_FIELDS)), width=60, subsequent_indent="    ")
+    replacements = {"@REPORTABLE_FIELDS@": fields, "@PRIORITY_TERMS_HELP@": PRIORITY_TERMS_HELP}
+    lines = []
+    for line in (fn.__doc__ or "").split("\n"):
+        for token, text in replacements.items():
+            if token in line:
+                indent = line[: len(line) - len(line.lstrip())]
+                first, *rest = text.split("\n")
+                line = "\n".join([line.replace(token, first)] + [indent + extra for extra in rest])
+        lines.append(line)
+    fn.__doc__ = "\n".join(lines)
+    return fn
 
 
 def _guard_queen_write(resolved_root: Path) -> dict | None:
@@ -776,6 +799,7 @@ async def sanitize_hive(
 
 
 @mcp.tool()
+@_inject_query_help
 async def add_named_query(
     name: str,
     query_yaml: str,
@@ -790,12 +814,13 @@ async def add_named_query(
     per match, holding ticket_id plus the listed fields) instead of "ticket_ids"
     (list of strings). ticket_id is always included and should not be listed.
 
-    Reportable fields: children, created_at, down_dependencies, guid, hive,
-        parent, schema_version, tags, ticket_status, ticket_type, title,
-        up_dependencies
+    Reportable fields: @REPORTABLE_FIELDS@
 
     Not reportable: body, reference_materials — not available in query
         results; use show_ticket.
+
+    Priority search terms (see execute_freeform_query):
+        @PRIORITY_TERMS_HELP@
 
     Args:
         name: Name for the query (used to execute it later).
@@ -847,6 +872,7 @@ async def execute_named_query(
 
 
 @mcp.tool()
+@_inject_query_help
 async def execute_freeform_query(
     query_yaml: str,
     ctx: Context | None = None,
@@ -876,6 +902,9 @@ async def execute_freeform_query(
         hive=<name>                         exact match on hive name
         hive~<regex>                        regex match on hive name
 
+    Priority terms (search stages, AND logic with the other search terms):
+        @PRIORITY_TERMS_HELP@
+
     Graph stages — traverse relationships from current result set:
         parent              get parent of each ticket
         children            get children of each ticket
@@ -887,9 +916,7 @@ async def execute_freeform_query(
         ticket data instead of a plain ID list. ticket_id is always included
         automatically and should not be listed.
 
-        Reportable fields: children, created_at, down_dependencies, guid, hive,
-            parent, schema_version, tags, ticket_status, ticket_type, title,
-            up_dependencies
+        Reportable fields: @REPORTABLE_FIELDS@
 
         Not reportable: body, reference_materials — not available in query
             results; use show_ticket.

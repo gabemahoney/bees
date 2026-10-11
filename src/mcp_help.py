@@ -87,6 +87,8 @@ def _help() -> dict[str, Any]:
     QUERIES
     - Multi-stage pipeline: Each stage filters or traverses previous result set
     - Search terms (AND logic): type=, id=, status=, title~regex, tag~regex, hive=, hive~regex
+    - Priority terms (search): priority=N, priority!=N, priority<N, priority<=N, priority>N, priority>=N
+      (N an integer, negatives allowed); priority=none matches only tickets with no priority
     - Graph terms (traversal): parent, children, up_dependencies, down_dependencies
     - Stage purity: Each stage is ONLY search OR ONLY graph, never mixed
     - Named queries: Stored in ~/.bees/config.json under named_queries, validated on save
@@ -378,6 +380,8 @@ DEPENDENCIES
 QUERIES
 - Multi-stage pipeline: Each stage filters or traverses previous result set
 - Search terms (AND logic): type=, id=, status=, title~regex, tag~regex, hive=, hive~regex
+- Priority terms (search): priority=N, priority!=N, priority<N, priority<=N, priority>N, priority>=N
+  (N an integer, negatives allowed); priority=none matches only tickets with no priority
 - Graph terms (traversal): parent, children, up_dependencies, down_dependencies
 - Stage purity: Each stage is ONLY search OR ONLY graph, never mixed
 - Named queries: Stored in ~/.bees/config.json under named_queries, validated on save
