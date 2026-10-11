@@ -10,16 +10,20 @@ from unittest.mock import patch
 
 import pytest
 
+from fastmcp import Client
+
 from src.config import load_bees_config, save_bees_config
+from src.parser import parse_frontmatter
 from src.mcp_id_utils import parse_ticket_id
 from src.constants import GUID_LENGTH
 from src.mcp_server import _create_ticket, _show_ticket, _update_ticket
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee, create_child_tier
 from tests.conftest import write_multi_scope_config, write_scoped_config
-from tests.helpers import write_ticket_file
+from tests.helpers import snapshot_diff, tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
+    INVALID_PRIORITY_INPUTS,
     SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_WILDCARD_PARENT,
     TAG_ALPHA,
@@ -111,6 +115,99 @@ class TestUpdateTicketSchema:
             # Should accept None (clear the field)
             result = adapter.validate_python(None)
             assert result is None, f"{param_name}: None validation failed"
+
+
+    @pytest.mark.parametrize("tool_name", ["create_ticket", "update_ticket"])
+    async def test_priority_schema_is_integer_or_null(self, tool_name):
+        """priority is integer-or-null on both tools, with no string branch (a string would let clients stringify it)."""
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool(tool_name)
+        priority_schema = tool.parameters["properties"]["priority"]
+
+        assert sorted(branch["type"] for branch in priority_schema["anyOf"]) == ["integer", "null"]
+        assert all("const" not in branch and "enum" not in branch for branch in priority_schema["anyOf"])
+
+    @pytest.mark.parametrize("tool_name,default", [("create_ticket", None), ("update_ticket", "__UNSET__")])
+    async def test_priority_is_optional_with_the_tool_default(self, tool_name, default):
+        """priority is not required; omitted means none on create and unchanged (the sentinel) on update."""
+        from src.mcp_server import mcp
+
+        tool = await mcp.get_tool(tool_name)
+
+        assert "priority" not in tool.parameters.get("required", [])
+        assert tool.parameters["properties"]["priority"]["default"] == default
+
+
+class TestPriorityOverMcp:
+    """create_ticket and update_ticket run through the MCP layer (argument validation included) with a priority."""
+
+    TARGET = "b.pri"
+
+    @pytest.fixture
+    def hive(self, isolated_bees_env):
+        """Hive `backend` holding bee b.pri without a priority; the repo root is tmp_path."""
+        (isolated_bees_env.base_path / ".git").mkdir()
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
+        isolated_bees_env.write_config()
+        write_ticket_file(hive_dir, self.TARGET)
+        return hive_dir
+
+    @staticmethod
+    async def _call(hive_dir, tool_name, **arguments):
+        """Call an MCP tool in-memory; returns the CallToolResult, errors included."""
+        from src.mcp_server import mcp
+
+        async with Client(mcp) as client:
+            return await client.call_tool(tool_name, {"repo_root": str(hive_dir.parent), **arguments}, raise_on_error=False)
+
+    def _priority(self, hive):
+        return parse_frontmatter(hive / self.TARGET / f"{self.TARGET}.md")[0].get("priority", "<absent>")
+
+    async def test_update_sets_then_null_clears(self, hive):
+        """An integer priority is stored; null removes it."""
+        set_result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=-3)
+        stored = self._priority(hive)
+        clear_result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=None)
+
+        assert not set_result.is_error and set_result.data["status"] == "success"
+        assert stored == -3
+        assert not clear_result.is_error and clear_result.data["status"] == "success"
+        assert self._priority(hive) == "<absent>"
+
+    async def test_update_omitted_priority_is_unchanged(self, hive):
+        """update_ticket without a priority keeps the stored one."""
+        await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=0)
+
+        result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, title="Renamed")
+
+        assert result.data["status"] == "success"
+        assert self._priority(hive) == 0
+
+    @pytest.mark.parametrize("priority,expected", [(0, 0), (9, 9), (None, "<absent>")], ids=["zero", "positive", "null"])
+    async def test_create_with_priority(self, hive, priority, expected):
+        """create_ticket stores an integer (zero included); null stores nothing."""
+        result = await self._call(hive, "create_ticket", ticket_type="bee", title="New", hive=HIVE_BACKEND, priority=priority)
+
+        assert result.data["status"] == "success"
+        path = next(hive.rglob(f"{result.data['ticket_id']}.md"))
+        assert parse_frontmatter(path)[0].get("priority", "<absent>") == expected
+
+    @pytest.mark.parametrize("value", [*INVALID_PRIORITY_INPUTS.values(), {}], ids=[*INVALID_PRIORITY_INPUTS, "dict"])
+    @pytest.mark.parametrize("tool_name", ["create_ticket", "update_ticket"])
+    async def test_invalid_priority_is_rejected_with_no_file_change(self, hive, tool_name, value):
+        """A non-integer priority fails argument validation (a pydantic integer error) and changes no file."""
+        arguments = (
+            {"ticket_type": "bee", "title": "New", "hive": HIVE_BACKEND}
+            if tool_name == "create_ticket" else {"ticket_ids": self.TARGET, "title": "Renamed"}
+        )
+        before = tree_snapshot(hive)
+
+        result = await self._call(hive, tool_name, priority=value, **arguments)
+
+        assert result.is_error
+        assert "valid integer" in result.content[0].text
+        assert snapshot_diff(before, tree_snapshot(hive)) == (set(), set(), set())
 
 
 def _find_max_length(schema: dict) -> int | None:

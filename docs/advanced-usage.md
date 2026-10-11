@@ -56,6 +56,19 @@ Dependencies work across any hive.
 
 Tickets support a `tags` field — a list of string tags for categorizing and filtering work. Tags can be set on creation, replaced entirely, or updated incrementally by adding and removing individual values.
 
+## Priority
+
+Tickets can carry an optional integer `priority`. It may be zero or negative, and a ticket without one simply has no priority. Set it on creation with `--priority N`, change it later with `update-ticket --priority N`, and clear it with `--priority null`. Leaving `--priority` out of an update keeps the current value. Anything that is not an integer or `null` (such as `1.5`, `true`, or `abc`) is rejected with an `invalid_priority` error and nothing is written. Pass a negative value as `--priority -3` or `--priority=-3`. `show-ticket` always returns `priority`, `null` when none is set.
+
+```bash
+bees create-ticket --ticket-type bee --title "Urgent fix" --hive backend --priority 1
+bees update-ticket --ids b.amx --priority -3
+bees update-ticket --ids b.amx b.x4f --priority 2    # several IDs at once
+bees update-ticket --ids b.amx --priority null       # clear it
+```
+
+The MCP `create_ticket` and `update_ticket` tools take `priority` as an integer or `null`; a string, a float, or a boolean is rejected rather than converted.
+
 ## Ticket Status
 
 Any string is valid as a status.
@@ -393,7 +406,7 @@ bees set-status-values --scope=hive --hive features --status-values '["pupa","wo
 bees set-status-values --scope=global --unset
 ```
 
-`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--reference-materials`).
+`show-ticket` and `delete-ticket` accept multiple IDs. `update-ticket` accepts multiple IDs when using `--status`, `--priority`, `--add-tags`, or `--remove-tags` (batch updates do not support `--title`, `--body`, or `--reference-materials`).
 
 `create-ticket --body` and `update-ticket --body` cap the inline body at 10000 characters; oversized values are rejected up front. To write a longer body, create or update the ticket with a short stub body and then call `append-ticket-body` repeatedly with chunks of up to 10000 characters each. Chunks are concatenated to the end of the body in call order with no separator. Whitespace in bodies and chunks is kept as given, leading whitespace and trailing newlines included, so end a chunk with a newline to start the next one on a new line. An empty `--chunk` is a success no-op, so the subcommand is safe inside idempotent retry loops.
 

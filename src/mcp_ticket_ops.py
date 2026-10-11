@@ -270,6 +270,24 @@ def _validate_hive_path(hive_path: Path) -> None:
         raise ValueError(error_msg)
 
 
+def _priority_error(priority: Any, *, allow_unset: bool = False) -> dict[str, Any] | None:
+    """Return an ``invalid_priority`` error dict unless priority is an integer or null.
+
+    Accepts ``None`` and integers; with ``allow_unset`` also the ``_UNSET`` sentinel
+    (omitted, update only). Booleans are rejected (``bool`` is an ``int`` subclass
+    in Python), as are floats and strings.
+    """
+    if priority is None:
+        return None
+    if allow_unset and isinstance(priority, str) and priority == _UNSET:
+        return None
+    if isinstance(priority, int) and not isinstance(priority, bool):
+        return None
+    error_msg = f"Invalid priority {priority!r}: priority must be an integer or null"
+    logger.error(error_msg)
+    return {"status": "error", "error_type": "invalid_priority", "message": error_msg}
+
+
 def _validate_status_value(status: str, normalized_hive: str, config=None) -> None:
     """Validate status against configured status_values for the hive."""
     status_values = resolve_status_values_for_hive(normalized_hive, config)
@@ -292,6 +310,7 @@ async def _create_ticket(
     resolved_root: Path | None = None,
     *,
     unescape_body: bool = True,
+    priority: Any = None,
 ) -> dict[str, Any]:
     """
     Create a new ticket (bee or dynamic tier type).
@@ -312,6 +331,9 @@ async def _create_ticket(
         unescape_body: When True (inline body), expand literal ``\\n`` / ``\\t``
             sequences in ``body``. Pass False for file-sourced bodies, which are
             stored verbatim.
+        priority: Optional integer priority (may be zero or negative). None means no
+            priority; anything other than an integer (including a boolean) returns
+            ``invalid_priority``.
 
     Returns:
         dict: Created ticket information including ticket_id
@@ -324,6 +346,10 @@ async def _create_ticket(
         error_msg = "Ticket title cannot be empty"
         logger.error(error_msg)
         return {"status": "error", "error_type": "invalid_title", "message": error_msg}
+
+    # Validate priority before any write or relationship sync
+    if (priority_err := _priority_error(priority)) is not None:
+        return priority_err
 
     # Validate hive_name (required parameter)
     if not hive_name or not hive_name.strip():
@@ -510,6 +536,7 @@ async def _create_ticket(
                 status=status,
                 hive_name=hive_name,
                 reference_materials=reference_materials,
+                priority=priority,
             )
         else:
             # Handle dynamic tier types (t1, t2, t3, etc.)
@@ -530,6 +557,7 @@ async def _create_ticket(
                 down_dependencies=down_dependencies,
                 status=status,
                 hive_name=hive_name,
+                priority=priority,
             )
 
         logger.info(f"Successfully created {ticket_type} ticket: {ticket_id}")
@@ -639,8 +667,9 @@ async def _update_ticket_batch(
     up_dependencies: list[str] | None,
     down_dependencies: list[str] | None,
     hive_name: str | None,
+    priority: Any = _UNSET,
 ) -> dict[str, Any]:
-    """Batch-update multiple tickets with status, add_tags, and remove_tags."""
+    """Batch-update multiple tickets with status, priority, add_tags, and remove_tags."""
     if not ticket_ids_raw:
         return {"status": "success", "updated": [], "not_found": [], "failed": []}
 
@@ -717,6 +746,10 @@ async def _update_ticket_batch(
             if status is not _UNSET:
                 ticket.status = status  # type: ignore[assignment]
 
+            # Apply priority (already validated; None clears it)
+            if priority != _UNSET:
+                ticket.priority = priority
+
             # Apply add_tags / remove_tags
             _apply_tag_ops(ticket, add_tags, remove_tags)
 
@@ -757,6 +790,7 @@ async def _update_ticket_single(
     resolved_root: Path | None,
     *,
     unescape_body: bool = True,
+    priority: Any = _UNSET,
 ) -> dict[str, Any]:
     """Update a single ticket with any combination of fields.
 
@@ -858,6 +892,10 @@ async def _update_ticket_single(
 
     if status is not _UNSET:
         ticket.status = status  # type: ignore[assignment]
+
+    # priority is validated by _update_ticket; None clears it (the writer omits the key)
+    if priority != _UNSET:
+        ticket.priority = priority
 
     if reference_materials is not _UNSET and reference_materials is not None:
         _rm_config = load_bees_config()
@@ -1106,6 +1144,7 @@ async def _update_ticket(
     resolved_root: Path | None = None,
     *,
     unescape_body: bool = True,
+    priority: Any = _UNSET,
 ) -> dict[str, Any]:
     """
     Update one or more existing tickets.
@@ -1117,7 +1156,7 @@ async def _update_ticket(
         Returns ``{"status": "success", "updated": [ticket_ids], "not_found": [], "failed": []}``.
 
     **Batch update** (``ticket_ids`` is a ``list[str]``):
-        Updates multiple tickets applying status, add_tags, and remove_tags to each.
+        Updates multiple tickets applying status, priority, add_tags, and remove_tags to each.
         Non-batchable fields (``title``, ``body``, ``reference_materials``, ``tags``,
         ``up_dependencies``, ``down_dependencies``) raise ``ValueError`` if set.
         Returns ``{"status": "success", "updated": [...], "not_found": [...], "failed": [...]}``.
@@ -1133,6 +1172,9 @@ async def _update_ticket(
         add_tags: Tags to add to the ticket (additive, deduplicates)
         remove_tags: Tags to remove from the ticket
         status: New status
+        priority: New integer priority (single and batch). None clears it (removes the key);
+            omitted leaves it unchanged. Anything other than an integer or None (including a
+            boolean) returns ``invalid_priority`` with no write, in single and batch mode alike.
         reference_materials: New reference_materials data (arbitrary structured data, single mode only)
         hive_name: Optional hive name for O(1) lookup. If not provided, scans all hives.
         resolved_root: Pre-resolved repo root path (injected by adapter)
@@ -1156,9 +1198,13 @@ async def _update_ticket(
     schema_error = check_schema_version()
     if schema_error is not None:
         return schema_error
+    # Validate priority up front so an invalid value writes nothing (single or batch)
+    if (priority_err := _priority_error(priority, allow_unset=True)) is not None:
+        return priority_err
     if isinstance(ticket_ids, list):
         return await _update_ticket_batch(
             ticket_ids_raw=ticket_ids,
+            priority=priority,
             status=status,
             add_tags=add_tags,
             remove_tags=remove_tags,
@@ -1180,6 +1226,7 @@ async def _update_ticket(
         add_tags=add_tags,
         remove_tags=remove_tags,
         status=status,
+        priority=priority,
         reference_materials=reference_materials,
         hive_name=hive_name,
         resolved_root=resolved_root,

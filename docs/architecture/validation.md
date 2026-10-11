@@ -140,6 +140,23 @@ Hive 'unknown_hive' not found in configuration
 - `reference_materials` field must NOT be present in child tier frontmatter (t1, t2, t3, etc.)
 - Child tiers do not inherit or store reference materials from their parent bees
 
+### Priority Field Validation
+
+This is entry-point validation of caller input. It is separate from the linter's Priority Validator, which checks tickets already on disk (see Linter Architecture).
+
+**Core ops** (`create_ticket` and `update_ticket`):
+- `priority` must be an integer or null. A boolean, float, or string returns `invalid_priority`
+- The check runs first, before any file write and before relationship sync, so a rejected call changes nothing
+- On create, null or omitted means no priority. On update, omitted leaves the stored value alone and null clears it
+- Batch update checks the value once, up front: an invalid value rejects the whole call before any ticket is written
+
+**MCP schema**:
+- `priority` is declared as integer or null, with no string branch and no coercion. `true`, `1.0`, and `"2"` fail input validation (a "valid integer" error) before the core op runs, and no file changes
+
+**CLI** (`create-ticket` and `update-ticket`):
+- `--priority` takes an optional `-` followed by ASCII digits, or the word `null`; `-3` and `=-3` forms work
+- Anything else (`1.5`, `true`, `abc`, `+3`, `1e3`, `1_000`, a leading space, an empty value) returns `invalid_priority` with exit 1 before any core logic runs
+
 ## Linter Architecture
 
 The linter validates ticket structure and relationships through a two-phase scanning and validation process. Implementation spans `src/linter.py`, `src/linter_report.py`, and integrates with existing reader and ID utilities.

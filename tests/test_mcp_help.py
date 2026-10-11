@@ -20,26 +20,24 @@ def get_param_names(command: dict) -> set[str]:
     return {p["name"] for p in params}
 
 
-@pytest.mark.parametrize(
-    "command_name,deprecated_param",
-    [
-        ("create_ticket", "owner"),
-        ("create_ticket", "priority"),
-        ("update_ticket", "owner"),
-        ("update_ticket", "priority"),
-    ],
-    ids=["create_no_owner", "create_no_priority", "update_no_owner", "update_no_priority"],
-)
-def test_no_deprecated_params(command_name: str, deprecated_param: str):
-    """Verify deprecated params (owner, priority) are not in create_ticket or update_ticket."""
+@pytest.mark.parametrize("command_name", ["create_ticket", "update_ticket"])
+def test_owner_param_absent(command_name: str):
+    """Verify the deprecated owner param is not in create_ticket or update_ticket."""
     result = _help()
     cmd = get_command_by_name(result, command_name)
     assert cmd is not None, f"Command {command_name} not found"
 
-    param_names = get_param_names(cmd)
-    assert deprecated_param not in param_names, (
-        f"Deprecated param '{deprecated_param}' should not appear in {command_name}"
-    )
+    assert "owner" not in get_param_names(cmd), f"Deprecated param 'owner' should not appear in {command_name}"
+
+
+@pytest.mark.parametrize("command_name", ["create_ticket", "update_ticket"])
+def test_priority_param_present(command_name: str):
+    """Verify priority is listed for create_ticket and update_ticket."""
+    result = _help()
+    cmd = get_command_by_name(result, command_name)
+    assert cmd is not None, f"Command {command_name} not found"
+
+    assert "priority" in get_param_names(cmd), f"priority should appear in {command_name}"
 
 
 def test_reference_materials_param_in_create_ticket():
@@ -119,6 +117,7 @@ def test_create_ticket_has_expected_params():
         "tags",
         "status",
         "reference_materials",
+        "priority",
     }
 
     result = _help()
@@ -144,6 +143,7 @@ def test_update_ticket_has_expected_params():
         "down_dependencies",
         "tags",
         "status",
+        "priority",
     }
 
     result = _help()

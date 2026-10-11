@@ -476,3 +476,32 @@ PRIORITY_FRONTMATTER = {
     "beyond_64_bit": (str(2**70), 2**70, "int"),
     **INVALID_PRIORITY_FRONTMATTER,
 }
+
+# ============================================================================
+# Priority values that create/update must reject (Python values, as MCP and the ticket operations receive them)
+# ============================================================================
+# {pytest id: value}. True and False are ints in Python but not integer priorities (SRD SR-9.3).
+INVALID_PRIORITY_INPUTS = {
+    "true": True,
+    "false": False,
+    "whole_float": 1.0,
+    "float": 1.5,
+    "numeric_string": "2",
+    "word": "abc",
+    "list": [1],
+}
+
+# --priority arguments the CLI must reject (SRD SR-2.5, SR-9.3); int() would accept 1_000, +3 and " 2"
+# {pytest id: value}
+INVALID_PRIORITY_CLI_ARGS = {
+    "float": "1.5",
+    "whole_float": "1.0",
+    "true": "true",
+    "word": "abc",
+    "exponent": "1e3",
+    "underscore": "1_000",
+    "plus_sign": "+3",
+    "space_2": " 2",
+    "empty": "",
+    "null_word": "NULL",
+}

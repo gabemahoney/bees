@@ -131,6 +131,7 @@ def create_bee(
     status: str | None = None,
     reference_materials: list[dict[str, Any]] | None = None,
     guid: str | None = None,
+    priority: int | None = None,
 ) -> tuple[str, str]:
     """
     Create a Bee ticket with YAML frontmatter.
@@ -143,6 +144,7 @@ def create_bee(
         down_dependencies: List of ticket IDs that this bee blocks
         status: Status string (default: "open")
         hive_name: Hive name determining storage location (required, e.g., "backend" stores in backend hive)
+        priority: Optional integer priority; None means no priority (nothing is written)
 
     Returns:
         (ticket_id, guid) tuple
@@ -181,6 +183,7 @@ def create_bee(
         status=status,
         reference_materials=reference_materials,
         guid=guid,
+        priority=priority,
     )
 
 
@@ -195,6 +198,7 @@ def create_child_tier(
     down_dependencies: list[str] | None = None,
     status: str | None = None,
     guid: str | None = None,
+    priority: int | None = None,
 ) -> tuple[str, str]:
     """
     Create a child tier ticket (t1, t2, t3, etc.) with YAML frontmatter.
@@ -212,6 +216,7 @@ def create_child_tier(
         up_dependencies: List of ticket IDs that block this ticket
         down_dependencies: List of ticket IDs that this ticket blocks
         status: Status string (default: "open")
+        priority: Optional integer priority; None means no priority (nothing is written)
 
     Returns:
         (ticket_id, guid) tuple
@@ -254,6 +259,7 @@ def create_child_tier(
         down_dependencies=down_dependencies,
         status=status,
         guid=guid,
+        priority=priority,
     )
 
 

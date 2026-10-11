@@ -129,6 +129,12 @@ def _help() -> dict[str, Any]:
                 {"name": "tags", "type": "list[str]", "required": False, "description": "Tag strings"},
                 {"name": "status", "type": "str", "required": False, "description": "Status"},
                 {
+                    "name": "priority",
+                    "type": "int | null",
+                    "required": False,
+                    "description": "Integer priority, may be zero or negative; null or omitted means no priority",
+                },
+                {
                     "name": "reference_materials",
                     "type": "list[dict] | null",
                     "required": False,
@@ -149,6 +155,15 @@ def _help() -> dict[str, Any]:
                 {"name": "down_dependencies", "type": "list[str]", "required": False, "description": "New blocked IDs"},
                 {"name": "tags", "type": "list[str]", "required": False, "description": "New tags"},
                 {"name": "status", "type": "str", "required": False, "description": "New status"},
+                {
+                    "name": "priority",
+                    "type": "int | null",
+                    "required": False,
+                    "description": (
+                        "New integer priority, may be zero or negative; null clears it, omitted leaves it "
+                        "unchanged. Works in batch updates"
+                    ),
+                },
             ],
         },
         {

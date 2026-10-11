@@ -15,6 +15,7 @@ SCOPE - Tests that belong here:
 - JSON output structure and field values
 - UNSET sentinel behaviour for update-ticket
 - JSON flag parsing: --reference-materials null, --tags '["a","b"]'
+- The --priority flag on create-ticket and update-ticket (set, clear, batch, rejection, help text)
 - No-subcommand invocation
 
 SCOPE - Tests that DON'T belong here:
@@ -33,9 +34,12 @@ import json
 
 import pytest
 
+from src.parser import parse_frontmatter
 from tests.conftest import write_multi_scope_config
+from tests.helpers import snapshot_diff, tree_snapshot
 from tests.test_constants import (
     HIVE_FEATURES,
+    INVALID_PRIORITY_CLI_ARGS,
     SCOPE_TIER_DEFAULT,
 )
 
@@ -953,3 +957,180 @@ class TestTestConfigFlag:
             ]
         )
         assert exit_code != 0
+
+
+# ---------------------------------------------------------------------------
+# --priority on create-ticket and update-ticket
+# ---------------------------------------------------------------------------
+
+_NO_KEY = "<no priority key>"
+
+
+@pytest.fixture
+def priority_hive(isolated_bees_env):
+    """Hive `test` with a t1 tier; returns its path."""
+    hive_dir = isolated_bees_env.create_hive("test", "Test")
+    isolated_bees_env.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+    return hive_dir
+
+
+def _stored_priority(hive_dir, ticket_id):
+    """The frontmatter priority of a ticket file, or _NO_KEY when the file has no priority key."""
+    path = next(hive_dir.rglob(f"{ticket_id}.md"))
+    return parse_frontmatter(path)[0].get("priority", _NO_KEY)
+
+
+def _create_via_cli(cli_runner, *extra, ticket_type="bee"):
+    """create-ticket in hive `test` with extra argv; returns (parsed output, exit code)."""
+    stdout, exit_code = cli_runner(["create-ticket", "--ticket-type", ticket_type, "--title", "P", "--hive", "test", *extra])
+    return json.loads(stdout), exit_code
+
+
+@pytest.mark.parametrize(
+    "priority_argv,expected",
+    [
+        pytest.param(["--priority", "-3"], -3, id="negative"),
+        pytest.param(["--priority=-3"], -3, id="negative_equals"),
+        pytest.param(["--priority", "0"], 0, id="zero"),
+        pytest.param(["--priority", "12"], 12, id="positive"),
+        pytest.param(["--priority", "null"], _NO_KEY, id="null"),
+        pytest.param([], _NO_KEY, id="omitted"),
+    ],
+)
+def test_create_ticket_bee_priority(cli_runner, priority_hive, priority_argv, expected):
+    result, exit_code = _create_via_cli(cli_runner, *priority_argv)
+
+    assert exit_code == 0 and result["status"] == "success"
+    stored = _stored_priority(priority_hive, result["ticket_id"])
+    assert stored == expected and type(stored) is type(expected)
+
+
+@pytest.mark.parametrize(
+    "priority_argv,expected",
+    [
+        pytest.param(["--priority", "0"], 0, id="zero"),
+        pytest.param(["--priority=-3"], -3, id="negative_equals"),
+        pytest.param(["--priority", "null"], _NO_KEY, id="null"),
+        pytest.param([], _NO_KEY, id="omitted"),
+    ],
+)
+def test_create_ticket_t1_priority(cli_runner, priority_hive, priority_argv, expected):
+    parent, _ = _create_via_cli(cli_runner)
+
+    result, exit_code = _create_via_cli(cli_runner, "--parent", parent["ticket_id"], *priority_argv, ticket_type="t1")
+
+    assert exit_code == 0 and result["status"] == "success"
+    stored = _stored_priority(priority_hive, result["ticket_id"])
+    assert stored == expected and type(stored) is type(expected)
+
+
+@pytest.mark.parametrize(
+    "priority_argv,expected",
+    [
+        pytest.param(["--priority", "-3"], -3, id="negative"),
+        pytest.param(["--priority=-3"], -3, id="negative_equals"),
+        pytest.param(["--priority", "0"], 0, id="zero"),
+        pytest.param(["--priority", "5"], 5, id="positive"),
+    ],
+)
+@pytest.mark.parametrize("ticket_type", ["bee", "t1"])
+def test_update_ticket_sets_priority(cli_runner, priority_hive, ticket_type, priority_argv, expected):
+    bee, _ = _create_via_cli(cli_runner, "--priority", "99")
+    target = bee["ticket_id"]
+    if ticket_type == "t1":
+        target = _create_via_cli(cli_runner, "--parent", target, "--priority", "99", ticket_type="t1")[0]["ticket_id"]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", target, *priority_argv])
+
+    assert exit_code == 0 and json.loads(stdout)["updated"] == [target]
+    stored = _stored_priority(priority_hive, target)
+    assert stored == expected and type(stored) is int
+
+
+def test_update_ticket_null_priority_removes_the_key(cli_runner, priority_hive):
+    ticket_id = _create_via_cli(cli_runner, "--priority", "4")[0]["ticket_id"]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--priority", "null"])
+
+    assert exit_code == 0 and json.loads(stdout)["status"] == "success"
+    assert _stored_priority(priority_hive, ticket_id) == _NO_KEY
+
+
+def test_update_ticket_null_priority_on_ticket_without_one_leaves_no_key(cli_runner, priority_hive):
+    ticket_id = _create_via_cli(cli_runner)[0]["ticket_id"]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--priority", "null"])
+
+    assert exit_code == 0 and json.loads(stdout)["status"] == "success"
+    assert _stored_priority(priority_hive, ticket_id) == _NO_KEY
+
+
+def test_update_ticket_without_priority_flag_leaves_priority(cli_runner, priority_hive):
+    ticket_id = _create_via_cli(cli_runner, "--priority=-3")[0]["ticket_id"]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--status", "worker"])
+
+    assert exit_code == 0 and json.loads(stdout)["status"] == "success"
+    assert _stored_priority(priority_hive, ticket_id) == -3
+
+
+@pytest.mark.parametrize(
+    "priority_argv,expected",
+    [(["--priority", "2"], 2), (["--priority=-2"], -2), (["--priority", "0"], 0)],
+    ids=["positive", "negative", "zero"],
+)
+def test_update_ticket_priority_applies_to_every_id(cli_runner, priority_hive, priority_argv, expected):
+    first = _create_via_cli(cli_runner)[0]["ticket_id"]
+    second = _create_via_cli(cli_runner, "--priority", "9")[0]["ticket_id"]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", first, second, *priority_argv])
+
+    assert exit_code == 0 and sorted(json.loads(stdout)["updated"]) == sorted([first, second])
+    assert [_stored_priority(priority_hive, i) for i in (first, second)] == [expected, expected]
+
+
+def test_update_ticket_null_priority_clears_every_id(cli_runner, priority_hive):
+    ids = [_create_via_cli(cli_runner, "--priority", str(n))[0]["ticket_id"] for n in (1, 2)]
+
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", *ids, "--priority", "null"])
+
+    assert exit_code == 0 and json.loads(stdout)["status"] == "success"
+    assert [_stored_priority(priority_hive, i) for i in ids] == [_NO_KEY, _NO_KEY]
+
+
+@pytest.mark.parametrize("bad", INVALID_PRIORITY_CLI_ARGS.values(), ids=INVALID_PRIORITY_CLI_ARGS)
+def test_create_ticket_rejects_invalid_priority(cli_runner, priority_hive, bad):
+    parent, _ = _create_via_cli(cli_runner)
+    before = tree_snapshot(priority_hive)
+
+    for ticket_type, extra in (("bee", []), ("t1", ["--parent", parent["ticket_id"]])):
+        result, exit_code = _create_via_cli(cli_runner, *extra, "--priority", bad, ticket_type=ticket_type)
+
+        assert exit_code == 1
+        assert result["status"] == "error" and result["error_type"] == "invalid_priority"
+    assert snapshot_diff(before, tree_snapshot(priority_hive)) == (set(), set(), set())
+
+
+@pytest.mark.parametrize("bad", INVALID_PRIORITY_CLI_ARGS.values(), ids=INVALID_PRIORITY_CLI_ARGS)
+def test_update_ticket_rejects_invalid_priority(cli_runner, priority_hive, bad):
+    first = _create_via_cli(cli_runner, "--priority", "5")[0]["ticket_id"]
+    second = _create_via_cli(cli_runner)[0]["ticket_id"]
+    before = tree_snapshot(priority_hive)
+
+    for ids in ([first], [first, second]):
+        stdout, exit_code = cli_runner(["update-ticket", "--ids", *ids, "--priority", bad, "--title", "Renamed"])
+
+        assert exit_code == 1
+        result = json.loads(stdout)
+        assert result["status"] == "error" and result["error_type"] == "invalid_priority"
+    assert snapshot_diff(before, tree_snapshot(priority_hive)) == (set(), set(), set())
+
+
+@pytest.mark.parametrize("command", ["create-ticket", "update-ticket"])
+def test_priority_help_text_documents_the_flag(cli_runner, command):
+    stdout, exit_code = cli_runner([command, "--help"])
+
+    help_text = " ".join(stdout.split()).lower()
+    assert exit_code == 0
+    assert "--priority" in help_text
+    assert all(word in help_text for word in ("integer", "null", "negative"))

@@ -507,23 +507,25 @@ Parameters:
 - `tags`: optional list of strings
 - `status`: optional; validated against `status_values` if configured
 - `reference_materials`: optional; bee tickets only; list of `{value, resolver?}` dicts
+- `priority`: optional integer (zero and negative allowed) or null; null or omitted means no priority. Strictly an integer: a boolean, float, or string is rejected, never coerced
 
 Process:
-1. Resolve `hive` (accepts display name or normalized name)
-2. Validate `ticket_type` against hive's tier config (friendly names resolved to canonical)
-3. If child tier: validate parent exists and is correct tier (t1 needs bee parent, t2 needs t1, etc.)
-4. If `status_values` configured: validate status is in allowed list
-5. Generate unique ticket ID
-6. Generate GUID
-7. Set `created_at` to current time
-8. Set `schema_version` to current constant
-9. Create ticket directory
-10. Write ticket file (atomic)
-11. Sync bidirectional relationships (parent↔children, deps↔deps)
+1. Validate `priority` is an integer or null, before anything is written
+2. Resolve `hive` (accepts display name or normalized name)
+3. Validate `ticket_type` against hive's tier config (friendly names resolved to canonical)
+4. If child tier: validate parent exists and is correct tier (t1 needs bee parent, t2 needs t1, etc.)
+5. If `status_values` configured: validate status is in allowed list
+6. Generate unique ticket ID
+7. Generate GUID
+8. Set `created_at` to current time
+9. Set `schema_version` to current constant
+10. Create ticket directory
+11. Write ticket file (atomic)
+12. Sync bidirectional relationships (parent↔children, deps↔deps)
 
 Returns: `{status: "success", ticket_id, guid}`
 
-Errors: `invalid_ticket_type`, `invalid_parent`, `invalid_status`, `invalid_dependency`, `circular_dependency`
+Errors: `invalid_ticket_type`, `invalid_parent`, `invalid_status`, `invalid_dependency`, `circular_dependency`, `invalid_priority`
 
 ### 8.2 Show Ticket
 
@@ -544,6 +546,7 @@ Returns:
 - Found ticket → fully populated in `tickets` array
 - Found ticket whose file cannot be read or parsed (bad YAML, no `schema_version`, no closing `---`) → goes to `errors` as `{"id", "reason": "Failed to read ticket <id>: ..."}` and is left out of `tickets`; the call still succeeds and the other IDs are reported as usual
 - Reference materials are resolved per-entry using named resolvers (each entry augmented with a `resolved` key)
+- `priority` is always returned for every found ticket: the stored integer, or `null` when the ticket has no priority. A stored value that is not a valid integer (e.g. `"2"`, `true`, `1.5`, hand-edited into the file) is returned as read, not coerced or hidden; the linter flags it
 
 ### 8.3 Update Ticket
 
@@ -553,6 +556,7 @@ Parameters:
 - `body`: new body text (single mode only)
 - `body_file`: path to a UTF-8 file whose contents become the new body (single mode only); mutually exclusive with `body`
 - `status`: new status value (single and batch)
+- `priority`: new integer priority, or null to clear (single and batch)
 - `tags`: full replacement list (single mode only)
 - `add_tags`: tags to add incrementally (single and batch)
 - `remove_tags`: tags to remove incrementally (single and batch)
@@ -561,7 +565,7 @@ Parameters:
 - `reference_materials`: new reference_materials value (single mode only, bee tickets only)
 - `hive`: optional, speeds up ticket lookup by narrowing the search to one hive
 
-**Batch mode**: when `ticket_ids` is a list, only `status`, `add_tags`, `remove_tags` are allowed.
+**Batch mode**: when `ticket_ids` is a list, only `status`, `priority`, `add_tags`, `remove_tags` are allowed.
 
 **Immutable fields**: `parent` and `children` cannot be set via update — attempting to pass these returns an error.
 
@@ -569,10 +573,12 @@ Parameters:
 
 **Reference materials behavior**: unchanged when `reference_materials` parameter not passed; set to new value (including null) when passed.
 
+**Priority behavior**: unchanged when `priority` is not passed; an integer sets it; null clears it (the key is removed from the file). A value that is not an integer or null is rejected with `invalid_priority` before any write or relationship sync. In batch mode an invalid value rejects the whole call and no ticket is written.
+
 Returns (single): `{status: "success", ticket_id}`
 Returns (batch): `{status: "success", updated: [...]}`
 
-Errors: `ticket_not_found`, `invalid_title` (empty), `invalid_dependency`, `circular_dependency`, `invalid_status`
+Errors: `ticket_not_found`, `invalid_title` (empty), `invalid_dependency`, `circular_dependency`, `invalid_status`, `invalid_priority`
 
 ### 8.4 Delete Ticket
 
@@ -1288,9 +1294,9 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 
 | Command | Key Arguments |
 |---------|--------------|
-| `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --reference-materials]` |
+| `create-ticket` | `--ticket-type --title --hive [--body \| --body-file --parent --children --up-deps --down-deps --tags --status --priority --reference-materials]` |
 | `show-ticket` | `--ids ID [ID ...]` |
-| `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --tags --up-deps --down-deps --reference-materials --add-tags --remove-tags --hive]` |
+| `update-ticket` | `--ids ID [ID ...] [--title --body \| --body-file --status --priority --tags --up-deps --down-deps --reference-materials --add-tags --remove-tags --hive]` |
 | `append-ticket-body` | `--ticket-id (--chunk \| --chunk-file) [--hive]` |
 | `delete-ticket` | `--ids ID [ID ...] [--hive]` |
 | `get-types` | (none) |
@@ -1441,6 +1447,7 @@ Installs hook entries:
 | `circular_dependency` | Adding dep would create a cycle |
 | `invalid_parent` | Parent wrong type or doesn't exist |
 | `invalid_status` | Status not in configured `status_values` |
+| `invalid_priority` | `priority` is not an integer or null (boolean, float, and string rejected; CLI `--priority` not an integer literal or `null`) |
 | `invalid_source_type` | Clone non-bee ID |
 | `bee_not_found` | Clone target doesn't exist |
 | `clone_write_error` | Root bee write failed during clone |
@@ -1618,11 +1625,12 @@ Args:
 - `tags`: List of string tags.
 - `status`: Freeform if no status_values are configured for the hive; otherwise must be one of the hive's configured values. Required when status_values are configured.
 - `reference_materials`: Tracks external resources related to the ticket. A list of `{value, resolver?}` dicts. Only supported on bee (t0) tickets.
+- `priority`: Integer priority, may be zero or negative; null or omitted means no priority. Must be an integer: a string, float, or boolean is rejected.
 
 ### `update_ticket`
 Update one or more existing tickets.
 
-Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]). Batch mode only allows status, add_tags, and remove_tags — other fields are rejected.
+Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]). Batch mode only allows status, priority, add_tags, and remove_tags — other fields are rejected.
 
 Args:
 - `ticket_ids`: Ticket ID to update, or list of IDs for batch update.
@@ -1635,6 +1643,7 @@ Args:
 - `add_tags`: Tags to add (single and batch).
 - `remove_tags`: Tags to remove (single and batch).
 - `status`: New status value (single and batch).
+- `priority`: New integer priority (single and batch); null clears it, omitted leaves it unchanged. Must be an integer or null.
 - `reference_materials`: New reference materials data (single mode only). Only supported on bee tickets.
 - `hive`: Optional hive name for faster lookup.
 
@@ -1922,6 +1931,7 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
                           [--body BODY | --body-file PATH] [--parent ID]
                           [--children JSON] [--up-deps JSON] [--down-deps JSON]
                           [--tags JSON] [--status STATUS] [--reference-materials JSON]
+                          [--priority INT]
 
   --ticket-type TYPE    "bee" for top-level, or child tier by ID ("t1", "t2")
                         or friendly name. Run get-types to see configured tiers.
@@ -1942,6 +1952,8 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
   --tags JSON           JSON array of tag strings e.g. '["bug","urgent"]'
   --status STATUS       Ticket status
   --reference-materials JSON  JSON list of reference material dicts. Only supported on bee tickets.
+  --priority INT        Integer priority; may be zero or negative (e.g. --priority -3
+                        or --priority=-3). Omit, or pass null, for no priority.
 ```
 
 Note: `--body` and `--body-file` are mutually exclusive; pass `--body-file -` to read the body from stdin.
@@ -1959,6 +1971,7 @@ usage: bees show-ticket --ids ID [ID ...]
 ```
 usage: bees update-ticket --ids ID [ID ...] [--title TITLE]
                           [--body BODY | --body-file PATH] [--status STATUS]
+                          [--priority INT|null]
                           [--tags JSON] [--up-deps JSON] [--down-deps JSON]
                           [--reference-materials JSON] [--add-tags JSON] [--remove-tags JSON]
                           [--hive HIVE]
@@ -1976,6 +1989,9 @@ flags are left as-is. Pass null to JSON fields to clear them (e.g. --tags null).
                         same 10000 character cap as --body, with oversized input
                         pointed at 'bees append-ticket-body'.
   --status STATUS       New status
+  --priority INT|null   New integer priority; may be zero or negative (e.g. --priority -3
+                        or --priority=-3). 'null' clears the priority; omitted leaves it
+                        unchanged. Applies to every ID when several are given with --ids.
   --tags JSON           Full replacement tag list as JSON array (null to clear)
   --up-deps JSON        Full replacement list of blocking ticket IDs (null to clear)
   --down-deps JSON      Full replacement list of dependent ticket IDs (null to clear)

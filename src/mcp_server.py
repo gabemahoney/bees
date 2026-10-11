@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
-from pydantic import Field
+from pydantic import Field, StrictInt
 
 from .config import (  # noqa: F401 - re-exported for test mocking
     check_queen_write_access,
@@ -210,6 +210,7 @@ async def create_ticket(
     ctx: Context | None = None,
     repo_root: str | None = None,
     reference_materials: list[dict] | None = None,
+    priority: StrictInt | None = None,
 ) -> dict[str, Any]:
     """Create a new ticket in a hive.
 
@@ -241,6 +242,8 @@ async def create_ticket(
                 one of the hive's configured values. Required when status_values are configured.
         reference_materials: Tracks external resources related to the ticket.
                              Only supported on bee (t0) tickets.
+        priority: Optional integer priority; may be zero or negative. Null or omitted means
+                  no priority. Only an integer or null is accepted (no booleans, floats or strings).
 
     """
     if body_file is not None and body != "":
@@ -268,6 +271,7 @@ async def create_ticket(
             reference_materials=reference_materials,
             resolved_root=resolved_root,
             unescape_body=body_file is None,
+            priority=priority,
         )
 
 
@@ -287,11 +291,12 @@ async def update_ticket(
     ctx: Context | None = None,
     repo_root: str | None = None,
     hive: str | None = None,
+    priority: StrictInt | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded so the schema stays integer-or-null
 ) -> dict[str, Any]:
     """Update one or more existing tickets.
 
     Supports single update (ticket_ids as str) or batch update (ticket_ids as list[str]).
-    Batch mode only allows status, add_tags, and remove_tags — other fields raise ValueError.
+    Batch mode only allows status, priority, add_tags, and remove_tags — other fields raise ValueError.
 
     For bodies longer than 10000 characters, update the ticket with a short
     stub body and then loop `append_ticket_body` to add the rest in chunks
@@ -318,6 +323,9 @@ async def update_ticket(
         status: New status value (single and batch).
         reference_materials: New reference_materials data (single mode only). Only supported on bee tickets.
         hive: Optional hive name for faster lookup.
+        priority: New integer priority, may be zero or negative (single and batch). Null clears
+                  the priority; omitted leaves it unchanged. Only an integer or null is accepted
+                  (no booleans, floats or strings).
 
     """
     if body_file is not None and body != _UNSET:
@@ -345,6 +353,7 @@ async def update_ticket(
             hive_name=hive,
             resolved_root=resolved_root,
             unescape_body=body_file is None,
+            priority=priority,
         )
 
 

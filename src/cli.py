@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -96,6 +97,35 @@ def _guard_queen_write_cli(root: Path) -> bool:
         _output_result(write_err)
         return True
     return False
+
+
+_PRIORITY_LITERAL = re.compile(r"-?[0-9]+")
+
+
+def _parse_priority_arg(value: str) -> tuple[bool, int | None]:
+    """Parse a ``--priority`` value: a strict integer literal or ``null``.
+
+    Accepts an optional ``-`` followed by digits (so ``-3``, ``0``, ``007``) or the
+    word ``null``. Rejects everything else (``+3``, ``1.5``, ``true``, ``abc``, blanks).
+
+    Returns:
+        (ok, parsed): ``(True, int)`` for a literal, ``(True, None)`` for ``null``,
+        ``(False, None)`` for an invalid value.
+    """
+    if value == "null":
+        return True, None
+    if _PRIORITY_LITERAL.fullmatch(value):
+        return True, int(value)
+    return False, None
+
+
+def _invalid_priority_result(value: str) -> dict:
+    """Build the ``invalid_priority`` error result for a bad ``--priority`` value."""
+    return {
+        "status": "error",
+        "error_type": "invalid_priority",
+        "message": f"Invalid priority {value!r}: priority must be an integer or null",
+    }
 
 
 def _reject_oversized_body_cli(arg_name: str, value: str) -> None:
@@ -203,6 +233,12 @@ def handle_create_ticket(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
+    priority = None
+    if args.priority is not None:
+        ok, priority = _parse_priority_arg(args.priority)
+        if not ok:
+            _output_result(_invalid_priority_result(args.priority))
+            return
     if args.body_file is not None:
         args.body = _read_body_file_arg("--body-file", args.body_file)
     if args.body is not None and args.body_file is None:
@@ -231,6 +267,7 @@ def handle_create_ticket(args):
             status=args.status,
             reference_materials=parsed_reference_materials,
             unescape_body=args.body_file is None,
+            priority=priority,
         ),
         root=root,
     )
@@ -253,6 +290,13 @@ def handle_update_ticket(args):
     if _guard_queen_write_cli(root):
         return
 
+    priority = _UNSET
+    if args.priority is not _UNSET:
+        ok, priority = _parse_priority_arg(args.priority)
+        if not ok:
+            _output_result(_invalid_priority_result(args.priority))
+            return
+
     if args.body_file is not None:
         args.body = _read_body_file_arg("--body-file", args.body_file)
 
@@ -272,6 +316,8 @@ def handle_update_ticket(args):
         kwargs["unescape_body"] = args.body_file is None
     if args.status is not _UNSET:
         kwargs["status"] = args.status
+    if priority is not _UNSET:
+        kwargs["priority"] = priority
     if args.tags is not _UNSET:
         kwargs["tags"] = parse_json_arg(args.tags, "--tags")
     if args.up_deps is not _UNSET:
@@ -884,6 +930,7 @@ def build_parser():
     p_create.add_argument("--tags", default=None, metavar="JSON", help='JSON array of tag strings e.g. \'["bug","urgent"]\'')  # noqa: E501
     p_create.add_argument("--status", default=None, help="Ticket status. Freeform unless the hive has status_values configured, in which case must be one of the allowed values.")  # noqa: E501
     p_create.add_argument("--reference-materials", default=None, dest="reference_materials", metavar="JSON", help="JSON list of reference material dicts. Tracks external resources related to the ticket. Only supported on bee (top-level) tickets.")  # noqa: E501
+    p_create.add_argument("--priority", default=None, metavar="INT", help="Integer priority; may be zero or negative (e.g. --priority -3 or --priority=-3). Omit, or pass null, for no priority.")  # noqa: E501
     p_create.set_defaults(func=handle_create_ticket)
 
     # --- show-ticket ---
@@ -907,6 +954,7 @@ def build_parser():
     p_update_body.add_argument("--body", default=_UNSET, help="New body (markdown). Literal \\n and \\t sequences are expanded to a newline and tab. Capped at 10000 characters; for larger bodies, set the body to the first 10000-character chunk and use 'bees append-ticket-body' to write the rest in chunks of up to 10000 characters each. Alternative: pass --body-file PATH when shell substitution is awkward.")  # noqa: E501
     p_update_body.add_argument("--body-file", dest="body_file", default=None, metavar="PATH", help="Read new body from a UTF-8 file (use '-' for stdin). Stored verbatim: escape sequences such as \\n are not interpreted. No size cap — use this to write bodies larger than 10000 characters without chunking.")  # noqa: E501
     p_update.add_argument("--status", default=_UNSET, help="New status")
+    p_update.add_argument("--priority", default=_UNSET, metavar="INT|null", help="New integer priority; may be zero or negative (e.g. --priority -3 or --priority=-3). 'null' clears the priority; omitted leaves it unchanged. Applies to every ID when several are given with --ids.")  # noqa: E501
     p_update.add_argument("--tags", default=_UNSET, dest="tags", metavar="JSON", help="Full replacement tag list as JSON array (null to clear)")  # noqa: E501
     p_update.add_argument("--up-deps", default=_UNSET, dest="up_deps", metavar="JSON", help="Full replacement list of ticket IDs that must be resolved BEFORE this one (null to clear)")  # noqa: E501
     p_update.add_argument("--down-deps", default=_UNSET, dest="down_deps", metavar="JSON", help="Full replacement list of ticket IDs this ticket must be resolved BEFORE (null to clear)")  # noqa: E501
