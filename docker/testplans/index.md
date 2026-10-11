@@ -1,6 +1,6 @@
 # Ticket Index
 
-*Generated: 2026-10-10 04:19:05*
+*Generated: 2026-10-10 22:53:46*
 
 <details><summary id="b-qi9">Full Regression Test [b.qi9] <code>pupa</code></summary>
 
@@ -117,6 +117,95 @@
 [Parent-scope hive visible when repo matches more-specific child scope](b.qi9/t1.qi9.w8/t2.qi9.w8.o1/t2.qi9.w8.o1.md) [t2.qi9.w8.o1] `unknown`
 
 </div>
+<details><summary id="t2-qi9-w8-pq">Priority Field CLI [t2.qi9.w8.pq] <code>pupa</code></summary>
+
+&ensp;&ensp;&ensp;&ensp;[Priority Field CLI](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t2.qi9.w8.pq.md) [t2.qi9.w8.pq]
+
+<div style="padding-left: 1.5em">
+
+<div id="t3-qi9-w8-pq-w1" style="margin-left:1em">
+
+[Batch update-ticket sets and clears priority](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.w1/t3.qi9.w8.pq.w1.md) [t3.qi9.w8.pq.w1] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-vm" style="margin-left:1em">
+
+[Malformed priority terms are rejected](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.vm/t3.qi9.w8.pq.vm.md) [t3.qi9.w8.pq.vm] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-gf" style="margin-left:1em">
+
+[Named query with a priority term](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.gf/t3.qi9.w8.pq.gf.md) [t3.qi9.w8.pq.gf] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-x8" style="margin-left:1em">
+
+[Priority setup: create tickets with and without a priority](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.x8/t3.qi9.w8.pq.x8.md) [t3.qi9.w8.pq.x8] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-tp" style="margin-left:1em">
+
+[Priority terms AND with other terms; priority:N tags stay tags](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.tp/t3.qi9.w8.pq.tp.md) [t3.qi9.w8.pq.tp] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-fy" style="margin-left:1em">
+
+[Priority values that are not integers are rejected](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.fy/t3.qi9.w8.pq.fy.md) [t3.qi9.w8.pq.fy] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-5j" style="margin-left:1em">
+
+[priority!=N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.5j/t3.qi9.w8.pq.5j.md) [t3.qi9.w8.pq.5j] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-6z" style="margin-left:1em">
+
+[priority<=N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.6z/t3.qi9.w8.pq.6z.md) [t3.qi9.w8.pq.6z] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-cm" style="margin-left:1em">
+
+[priority<N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.cm/t3.qi9.w8.pq.cm.md) [t3.qi9.w8.pq.cm] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-ss" style="margin-left:1em">
+
+[priority=N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.ss/t3.qi9.w8.pq.ss.md) [t3.qi9.w8.pq.ss] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-jg" style="margin-left:1em">
+
+[priority=none filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.jg/t3.qi9.w8.pq.jg.md) [t3.qi9.w8.pq.jg] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-oy" style="margin-left:1em">
+
+[priority>=N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.oy/t3.qi9.w8.pq.oy.md) [t3.qi9.w8.pq.oy] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-5u" style="margin-left:1em">
+
+[priority>N filter](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.5u/t3.qi9.w8.pq.5u.md) [t3.qi9.w8.pq.5u] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-pk" style="margin-left:1em">
+
+[Report stage returns priority](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.pk/t3.qi9.w8.pq.pk.md) [t3.qi9.w8.pq.pk] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-7z" style="margin-left:1em">
+
+[show-ticket returns priority, null when unset](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.7z/t3.qi9.w8.pq.7z.md) [t3.qi9.w8.pq.7z] `pupa`
+
+</div>
+<div id="t3-qi9-w8-pq-nd" style="margin-left:1em">
+
+[update-ticket sets, changes and clears priority](b.qi9/t1.qi9.w8/t2.qi9.w8.pq/t3.qi9.w8.pq.nd/t3.qi9.w8.pq.nd.md) [t3.qi9.w8.pq.nd] `pupa`
+
+</div>
+
+</div>
+</details>
 <div id="t2-qi9-w8-ej" style="margin-left:1em">
 
 [Queen repo lists hives from a scope that doesn't match its own root](b.qi9/t1.qi9.w8/t2.qi9.w8.ej/t2.qi9.w8.ej.md) [t2.qi9.w8.ej] `pupa`
@@ -472,6 +561,45 @@
 <div id="t3-qi9-4u-w8-yr" style="margin-left:1em">
 
 [Test 332: Abandon hive via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.w8/t3.qi9.4u.w8.yr/t3.qi9.4u.w8.yr.md) [t3.qi9.4u.w8.yr] `pupa`
+
+</div>
+
+</div>
+</details>
+<details><summary id="t2-qi9-4u-pr">Priority via HTTP [t2.qi9.4u.pr] <code>pupa</code></summary>
+
+&ensp;&ensp;&ensp;&ensp;[Priority via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t2.qi9.4u.pr.md) [t2.qi9.4u.pr]
+
+<div style="padding-left: 1.5em">
+
+<div id="t3-qi9-4u-pr-fr" style="margin-left:1em">
+
+[Test 343: create_ticket with priority and show_ticket via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.fr/t3.qi9.4u.pr.fr.md) [t3.qi9.4u.pr.fr] `pupa`
+
+</div>
+<div id="t3-qi9-4u-pr-cp" style="margin-left:1em">
+
+[Test 344: Numeric priority filters via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.cp/t3.qi9.4u.pr.cp.md) [t3.qi9.4u.pr.cp] `pupa`
+
+</div>
+<div id="t3-qi9-4u-pr-3o" style="margin-left:1em">
+
+[Test 345: priority=none, combined terms, tags and report via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.3o/t3.qi9.4u.pr.3o.md) [t3.qi9.4u.pr.3o] `pupa`
+
+</div>
+<div id="t3-qi9-4u-pr-gp" style="margin-left:1em">
+
+[Test 346: Malformed priority terms and a named query via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.gp/t3.qi9.4u.pr.gp.md) [t3.qi9.4u.pr.gp] `pupa`
+
+</div>
+<div id="t3-qi9-4u-pr-qb" style="margin-left:1em">
+
+[Test 347: update_ticket sets, changes and clears priority via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.qb/t3.qi9.4u.pr.qb.md) [t3.qi9.4u.pr.qb] `pupa`
+
+</div>
+<div id="t3-qi9-4u-pr-az" style="margin-left:1em">
+
+[Test 348: Priority values that are not integers are rejected via HTTP](b.qi9/t1.qi9.4u/t2.qi9.4u.pr/t3.qi9.4u.pr.az/t3.qi9.4u.pr.az.md) [t3.qi9.4u.pr.az] `pupa`
 
 </div>
 

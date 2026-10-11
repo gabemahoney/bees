@@ -99,6 +99,7 @@ PHASE_SECTIONS = {
         "FREEFORM QUERIES",
         "NAMED QUERIES",
         "BODY FILE / CHUNK FILE",
+        "PRIORITY",
     },
     5: {
         "INDEX GENERATION",

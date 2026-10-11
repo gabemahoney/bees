@@ -1524,11 +1524,11 @@ The integration test suite lives at `b.qi9` in the testplans hive. It consists o
 | Phase | ID | Tests | Description |
 |-------|-----|-------|-------------|
 | 1 | t1.qi9.8h | 1-3 | Installation & Environment |
-| 2 | t1.qi9.w8 | 4-83 | CLI Exhaustive Tests (Part 1) |
+| 2 | t1.qi9.w8 | 4-99 | CLI Exhaustive Tests (Part 1) |
 | 3 | t1.qi9.de | 301-320 | Stdio MCP Server Tests |
-| 4 | t1.qi9.4u | 321-342 | HTTP MCP Server Tests |
-| 5 | t1.qi9.h5 | 84-178 | CLI Exhaustive Tests (Part 2) |
-| 6 | t1.qi9.kw | 179-192 | Resolver Registry Tests |
+| 4 | t1.qi9.4u | 321-348 | HTTP MCP Server Tests |
+| 5 | t1.qi9.h5 | 100-194 | CLI Exhaustive Tests (Part 2) |
+| 6 | t1.qi9.kw | 195-208 | Resolver Registry Tests |
 
 Phases 1, 2, 5 and 6 are numbered in order from 1; the LLM-run Phases 3 and 4 from 301, so adding a CLI test renumbers none of theirs.
 
@@ -1562,6 +1562,7 @@ Phases 1, 2, 5 and 6 are numbered in order from 1; the LLM-run Phases 3 and 4 fr
 | 24 | Fast Parser | search filters and graph traversals return correct results |
 | 25 | Clone Bee | flat/tree clone, remapped refs, non-bee rejection, cross-hive, compatibility, --force |
 | 26 | Uninstall | remove hooks, pipx uninstall |
+| 27 | Priority | set on create, show (null when unset), change and clear (single and batch), every filter term including priority=none, report, named query, invalid values rejected, priority:N tags stay tags; CLI (Phase 2) and MCP over HTTP (Phase 4) |
 
 ### 26.3 Cross-Cutting Test Requirements
 

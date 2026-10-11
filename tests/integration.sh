@@ -1739,6 +1739,267 @@ run_setup_test test_chunk_file_append
 run_test test_chunk_file_mutual_exclusion
 run_test test_body_file_not_found
 
+# === PHASE 2: PRIORITY ===
+phase_section 2
+
+# Priorities set by test_prio_setup: PA 2, its task TA 1, PB 0, PC -1; PD (tagged priority:1) and its task TD unset
+PA=""
+TA=""
+PB=""
+PC=""
+PD=""
+TD=""
+
+# Sorted, space-separated ticket IDs of a query of the priority hive; $1 is the extra stage terms (YAML flow
+# items: quote one holding a colon)
+prio_query() {
+    capture_cmd bees execute-freeform-query --query-yaml "stages:
+  - [hive=priority_hive, $1]"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        echo "exit $CMD_EXIT: $CMD_OUT"
+        return
+    fi
+    check_json "$CMD_OUT" "' '.join(sorted(d['ticket_ids']))"
+}
+
+# Checks that the priority hive query with stage terms $1 returns exactly the tickets $2 (space-separated)
+assert_prio_query() {
+    local terms="$1"
+    local name="$3"
+    local expected got
+    expected=$(tr ' ' '\n' <<< "$2" | sort | tr '\n' ' ' | sed 's/ *$//')
+    got=$(prio_query "$terms")
+    assert_eq "$got" "$expected" "$name" "[$terms]: expected '$expected', got '$got'"
+}
+
+# The priority of each ticket $1.. as show-ticket gives it, as "id=priority" lines. Run it in $(...): the
+# CMD_OUT it sets does not reach the caller
+shown_priorities() {
+    capture_cmd bees show-ticket --ids "$@"
+    check_json "$CMD_OUT" "'\n'.join(f\"{t['ticket_id']}={t['priority']}\" for t in d['tickets'])"
+}
+
+test_prio_setup() {
+    capture_cmd bees colonize-hive \
+        --name "Priority Hive" \
+        --path "$REPO/tickets/priority_hive" \
+        --child-tiers '{"t1":["Task","Tasks"]}'
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Priority setup" "Colonize failed: exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Two" --hive priority_hive --priority 2
+    PA=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "Prio One Task" --hive priority_hive \
+        --parent "$PA" --priority 1
+    TA=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Zero" --hive priority_hive --priority 0
+    PB=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Minus One" --hive priority_hive --priority=-1
+    PC=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Tag Only" --hive priority_hive \
+        --tags '["priority:1"]'
+    PD=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type t1 --title "No Prio Task" --hive priority_hive --parent "$PD"
+    TD=$(check_json "$CMD_OUT" "d['ticket_id']")
+    pass_test "Priority setup"
+}
+
+test_prio_show() {
+    local got expected
+    got=$(shown_priorities "$PA" "$TA" "$PB" "$PC" "$PD" "$TD")
+    expected=$(printf '%s\n' "$PA=2" "$TA=1" "$PB=0" "$PC=-1" "$PD=None" "$TD=None")
+    if [ "$got" != "$expected" ]; then
+        fail_test "show-ticket returns priority" "expected '$expected', got '$got'"
+    fi
+    local tags
+    capture_cmd bees show-ticket --ids "$PD"
+    tags=$(check_json "$CMD_OUT" "d['tickets'][0]['tags']")
+    if [ "$tags" != "['priority:1']" ]; then
+        fail_test "show-ticket returns priority" "Expected PD's tags ['priority:1'], got $tags"
+    fi
+    # Set: an integer key in the file. Unset: no key at all
+    if ! grep -qx "priority: 2" "$REPO/tickets/priority_hive/$PA/$PA.md"; then
+        fail_test "show-ticket returns priority" "No 'priority: 2' line in $PA's file"
+    fi
+    if grep -q "^priority:" "$REPO/tickets/priority_hive/$PD/$PD.md"; then
+        fail_test "show-ticket returns priority" "$PD has no priority, but its file holds a priority key"
+    fi
+    pass_test "show-ticket returns priority"
+}
+
+test_prio_filter_eq() {
+    # PD's priority:1 tag is not the priority field
+    assert_prio_query "priority=1" "$TA" "priority=N filter"
+}
+
+test_prio_filter_ne() {
+    # Unset tickets never match a numeric term, != included
+    assert_prio_query "priority!=0" "$PA $TA $PC" "priority!=N filter"
+}
+
+test_prio_filter_lt() {
+    assert_prio_query "priority<0" "$PC" "priority<N filter"
+}
+
+test_prio_filter_le() {
+    assert_prio_query "priority<=0" "$PB $PC" "priority<=N filter"
+}
+
+test_prio_filter_gt() {
+    assert_prio_query "priority>1" "$PA" "priority>N filter"
+}
+
+test_prio_filter_ge() {
+    assert_prio_query "priority>=-1" "$PA $TA $PB $PC" "priority>=N filter"
+}
+
+test_prio_filter_none() {
+    # Never a ticket with priority 0
+    assert_prio_query "priority=none" "$PD $TD" "priority=none filter"
+}
+
+test_prio_filter_and_tags() {
+    local got
+    got=$(prio_query "type=t1, priority=none")
+    if [ "$got" != "$TD" ]; then
+        fail_test "Priority terms AND with others; priority:N tags stay tags" "[type=t1, priority=none]: expected '$TD', got '$got'"
+    fi
+    got=$(prio_query "'tag~priority:1'")
+    if [ "$got" != "$PD" ]; then
+        fail_test "Priority terms AND with others; priority:N tags stay tags" "[tag~priority:1]: expected '$PD', got '$got'"
+    fi
+    pass_test "Priority terms AND with others; priority:N tags stay tags"
+}
+
+test_prio_report() {
+    capture_cmd bees execute-freeform-query --query-yaml "{stages: [[hive=priority_hive, type=bee]], report: [title, priority]}"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Report priority" "exit $CMD_EXIT: $CMD_OUT"
+    fi
+    local got
+    got=$(check_json "$CMD_OUT" "sorted((t['title'], t['priority']) for t in d['tickets'])")
+    assert_eq "$got" "[('Prio Minus One', -1), ('Prio Tag Only', None), ('Prio Two', 2), ('Prio Zero', 0)]" "Report priority"
+}
+
+test_prio_malformed_terms() {
+    local term error_type
+    for term in "priority=abc" "priority=1.5" "priority<" "priority!=none" "priority<none" "priority=None"; do
+        capture_cmd bees execute-freeform-query --query-yaml "stages:
+  - ['$term']"
+        if [ "$CMD_EXIT" -eq 0 ]; then
+            fail_test "Malformed priority terms rejected" "$term: expected an error, got exit 0: $CMD_OUT"
+        fi
+        assert_no_traceback "$CMD_OUT" "Malformed priority terms rejected"
+        error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+        if [ "$error_type" != "parse_error" ]; then
+            fail_test "Malformed priority terms rejected" "$term: expected error_type=parse_error, got $error_type"
+        fi
+    done
+    pass_test "Malformed priority terms rejected"
+}
+
+test_prio_named_query() {
+    capture_cmd bees add-named-query --query-name "prio_low" --query-yaml "stages:
+  - [hive=priority_hive, 'priority<=0']" --scope repo
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Named query with a priority term" "add: exit $CMD_EXIT: $CMD_OUT"
+    fi
+    capture_cmd bees execute-named-query --query-name "prio_low"
+    local got
+    got=$(check_json "$CMD_OUT" "' '.join(sorted(d.get('ticket_ids', [])))")
+    capture_cmd bees delete-named-query --query-name "prio_low"
+    local expected
+    expected=$(printf '%s\n' "$PB" "$PC" | sort | tr '\n' ' ' | sed 's/ *$//')
+    assert_eq "$got" "$expected" "Named query with a priority term"
+}
+
+test_prio_update_set_change_clear() {
+    local bee got
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Changes" --hive priority_hive \
+        --tags '["keep"]'
+    bee=$(check_json "$CMD_OUT" "d['ticket_id']")
+    local value expected
+    for value in "5" "-3" "null" "null"; do
+        capture_cmd bees update-ticket --ids "$bee" "--priority=$value"
+        if [ "$CMD_EXIT" -ne 0 ]; then
+            fail_test "Set, change and clear priority" "--priority=$value: exit $CMD_EXIT: $CMD_OUT"
+        fi
+        expected="$value"
+        [ "$value" = "null" ] && expected="None"
+        got=$(shown_priorities "$bee")
+        if [ "$got" != "$bee=$expected" ]; then
+            fail_test "Set, change and clear priority" "After --priority=$value: expected '$bee=$expected', got '$got'"
+        fi
+    done
+    capture_cmd bees show-ticket --ids "$bee"
+    got=$(check_json "$CMD_OUT" "(d['tickets'][0]['title'], d['tickets'][0]['tags'])")
+    if [ "$got" != "('Prio Changes', ['keep'])" ]; then
+        fail_test "Set, change and clear priority" "Title and tags changed: $got"
+    fi
+    if grep -q "^priority:" "$REPO/tickets/priority_hive/$bee/$bee.md"; then
+        fail_test "Set, change and clear priority" "Cleared, but the file still holds a priority key"
+    fi
+    pass_test "Set, change and clear priority"
+}
+
+test_prio_update_batch() {
+    local first second got
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Batch One" --hive priority_hive
+    first=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees create-ticket --ticket-type bee --title "Prio Batch Two" --hive priority_hive --priority 9
+    second=$(check_json "$CMD_OUT" "d['ticket_id']")
+    capture_cmd bees update-ticket --ids "$first" "$second" --priority 4
+    got=$(shown_priorities "$first" "$second")
+    if [ "$got" != "$(printf '%s\n' "$first=4" "$second=4")" ]; then
+        fail_test "Batch set and clear priority" "After batch --priority 4: got '$got'"
+    fi
+    capture_cmd bees update-ticket --ids "$first" "$second" --priority null
+    got=$(shown_priorities "$first" "$second")
+    assert_eq "$got" "$(printf '%s\n' "$first=None" "$second=None")" "Batch set and clear priority"
+}
+
+test_prio_invalid_rejected() {
+    local file="$REPO/tickets/priority_hive/$PA/$PA.md"
+    local before value error_type
+    before=$(cat "$file")
+    for value in "1.5" "true" "abc"; do
+        capture_cmd bees update-ticket --ids "$PA" --priority "$value"
+        if [ "$CMD_EXIT" -eq 0 ]; then
+            fail_test "Invalid priority rejected" "--priority $value: expected an error, got exit 0"
+        fi
+        error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+        if [ "$error_type" != "invalid_priority" ]; then
+            fail_test "Invalid priority rejected" "--priority $value: expected error_type=invalid_priority, got $error_type"
+        fi
+        capture_cmd bees create-ticket --ticket-type bee --title "Never Written" --hive priority_hive --priority "$value"
+        error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
+        if [ "$CMD_EXIT" -eq 0 ] || [ "$error_type" != "invalid_priority" ]; then
+            fail_test "Invalid priority rejected" "create --priority $value: exit $CMD_EXIT, error_type '$error_type'"
+        fi
+    done
+    if [ "$(cat "$file")" != "$before" ]; then
+        fail_test "Invalid priority rejected" "$PA's file changed"
+    fi
+    assert_prio_query "title~Never Written" "" "Invalid priority rejected"
+}
+
+run_setup_test test_prio_setup
+run_test test_prio_show
+run_test test_prio_filter_eq
+run_test test_prio_filter_ne
+run_test test_prio_filter_lt
+run_test test_prio_filter_le
+run_test test_prio_filter_gt
+run_test test_prio_filter_ge
+run_test test_prio_filter_none
+run_test test_prio_filter_and_tags
+run_test test_prio_report
+run_test test_prio_malformed_terms
+run_test test_prio_named_query
+run_test test_prio_update_set_change_clear
+run_test test_prio_update_batch
+run_test test_prio_invalid_rejected
+
 # === PHASE 5: INDEX GENERATION ===
 phase_section 5
 
