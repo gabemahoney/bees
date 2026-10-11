@@ -143,7 +143,7 @@ class TestServeFlagValidation:
 
 class TestServeExtraGating:
     def test_serve_missing_fastmcp_exits_1(self, capsys):
-        """When fastmcp is not importable, handle_serve exits 1 with install instructions."""
+        """When fastmcp is not importable, handle_serve exits 1 with an install hint naming the published package 'bees-md[serve]', not bees-cli."""
         args = _make_serve_args(stdio=True)
 
         with patch.dict("sys.modules", {"fastmcp": None}):
@@ -155,6 +155,8 @@ class TestServeExtraGating:
         result = json.loads(captured.out.strip())
         assert result["status"] == "error"
         assert "fastmcp" in result["message"]
+        assert "'bees-md[serve]'" in result["message"]
+        assert "bees-cli" not in result["message"]
 
 
 # ---------------------------------------------------------------------------

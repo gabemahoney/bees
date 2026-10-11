@@ -664,7 +664,7 @@ def handle_serve(args):
                 "status": "error",
                 "message": (
                     "Missing required dependency: fastmcp. "
-                    "Install with: pip install bees-cli[serve]"
+                    "Install with: pip install 'bees-md[serve]'"
                 ),
             },
             sys.stdout,

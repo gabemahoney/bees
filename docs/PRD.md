@@ -1367,7 +1367,7 @@ The MCP server needs to know which repository the caller is working in, so it ca
 
 | MCP Tool | CLI Equivalent | Notes |
 |----------|---------------|-------|
-| `health_check` | — | Returns `{status: "ok"}` |
+| `health_check` | — | Returns the server status (`healthy` or `stopped`), `server_running`, `ready`, `name`, and `version` (the installed `bees-md` package version, or `unknown` if its metadata is unavailable) |
 | `create_ticket` | `create-ticket` | |
 | `update_ticket` | `update-ticket` | Optional string fields use a sentinel value to distinguish "not provided" from "set to null" |
 | `delete_ticket` | `delete-ticket` | Accepts single ID or list |

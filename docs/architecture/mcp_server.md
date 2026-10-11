@@ -41,7 +41,7 @@ Stdio transport runs the MCP server as a subprocess communicating over stdin/std
 
 **Deferred import strategy**: `start_server` and `mcp` are imported inside the `serve` command handler rather than at module level. This prevents `fastmcp` from being pulled in on every `bees` invocation, keeping CLI startup fast for users who have not installed the `[serve]` extra.
 
-**`[serve]` extra guard**: The `serve` subcommand opens with `import fastmcp`. If the package is not installed, Python raises `ImportError` and the handler prints a message directing the user to install the `[serve]` extra. Users who only need the ticket CLI commands are not required to install FastMCP.
+**`[serve]` extra guard**: The `serve` subcommand opens with `import fastmcp`. If the package is not installed, Python raises `ImportError` and the handler prints a message directing the user to install the `[serve]` extra of the published package, `bees-md`. Users who only need the ticket CLI commands are not required to install FastMCP.
 
 **`[serve]` version bounds**: The `serve` extra declares `fastmcp` (3.x) and `mcp` (1.x), each capped below its next major version. `mcp` is declared directly, not left to come in through `fastmcp`, because `mcp_roots.py` and `mcp_repo_utils.py` import `McpError` from `mcp.shared.exceptions`. The caps are required: without them, pip resolves fastmcp 4, which pulls in mcp 2, where that import fails and `bees serve` crashes on startup. The PEP 621 extra in `[project.optional-dependencies]` must match the Poetry caret pins; `tests/test_package_entry_point.py` checks both the caps and the match.
 
@@ -270,7 +270,7 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 ### Utility
 - **generate_index**: Generate the markdown `index.md` for hives. Besides `repo_root`, its only parameter is the optional `hive` (there are no status or type filters). When `hive` is provided, generates index for that hive only. When `hive` is omitted (global mode), iterates all registered hives and generates index for each. The success response is `{"status": "success", "skipped_hives": []}` (`skipped_hives` is always an empty list); the markdown is written to each hive's `index.md`, not returned.
-- **health_check**: Check server health status and readiness
+- **health_check**: Check server health status and readiness. Reports the installed `bees-md` package version (`unknown` when package metadata is unavailable), the same value `start_server` returns
 - **update_config**: Apply pending schema migrations to `~/.bees/config.json`. When `details_only=True`, returns a preview of pending migrations without applying them (no confirmation required). When `details_only=False` (default), applies all pending migration hops — callers MUST obtain explicit user confirmation before invoking. Returns `current_version` and `pending_hops` in preview mode; returns `applied_hops` and `final_version` after applying.
 
 ## Chunked body workflow

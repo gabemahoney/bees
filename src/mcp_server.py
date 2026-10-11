@@ -8,6 +8,7 @@ injecting it into the pure core functions.
 
 import logging
 import textwrap
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -152,6 +153,14 @@ def _read_file_content(param_name: str, path: str) -> str:
 
 # ── Server lifecycle ──────────────────────────────────────────────────────────
 
+def _get_version() -> str:
+    """Return the installed bees-md version, or "unknown" if package metadata is unavailable."""
+    try:
+        return version("bees-md")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def start_server() -> dict[str, Any]:
     """
     Start the MCP server.
@@ -166,7 +175,7 @@ def start_server() -> dict[str, Any]:
         _server_running = True
         logger.info("Bees MCP Server started successfully")
 
-        return {"status": "running", "name": "bees", "version": "0.1.0"}
+        return {"status": "running", "name": "bees", "version": _get_version()}
     except Exception as e:
         logger.error(f"Failed to start server: {e}")
         _server_running = False
@@ -204,7 +213,7 @@ def _health_check() -> dict[str, Any]:
         "status": "healthy" if _server_running else "stopped",
         "server_running": _server_running,
         "name": "bees",
-        "version": "0.1.0",
+        "version": _get_version(),
         "ready": _server_running,
     }
 
