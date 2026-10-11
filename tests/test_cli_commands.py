@@ -480,6 +480,19 @@ class TestQueryCommands:
         assert result["status"] == "success"
         assert "ticket_ids" in result
 
+    def test_execute_freeform_query_priority_terms(self, cli_runner, priority_tickets):
+        """execute-freeform-query with priority terms returns the matching IDs."""
+        stdout, exit_code = cli_runner(
+            ["execute-freeform-query", "--query-yaml", "stages:\n- [type=bee, 'priority>=0', 'priority<2']"]
+        )
+
+        assert exit_code == 0
+        result = json.loads(stdout)
+        assert result["status"] == "success"
+        expected = {tid for tid, p in priority_tickets.items() if tid.startswith("b.") and p is not None and 0 <= p < 2}
+        assert set(result["ticket_ids"]) == expected
+        assert expected
+
     def test_execute_named_query_happy_path(self, cli_runner, isolated_bees_env):
         isolated_bees_env.create_hive("test", "Test")
         isolated_bees_env.write_config()

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.graph_executor import GraphExecutor
+from src.query_parser import QueryParser
 from src.search_executor import SearchExecutor
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,8 @@ class PipelineEvaluator:
                     "guid": fm.get("guid"),
                     "created_at": fm.get("created_at"),
                     "schema_version": fm.get("schema_version"),
+                    # As read: None when absent, null or empty; invalid stored values pass through.
+                    "priority": None if fm.get("priority") == "" else fm.get("priority"),
                 }
 
         # Second pass: Build reverse relationships (children from parents, etc)
@@ -186,7 +189,7 @@ class PipelineEvaluator:
         if not stage:
             raise ValueError("Cannot determine type of empty stage")
 
-        search_prefixes = {"type=", "id=", "status=", "title~", "tag~", "parent=", "guid=", "hive=", "hive~"}
+        search_prefixes = QueryParser.SEARCH_TERMS
         graph_terms = {"parent", "children", "up_dependencies", "down_dependencies"}
 
         has_search = any(any(term.startswith(prefix) for prefix in search_prefixes) for term in stage)

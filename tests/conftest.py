@@ -547,6 +547,35 @@ def isolated_bees_env(tmp_path, monkeypatch, mock_global_bees_dir):
 
 
 @pytest.fixture
+def priority_tickets(isolated_bees_env):
+    """Tickets with priorities for query tests, in one hive ("test_hive") of the isolated env.
+
+    Four bees and four t1 children carry priorities 2, 0, -1 and unset; a fifth bee has no
+    priority but the tag ``priority:1``. Returns {ticket_id: priority}, None when unset.
+    ``b.pt1`` (PRIORITY_TAGGED_BEE_ID in tests.test_constants) is the tagged bee.
+    """
+    from tests.test_constants import PRIORITY_TAGGED_BEE_ID
+
+    helper = isolated_bees_env
+    hive_dir = helper.create_hive("test_hive", "Test Hive")
+    helper.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+
+    tickets: dict[str, int | None] = {}
+    for short, priority in (("pa1", 2), ("pb1", 0), ("pc1", -1), ("pd1", None)):
+        bee_id = f"b.{short}"
+        extra = {} if priority is None else {"priority": priority}
+        helper.create_ticket(hive_dir, bee_id, "bee", f"Bee {short}", **extra)
+        child_id = f"t1.{short}.k1"
+        helper.create_ticket(hive_dir / bee_id, child_id, "t1", f"Task {short}", parent=bee_id, **extra)
+        tickets[bee_id] = priority
+        tickets[child_id] = priority
+
+    helper.create_ticket(hive_dir, PRIORITY_TAGGED_BEE_ID, "bee", "Tagged bee", tags=["priority:1"])
+    tickets[PRIORITY_TAGGED_BEE_ID] = None
+    return tickets
+
+
+@pytest.fixture
 def mock_mcp_context(tmp_path):
     """Factory fixture for creating mock MCP Context objects. Returns create_mock_context(repo_path=None)."""
     from unittest.mock import Mock

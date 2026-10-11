@@ -43,6 +43,7 @@ from src.mcp_query_ops import (
 from tests.conftest import build_query, write_global_queries, write_scoped_config
 from tests.test_constants import (
     HIVE_BACKEND,
+    INVALID_PRIORITY_TERMS,
     RESULT_STATUS_SUCCESS,
 )
 
@@ -1030,3 +1031,187 @@ class TestResponseFormatBranching:
         assert "b.rtp" in rows
         assert rows["b.rtp"]["title"] == "Round Trip Bee"
         assert rows["b.rtp"]["ticket_status"] == "finished"
+
+
+# ---------------------------------------------------------------------------
+# Priority terms (fixture: priority_tickets in conftest.py)
+# ---------------------------------------------------------------------------
+
+
+def _ids_where(priority_tickets, predicate, prefix=""):
+    """IDs from the priority_tickets fixture whose priority satisfies predicate (never called on None)."""
+    return {
+        tid for tid, p in priority_tickets.items() if tid.startswith(prefix) and p is not None and predicate(p)
+    }
+
+
+class TestPriorityQueries:
+    """Priority terms through execute_freeform_query, add_named_query and execute_named_query."""
+
+    @pytest.mark.parametrize(
+        "term,predicate",
+        [
+            pytest.param("priority=2", lambda p: p == 2, id="eq"),
+            pytest.param("priority=0", lambda p: p == 0, id="eq_zero"),
+            pytest.param("priority=-1", lambda p: p == -1, id="eq_negative"),
+            pytest.param("priority!=2", lambda p: p != 2, id="ne_excludes_unset"),
+            pytest.param("priority<0", lambda p: p < 0, id="lt"),
+            pytest.param("priority<=0", lambda p: p <= 0, id="le"),
+            pytest.param("priority>0", lambda p: p > 0, id="gt"),
+            pytest.param("priority>=0", lambda p: p >= 0, id="ge"),
+        ],
+    )
+    async def test_freeform_numeric_terms(self, priority_tickets, term, predicate):
+        """Each numeric operator returns the bees and t1s whose stored priority satisfies it, never unset ones."""
+        result = await _execute_freeform_query(f"stages:\n- ['{term}']")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert set(result["ticket_ids"]) == _ids_where(priority_tickets, predicate)
+
+    async def test_freeform_none_returns_unset_at_every_tier(self, priority_tickets):
+        """priority=none returns exactly the unset tickets, including the tagged bee."""
+        result = await _execute_freeform_query("stages:\n- ['priority=none']")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert set(result["ticket_ids"]) == {tid for tid, p in priority_tickets.items() if p is None}
+
+    async def test_freeform_type_t1_and_priority_none(self, priority_tickets):
+        """type=t1 with priority=none returns only the unset t1."""
+        result = await _execute_freeform_query("stages:\n- [type=t1, 'priority=none']")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert set(result["ticket_ids"]) == {
+            tid for tid, p in priority_tickets.items() if tid.startswith("t1.") and p is None
+        }
+        assert len(result["ticket_ids"]) == 1
+
+    async def test_freeform_priority_range_anded_with_type(self, priority_tickets):
+        """Two priority terms and type= are ANDed."""
+        result = await _execute_freeform_query("stages:\n- [type=bee, 'priority>=0', 'priority<2']")
+
+        assert set(result["ticket_ids"]) == _ids_where(priority_tickets, lambda p: 0 <= p < 2, prefix="b.")
+
+    async def test_freeform_priority_then_graph_stage(self, priority_tickets):
+        """A priority stage feeds a graph stage."""
+        result = await _execute_freeform_query("stages:\n- [type=bee, 'priority=2']\n- [children]")
+
+        expected = _ids_where(priority_tickets, lambda p: p == 2, prefix="t1.")
+        assert set(result["ticket_ids"]) == expected
+        assert len(expected) == 1
+
+    async def test_freeform_priority_mixed_with_graph_term_errors(self, priority_tickets):
+        """A priority term and a graph term in one stage is rejected."""
+        result = await _execute_freeform_query("stages:\n- ['priority=2', children]")
+
+        assert result["status"] == "error"
+        assert "Cannot mix search and graph terms" in result["message"]
+
+    async def test_tag_regex_still_finds_priority_tag(self, priority_tickets):
+        """A priority:N tag is a plain tag: tag~priority returns the tagged bee and nothing else."""
+        from tests.test_constants import PRIORITY_TAGGED_BEE_ID
+
+        result = await _execute_freeform_query("stages:\n- ['tag~priority']")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["ticket_ids"] == [PRIORITY_TAGGED_BEE_ID]
+
+    async def test_priority_term_does_not_match_priority_tag(self, priority_tickets):
+        """The priority:1 tag does not make a ticket match priority=1."""
+        result = await _execute_freeform_query("stages:\n- ['priority=1']")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        assert result["ticket_ids"] == []
+
+    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    async def test_freeform_malformed_term_is_parse_error(self, priority_tickets, term):
+        """A malformed priority term gives a parse_error beginning 'Invalid query structure:'."""
+        result = await _execute_freeform_query(f"stages:\n- ['{term}']")
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "parse_error"
+        assert result["message"].startswith("Invalid query structure:")
+
+    async def test_freeform_report_priority_values(self, priority_tickets):
+        """report: [priority] gives integers, and null for unset tickets."""
+        result = await _execute_freeform_query("{stages: [['type=bee']], report: [priority]}")
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        rows = {r["ticket_id"]: r["priority"] for r in result["tickets"]}
+        assert rows == {tid: p for tid, p in priority_tickets.items() if tid.startswith("b.")}
+        assert all(p is None or type(p) is int for p in rows.values())
+
+    async def test_freeform_report_invalid_stored_priority_as_read(self, priority_tickets, isolated_bees_env):
+        """A ticket holding an invalid priority is reported as read and matches no priority term."""
+        from tests.helpers import write_ticket_file
+
+        hive_dir = isolated_bees_env.base_path / "test_hive"
+        write_ticket_file(hive_dir, "b.pv1", raw_fields={"priority": "'2'"})
+        write_ticket_file(hive_dir, "b.pv2", raw_fields={"priority": "1.5"})
+
+        rows = await _execute_freeform_query("{stages: [['type=bee']], report: [priority]}")
+        by_id = {r["ticket_id"]: r["priority"] for r in rows["tickets"]}
+        assert by_id["b.pv1"] == "2"
+        assert by_id["b.pv2"] == 1.5
+
+        for term in ("priority=2", "priority>=0", "priority!=9", "priority=none"):
+            matched = await _execute_freeform_query(f"stages:\n- ['{term}']")
+            assert not {"b.pv1", "b.pv2"} & set(matched["ticket_ids"])
+
+    async def test_named_query_with_priority_terms(self, priority_tickets, isolated_bees_env):
+        """A named query saved with priority terms and a priority report returns the expected rows."""
+        env = isolated_bees_env
+        saved = _add_named_query(
+            "prio_q",
+            "{stages: [[type=t1, 'priority<=0']], report: [priority]}",
+            scope="global",
+            resolved_root=env.base_path,
+        )
+        assert saved["status"] == RESULT_STATUS_SUCCESS
+
+        result = await _execute_named_query("prio_q", resolved_root=env.base_path)
+
+        assert result["status"] == RESULT_STATUS_SUCCESS
+        expected = {tid: p for tid, p in priority_tickets.items() if tid.startswith("t1.") and p is not None and p <= 0}
+        assert {r["ticket_id"]: r["priority"] for r in result["tickets"]} == expected
+        assert len(expected) == 2
+
+    async def test_named_query_priority_none(self, priority_tickets, isolated_bees_env):
+        """A named query using priority=none returns exactly the unset tickets."""
+        env = isolated_bees_env
+        _add_named_query("unset_q", "stages:\n- ['priority=none']", scope="global", resolved_root=env.base_path)
+
+        result = await _execute_named_query("unset_q", resolved_root=env.base_path)
+
+        assert set(result["ticket_ids"]) == {tid for tid, p in priority_tickets.items() if p is None}
+
+    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    def test_add_named_query_malformed_term_saves_nothing(self, tmp_path, mock_global_bees_dir, term):
+        """A malformed priority term returns parse_error 'Invalid query structure:' and leaves the config untouched."""
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+        config_path = mock_global_bees_dir / "config.json"
+        config_before = config_path.read_text()
+
+        result = _add_named_query("q", f"stages:\n- ['{term}']", scope="global", resolved_root=tmp_path)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "parse_error"
+        assert result["message"].startswith("Invalid query structure:")
+        assert config_path.read_text() == config_before
+
+    def test_add_named_query_priority_report_round_trip(self, tmp_path, mock_global_bees_dir):
+        """A named query with priority terms and report: [priority] is stored intact."""
+        write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})
+
+        result = _add_named_query(
+            "prio_rt",
+            "{stages: [['priority>=0', 'priority<5']], report: [priority]}",
+            scope="global",
+            resolved_root=tmp_path,
+        )
+        assert result["status"] == RESULT_STATUS_SUCCESS
+
+        from src.config import load_global_config
+
+        stored = load_global_config()["queries"]["prio_rt"]
+        assert stored["stages"] == [["priority>=0", "priority<5"]]
+        assert stored["report"] == ["priority"]

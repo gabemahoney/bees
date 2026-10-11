@@ -233,6 +233,9 @@ Shared case tables live in `tests/test_constants.py`. Parametrize over `.values(
 | `PRIORITY_FRONTMATTER` | same shape | The invalid forms above plus valid integers: zero, positive, negative, beyond 64-bit (type name `int`) |
 | `INVALID_PRIORITY_INPUTS` | `{id: Python value}` | Values create and update must reject with `invalid_priority`, as the ticket operations and MCP receive them: `True`, `False`, floats, numeric string, word, list |
 | `INVALID_PRIORITY_CLI_ARGS` | `{id: argument string}` | `--priority` arguments the CLI must reject: float, `true`, word, exponent, underscore, plus sign, leading space, empty, `NULL` |
+| `INVALID_PRIORITY_TERMS` | `{id: query term}` | Priority query terms the parser must reject: missing or non-integer value, float, `none` with an operator other than `=`, `None`/`NONE`, doubled or misordered operators, `~`, plus sign, space |
+
+`priority_tickets` (`tests/conftest.py`, on `isolated_bees_env`) builds one hive, `test_hive`, with four bees and four `t1` children holding priorities 2, 0, -1 and unset, plus an unset bee tagged `priority:1` (`PRIORITY_TAGGED_BEE_ID` in `tests/test_constants.py`). It returns `{ticket_id: priority}` with `None` for unset; compute expected query matches from that dict rather than hard-coding IDs.
 
 `tests/test_priority_field.py` has the pattern for a rewrite test: a ticket per case, a rewrite action, then the frontmatter re-read with `parse_frontmatter` (not the ticket cache), compared by value and type, with a sentinel for "no key".
 

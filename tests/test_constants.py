@@ -505,3 +505,26 @@ INVALID_PRIORITY_CLI_ARGS = {
     "empty": "",
     "null_word": "NULL",
 }
+
+# Unset bee tagged priority:1 in the priority_tickets fixture (tests/conftest.py)
+PRIORITY_TAGGED_BEE_ID = "b.pt1"
+
+# Priority query terms the parser must reject (SRD SR-5.1): bad operator, bad value or `none` misuse
+# {pytest id: term}
+INVALID_PRIORITY_TERMS = {
+    "lt_missing_value": "priority<",
+    "gte_word_value": "priority>=x",
+    "float_value": "priority=1.5",
+    "ne_none": "priority!=none",
+    "capitalised_none": "priority=None",
+    "double_equals": "priority==1",
+    "equals_lt": "priority=<1",
+    "lt_gt": "priority<>1",
+    "tilde_operator": "priority~1",
+    "empty_value": "priority=",
+    "plus_sign": "priority=+1",
+    "space_in_value": "priority= 1",
+    "gte_none": "priority>=none",
+    "lt_none": "priority<none",
+    "upper_none": "priority=NONE",
+}

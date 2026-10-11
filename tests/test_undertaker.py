@@ -34,6 +34,7 @@ from src.config import BeesConfig, HiveConfig
 from src.constants import ID_CHARSET
 from src.mcp_undertaker import UndertakerScheduler, _undertaker
 from tests.helpers import tree_snapshot
+from tests.test_constants import INVALID_PRIORITY_TERMS
 
 
 def _make_guid(short_id: str) -> str:
@@ -593,3 +594,128 @@ class TestUndertakerScheduler:
         # Log file should still have been written (index failure doesn't block logging)
         log_content = (tmp_path / "ut.log").read_text()
         assert "archived=1" in log_content
+
+
+class TestUndertakerPriorityTerms:
+    """Priority terms in manual and scheduled undertaker runs (fixture: priority_tickets)."""
+
+    @staticmethod
+    def _live_bees(hive_dir, priority_tickets):
+        return {tid for tid in priority_tickets if tid.startswith("b.") and (hive_dir / tid).exists()}
+
+    @pytest.mark.parametrize(
+        "term,predicate",
+        [
+            pytest.param("priority<=0", lambda p: p <= 0, id="le"),
+            pytest.param("priority=2", lambda p: p == 2, id="eq"),
+            pytest.param("priority!=0", lambda p: p != 0, id="ne_keeps_unset"),
+        ],
+    )
+    async def test_manual_run_archives_only_matching_bees(self, priority_tickets, isolated_bees_env, term, predicate):
+        """type=bee plus a priority term archives exactly the matching bees; unset bees are never matched."""
+        hive_dir = isolated_bees_env.base_path / "test_hive"
+        expected = {tid for tid, p in priority_tickets.items() if tid.startswith("b.") and p is not None and predicate(p)}
+        assert expected  # the case is not vacuous
+
+        result = await _undertaker(hive_name="test_hive", query_yaml=f"stages:\n- [type=bee, '{term}']")
+
+        assert result["status"] == "success"
+        bees = {tid for tid in priority_tickets if tid.startswith("b.")}
+        assert self._live_bees(hive_dir, priority_tickets) == bees - expected
+        assert len(result["archived_guids"]) == 2 * len(expected)  # each bee plus its t1 child
+
+    async def test_manual_run_priority_none_archives_unset_bees(self, priority_tickets, isolated_bees_env):
+        """priority=none archives the unset bees (including the tagged one) and leaves prioritised bees."""
+        hive_dir = isolated_bees_env.base_path / "test_hive"
+
+        result = await _undertaker(hive_name="test_hive", query_yaml="stages:\n- [type=bee, 'priority=none']")
+
+        assert result["status"] == "success"
+        unset_bees = {tid for tid, p in priority_tickets.items() if tid.startswith("b.") and p is None}
+        assert self._live_bees(hive_dir, priority_tickets) == {
+            tid for tid in priority_tickets if tid.startswith("b.")
+        } - unset_bees
+
+    async def test_manual_run_t1_priority_match_is_skipped_not_archived(self, priority_tickets, isolated_bees_env):
+        """A priority term matching only a t1 archives no bee and reports the t1 as skipped."""
+        hive_dir = isolated_bees_env.base_path / "test_hive"
+        before = tree_snapshot(hive_dir)
+
+        result = await _undertaker(hive_name="test_hive", query_yaml="stages:\n- [type=t1, 'priority=-1']")
+
+        assert result["status"] == "success"
+        assert result["archived_count"] == 0
+        assert result["skipped"] == [tid for tid, p in priority_tickets.items() if tid.startswith("t1.") and p == -1]
+        assert tree_snapshot(hive_dir) == before
+
+    async def test_named_query_with_priority_term(self, priority_tickets, isolated_bees_env):
+        """A saved named query with a priority term drives the archive."""
+        from src.mcp_query_ops import _add_named_query
+
+        env = isolated_bees_env
+        _add_named_query("old_low", "stages:\n- [type=bee, 'priority<0']", scope="global", resolved_root=env.base_path)
+
+        result = await _undertaker(hive_name="test_hive", query_name="old_low")
+
+        assert result["status"] == "success"
+        low = {tid for tid, p in priority_tickets.items() if tid.startswith("b.") and p is not None and p < 0}
+        bees = {tid for tid in priority_tickets if tid.startswith("b.")}
+        assert self._live_bees(env.base_path / "test_hive", priority_tickets) == bees - low
+
+    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    async def test_invalid_term_errors_and_archives_nothing(self, priority_tickets, isolated_bees_env, term):
+        """A malformed priority term returns an error and moves nothing."""
+        hive_dir = isolated_bees_env.base_path / "test_hive"
+        before = tree_snapshot(hive_dir)
+
+        result = await _undertaker(hive_name="test_hive", query_yaml=f"stages:\n- [type=bee, '{term}']")
+
+        assert result["status"] == "error"
+        assert result["message"].startswith("Query error:")
+        assert tree_snapshot(hive_dir) == before
+        assert not (hive_dir / "cemetery").exists()
+
+    def test_scheduled_run_archives_only_matching_bees(self, priority_tickets, isolated_bees_env):
+        """A scheduled run with a priority term archives exactly the matching bees."""
+        from src.config import load_bees_config
+        from src.repo_context import repo_root_context
+
+        env = isolated_bees_env
+        hive_dir = env.base_path / "test_hive"
+        env.hives["test_hive"]["undertaker_schedule"] = {
+            "interval_seconds": 3600,
+            "query_yaml": "stages:\n- [type=bee, 'priority>=1']",
+            "log_path": str(env.base_path / "undertaker.log"),
+        }
+        env.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+        with repo_root_context(env.base_path):
+            scheduler = UndertakerScheduler(load_bees_config(), env.base_path)
+
+        scheduler._fire(scheduler._schedules[0])
+
+        high = {tid for tid, p in priority_tickets.items() if tid.startswith("b.") and p is not None and p >= 1}
+        bees = {tid for tid in priority_tickets if tid.startswith("b.")}
+        assert self._live_bees(hive_dir, priority_tickets) == bees - high
+        assert "status=success" in (env.base_path / "undertaker.log").read_text()
+
+    def test_scheduled_run_invalid_term_logs_error_and_archives_nothing(self, priority_tickets, isolated_bees_env):
+        """A scheduled run with a malformed priority term logs an error and moves nothing."""
+        from src.config import load_bees_config
+        from src.repo_context import repo_root_context
+
+        env = isolated_bees_env
+        hive_dir = env.base_path / "test_hive"
+        env.hives["test_hive"]["undertaker_schedule"] = {
+            "interval_seconds": 3600,
+            "query_yaml": "stages:\n- [type=bee, 'priority=1.5']",
+            "log_path": str(env.base_path / "undertaker.log"),
+        }
+        env.write_config(child_tiers={"t1": ["Task", "Tasks"]})
+        with repo_root_context(env.base_path):
+            scheduler = UndertakerScheduler(load_bees_config(), env.base_path)
+        before = tree_snapshot(hive_dir)
+
+        scheduler._fire(scheduler._schedules[0])
+
+        assert tree_snapshot(hive_dir) == before
+        assert "status=error" in (env.base_path / "undertaker.log").read_text()

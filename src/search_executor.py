@@ -4,8 +4,21 @@ This module implements search-based filtering of tickets using exact match
 and regex patterns. All search terms in a stage are combined with AND logic.
 """
 
+import operator
 import re
+from collections.abc import Callable
 from typing import Any
+
+from src.query_parser import is_priority_term, parse_priority_term
+
+_PRIORITY_COMPARATORS: dict[str, Callable[[int, int], bool]] = {
+    "=": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+}
 
 
 class SearchExecutor:
@@ -21,6 +34,7 @@ class SearchExecutor:
     - guid= (exact match on guid field)
     - hive= (exact match on hive field)
     - hive~ (regex match on hive field)
+    - priority=N, !=N, <N, <=N, >N, >=N (integer comparison) and priority=none (unset)
 
     All filters in a stage are ANDed together - tickets must match ALL terms.
     """
@@ -201,6 +215,38 @@ class SearchExecutor:
 
         return matching_ids
 
+    def filter_by_priority(self, tickets: dict[str, dict[str, Any]], term: str) -> set[str]:
+        """Filter tickets by a priority term such as ``priority<=0`` or ``priority=none``.
+
+        Numeric terms match only integer, non-boolean priorities. An unset priority
+        (None) never matches a numeric term, ``!=`` included. ``priority=none`` matches
+        exactly the unset tickets, never 0. Invalid stored values (strings, booleans,
+        floats, lists, ...) match no priority term and never raise.
+
+        Args:
+            tickets: Dict mapping ticket_id -> ticket data
+            term: Priority term string
+
+        Returns:
+            Set of ticket IDs whose priority satisfies the term
+
+        Raises:
+            QueryValidationError: If the term is malformed
+        """
+        op, value = parse_priority_term(term)
+
+        if value is None:
+            return {tid for tid, data in tickets.items() if data.get("priority") is None}
+
+        compare = _PRIORITY_COMPARATORS[op]
+        matching_ids = set()
+        for ticket_id, ticket_data in tickets.items():
+            stored = ticket_data.get("priority")
+            # type() is int excludes bool, which is an int subclass
+            if type(stored) is int and compare(stored, value):
+                matching_ids.add(ticket_id)
+        return matching_ids
+
     def execute(self, tickets: dict[str, dict[str, Any]], search_terms: list[str]) -> set[str]:
         """Execute search stage with AND logic across all search terms.
 
@@ -220,7 +266,11 @@ class SearchExecutor:
 
         # Apply each filter sequentially (AND logic via intersection)
         for term in search_terms:
-            if "=" in term:
+            if is_priority_term(term):
+                # Checked first: "!=", "<=" and ">=" contain "=" but are not exact-match terms
+                matching_ids = self.filter_by_priority(tickets, term)
+
+            elif "=" in term:
                 # Exact match terms: type=, id=, parent=
                 term_name, term_value = term.split("=", 1)
 

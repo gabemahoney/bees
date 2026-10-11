@@ -30,6 +30,7 @@ import re
 
 import pytest
 
+from src.query_parser import QueryValidationError
 from src.search_executor import SearchExecutor
 from tests.test_constants import (
     TICKET_ID_EP1,
@@ -43,10 +44,14 @@ from tests.test_constants import (
 
 @pytest.fixture
 def sample_tickets():
-    """Sample ticket data for testing."""
+    """Sample ticket data for testing.
+
+    Priorities: EP1=2, TK1=0, TK2=-1, EP2=5; ST1 and b.nol have no priority key (unset).
+    """
     return {
         TICKET_ID_EP1: {
             "id": TICKET_ID_EP1,
+            "priority": 2,
             "issue_type": "bee",
             "title": "Build Authentication System",
             "status": "open",
@@ -56,6 +61,7 @@ def sample_tickets():
         },
         TICKET_ID_TK1: {
             "id": TICKET_ID_TK1,
+            "priority": 0,
             "issue_type": "t1",
             "title": "Implement OAuth Login",
             "status": "in_progress",
@@ -66,6 +72,7 @@ def sample_tickets():
         },
         TICKET_ID_TK2: {
             "id": TICKET_ID_TK2,
+            "priority": -1,
             "issue_type": "t1",
             "title": "Build User Profile API",
             "status": "open",
@@ -86,6 +93,7 @@ def sample_tickets():
         },
         TICKET_ID_EP2: {
             "id": TICKET_ID_EP2,
+            "priority": 5,
             "issue_type": "bee",
             "title": "Frontend Dashboard",
             "status": "open",
@@ -288,6 +296,81 @@ class TestFilterByTagRegex:
             executor.filter_by_tag_regex(sample_tickets, "[invalid(")
 
 
+class TestFilterByPriority:
+    """Tests for filter_by_priority. Fixture priorities: EP1=2, TK1=0, TK2=-1, EP2=5, ST1/b.nol unset."""
+
+    @pytest.mark.parametrize(
+        "term,expected",
+        [
+            pytest.param("priority=2", {TICKET_ID_EP1}, id="eq"),
+            pytest.param("priority=0", {TICKET_ID_TK1}, id="eq_zero"),
+            pytest.param("priority=-1", {TICKET_ID_TK2}, id="eq_negative"),
+            pytest.param("priority=9", set(), id="eq_no_match"),
+            pytest.param("priority!=2", {TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_EP2}, id="ne"),
+            pytest.param("priority!=-1", {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_EP2}, id="ne_negative"),
+            pytest.param("priority<2", {TICKET_ID_TK1, TICKET_ID_TK2}, id="lt"),
+            pytest.param("priority<=2", {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_TK2}, id="le"),
+            pytest.param("priority>2", {TICKET_ID_EP2}, id="gt"),
+            pytest.param("priority>=2", {TICKET_ID_EP1, TICKET_ID_EP2}, id="ge"),
+            pytest.param("priority<0", {TICKET_ID_TK2}, id="lt_zero"),
+            pytest.param("priority>-1", {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_EP2}, id="gt_negative"),
+            pytest.param("priority>=-1", {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_EP2}, id="ge_negative"),
+            pytest.param("priority<=-2", set(), id="le_below_all"),
+            pytest.param("priority=none", {TICKET_ID_ST1, "b.nol"}, id="none_matches_unset_only"),
+            pytest.param("priority=00", {TICKET_ID_TK1}, id="leading_zeros"),
+        ],
+    )
+    def test_filter_by_priority(self, executor, sample_tickets, term, expected):
+        """Each operator compares stored integers; unset tickets never satisfy a numeric term."""
+        assert executor.filter_by_priority(sample_tickets, term) == expected
+
+    @pytest.mark.parametrize(
+        "term",
+        ["priority=0", "priority!=0", "priority<0", "priority<=0", "priority>0", "priority>=0", "priority=-1"],
+    )
+    def test_unset_never_matches_numeric_terms(self, executor, term):
+        """A ticket with no priority (missing key or None) matches no numeric term, != included."""
+        tickets = {"b.mis": {"id": "b.mis"}, "b.nul": {"id": "b.nul", "priority": None}}
+        assert executor.filter_by_priority(tickets, term) == set()
+
+    def test_none_matches_missing_key_and_null_but_not_zero(self, executor):
+        """priority=none matches exactly the unset tickets (missing key or None), never 0."""
+        tickets = {
+            "b.mis": {"id": "b.mis"},
+            "b.nul": {"id": "b.nul", "priority": None},
+            "b.zer": {"id": "b.zer", "priority": 0},
+        }
+        assert executor.filter_by_priority(tickets, "priority=none") == {"b.mis", "b.nul"}
+
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            pytest.param("2", id="numeric_string"),
+            pytest.param("high", id="word_string"),
+            pytest.param(1.5, id="float"),
+            pytest.param(2.0, id="whole_float"),
+            pytest.param(True, id="true"),
+            pytest.param(False, id="false"),
+            pytest.param([1], id="list"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "term",
+        ["priority=1", "priority=0", "priority=2", "priority!=5", "priority<9", "priority<=9", "priority>-9",
+         "priority>=-9", "priority=none"],
+    )
+    def test_invalid_stored_value_matches_nothing_and_does_not_raise(self, executor, stored, term):
+        """Invalid stored values match no priority term (a boolean is not 1 or 0, none is not 'invalid')."""
+        tickets = {"b.bad": {"id": "b.bad", "priority": stored}}
+        assert executor.filter_by_priority(tickets, term) == set()
+
+    @pytest.mark.parametrize("term", ["priority=1.5", "priority=None", "priority>=none", "priority="])
+    def test_malformed_term_raises(self, executor, sample_tickets, term):
+        """A malformed term raises QueryValidationError."""
+        with pytest.raises(QueryValidationError):
+            executor.filter_by_priority(sample_tickets, term)
+
+
 class TestExecute:
     """Tests for execute method with AND logic."""
 
@@ -317,6 +400,16 @@ class TestExecute:
             pytest.param(["hive=backend", "type=bee"], {TICKET_ID_EP1}, id="hive_and_type"),
             pytest.param(["hive~back.*"], {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_ST1}, id="hive_regex"),
             pytest.param(["hive~backend|frontend", "type=bee"], {TICKET_ID_EP1, TICKET_ID_EP2}, id="hive_regex_and_type"),
+            pytest.param(["priority>=0"], {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_EP2}, id="single_priority"),
+            pytest.param(["priority!=2"], {TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_EP2}, id="priority_ne_excludes_unset"),
+            pytest.param(["priority=none"], {TICKET_ID_ST1, "b.nol"}, id="priority_none"),
+            pytest.param(["type=t1", "priority<=0"], {TICKET_ID_TK1, TICKET_ID_TK2}, id="priority_and_type"),
+            pytest.param(["type=t1", "priority=none"], {"b.nol"}, id="priority_none_and_type"),
+            pytest.param(["priority>=0", "priority<=2"], {TICKET_ID_EP1, TICKET_ID_TK1}, id="priority_range"),
+            pytest.param(["priority>=0", "tag~beta"], {TICKET_ID_EP1}, id="priority_and_tag"),
+            pytest.param(["hive=backend", "priority<1", f"parent={TICKET_ID_EP1}"], {TICKET_ID_TK1, TICKET_ID_TK2},
+                         id="priority_and_hive_and_parent"),
+            pytest.param(["priority=9", "type=bee"], set(), id="priority_no_match_and_type"),
         ],
     )
     def test_execute_search(self, executor, sample_tickets, terms, expected):
@@ -338,6 +431,23 @@ class TestExecute:
     def test_invalid_terms_raise_error(self, executor, sample_tickets, terms, match):
         with pytest.raises(ValueError, match=match):
             executor.execute(sample_tickets, terms)
+
+    @pytest.mark.parametrize("term", ["priority=1.5", "priority=None", "priority!=none", "priority="])
+    def test_malformed_priority_term_raises(self, executor, sample_tickets, term):
+        """execute routes priority-shaped terms to the priority parser, which rejects malformed ones."""
+        with pytest.raises(QueryValidationError):
+            executor.execute(sample_tickets, ["type=bee", term])
+
+    def test_priority_tag_and_tag_regex_unchanged(self, executor):
+        """A priority:N tag is still a plain tag, found by tag~ and not by priority terms."""
+        tickets = {
+            "b.tag": {"id": "b.tag", "issue_type": "bee", "tags": ["priority:1"]},
+            "b.pri": {"id": "b.pri", "issue_type": "bee", "tags": [], "priority": 1},
+        }
+        assert executor.execute(tickets, ["tag~priority"]) == {"b.tag"}
+        assert executor.execute(tickets, ["tag~priority:1"]) == {"b.tag"}
+        assert executor.execute(tickets, ["priority=1"]) == {"b.pri"}
+        assert executor.execute(tickets, ["priority=none"]) == {"b.tag"}
 
     def test_invalid_regex_in_execute(self, executor, sample_tickets):
         with pytest.raises(re.error):

@@ -14,6 +14,8 @@ __all__ = [
     "QueryParser",
     "QueryValidationError",
     "VALID_REPORT_FIELDS",
+    "is_priority_term",
+    "parse_priority_term",
 ]
 
 VALID_REPORT_FIELDS: frozenset[str] = frozenset({
@@ -29,6 +31,7 @@ VALID_REPORT_FIELDS: frozenset[str] = frozenset({
     "schema_version",
     "guid",
     "hive",
+    "priority",
 })
 
 # Ticket fields that "report" rejects: query results omit them, so callers use show_ticket.
@@ -38,6 +41,62 @@ NON_REPORTABLE_FIELDS: frozenset[str] = frozenset({"body", "reference_materials"
 # They work typed into a shell inside single quotes, with no newline escapes.
 QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa], [children]]}"
 REPORT_QUERY_YAML_EXAMPLE = "{stages: [[type=bee, status=pupa]], report: [title, ticket_status]}"
+
+
+# Priority terms: ``priority`` + operator + value. Longest operators first so "<=" is never read as "<".
+_PRIORITY_TERM_RE = re.compile(r"priority(!=|<=|>=|=|<|>)(.*)", re.DOTALL)
+_PRIORITY_INTEGER_RE = re.compile(r"-?[0-9]+")
+
+
+def is_priority_term(term: str) -> bool:
+    """Return True if term is a priority search term (well-formed or not).
+
+    A term is a priority term when it starts with ``priority`` followed by one of
+    ``=``, ``!=``, ``<`` or ``>``. Whether the operator and value are valid is decided
+    by parse_priority_term, so malformed terms still classify as search terms and
+    fail with a precise error.
+    """
+    return term.startswith(("priority=", "priority!=", "priority<", "priority>"))
+
+
+def parse_priority_term(term: str) -> tuple[str, int | None]:
+    """Parse a priority term into (operator, value).
+
+    Grammar: ``priority`` then one of ``=``, ``!=``, ``<``, ``<=``, ``>``, ``>=`` then an
+    integer literal (optional leading ``-``, ASCII digits only, no ``+`` or whitespace),
+    or the lowercase literal ``none`` which is accepted only with ``=``.
+
+    Args:
+        term: Priority term string, e.g. "priority<=0" or "priority=none"
+
+    Returns:
+        (operator, value). For ``priority=none`` the result is ("=", None), meaning
+        "unset"; for numeric terms value is an int.
+
+    Raises:
+        QueryValidationError: If the term is malformed
+    """
+    match = _PRIORITY_TERM_RE.fullmatch(term)
+    if match is None:
+        raise QueryValidationError(
+            f"Invalid priority term '{term}'. Expected priority<op><integer> with op one of "
+            f"=, !=, <, <=, >, >=, or priority=none"
+        )
+    operator, raw = match.group(1), match.group(2)
+    if not raw:
+        raise QueryValidationError(f"Invalid priority term '{term}': missing value")
+    if raw == "none":
+        if operator != "=":
+            raise QueryValidationError(
+                f"Invalid priority term '{term}': 'none' is only valid with '=' (use priority=none)"
+            )
+        return ("=", None)
+    if _PRIORITY_INTEGER_RE.fullmatch(raw) is None:
+        raise QueryValidationError(
+            f"Invalid priority term '{term}': value must be an integer (negatives allowed) "
+            f"or 'none' with '='"
+        )
+    return (operator, int(raw))
 
 
 @dataclass
@@ -71,6 +130,9 @@ class QueryParser:
     - guid=<value>
     - hive=<value>
     - hive~<regex>
+    - priority=<N>, priority!=<N>, priority<<N>, priority<=<N>, priority><N>, priority>=<N>
+      (N an integer, negatives allowed)
+    - priority=none (tickets with no priority)
 
     Graph terms:
     - down_dependencies
@@ -80,7 +142,23 @@ class QueryParser:
     """
 
     # Valid search term prefixes
-    SEARCH_TERMS = {"type=", "id=", "status=", "title~", "tag~", "parent=", "guid=", "hive=", "hive~"}
+    SEARCH_TERMS = {
+        "type=",
+        "id=",
+        "status=",
+        "title~",
+        "tag~",
+        "parent=",
+        "guid=",
+        "hive=",
+        "hive~",
+        "priority=",
+        "priority!=",
+        "priority<",
+        "priority<=",
+        "priority>",
+        "priority>=",
+    }
 
     # Valid graph term names
     GRAPH_TERMS = {"down_dependencies", "up_dependencies", "parent", "children"}
@@ -228,7 +306,13 @@ class QueryParser:
         Raises:
             QueryValidationError: If term is invalid
         """
-        if term.startswith("type="):
+        if is_priority_term(term):
+            try:
+                parse_priority_term(term)
+            except QueryValidationError as e:
+                raise QueryValidationError(f"Stage {stage_idx}: {e}") from e
+
+        elif term.startswith("type="):
             value = term[5:]  # Skip 'type='
             if not value:
                 raise QueryValidationError(f"Stage {stage_idx}: type= term missing value")

@@ -14,7 +14,7 @@ The Query Parser (`src/query_parser.py`) validates dict-based query structures b
 
 **Responsibilities**:
 - Parse dict query structure (`{"stages": [...], "report": [...]}`) into validated stages and an optional report list
-- Validate search terms (type=, id=, status=, title~, tag~, parent=, guid=, hive=, hive~)
+- Validate search terms (type=, id=, status=, title~, tag~, parent=, guid=, hive=, hive~, priority terms)
 - Validate graph terms (children, parent, up_dependencies, down_dependencies)
 - Enforce stage purity (no mixing search and graph terms)
 - Validate regex patterns are compilable
@@ -61,6 +61,7 @@ Two pieces of query help are not built from the constants and are checked separa
 - `guid=` - Exact match on ticket GUID
 - `hive=` - Exact match on the hive's normalized name
 - `hive~` - Regex match on the hive's normalized name
+- `priority=`, `priority!=`, `priority<`, `priority<=`, `priority>`, `priority>=` - Integer comparison on the ticket's priority, plus `priority=none` for tickets with no priority (see Priority Terms)
 
 **Graph Terms** (traversal):
 - `parent` - Traverse to parent ticket
@@ -68,7 +69,29 @@ Two pieces of query help are not built from the constants and are checked separa
 - `up_dependencies` - Traverse to blocking dependencies
 - `down_dependencies` - Traverse to blocked dependents
 
-**Stage Purity Rule**: A stage can contain only search terms OR only graph terms, never both. This keeps execution logic clean and query semantics clear.
+**Stage Purity Rule**: A stage can contain only search terms OR only graph terms, never both. This keeps execution logic clean and query semantics clear. Priority terms are search terms, so they follow the same rule: a stage holding a priority term cannot also hold a graph term. The pipeline classifies a stage as search or graph using the parser's search-term list, which includes the priority prefixes, and the unknown-term error lists those prefixes among the valid search terms.
+
+### Priority Terms
+
+A priority term is `priority`, then a comparison operator, then a value. It filters on the ticket's optional integer `priority` field.
+
+**Grammar**:
+- Operators are `=`, `!=`, `<`, `<=`, `>`, `>=`. The parser reads the longest operator first, so `priority<=0` is "less than or equal to 0", never `<` followed by `=0`
+- The value is an ASCII integer literal with an optional leading minus sign. Negative numbers and leading zeros are accepted (`priority>=-1`, `priority=007`)
+- The value `none` (lowercase only) is valid with `=` only and selects tickets with no priority. `priority=none` is the only way to query for unset priority
+- A term is recognized as a priority term by its prefix (`priority=`, `priority!=`, `priority<`, `priority>`). Recognition is separate from value validation, so a malformed priority term is reported as an invalid priority term rather than as an unknown term
+
+**Malformed terms**: A leading plus sign (`+1`), a decimal (`1.5`), whitespace, an empty value, `None` or `NONE`, and `none` with any operator other than `=` are rejected at parse time with `Stage N: Invalid priority term ...`. `add_named_query` and `execute_freeform_query` wrap it as `Invalid query structure: ...` (`parse_error`). The undertaker returns its existing query error and archives nothing.
+
+**Matching** (`filter_by_priority` in the Search Executor):
+- A numeric term matches only tickets whose stored priority is a true integer. Booleans, floats and strings never match
+- An unset priority never matches a numeric term, including `priority!=N`. A query for "not priority 1" therefore excludes unset tickets; combine with `priority=none` in a separate query to see them
+- `priority=none` matches exactly the unset tickets (absent, null or empty in the file) and never a ticket whose priority is 0
+- A stored value that is invalid (for example a string or float written by hand into a ticket file) matches no priority term and never causes the query to fail
+
+**Not covered**: Priority adds no result ordering; results are still sorted by ticket ID. Priority terms read the `priority` field only, so tags of the form `priority:N` are unaffected and still matched with `tag~`.
+
+**Pipeline load**: The pipeline's one-time ticket load carries `priority` into the in-memory ticket data, with an absent, null or empty value loaded as unset.
 
 ### Regex Features Supported
 
@@ -125,6 +148,7 @@ The Search Executor (`src/search_executor.py`) implements in-memory filtering of
 7. **filter_by_hive_regex(tickets, regex_pattern)** - Case-insensitive regex match on `hive` field
 8. **filter_by_title_regex(tickets, regex_pattern)** - Case-insensitive regex match on `title` field
 9. **filter_by_tag_regex(tickets, regex_pattern)** - Case-insensitive regex match on ANY tag in `tags` array
+10. **filter_by_priority(tickets, term)** - Integer comparison or unset match on the `priority` field (see Priority Terms)
 
 ### Execute Method AND Logic
 
@@ -259,6 +283,7 @@ The `report` key enables field projection on query results. When omitted, querie
 | `schema_version` | Internal schema version string |
 | `guid` | Globally unique ticket identifier |
 | `hive` | The hive's normalized name (the hive directory name) |
+| `priority` | The ticket's integer priority, or null when unset. A hand-edited invalid stored value is reported as read |
 
 **Excluded fields** (`NON_REPORTABLE_FIELDS` in `src/query_parser.py`):
 - `body` / `reference_materials` — Not reportable because they can be arbitrarily large. Use `show_ticket` (`bees show-ticket`) to fetch full ticket content.
