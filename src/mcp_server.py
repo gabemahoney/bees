@@ -11,7 +11,6 @@ import inspect
 import logging
 import textwrap
 import warnings
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -66,6 +65,7 @@ from .migrations.runner import preview_pending_migrations, run_pending_migration
 from .query_parser import PRIORITY_TERMS_HELP, VALID_REPORT_FIELDS
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - re-exported
+from .version import get_version
 
 # Ensure log directory exists
 log_dir = Path.home() / ".bees"
@@ -223,14 +223,6 @@ def _read_file_content(param_name: str, path: str) -> str:
 
 # ── Server lifecycle ──────────────────────────────────────────────────────────
 
-def _get_version() -> str:
-    """Return the installed bees-md version, or "unknown" if package metadata is unavailable."""
-    try:
-        return version("bees-md")
-    except PackageNotFoundError:
-        return "unknown"
-
-
 def start_server() -> dict[str, Any]:
     """
     Start the MCP server.
@@ -245,7 +237,7 @@ def start_server() -> dict[str, Any]:
         _server_running = True
         logger.info("Bees MCP Server started successfully")
 
-        return {"status": "running", "name": "bees", "version": _get_version()}
+        return {"status": "running", "name": "bees", "version": get_version()}
     except Exception as e:
         logger.error(f"Failed to start server: {e}")
         _server_running = False
@@ -283,7 +275,7 @@ def _health_check() -> dict[str, Any]:
         "status": "healthy" if _server_running else "stopped",
         "server_running": _server_running,
         "name": "bees",
-        "version": _get_version(),
+        "version": get_version(),
         "ready": _server_running,
     }
 

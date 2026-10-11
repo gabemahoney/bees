@@ -12,6 +12,12 @@ pipx install bees-md
 pipx install 'bees-md[serve]'
 ```
 
+Check the installed version:
+
+```bash
+bees --version
+```
+
 ## Documentation
 
 Full docs at [github.com/gabemahoney/bees](https://github.com/gabemahoney/bees)

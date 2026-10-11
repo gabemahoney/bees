@@ -52,6 +52,12 @@ pipx install bees-md
 pipx install 'bees-md[serve]'
 ```
 
+Check the installed version:
+
+```bash
+bees --version
+```
+
 ### CLI Context Injection
 
 The following script installs `bees sting` hooks into Claude Code's settings (`SessionStart` and `PreCompact`).

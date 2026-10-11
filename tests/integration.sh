@@ -277,6 +277,28 @@ test_bees_help() {
     pass_test "bees --help"
 }
 
+test_bees_version() {
+    capture_cmd bees --version
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "bees --version" "bees --version failed (exit $CMD_EXIT)"
+    fi
+    assert_no_traceback "$CMD_OUT" "bees --version"
+    local status version
+    status=$(check_json "$CMD_OUT" "d['status']")
+    if [ "$status" != "success" ]; then
+        fail_test "bees --version" "Expected status=success, got status=$status"
+    fi
+    version=$(check_json "$CMD_OUT" "d['version']")
+    if [ -z "$version" ] || [ "$version" = "unknown" ]; then
+        fail_test "bees --version" "Expected an installed version, got '$version'"
+    fi
+    # The container installs bees-md==$BEES_VERSION, so the CLI must report exactly that build
+    if [ -n "${BEES_VERSION:-}" ] && [ "$version" != "$BEES_VERSION" ]; then
+        fail_test "bees --version" "Expected version=$BEES_VERSION, got version=$version"
+    fi
+    pass_test "bees --version"
+}
+
 test_config_bootstrap() {
     capture_cmd bees list-hives --test-config
     if [ "$CMD_EXIT" -ne 0 ]; then
@@ -298,6 +320,7 @@ test_config_bootstrap() {
 
 run_test test_install_bees
 run_test test_bees_help
+run_test test_bees_version
 run_test test_config_bootstrap
 
 # === PHASE 2: HIVE MANAGEMENT ===
@@ -3342,9 +3365,13 @@ test_uninstall_remove_hooks() {
 
 test_uninstall_pipx_cycle() {
     # Install via pipx using the version already installed
-    local bees_version
-    bees_version=$(bees --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "")
-    if [ -z "$bees_version" ]; then
+    local bees_version=""
+    capture_cmd bees --version
+    if [ "$CMD_EXIT" -eq 0 ]; then
+        # Keep the full version, including any .devN suffix, so pipx installs the build under test
+        bees_version=$(check_json "$CMD_OUT" "d.get('version', '')" 2>/dev/null || echo "")
+    fi
+    if [ -z "$bees_version" ] || [ "$bees_version" = "unknown" ]; then
         # Skip if version can't be determined
         pass_test "Uninstall pipx cycle (skipped: version unknown)"
         return

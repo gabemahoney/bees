@@ -14,6 +14,7 @@ SCOPE - Tests that belong here:
 """
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -288,3 +289,12 @@ class TestOutput:
         assert "execute-freeform-query" in out
         assert "execute-named-query" in out
         assert "bees-managed project" in out
+        assert "bees --version" in out
+        assert "-V" in out
+
+    def test_command_descriptions_share_one_column(self):
+        """Every command row in the reference starts its description in the same column."""
+        rows = [line for line in _CLI_REFERENCE.splitlines() if re.match(r"^  [a-z][a-z-]+ {2,}\S", line)]
+        assert len(rows) > 5
+        columns = {re.match(r"^  [a-z][a-z-]+ +", line).end() for line in rows}
+        assert len(columns) == 1, columns

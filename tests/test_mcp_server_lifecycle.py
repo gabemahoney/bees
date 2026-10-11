@@ -40,7 +40,7 @@ class TestReportedVersion:
         """Both report the bees-md package metadata version, not a hardcoded one."""
         mock_version = MagicMock(return_value=FAKE_VERSION)
 
-        with patch("src.mcp_server.version", mock_version):
+        with patch("src.version.version", mock_version):
             result = report()
 
         assert result["version"] == FAKE_VERSION
@@ -48,7 +48,7 @@ class TestReportedVersion:
 
     def test_health_check_reports_unknown_without_metadata(self):
         """_health_check() reports "unknown" when bees-md metadata is unavailable."""
-        with patch("src.mcp_server.version", side_effect=PackageNotFoundError("bees-md")):
+        with patch("src.version.version", side_effect=PackageNotFoundError("bees-md")):
             result = mcp_server._health_check()
 
         assert result["version"] == "unknown"

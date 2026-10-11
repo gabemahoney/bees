@@ -61,6 +61,7 @@ from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
 from .setup_claude import handle_setup_claude_cli
 from .sting import handle_sting
+from .version import get_version
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,19 @@ class BeesArgumentParser(argparse.ArgumentParser):
         json.dump({"status": "error", "message": message}, sys.stdout)
         print()
         sys.exit(2)
+
+
+class _VersionAction(argparse.Action):
+    """Print the installed version as a JSON success object on stdout and exit 0.
+
+    Replaces argparse's plain-text action="version" to honor the CLI's JSON-on-stdout contract.
+    """
+
+    def __init__(self, option_strings, dest=argparse.SUPPRESS, default=argparse.SUPPRESS, help=None):
+        super().__init__(option_strings=option_strings, dest=dest, default=default, nargs=0, help=help)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        _output_result({"status": "success", "version": get_version()})
 
 
 def parse_json_arg(value, arg_name):
@@ -936,6 +950,12 @@ def build_parser():
     parser = BeesArgumentParser(
         prog="bees",
         description="Bees ticket management CLI. All commands output JSON to stdout, including errors. Exit 0 on success, exit 1 on error.",  # noqa: E501
+    )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action=_VersionAction,
+        help="Print the installed bees-md version as JSON and exit. Works without a bees repo or config.",
     )
     subparsers = parser.add_subparsers(
         title="commands",

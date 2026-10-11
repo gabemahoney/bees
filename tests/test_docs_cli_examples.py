@@ -40,7 +40,7 @@ from pathlib import Path
 import pytest
 
 from src import mcp_undertaker
-from src.cli import build_parser
+from src.cli import _VersionAction, build_parser
 from src.mcp_server import mcp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -271,7 +271,14 @@ class _UsageError(Exception):
 
 
 class _HelpShown(Exception):
-    """The command asked for help."""
+    """The command asked for help or the version."""
+
+
+class _VersionShown(_VersionAction):
+    """Stands in for the CLI's version action: signals instead of printing and exiting."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        raise _HelpShown()
 
 
 def _raise_usage_error(message):
@@ -320,6 +327,8 @@ def cli_parser():
         p.print_help = lambda file=None: None
         p._check_value = partial(_check_unless_placeholder, p._check_value)
         for action in p._actions:
+            if isinstance(action, _VersionAction):
+                action.__class__ = _VersionShown
             if callable(action.type):
                 action.type = partial(_convert_unless_placeholder, action.type)
                 action.type.__name__ = getattr(action.type.args[0], "__name__", "value")

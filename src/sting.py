@@ -44,6 +44,7 @@ are sub-tickets nested under a parent.
 Use the bees CLI for all ticket operations.
 All commands output JSON to stdout, including errors. Exit 0 on success, exit 1 on error.
 Run bees <command> -h for full usage on any command.
+Run bees --version (or -V) to print the installed bees-md version as JSON.
 
   create-ticket           Create a bee or child-tier ticket
   show-ticket             Retrieve one or more tickets by ID
