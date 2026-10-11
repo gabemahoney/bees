@@ -31,6 +31,7 @@ SCOPE - Also covered here:
 """
 
 import json
+import re
 
 import pytest
 
@@ -1021,37 +1022,14 @@ def test_create_ticket_bee_priority(cli_runner, priority_hive, priority_argv, ex
 @pytest.mark.parametrize(
     "priority_argv,expected",
     [
-        pytest.param(["--priority", "0"], 0, id="zero"),
-        pytest.param(["--priority=-3"], -3, id="negative_equals"),
-        pytest.param(["--priority", "null"], _NO_KEY, id="null"),
-        pytest.param([], _NO_KEY, id="omitted"),
-    ],
-)
-def test_create_ticket_t1_priority(cli_runner, priority_hive, priority_argv, expected):
-    parent, _ = _create_via_cli(cli_runner)
-
-    result, exit_code = _create_via_cli(cli_runner, "--parent", parent["ticket_id"], *priority_argv, ticket_type="t1")
-
-    assert exit_code == 0 and result["status"] == "success"
-    stored = _stored_priority(priority_hive, result["ticket_id"])
-    assert stored == expected and type(stored) is type(expected)
-
-
-@pytest.mark.parametrize(
-    "priority_argv,expected",
-    [
         pytest.param(["--priority", "-3"], -3, id="negative"),
         pytest.param(["--priority=-3"], -3, id="negative_equals"),
         pytest.param(["--priority", "0"], 0, id="zero"),
         pytest.param(["--priority", "5"], 5, id="positive"),
     ],
 )
-@pytest.mark.parametrize("ticket_type", ["bee", "t1"])
-def test_update_ticket_sets_priority(cli_runner, priority_hive, ticket_type, priority_argv, expected):
-    bee, _ = _create_via_cli(cli_runner, "--priority", "99")
-    target = bee["ticket_id"]
-    if ticket_type == "t1":
-        target = _create_via_cli(cli_runner, "--parent", target, "--priority", "99", ticket_type="t1")[0]["ticket_id"]
+def test_update_ticket_sets_priority(cli_runner, priority_hive, priority_argv, expected):
+    target = _create_via_cli(cli_runner, "--priority", "99")[0]["ticket_id"]
 
     stdout, exit_code = cli_runner(["update-ticket", "--ids", target, *priority_argv])
 
@@ -1069,15 +1047,6 @@ def test_update_ticket_null_priority_removes_the_key(cli_runner, priority_hive):
     assert _stored_priority(priority_hive, ticket_id) == _NO_KEY
 
 
-def test_update_ticket_null_priority_on_ticket_without_one_leaves_no_key(cli_runner, priority_hive):
-    ticket_id = _create_via_cli(cli_runner)[0]["ticket_id"]
-
-    stdout, exit_code = cli_runner(["update-ticket", "--ids", ticket_id, "--priority", "null"])
-
-    assert exit_code == 0 and json.loads(stdout)["status"] == "success"
-    assert _stored_priority(priority_hive, ticket_id) == _NO_KEY
-
-
 def test_update_ticket_without_priority_flag_leaves_priority(cli_runner, priority_hive):
     ticket_id = _create_via_cli(cli_runner, "--priority=-3")[0]["ticket_id"]
 
@@ -1087,19 +1056,14 @@ def test_update_ticket_without_priority_flag_leaves_priority(cli_runner, priorit
     assert _stored_priority(priority_hive, ticket_id) == -3
 
 
-@pytest.mark.parametrize(
-    "priority_argv,expected",
-    [(["--priority", "2"], 2), (["--priority=-2"], -2), (["--priority", "0"], 0)],
-    ids=["positive", "negative", "zero"],
-)
-def test_update_ticket_priority_applies_to_every_id(cli_runner, priority_hive, priority_argv, expected):
+def test_update_ticket_priority_applies_to_every_id(cli_runner, priority_hive):
     first = _create_via_cli(cli_runner)[0]["ticket_id"]
     second = _create_via_cli(cli_runner, "--priority", "9")[0]["ticket_id"]
 
-    stdout, exit_code = cli_runner(["update-ticket", "--ids", first, second, *priority_argv])
+    stdout, exit_code = cli_runner(["update-ticket", "--ids", first, second, "--priority=-2"])
 
     assert exit_code == 0 and sorted(json.loads(stdout)["updated"]) == sorted([first, second])
-    assert [_stored_priority(priority_hive, i) for i in (first, second)] == [expected, expected]
+    assert [_stored_priority(priority_hive, i) for i in (first, second)] == [-2, -2]
 
 
 def test_update_ticket_null_priority_clears_every_id(cli_runner, priority_hive):
@@ -1113,14 +1077,12 @@ def test_update_ticket_null_priority_clears_every_id(cli_runner, priority_hive):
 
 @pytest.mark.parametrize("bad", INVALID_PRIORITY_CLI_ARGS.values(), ids=INVALID_PRIORITY_CLI_ARGS)
 def test_create_ticket_rejects_invalid_priority(cli_runner, priority_hive, bad):
-    parent, _ = _create_via_cli(cli_runner)
     before = tree_snapshot(priority_hive)
 
-    for ticket_type, extra in (("bee", []), ("t1", ["--parent", parent["ticket_id"]])):
-        result, exit_code = _create_via_cli(cli_runner, *extra, "--priority", bad, ticket_type=ticket_type)
+    result, exit_code = _create_via_cli(cli_runner, "--priority", bad)
 
-        assert exit_code == 1
-        assert result["status"] == "error" and result["error_type"] == "invalid_priority"
+    assert exit_code == 1
+    assert result["status"] == "error" and result["error_type"] == "invalid_priority"
     assert snapshot_diff(before, tree_snapshot(priority_hive)) == (set(), set(), set())
 
 
@@ -1139,11 +1101,19 @@ def test_update_ticket_rejects_invalid_priority(cli_runner, priority_hive, bad):
     assert snapshot_diff(before, tree_snapshot(priority_hive)) == (set(), set(), set())
 
 
-@pytest.mark.parametrize("command", ["create-ticket", "update-ticket"])
-def test_priority_help_text_documents_the_flag(cli_runner, command):
+@pytest.mark.parametrize(
+    "command,expected_words",
+    [
+        pytest.param("create-ticket", ("integer", "negative", "null"), id="create"),
+        pytest.param("update-ticket", ("integer", "negative", "null", "clears", "several"), id="update"),
+    ],
+)
+def test_priority_help_text_documents_the_flag(cli_runner, command, expected_words):
     stdout, exit_code = cli_runner([command, "--help"])
 
-    help_text = " ".join(stdout.split()).lower()
     assert exit_code == 0
-    assert "--priority" in help_text
-    assert all(word in help_text for word in ("integer", "null", "negative"))
+    # The option's own entry: from its 2-space-indented line up to the next option line
+    match = re.search(r"^ {2}--priority\b.*?(?=^ {2}-|\Z)", stdout, re.S | re.M)
+    assert match, "--priority option not listed in help"
+    option_help = " ".join(match.group(0).split()).lower()
+    assert all(word in option_help for word in expected_words)

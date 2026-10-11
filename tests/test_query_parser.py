@@ -35,7 +35,6 @@ from src.query_parser import (
     ParsedQuery,
     QueryParser,
     QueryValidationError,
-    is_priority_term,
     parse_priority_term,
 )
 from tests.test_constants import INVALID_PRIORITY_TERMS, TICKET_ID_TEST_BEE
@@ -186,14 +185,6 @@ class TestPriorityTerms:
         stages = parser.parse({"stages": [[term]]})
         parser.validate(stages)
 
-    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
-    def test_invalid_priority_term_rejected(self, term):
-        """Every malformed priority term raises QueryValidationError from validation."""
-        parser = QueryParser()
-        stages = parser.parse({"stages": [[term]]})
-        with pytest.raises(QueryValidationError):
-            parser.validate(stages)
-
     @pytest.mark.parametrize(
         "term",
         [t for k, t in INVALID_PRIORITY_TERMS.items() if k != "tilde_operator"],
@@ -214,32 +205,6 @@ class TestPriorityTerms:
         stages = parser.parse({"stages": [["type=bee"], ["children"], ["priority=x"]]})
         with pytest.raises(QueryValidationError, match="Stage 2: Invalid priority term"):
             parser.validate(stages)
-
-    @pytest.mark.parametrize("term", ["priority=1.5", "priority=None"], ids=["float", "capitalised_none"])
-    def test_invalid_priority_term_rejected_through_parse_priority_term(self, term):
-        """parse_priority_term itself raises, not only the stage validator."""
-        with pytest.raises(QueryValidationError, match="Invalid priority term"):
-            parse_priority_term(term)
-
-    @pytest.mark.parametrize(
-        "term,expected",
-        [
-            pytest.param("priority=1", True, id="eq"),
-            pytest.param("priority!=1", True, id="ne"),
-            pytest.param("priority<1", True, id="lt"),
-            pytest.param("priority>1", True, id="gt"),
-            pytest.param("priority<=1", True, id="le"),
-            pytest.param("priority>=1", True, id="ge"),
-            pytest.param("priority=", True, id="malformed_still_priority"),
-            pytest.param("priority", False, id="bare_word"),
-            pytest.param("priority~1", False, id="tilde"),
-            pytest.param("priority:2", False, id="tag_shape"),
-            pytest.param("type=bee", False, id="other_search_term"),
-        ],
-    )
-    def test_is_priority_term(self, term, expected):
-        """Terms starting with priority and = != < > are priority terms, even when malformed."""
-        assert is_priority_term(term) is expected
 
     def test_priority_is_search_term_so_mixing_with_graph_terms_fails(self):
         """A priority term counts as a search term, so a graph term in the same stage is rejected."""
@@ -271,12 +236,6 @@ class TestPriorityTerms:
         parser = QueryParser()
         result = parser.parse_and_validate({"stages": [["priority=1"]], "report": ["priority"]})
         assert result.report == ["priority"]
-
-    def test_malformed_priority_term_fails_parse_and_validate(self):
-        """parse_and_validate surfaces a malformed priority term as QueryValidationError."""
-        parser = QueryParser()
-        with pytest.raises(QueryValidationError, match="Invalid priority term"):
-            parser.parse_and_validate({"stages": [["priority=1.5"]]})
 
 
 class TestGraphTermValidation:

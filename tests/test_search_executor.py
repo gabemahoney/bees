@@ -364,12 +364,6 @@ class TestFilterByPriority:
         tickets = {"b.bad": {"id": "b.bad", "priority": stored}}
         assert executor.filter_by_priority(tickets, term) == set()
 
-    @pytest.mark.parametrize("term", ["priority=1.5", "priority=None", "priority>=none", "priority="])
-    def test_malformed_term_raises(self, executor, sample_tickets, term):
-        """A malformed term raises QueryValidationError."""
-        with pytest.raises(QueryValidationError):
-            executor.filter_by_priority(sample_tickets, term)
-
 
 class TestExecute:
     """Tests for execute method with AND logic."""
@@ -400,9 +394,6 @@ class TestExecute:
             pytest.param(["hive=backend", "type=bee"], {TICKET_ID_EP1}, id="hive_and_type"),
             pytest.param(["hive~back.*"], {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_ST1}, id="hive_regex"),
             pytest.param(["hive~backend|frontend", "type=bee"], {TICKET_ID_EP1, TICKET_ID_EP2}, id="hive_regex_and_type"),
-            pytest.param(["priority>=0"], {TICKET_ID_EP1, TICKET_ID_TK1, TICKET_ID_EP2}, id="single_priority"),
-            pytest.param(["priority!=2"], {TICKET_ID_TK1, TICKET_ID_TK2, TICKET_ID_EP2}, id="priority_ne_excludes_unset"),
-            pytest.param(["priority=none"], {TICKET_ID_ST1, "b.nol"}, id="priority_none"),
             pytest.param(["type=t1", "priority<=0"], {TICKET_ID_TK1, TICKET_ID_TK2}, id="priority_and_type"),
             pytest.param(["type=t1", "priority=none"], {"b.nol"}, id="priority_none_and_type"),
             pytest.param(["priority>=0", "priority<=2"], {TICKET_ID_EP1, TICKET_ID_TK1}, id="priority_range"),

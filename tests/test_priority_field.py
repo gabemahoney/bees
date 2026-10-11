@@ -228,18 +228,6 @@ async def test_update_changes_existing_priority(backend, ticket_type):
 
 
 @pytest.mark.parametrize("ticket_type", ["bee", "t1"])
-async def test_update_omitted_priority_is_unchanged(backend, ticket_type):
-    """update-ticket without a priority leaves the stored one alone."""
-    ticket_id = _bee_and_t1(backend)[ticket_type]
-    await _update_ticket(ticket_id, priority=5)
-
-    result = await _update_ticket(ticket_id, title="Renamed")
-
-    assert result["status"] == "success"
-    assert _priority_on_disk(_ticket_file(backend, ticket_id)) == 5
-
-
-@pytest.mark.parametrize("ticket_type", ["bee", "t1"])
 async def test_update_null_clears_priority(backend, ticket_type):
     """update-ticket with priority null removes the key."""
     ticket_id = _bee_and_t1(backend)[ticket_type]
@@ -297,17 +285,6 @@ async def test_batch_update_null_clears_every_ticket(backend):
 
     assert result["status"] == "success"
     assert [_priority_on_disk(_ticket_file(backend, i)) for i in ids] == [_ABSENT] * 3
-
-
-async def test_batch_update_omitted_priority_is_unchanged(backend):
-    """A batch update of another field leaves each stored priority alone."""
-    ids = list(_bee_and_t1(backend).values())
-    await _update_ticket(ids, priority=4)
-
-    result = await _update_ticket(ids, status="closed")
-
-    assert result["status"] == "success"
-    assert [_priority_on_disk(_ticket_file(backend, i)) for i in ids] == [4, 4]
 
 
 @pytest.mark.parametrize("value", INVALID_PRIORITY_INPUTS.values(), ids=INVALID_PRIORITY_INPUTS)

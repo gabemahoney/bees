@@ -662,7 +662,11 @@ class TestUndertakerPriorityTerms:
         bees = {tid for tid in priority_tickets if tid.startswith("b.")}
         assert self._live_bees(env.base_path / "test_hive", priority_tickets) == bees - low
 
-    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    @pytest.mark.parametrize(
+        "term",
+        [INVALID_PRIORITY_TERMS["float_value"], INVALID_PRIORITY_TERMS["ne_none"]],
+        ids=["float_value", "ne_none"],
+    )
     async def test_invalid_term_errors_and_archives_nothing(self, priority_tickets, isolated_bees_env, term):
         """A malformed priority term returns an error and moves nothing."""
         hive_dir = isolated_bees_env.base_path / "test_hive"

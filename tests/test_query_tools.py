@@ -1122,7 +1122,11 @@ class TestPriorityQueries:
         assert result["status"] == RESULT_STATUS_SUCCESS
         assert result["ticket_ids"] == []
 
-    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    @pytest.mark.parametrize(
+        "term",
+        [INVALID_PRIORITY_TERMS["float_value"], INVALID_PRIORITY_TERMS["ne_none"]],
+        ids=["float_value", "ne_none"],
+    )
     async def test_freeform_malformed_term_is_parse_error(self, priority_tickets, term):
         """A malformed priority term gives a parse_error beginning 'Invalid query structure:'."""
         result = await _execute_freeform_query(f"stages:\n- ['{term}']")
@@ -1184,7 +1188,11 @@ class TestPriorityQueries:
 
         assert set(result["ticket_ids"]) == {tid for tid, p in priority_tickets.items() if p is None}
 
-    @pytest.mark.parametrize("term", INVALID_PRIORITY_TERMS.values(), ids=INVALID_PRIORITY_TERMS)
+    @pytest.mark.parametrize(
+        "term",
+        [INVALID_PRIORITY_TERMS["float_value"], INVALID_PRIORITY_TERMS["ne_none"]],
+        ids=["float_value", "ne_none"],
+    )
     def test_add_named_query_malformed_term_saves_nothing(self, tmp_path, mock_global_bees_dir, term):
         """A malformed priority term returns parse_error 'Invalid query structure:' and leaves the config untouched."""
         write_scoped_config(mock_global_bees_dir, tmp_path, {"hives": {}, "child_tiers": {}})

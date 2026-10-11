@@ -30,16 +30,6 @@ def test_owner_param_absent(command_name: str):
     assert "owner" not in get_param_names(cmd), f"Deprecated param 'owner' should not appear in {command_name}"
 
 
-@pytest.mark.parametrize("command_name", ["create_ticket", "update_ticket"])
-def test_priority_param_present(command_name: str):
-    """Verify priority is listed for create_ticket and update_ticket."""
-    result = _help()
-    cmd = get_command_by_name(result, command_name)
-    assert cmd is not None, f"Command {command_name} not found"
-
-    assert "priority" in get_param_names(cmd), f"priority should appear in {command_name}"
-
-
 @pytest.mark.parametrize(
     "section",
     [

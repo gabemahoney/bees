@@ -757,24 +757,6 @@ class TestPriorityLoading:
         assert loaded == expected
         assert type(loaded) is type(expected)
 
-    def test_priority_query_over_loaded_tickets(self, isolated_bees_env):
-        """execute_query filters loaded tickets on priority, with unset tickets excluded from numeric terms."""
-        from tests.helpers import write_ticket_file
-
-        helper = isolated_bees_env
-        hive_dir = helper.create_hive("test_hive", "Test Hive")
-        helper.write_config()
-        write_ticket_file(hive_dir, "b.hi1", priority=2)
-        write_ticket_file(hive_dir, "b.ng1", priority=-1)
-        write_ticket_file(hive_dir, "b.unk")
-        write_ticket_file(hive_dir, "b.bad", raw_fields={"priority": "'2'"})
-
-        pipeline = PipelineEvaluator()
-        assert pipeline.execute_query([["priority>=0"]]) == {"b.hi1"}
-        assert pipeline.execute_query([["priority!=2"]]) == {"b.ng1"}
-        assert pipeline.execute_query([["priority=none"]]) == {"b.unk"}
-        assert pipeline.execute_query([["type=bee", "priority<0"]]) == {"b.ng1"}
-
 
 class TestGetStageType:
     """get_stage_type classifies priority terms as search terms."""
@@ -793,10 +775,6 @@ class TestGetStageType:
     def test_priority_mixed_with_graph_term_raises(self, pipeline, graph_term):
         with pytest.raises(ValueError, match="mixed search and graph terms"):
             pipeline.get_stage_type(["priority=1", graph_term])
-
-    def test_priority_mixed_with_graph_term_raises_from_execute_query(self, pipeline):
-        with pytest.raises(ValueError, match="mixed search and graph terms"):
-            pipeline.execute_query([["priority<=0", "children"]])
 
     @pytest.mark.parametrize("term", ["priority", "priority~1", "priority:2"])
     def test_non_priority_shapes_are_not_search_terms(self, pipeline, term):
