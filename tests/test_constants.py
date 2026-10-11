@@ -491,6 +491,21 @@ INVALID_PRIORITY_INPUTS = {
     "list": [1],
 }
 
+# Priority values as an LLM tool-call layer delivers them over MCP (b.3zy): a value it cannot fit to the
+# integer-or-null schema arrives as raw text (1.5 as '1.5', true as 'true', "2" as '"2"'). Only the exact
+# text "null" means null; every other text, case variants included, is invalid_priority (SRD SR-2.1, SR-9.3, SR-9.5).
+# {pytest id: value}
+LLM_TEXT_INVALID_PRIORITY_INPUTS = {
+    "float_text": "1.5",
+    "true_text": "true",
+    "quoted_int_text": '"2"',
+    "quoted_null_text": '"null"',
+    "capitalized_null": "Null",
+    "upper_null": "NULL",
+    "padded_null": " null",
+    "unset_sentinel_text": "__UNSET__",
+}
+
 # --priority arguments the CLI must reject (SRD SR-2.5, SR-9.3); int() would accept 1_000, +3 and " 2"
 # {pytest id: value}
 INVALID_PRIORITY_CLI_ARGS = {

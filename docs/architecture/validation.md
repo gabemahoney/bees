@@ -151,7 +151,9 @@ This is entry-point validation of caller input. It is separate from the linter's
 - Batch update checks the value once, up front: an invalid value rejects the whole call before any ticket is written
 
 **MCP schema**:
-- `priority` is declared as integer or null, with no string branch and no coercion. `true`, `1.0`, and `"2"` fail input validation (a "valid integer" error) before the core op runs, and no file changes
+- The advertised schema for `priority` is integer or null, with no string branch and no default on `update_ticket` (omitted still means unchanged). Internally the parameter is typed to accept any value, so the schema layer never rejects it and a bad value reaches the core op, which returns the normal `invalid_priority` result (a tool result with `status: error`, not a raw input-validation error)
+- LLM tool-call layers may deliver a value as raw text
+- No coercion: `true`, `1.0`, `"2"`, a list, a dict, and every string other than the exact lowercase text `null` (including `__UNSET__`) return `invalid_priority` and no file changes, on both tools and in a batch. The exact text `null` is treated as null (update clears, create stores none), mirroring CLI `--priority null`. `Null`, `NULL`, `"null"` with quotes, and padded forms are invalid
 
 **CLI** (`create-ticket` and `update-ticket`):
 - `--priority` takes an optional `-` followed by ASCII digits, or the word `null`; `-3` and `=-3` forms work

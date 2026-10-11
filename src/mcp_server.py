@@ -10,12 +10,15 @@ import functools
 import inspect
 import logging
 import textwrap
+import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastmcp import Context, FastMCP
-from pydantic import Field, StrictInt
+from fastmcp.tools import FunctionTool
+from pydantic import Field, WithJsonSchema
+from pydantic.json_schema import PydanticJsonSchemaWarning
 
 from .config import (  # noqa: F401 - re-exported for test mocking
     ConfigLoadError,
@@ -52,6 +55,7 @@ from .mcp_ticket_ops import (
     _delete_ticket,
     _get_status_values,
     _get_types,
+    _priority_error,
     _set_status_values,
     _set_types,
     _show_ticket,
@@ -93,6 +97,38 @@ _server_running = False
 
 # Sentinel for __UNSET__ pattern
 _UNSET: Literal["__UNSET__"] = "__UNSET__"
+
+
+# Priority as seen by pydantic vs. by the client. Pydantic gets ``Any`` so the value reaches
+# the handler untouched (no coercion, no raw ValidationError) and the core's ``_priority_error``
+# can answer a bad value with ``error_type: invalid_priority``. The advertised JSON schema stays
+# exactly integer-or-null.
+_PriorityParam = Annotated[Any, WithJsonSchema({"anyOf": [{"type": "integer"}, {"type": "null"}]})]
+
+
+# update_ticket's Python default for priority: an object no JSON value can equal, so omitted is
+# distinguishable from a client sending the text "__UNSET__" (which is an invalid priority).
+_PRIORITY_OMITTED: Any = object()
+
+
+def _tool_from_function(fn) -> FunctionTool:
+    """Build a FunctionTool, silencing pydantic's note that the default is not JSON serializable.
+
+    That is the intent: pydantic then leaves ``default`` out of the advertised schema, so
+    ``priority`` shows as plain integer-or-null and not required.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", PydanticJsonSchemaWarning)
+        return FunctionTool.from_function(fn)
+
+
+def _null_text_to_none(priority: Any) -> Any:
+    """Map the exact text "null" to None; pass every other value through untouched.
+
+    LLM tool-call layers can deliver JSON null as the text "null". Priority is never a
+    string, so "null" has no other meaning. Mirrors CLI ``--priority null``.
+    """
+    return None if isinstance(priority, str) and priority == "null" else priority
 
 
 def _inject_query_help(fn):
@@ -277,7 +313,7 @@ async def create_ticket(
     ctx: Context | None = None,
     repo_root: str | None = None,
     reference_materials: list[dict] | None = None,
-    priority: StrictInt | None = None,
+    priority: _PriorityParam = None,
 ) -> dict[str, Any]:
     """Create a new ticket in a hive.
 
@@ -310,7 +346,8 @@ async def create_ticket(
         reference_materials: Tracks external resources related to the ticket.
                              Only supported on bee (t0) tickets.
         priority: Optional integer priority; may be zero or negative. Null or omitted means
-                  no priority. Only an integer or null is accepted (no booleans, floats or strings).
+                  no priority. Only an integer or null is accepted; booleans, floats and
+                  strings return error_type invalid_priority.
 
     """
     if body_file is not None and body != "":
@@ -338,11 +375,10 @@ async def create_ticket(
             reference_materials=reference_materials,
             resolved_root=resolved_root,
             unescape_body=body_file is None,
-            priority=priority,
+            priority=_null_text_to_none(priority),
         )
 
 
-@mcp.tool()
 @_config_errors_as_result
 async def update_ticket(
     ticket_ids: str | list[str],
@@ -359,7 +395,7 @@ async def update_ticket(
     ctx: Context | None = None,
     repo_root: str | None = None,
     hive: str | None = None,
-    priority: StrictInt | None = _UNSET,  # type: ignore[assignment]  # _UNSET sentinel; Literal excluded so the schema stays integer-or-null
+    priority: _PriorityParam = _PRIORITY_OMITTED,  # sentinel; advertised schema stays integer-or-null, no default
 ) -> dict[str, Any]:
     """Update one or more existing tickets.
 
@@ -392,12 +428,19 @@ async def update_ticket(
         reference_materials: New reference_materials data (single mode only). Only supported on bee tickets.
         hive: Optional hive name for faster lookup.
         priority: New integer priority, may be zero or negative (single and batch). Null clears
-                  the priority; omitted leaves it unchanged. Only an integer or null is accepted
-                  (no booleans, floats or strings).
+                  the priority; omitted leaves it unchanged. Only an integer or null is accepted;
+                  booleans, floats and strings return error_type invalid_priority.
 
     """
     if body_file is not None and body != _UNSET:
         raise ValueError("body and body_file are mutually exclusive")
+    if priority is _PRIORITY_OMITTED:
+        priority = _UNSET
+    else:
+        # Sent explicitly: validate as a plain value, so the text "__UNSET__" is rejected.
+        priority = _null_text_to_none(priority)
+        if priority_err := _priority_error(priority):
+            return priority_err
     if body_file is not None:
         body = _read_file_content("body_file", body_file)
     if ctx:
@@ -423,6 +466,11 @@ async def update_ticket(
             unescape_body=body_file is None,
             priority=priority,
         )
+
+
+# Registered explicitly (not via @mcp.tool()) so the non-serializable priority default can be
+# built without a pydantic warning.
+mcp.add_tool(_tool_from_function(update_ticket))
 
 
 @mcp.tool()

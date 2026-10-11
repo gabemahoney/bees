@@ -27,6 +27,7 @@ from tests.helpers import break_config_with_trailing_comma, snapshot_diff, tree_
 from tests.test_constants import (
     HIVE_BACKEND,
     INVALID_PRIORITY_INPUTS,
+    LLM_TEXT_INVALID_PRIORITY_INPUTS,
     SCOPE_PATTERN_EXACT_CHILD,
     SCOPE_PATTERN_WILDCARD_PARENT,
     TAG_ALPHA,
@@ -131,15 +132,16 @@ class TestUpdateTicketSchema:
         assert sorted(branch["type"] for branch in priority_schema["anyOf"]) == ["integer", "null"]
         assert all("const" not in branch and "enum" not in branch for branch in priority_schema["anyOf"])
 
-    @pytest.mark.parametrize("tool_name,default", [("create_ticket", None), ("update_ticket", "__UNSET__")])
+    @pytest.mark.parametrize("tool_name,default", [("create_ticket", None), ("update_ticket", "<no default>")])
     async def test_priority_is_optional_with_the_tool_default(self, tool_name, default):
-        """priority is not required; omitted means none on create and unchanged (the sentinel) on update."""
+        """priority is not required; create advertises a null default, update advertises none (the
+        "__UNSET__" sentinel contradicts integer-or-null and could make a client send text)."""
         from src.mcp_server import mcp
 
         tool = await mcp.get_tool(tool_name)
 
         assert "priority" not in tool.parameters.get("required", [])
-        assert tool.parameters["properties"]["priority"]["default"] == default
+        assert tool.parameters["properties"]["priority"].get("default", "<no default>") == default
 
 
 class TestPriorityOverMcp:
@@ -167,11 +169,12 @@ class TestPriorityOverMcp:
     def _priority(self, hive):
         return parse_frontmatter(hive / self.TARGET / f"{self.TARGET}.md")[0].get("priority", "<absent>")
 
-    async def test_update_sets_then_null_clears(self, hive):
-        """An integer priority is stored; null removes it."""
+    @pytest.mark.parametrize("clear_value", [None, "null"], ids=["null", "null_text"])
+    async def test_update_sets_then_null_clears(self, hive, clear_value):
+        """An integer priority is stored; null, or the text "null" an LLM tool-call layer can deliver for it, removes it."""
         set_result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=-3)
         stored = self._priority(hive)
-        clear_result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=None)
+        clear_result = await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=clear_value)
 
         assert not set_result.is_error and set_result.data["status"] == "success"
         assert stored == -3
@@ -187,7 +190,22 @@ class TestPriorityOverMcp:
         assert result.data["status"] == "success"
         assert self._priority(hive) == 0
 
-    @pytest.mark.parametrize("priority,expected", [(0, 0), (9, 9), (None, "<absent>")], ids=["zero", "positive", "null"])
+    async def test_batch_update_null_text_clears_every_ticket(self, hive):
+        """A batch update with the text "null" clears the priority of every ticket in the batch (the null case is core-tested)."""
+        other = "b.pr2"
+        write_ticket_file(hive, other, priority=4)
+        await self._call(hive, "update_ticket", ticket_ids=self.TARGET, priority=5)
+
+        result = await self._call(hive, "update_ticket", ticket_ids=[self.TARGET, other], priority="null")
+
+        assert not result.is_error and result.data["status"] == "success"
+        assert self._priority(hive) == "<absent>"
+        assert parse_frontmatter(hive / other / f"{other}.md")[0].get("priority", "<absent>") == "<absent>"
+
+    @pytest.mark.parametrize(
+        "priority,expected", [(0, 0), (9, 9), (None, "<absent>"), ("null", "<absent>")],
+        ids=["zero", "positive", "null", "null_text"],
+    )
     async def test_create_with_priority(self, hive, priority, expected):
         """create_ticket stores an integer (zero included); null stores nothing."""
         result = await self._call(hive, "create_ticket", ticket_type="bee", title="New", hive=HIVE_BACKEND, priority=priority)
@@ -196,10 +214,15 @@ class TestPriorityOverMcp:
         path = next(hive.rglob(f"{result.data['ticket_id']}.md"))
         assert parse_frontmatter(path)[0].get("priority", "<absent>") == expected
 
-    @pytest.mark.parametrize("value", [*INVALID_PRIORITY_INPUTS.values(), {}], ids=[*INVALID_PRIORITY_INPUTS, "dict"])
+    @pytest.mark.parametrize(
+        "value",
+        [*INVALID_PRIORITY_INPUTS.values(), {}, *LLM_TEXT_INVALID_PRIORITY_INPUTS.values()],
+        ids=[*INVALID_PRIORITY_INPUTS, "dict", *LLM_TEXT_INVALID_PRIORITY_INPUTS],
+    )
     @pytest.mark.parametrize("tool_name", ["create_ticket", "update_ticket"])
     async def test_invalid_priority_is_rejected_with_no_file_change(self, hive, tool_name, value):
-        """A non-integer priority fails argument validation (a pydantic integer error) and changes no file."""
+        """A non-integer priority, also as the text an LLM client delivers it in, reaches the handler and
+        returns an invalid_priority result (not a raw validation error) and changes no file."""
         arguments = (
             {"ticket_type": "bee", "title": "New", "hive": HIVE_BACKEND}
             if tool_name == "create_ticket" else {"ticket_ids": self.TARGET, "title": "Renamed"}
@@ -208,8 +231,20 @@ class TestPriorityOverMcp:
 
         result = await self._call(hive, tool_name, priority=value, **arguments)
 
-        assert result.is_error
-        assert "valid integer" in result.content[0].text
+        assert not result.is_error
+        assert result.data["status"] == "error"
+        assert result.data["error_type"] == "invalid_priority"
+        assert snapshot_diff(before, tree_snapshot(hive)) == (set(), set(), set())
+
+    async def test_batch_update_rejects_unset_sentinel_text_whole(self, hive):
+        """The text "__UNSET__" sent as a batch priority is validated by the adapter, not read as "omitted":
+        invalid_priority, and no listed ticket changes."""
+        write_ticket_file(hive, "b.pr2", priority=4)
+        before = tree_snapshot(hive)
+
+        result = await self._call(hive, "update_ticket", ticket_ids=[self.TARGET, "b.pr2"], priority="__UNSET__")
+
+        assert not result.is_error and result.data["error_type"] == "invalid_priority"
         assert snapshot_diff(before, tree_snapshot(hive)) == (set(), set(), set())
 
 

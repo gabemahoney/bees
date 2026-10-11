@@ -509,7 +509,7 @@ Parameters:
 - `tags`: optional list of strings
 - `status`: optional; validated against `status_values` if configured
 - `reference_materials`: optional; bee tickets only; list of `{value, resolver?}` dicts
-- `priority`: optional integer (zero and negative allowed) or null; null or omitted means no priority. Strictly an integer: a boolean, float, or string is rejected, never coerced
+- `priority`: optional integer (zero and negative allowed) or null; null or omitted means no priority. Strictly an integer: a boolean, float, or string is rejected with `invalid_priority`, never coerced. Over MCP the rejection is a normal tool result, not a raw input-validation error. The one exception is the exact lowercase text `null` (how some LLM tool-call layers deliver JSON null), which is treated as null, as CLI `--priority null` is
 
 Process:
 1. Validate `priority` is an integer or null, before anything is written
@@ -1640,7 +1640,7 @@ Args:
 - `tags`: List of string tags.
 - `status`: Freeform if no status_values are configured for the hive; otherwise must be one of the hive's configured values. Required when status_values are configured.
 - `reference_materials`: Tracks external resources related to the ticket. A list of `{value, resolver?}` dicts. Only supported on bee (t0) tickets.
-- `priority`: Integer priority, may be zero or negative; null or omitted means no priority. Must be an integer: a string, float, or boolean is rejected.
+- `priority`: Integer priority, may be zero or negative; null or omitted means no priority. Must be an integer: a string (other than the exact text `null`, which means null), float, or boolean returns `invalid_priority`.
 
 ### `update_ticket`
 Update one or more existing tickets.
@@ -1658,7 +1658,7 @@ Args:
 - `add_tags`: Tags to add (single and batch).
 - `remove_tags`: Tags to remove (single and batch).
 - `status`: New status value (single and batch).
-- `priority`: New integer priority (single and batch); null clears it, omitted leaves it unchanged. Must be an integer or null.
+- `priority`: New integer priority (single and batch); null (or the exact text `null`) clears it, omitted leaves it unchanged. Must be an integer or null; anything else returns `invalid_priority`.
 - `reference_materials`: New reference materials data (single mode only). Only supported on bee tickets.
 - `hive`: Optional hive name for faster lookup.
 

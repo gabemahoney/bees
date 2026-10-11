@@ -67,7 +67,7 @@ bees update-ticket --ids b.amx b.x4f --priority 2    # several IDs at once
 bees update-ticket --ids b.amx --priority null       # clear it
 ```
 
-The MCP `create_ticket` and `update_ticket` tools take `priority` as an integer or `null`; a string, a float, or a boolean is rejected rather than converted.
+The MCP `create_ticket` and `update_ticket` tools take `priority` the same way: an integer, or `null` (also accepted as the text `null`).
 
 **Mixed versions.** Bees 0.8.4 and earlier do not know the field: they drop `priority` whenever they rewrite a ticket (for example on an update or a status change), and their linter reports it as `disallowed_field`. They also cannot run a saved named query that uses priority terms. If some machines or agents on a shared hive run an older bees, upgrade them all before relying on priority.
 
