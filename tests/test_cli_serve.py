@@ -10,6 +10,7 @@ SCOPE - Tests that belong here:
 - fastmcp ImportError guard
 - --stdio transport: start_server() + mcp.run() called, logging reconfigured
 - --http transport: uvicorn.run called, health route registered, scheduler wired
+- --http startup fails with the config_load_error JSON when the global config cannot be loaded
 - --config forwarded to set_config_path
 - UndertakerScheduler not instantiated in stdio path
 
@@ -27,6 +28,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.cli import build_parser, handle_serve
+from src.config import load_global_config
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +189,16 @@ class TestStdioTransport:
         """mcp.run(transport='stdio') is called on the --stdio path."""
         self._run_stdio()
         self.mock_mcp.run.assert_called_once_with(transport="stdio")
+
+    def test_stdio_starts_with_malformed_global_config(self, mock_global_bees_dir):
+        """--stdio loads the global config lazily (b.cyd): a malformed file does not stop the server from starting."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text("{invalid json")
+
+        self._run_stdio()
+
+        self.mock_mcp.run.assert_called_once_with(transport="stdio")
+        assert config_path.read_text() == "{invalid json"
 
     def test_stdio_calls_start_server(self):
         """start_server() is called before mcp.run()."""
@@ -399,6 +411,28 @@ class TestHttpTransport:
             self._run_http(config="/some/path")
 
         assert captured_paths == ["/some/path"]
+
+    # ------------------------------------------------------------------
+    # b.cyd — a global config that cannot be loaded stops the server at startup
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("port", [pytest.param(None, id="no_port"), pytest.param(9000, id="explicit_port")])
+    def test_http_refuses_to_start_on_unloadable_config(self, capsys, mock_global_bees_dir, port):
+        """A malformed global config fails startup with the error JSON on stdout and exit 1, with or without --port."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text("{invalid json")
+        self.mock_load_global_config.side_effect = load_global_config  # the real loader, on the real file
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_http(port=port)
+
+        assert exc_info.value.code == 1
+        result = json.loads(capsys.readouterr().out)
+        assert result["error_type"] == "config_load_error"
+        assert result["path"] == str(config_path)
+        self.mock_uvicorn_run.assert_not_called()
+        self.mock_start.assert_not_called()
+        assert config_path.read_text() == "{invalid json"
 
     # ------------------------------------------------------------------
     # Test 8 — port resolution priority: CLI > config > default

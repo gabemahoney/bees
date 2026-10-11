@@ -6,6 +6,8 @@ Tests the core MCP server ticket operations (create, update, delete) including
 validation, business rules, and relationship management.
 """
 
+import asyncio
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -16,11 +18,12 @@ from src.config import load_bees_config, save_bees_config
 from src.parser import parse_frontmatter
 from src.mcp_id_utils import parse_ticket_id
 from src.constants import GUID_LENGTH
+import src.mcp_server as server
 from src.mcp_server import _create_ticket, _show_ticket, _update_ticket
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee, create_child_tier
 from tests.conftest import write_multi_scope_config, write_scoped_config
-from tests.helpers import snapshot_diff, tree_snapshot, write_ticket_file
+from tests.helpers import break_config_with_trailing_comma, snapshot_diff, tree_snapshot, write_ticket_file
 from tests.test_constants import (
     HIVE_BACKEND,
     INVALID_PRIORITY_INPUTS,
@@ -1357,3 +1360,61 @@ class TestResolveReferencesTool:
 
         assert not hasattr(src.mcp_server, "resolve_references")
         assert not hasattr(src.mcp_server, "resolve_eggs")
+
+
+class TestMalformedGlobalConfig:
+    """An unloadable global config is an error dict from every MCP tool, and the file is never rewritten (b.cyd)."""
+
+    @pytest.mark.parametrize(
+        "tool,kwargs",
+        [
+            pytest.param("colonize_hive", {"name": "beta", "path": "{base}/beta"}, id="colonize_hive"),
+            pytest.param("add_named_query", {"name": "q", "query_yaml": "stages:\n- ['type=bee']"}, id="add_named_query"),
+            pytest.param("create_ticket", {"ticket_type": "bee", "title": "T", "hive": "backend"}, id="create_ticket"),
+            pytest.param("show_ticket", {"ticket_ids": ["b.abc"]}, id="show_ticket"),
+            pytest.param("list_hives", {}, id="list_hives"),
+            pytest.param("execute_freeform_query", {"query_yaml": "stages:\n- ['type=bee']"}, id="execute_freeform_query"),
+            pytest.param("get_resolvers", {}, id="get_resolvers_sync"),
+            pytest.param("set_resolver", {"name": "r", "unset": True}, id="set_resolver_sync"),
+            pytest.param("update_config", {}, id="update_config_sync"),
+        ],
+    )
+    def test_tool_returns_config_load_error_and_saves_nothing(
+        self, git_repo_tmp_path, mock_global_bees_dir, tool, kwargs
+    ):
+        config_path = mock_global_bees_dir / "config.json"
+        damaged = break_config_with_trailing_comma(config_path)
+        (git_repo_tmp_path / "beta").mkdir()
+        before = tree_snapshot(git_repo_tmp_path)
+        kwargs = {k: v.format(base=git_repo_tmp_path) if isinstance(v, str) else v for k, v in kwargs.items()}
+
+        result = getattr(server, tool)(**kwargs)
+        if inspect.isawaitable(result):
+            result = asyncio.run(result)
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "config_load_error"
+        assert result["path"] == str(config_path)
+        assert config_path.read_bytes() == damaged
+        assert tree_snapshot(git_repo_tmp_path) == before
+
+    def test_every_tool_but_health_check_turns_config_errors_into_results(self):
+        """A tool added later without @_config_errors_as_result would raise on a bad config; health_check never loads it."""
+        tools = {tool.name: tool for tool in asyncio.run(server.mcp.list_tools())}
+
+        assert "health_check" in tools
+
+        def dummy_sync():
+            pass
+
+        async def dummy_async():
+            pass
+
+        # All wrappers of one kind share a code object, so this tells our wrapper from functools.wraps by others
+        wrapper_codes = {
+            server._config_errors_as_result(dummy_sync).__code__,
+            server._config_errors_as_result(dummy_async).__code__,
+        }
+        assert len(wrapper_codes) == 2
+        unwrapped = [name for name, tool in tools.items() if name != "health_check" and tool.fn.__code__ not in wrapper_codes]
+        assert unwrapped == []

@@ -11,15 +11,15 @@ The Bees MCP (Model Context Protocol) server provides a standardized interface f
 3. **Atomic Operations**: All relationship updates succeed or fail together
 4. **Tool-Based Interface**: Standard MCP tool schemas for interoperability
 5. **Health Monitoring**: Server lifecycle management and readiness checks
-6. **Consistent Error Handling**: Two-tier error model. The MCP adapter layer in `mcp_server.py` raises `ValueError` for input validation errors (malformed parameters, mutual exclusivity violations, file read failures). Core functions return structured error dicts (`{"status": "error", "error_type": "...", "message": "..."}`) for domain errors (ticket not found, hive not found, invalid status, write failures, etc.)
+6. **Consistent Error Handling**: Two-tier error model. The MCP adapter layer in `mcp_server.py` raises `ValueError` for input validation errors (malformed parameters, mutual exclusivity violations, file read failures). Core functions return structured error dicts (`{"status": "error", "error_type": "...", "message": "..."}`) for domain errors (ticket not found, hive not found, invalid status, write failures, etc.). An unloadable `~/.bees/config.json` is also a domain error, `config_load_error` (see [Unloadable Config File](configuration.md#unloadable-config-file))
 
 ## HTTP Transport Architecture
 
 HTTP transport uses uvicorn ASGI server for MCP communication.
 
-**Entry point**: `bees serve --http` starts the HTTP server. The `--host` flag sets the bind address (default `127.0.0.1`) and `--port` sets the port (default `8000`). Use `--test-config` to run with an ephemeral in-memory config that bypasses `~/.bees/config.json` (see [Test Mode](configuration.md#test-mode---test-config)). Configuration comes from CLI flags only — there is no config file for HTTP transport.
+**Entry point**: `bees serve --http` starts the HTTP server. The `--host` flag sets the bind address (default `127.0.0.1`) and `--port` sets the port (default `8000`). Use `--test-config` to run with an ephemeral in-memory config that bypasses `~/.bees/config.json` (see [Test Mode](configuration.md#test-mode---test-config)). The port comes from `--port`, else `http.port` in the global config, else `8000`. The server refuses to start when the global config cannot be loaded (see Startup sequence).
 
-**Startup sequence**: The handler validates the bees config (undertaker schedule), starts the undertaker scheduler, registers SIGINT/SIGTERM signal handlers, then passes the Starlette ASGI app from `mcp.http_app` to uvicorn.
+**Startup sequence**: The handler first loads `~/.bees/config.json`; if the file is malformed or unreadable, it prints the `config_load_error` JSON on stdout and exits 1 without starting. It then validates the bees config (undertaker schedule), starts the undertaker scheduler, registers SIGINT/SIGTERM signal handlers, then passes the Starlette ASGI app from `mcp.http_app` to uvicorn.
 
 **Implementation**: The FastMCP framework provides HTTP transport through its `mcp.http_app` property, which returns a Starlette ASGI application instance. This application is passed to uvicorn, which handles the HTTP server hosting with configurable host, port, and logging settings. The architecture separates the MCP protocol handling (FastMCP) from the HTTP transport layer (uvicorn), allowing flexible deployment configurations.
 
@@ -34,6 +34,8 @@ Stdio transport runs the MCP server as a subprocess communicating over stdin/std
 **How it works**: `bees serve --stdio` calls `mcp.run(transport="stdio")`, which hands control to FastMCP's stdio loop. The process blocks until the client terminates it.
 
 **File-only logging**: All log output is redirected to `~/.bees/mcp.log` before the stdio loop starts. This is required because MCP JSON-RPC uses stdout for protocol messages — any log line written to stdout would corrupt the wire format.
+
+**Lazy config loading**: Stdio mode does not check the config file at startup. The server starts with a malformed config, each tool call (except `health_check`) returns `config_load_error`, and calls succeed again once the file is fixed, with no restart.
 
 **No undertaker**: The undertaker scheduler is not started in stdio mode. Stdio servers live and die with the client process, making background scheduling unnecessary and potentially harmful (the scheduler could interfere with clean shutdown).
 
@@ -238,6 +240,8 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 ## Available MCP Tools
 
+Every tool except `health_check` is wrapped by `_config_errors_as_result` (`src/mcp_server.py`), which turns a `ConfigLoadError` raised anywhere inside the tool into the `config_load_error` result. It is not repeated in the per-tool error lists below.
+
 ### Ticket Operations
 
 - **create_ticket**: Create new ticket (bee or tier types) with automatic relationship synchronization. Requires `ticket_type`, `title`, and `hive` parameters. The `body` parameter is constrained by the input schema to `maxLength: 10000` characters; for bodies longer than that, create the ticket with a short stub body and use `append_ticket_body` to write the rest in chunks. Accepts `body_file` (path to a UTF-8 file) as an alternative to `body`; `body` and `body_file` are mutually exclusive. `body_file` has no size limit. Stdin (`"-"`) is not supported for `body_file` in the MCP context — pass content inline instead. Inline `body` expands literal `\n` / `\t`; `body_file` content is stored as written (see "Escape handling in body content" below). See "Chunked body workflow" below. Accepts an optional `priority`, an integer or null; null or omitted means no priority. The input schema is `anyOf [integer, null]` with no string branch, and strict: `true`, `1.0`, and `"2"` are rejected by input validation (a "valid integer" error) and no file is written, never coerced.
@@ -301,7 +305,7 @@ argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-tic
 
 `create-ticket --body`, `update-ticket --body`, and `append-ticket-body --chunk` enforce the same 10000-character cap as their MCP counterparts; oversized values are rejected at the handler entry with a non-zero exit and a message on stderr pointing the caller at `bees append-ticket-body` for chunked writes. See "Chunked body workflow" above.
 
-Output is always written as JSON to stdout. Errors are also written to stdout as a JSON error dict — nothing goes to stderr. This keeps CLI output pipeable and machine-readable with no mixed-stream surprises.
+Output is always written as JSON to stdout. Errors are JSON on stdout, except an oversized `--body` or `--chunk` (rejected on stderr, see above) and an unloadable config under `bees sting`. This keeps CLI output pipeable and machine-readable with no mixed-stream surprises. `main()` catches an unloadable `~/.bees/config.json` for every subcommand and prints the `config_load_error` dict with exit 1; nothing was saved. `bees sting`, a session hook, instead writes `bees sting: <message>` to stderr, prints nothing to stdout and exits 1, so Claude Code shows the message while session start still proceeds (see [Unloadable Config File](configuration.md#unloadable-config-file)).
 
 The CLI handlers call the same core functions used by the MCP adapter layer (`_create_ticket`, `_show_ticket`, `_update_ticket`, `_delete_ticket`, `_get_types`, `_set_types`). There is no separate CLI business logic — the CLI is a different entry point into the same shared implementation.
 
@@ -309,7 +313,7 @@ The CLI handlers call the same core functions used by the MCP adapter layer (`_c
 
 **Entry point architecture**: Both `bees serve --stdio` and `bees serve --http` live in the `serve` subcommand handler in `src/cli.py`. The `--http` path adds undertaker scheduler startup and signal handling on top of the shared server initialization. There is no standalone `src/main.py` entry point for the HTTP server.
 
-**Per-hive integrity model**: The server always starts regardless of hive state. Use `sanitize_hive` to detect and repair corruption in a specific hive.
+**Per-hive integrity model**: The server always starts regardless of hive state (the config file itself must load for `--http`, see above). Use `sanitize_hive` to detect and repair corruption in a specific hive.
 
 **Signal handling** registers SIGINT and SIGTERM handlers to ensure cleanup before exit, supporting standard Unix process management.
 

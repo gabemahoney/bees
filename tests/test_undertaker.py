@@ -24,6 +24,7 @@ RELATED FILES:
 - test_paths.py: find_ticket_file used in Phase 1
 """
 
+import json
 import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -33,8 +34,16 @@ import pytest
 from src.config import BeesConfig, HiveConfig
 from src.constants import ID_CHARSET
 from src.mcp_undertaker import UndertakerScheduler, _undertaker
-from tests.helpers import tree_snapshot
+from tests.helpers import break_config_with_trailing_comma, tree_snapshot
 from tests.test_constants import INVALID_PRIORITY_TERMS
+
+
+def _set_invalid_delete_with_dependencies(config_path: Path) -> bytes:
+    """Make a global config.json parse but fail validation: a non-boolean delete_with_dependencies. Returns the new bytes."""
+    data = json.loads(config_path.read_text())
+    data["delete_with_dependencies"] = "yes"
+    config_path.write_text(json.dumps(data))
+    return config_path.read_bytes()
 
 
 def _make_guid(short_id: str) -> str:
@@ -594,6 +603,47 @@ class TestUndertakerScheduler:
         # Log file should still have been written (index failure doesn't block logging)
         log_content = (tmp_path / "ut.log").read_text()
         assert "archived=1" in log_content
+
+
+    @pytest.mark.parametrize(
+        "damage,logged",
+        [
+            pytest.param(break_config_with_trailing_comma, "Malformed JSON", id="malformed_json"),
+            pytest.param(_set_invalid_delete_with_dependencies, "delete_with_dependencies must be a boolean", id="invalid_setting_value_error"),
+        ],
+    )
+    def test_fire_skips_run_on_unloadable_config_and_resumes_when_fixed(self, isolated_bees_env, mock_global_bees_dir, caplog, damage, logged):
+        """b.cyd: a config that cannot be loaded (ConfigLoadError, or any other ValueError such as an invalid setting)
+        is logged and skips the run (the scheduler thread must survive); fixing it resumes."""
+        from src.config import load_bees_config
+        from src.repo_context import repo_root_context
+
+        env = isolated_bees_env
+        env.create_hive("test_hive", "Test Hive")
+        env.hives["test_hive"]["undertaker_schedule"] = {
+            "interval_seconds": 3600,
+            "query_yaml": "stages:\n- [type=bee]",
+            "log_path": str(env.base_path / "undertaker.log"),
+        }
+        env.write_config()
+        with repo_root_context(env.base_path):
+            scheduler = UndertakerScheduler(load_bees_config(), env.base_path)
+        config_path = mock_global_bees_dir / "config.json"
+        good = config_path.read_bytes()
+        damaged = damage(config_path)
+        before = tree_snapshot(env.base_path)
+
+        scheduler._fire(scheduler._schedules[0])  # must not raise
+
+        assert tree_snapshot(env.base_path) == before
+        assert config_path.read_bytes() == damaged
+        assert not (env.base_path / "undertaker.log").exists()
+        assert logged in caplog.text
+
+        config_path.write_bytes(good)
+        scheduler._fire(scheduler._schedules[0])
+
+        assert "status=success" in (env.base_path / "undertaker.log").read_text()
 
 
 class TestUndertakerPriorityTerms:

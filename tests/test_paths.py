@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import src.cache
+from src.config import ConfigLoadError
 from src.id_utils import is_ticket_id
 from src.mcp_id_utils import parse_ticket_id, parse_type_from_ticket_id
 from src.parser import parse_frontmatter as real_parse_frontmatter
@@ -984,6 +985,26 @@ class TestNestedHivePruning:
         inner = tmp_path / "b.aaa" / skipped_dir / "Inner"
         (inner / ".hive").mkdir(parents=True)
         assert find_nested_hive_root(tmp_path / "b.aaa") == inner
+
+    @pytest.mark.parametrize(
+        "walk",
+        [
+            pytest.param(lambda h: list(iter_ticket_files(h)), id="iter_ticket_files"),
+            pytest.param(lambda h: list(iter_ticket_files_deep(h)), id="iter_ticket_files_deep"),
+            pytest.param(lambda h: find_ticket_file(h, "b.aaa"), id="find_ticket_file"),
+            pytest.param(lambda h: list(walk_hive(h)), id="walk_hive"),
+            pytest.param(lambda h: find_nested_hive_root(h), id="find_nested_hive_root"),
+            pytest.param(lambda h: find_enclosing_hive_root(h, h / "Sub"), id="find_enclosing_hive_root"),
+        ],
+    )
+    def test_walks_raise_when_global_config_is_unloadable(self, tmp_path, mock_global_bees_dir, walk):
+        """b.cyd: with the registered hive roots unknown, a walk raises ConfigLoadError instead of entering a nested hive."""
+        hive = tmp_path / "outer"
+        write_ticket_file(hive, "b.aaa")
+        (mock_global_bees_dir / "config.json").write_text("{invalid json")
+
+        with pytest.raises(ConfigLoadError):
+            walk(hive)
 
     @pytest.mark.parametrize("outer_hive", ["marker"], indirect=True)
     @pytest.mark.parametrize(

@@ -396,8 +396,19 @@ class UndertakerScheduler:
     def _fire(self, sched: dict[str, Any]) -> None:
         """Execute one undertaker run for a scheduled hive."""
         hive_name = sched["hive_name"]
-        with repo_root_context(self._repo_root):
-            fresh_config = load_bees_config()
+        try:
+            with repo_root_context(self._repo_root):
+                fresh_config = load_bees_config()
+        except ValueError as e:
+            # Covers ConfigLoadError (unreadable or malformed file) and invalid settings.
+            # Raising here would end the scheduler thread for good. Skip this run; the next
+            # interval re-reads the file, so fixing it resumes the schedule without a restart.
+            logger.error(
+                "undertaker-scheduler: hive=%s config could not be loaded, skipping this run: %s",
+                hive_name,
+                e,
+            )
+            return
         if fresh_config is None:
             logger.warning(
                 "undertaker-scheduler: hive=%s could not read config, skipping",

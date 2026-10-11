@@ -11,9 +11,12 @@ from src.config import (
     GLOBAL_SCHEMA_VERSION,
     BeesConfig,
     ChildTierConfig,
+    ConfigLoadError,
     ConflictRecord,
     HiveConfig,
     canonicalize_scope_pattern,
+    check_for_config_conflicts,
+    check_schema_version,
     check_scope_conflict,
     compute_scope_specificity,
     detect_hive_conflicts,
@@ -414,7 +417,13 @@ class TestFindAllMatchingScopes:
 class TestLoadGlobalConfig:
     """Test load_global_config for reading ~/.bees/config.json."""
 
-    def test_missing_file_returns_default(self, mock_global_bees_dir):
+    @pytest.mark.parametrize("layout", ["file_missing", "dir_missing", "dir_is_a_file"])
+    def test_missing_file_returns_default(self, mock_global_bees_dir, layout):
+        """No config.json (or no ~/.bees to hold it, or a regular file where ~/.bees should be) is the default, not an error (b.cyd)."""
+        if layout != "file_missing":
+            mock_global_bees_dir.rmdir()
+        if layout == "dir_is_a_file":
+            mock_global_bees_dir.write_text("not a directory")
         config = load_global_config()
         assert config == {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
 
@@ -424,13 +433,80 @@ class TestLoadGlobalConfig:
         config = load_global_config()
         assert config["scopes"]["/path"]["hives"] == {}
 
-    def test_malformed_json_returns_default(self, mock_global_bees_dir, caplog):
-        import logging
-        (mock_global_bees_dir / "config.json").write_text("{invalid json")
-        with caplog.at_level(logging.WARNING):
-            config = load_global_config()
-        assert config == {"scopes": {}, "schema_version": GLOBAL_SCHEMA_VERSION}
-        assert "Malformed JSON" in caplog.text
+    @pytest.mark.parametrize(
+        "content",
+        [
+            pytest.param('{"scopes": {},\n}', id="trailing_comma"),
+            pytest.param("", id="empty_file"),
+            pytest.param("[]", id="top_level_list"),
+            pytest.param(b"\xff\xfe{}", id="invalid_utf8"),
+        ],
+    )
+    def test_unloadable_file_raises_and_is_left_alone(self, mock_global_bees_dir, content):
+        """A malformed, non-object or undecodable file is a ConfigLoadError naming it, never the default (b.cyd)."""
+        config_path = mock_global_bees_dir / "config.json"
+        raw = content if isinstance(content, bytes) else content.encode()
+        config_path.write_bytes(raw)
+
+        with pytest.raises(ConfigLoadError) as exc_info:
+            load_global_config()
+
+        assert exc_info.value.path == str(config_path)
+        assert str(config_path) in str(exc_info.value)
+        assert config_path.read_bytes() == raw
+
+    def test_directory_at_config_path_raises(self, mock_global_bees_dir):
+        """A config path that cannot be read as a file is a ConfigLoadError, not an empty config."""
+        (mock_global_bees_dir / "config.json").mkdir()
+        with pytest.raises(ConfigLoadError):
+            load_global_config()
+
+    @pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="permission bits do not stop root")
+    def test_unreadable_config_directory_raises_config_load_error(self, mock_global_bees_dir, request):
+        """~/.bees that cannot be entered (chmod 000) is a ConfigLoadError naming the file, not a raw PermissionError or the default (b.cyd)."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text(json.dumps({"scopes": {}, "schema_version": "2.0"}))
+        request.addfinalizer(lambda: mock_global_bees_dir.chmod(0o700))
+        mock_global_bees_dir.chmod(0o000)
+
+        with pytest.raises(ConfigLoadError) as exc_info:
+            load_global_config()
+
+        assert exc_info.value.path == str(config_path)
+        assert str(config_path) in str(exc_info.value)
+        assert isinstance(exc_info.value.__cause__, PermissionError)
+
+        mock_global_bees_dir.chmod(0o700)
+        assert load_global_config()["schema_version"] == "2.0"
+
+    def test_corrupted_after_cached_load_raises_then_recovers(self, mock_global_bees_dir):
+        """good -> corrupt -> error (not the cached config) -> fixed -> the fixed content loads."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text(json.dumps({"scopes": {"/v1": {"hives": {}}}, "schema_version": "2.0"}))
+        stamp = backdate(config_path)
+        assert "/v1" in load_global_config()["scopes"]
+
+        config_path.write_text('{"scopes": {"/v1": {"hives": {}}},\n}')
+        os.utime(config_path, ns=(stamp + 10**9, stamp + 10**9))
+        for _ in range(2):  # the failure is not cached as a success, and repeats
+            with pytest.raises(ConfigLoadError):
+                load_global_config()
+
+        config_path.write_text(json.dumps({"scopes": {"/v2": {"hives": {}}}, "schema_version": "2.0"}))
+        os.utime(config_path, ns=(stamp + 2 * 10**9, stamp + 2 * 10**9))
+        assert "/v2" in load_global_config()["scopes"]
+
+    @pytest.mark.parametrize("check", [check_for_config_conflicts, check_schema_version])
+    def test_config_checks_report_unloadable_file_as_error(self, mock_global_bees_dir, check):
+        """The pre-flight checks return the config_load_error dict, not 'no conflict' or 'up to date'."""
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text("{invalid json")
+
+        result = check()
+
+        assert result["status"] == "error"
+        assert result["error_type"] == "config_load_error"
+        assert result["path"] == str(config_path)
 
     def test_adds_missing_scopes_key(self, mock_global_bees_dir):
         (mock_global_bees_dir / "config.json").write_text(json.dumps({"schema_version": "2.0"}))
@@ -855,14 +931,13 @@ class TestLoadBeesConfig:
         assert config is not None
         assert config.hives == {}
 
-    def test_load_malformed_json_returns_default(self, tmp_path, monkeypatch, mock_global_bees_dir, caplog):
-        import logging
+    def test_load_malformed_json_raises(self, tmp_path, monkeypatch, mock_global_bees_dir):
+        """A malformed global config is a ConfigLoadError, not 'no scope matches' (b.cyd)."""
         monkeypatch.chdir(tmp_path)
-        (mock_global_bees_dir / "config.json").write_text("{invalid json")
-        with caplog.at_level(logging.WARNING):
-            config = load_bees_config()
-        # Returns None because malformed global config → empty scopes → no match
-        assert config is None
+        config_path = mock_global_bees_dir / "config.json"
+        config_path.write_text("{invalid json")
+        with pytest.raises(ConfigLoadError, match=str(config_path)):
+            load_bees_config()
 
     @pytest.mark.parametrize(
         "scope_data,error_match",
