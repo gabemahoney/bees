@@ -416,7 +416,7 @@ A config file that exists but cannot be loaded is an error, never an empty confi
 | Entry point | Behavior |
 |---|---|
 | CLI subcommands (except `bees sting`) | `main()` prints the error JSON to stdout and exits 1 |
-| `bees serve --http` | Prints the error JSON and exits 1 at startup, before the server starts |
+| `bees serve --http` | Prints the error JSON on stdout (plus a one-line message naming `~/.bees/mcp.log` on stderr) and exits 1 at startup, before the server starts |
 | `bees serve --stdio` | Starts anyway; tool calls return the error until the file is fixed (see [mcp_server.md](mcp_server.md#available-mcp-tools)) |
 | `check_for_config_conflicts()` and `check_schema_version()` | Return the error dict |
 | Undertaker scheduler | `_fire` catches any `ValueError` from loading the config (a `ConfigLoadError`, or an invalid setting such as `"delete_with_dependencies": "yes"`), logs it and skips that run, so the scheduler thread keeps going; the next interval re-reads the file and resumes once it is fixed |

@@ -500,7 +500,17 @@ The suite never reads or writes the real home directory, so a change another too
 - Other paths under the real home (the checkout, the virtualenv, tool caches) are not guarded.
 
 **A test that needs its own home:**
-Set `HOME` and `USERPROFILE` to `tmp_path` with `monkeypatch`. `test_cli_serve.py` does this for every test in the file with its autouse `serve_log_path` fixture, so `bees serve` file logging writes `tmp_path/.bees/mcp.log`; the fixture also restores the root logger's handlers and level.
+Set `HOME` and `USERPROFILE` to `tmp_path` with `monkeypatch`. `test_cli_serve.py` does this for every test in the file with its autouse `serve_log_path` fixture, so `bees serve` file logging writes `tmp_path/.bees/mcp.log`; the fixture also restores the root logger's handlers and level. Failure tests read the log path from the `serve_log_path` fixture to check that stderr names it and that `mcp.log` holds the reason.
+
+---
+
+### test_cli_serve.py fixtures
+
+File-local fixtures; `serve_log_path` is described under `guard_real_home` above.
+
+`healthy_serve_dependencies` (autouse) patches `src.cli.check_serve_dependencies` to report a usable install. The tests then do not depend on which fastmcp and mcp versions the test environment holds. A test of the real self-check requests the `real_dependency_check` fixture, which undoes the patch, and fakes a broken install with `patch.dict("sys.modules", ...)` or `monkeypatch.setitem(sys.modules, ...)`.
+
+`server_mocks` (opt-in, module level) stubs everything `handle_serve` starts: `start_server`, `stop_server`, `mcp`, the health check, the config loaders, the undertaker scheduler and `uvicorn.run`. It returns a namespace of the mocks (`mcp`, `http_app`, `start`, `uvicorn_run`, `load_global_config`, `repo_root`), so a run that gets past a guard starts nothing real. A test class requests it, usually through an autouse fixture.
 
 ---
 

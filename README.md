@@ -58,6 +58,22 @@ Check the installed version:
 bees --version
 ```
 
+### Upgrade
+
+Reinstall instead of upgrading in place. An in-place upgrade (`pipx upgrade`, `pipx install --force`, `pip install -U`) can leave the MCP server's `fastmcp` package half-installed, and `bees serve` then cannot start.
+
+```bash
+pipx uninstall bees-md
+pipx install 'bees-md[serve]'
+```
+
+With pip instead of pipx:
+
+```bash
+python -m pip uninstall -y bees-md fastmcp fastmcp-slim mcp
+python -m pip install 'bees-md[serve]'
+```
+
 ### CLI Context Injection
 
 The following script installs `bees sting` hooks into Claude Code's settings (`SessionStart` and `PreCompact`).

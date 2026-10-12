@@ -2,12 +2,15 @@
 Tests for the `bees serve` CLI command (src/cli.py handle_serve).
 
 PURPOSE:
-Tests flag validation, transport dispatch, fastmcp import guard, logging
-reconfiguration, and --config forwarding for the serve subcommand.
+Tests flag validation, transport dispatch, the fastmcp/mcp dependency guard, stderr reporting
+of fatal startup errors, logging reconfiguration, and --config forwarding for the serve subcommand.
 
 SCOPE - Tests that belong here:
 - bees serve flag validation (no flags, --stdio, --http, both flags)
-- fastmcp ImportError guard
+- the dependency guard (b.zhu, b.bop): a missing, half-installed or incompatible fastmcp/mcp stops both
+  transports with the clean-reinstall message on stderr, nothing on stdout, and the reason in mcp.log
+- fatal startup errors (invalid config, port in use, transport errors) reach stderr; stdout stays
+  clean under --stdio (it is the MCP stream)
 - --stdio transport: start_server() + mcp.run() called, logging reconfigured
 - --http transport: uvicorn.run called, health route registered, scheduler wired
 - --http startup fails with the config_load_error JSON when the global config cannot be loaded
@@ -15,6 +18,7 @@ SCOPE - Tests that belong here:
 - UndertakerScheduler not instantiated in stdio path
 
 SCOPE - Tests that DON'T belong here:
+- The dependency self-check itself (versions, imports, message text) -> test_serve_deps.py
 - MCP server lifecycle internals -> test_mcp_server_lifecycle.py
 - Other CLI commands -> test_cli_commands.py
 """
@@ -22,13 +26,17 @@ SCOPE - Tests that DON'T belong here:
 import json
 import logging
 import signal
+import sys
+import types
 from contextlib import ExitStack
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.cli import build_parser, handle_serve
 from src.config import load_global_config
+from src.serve_deps import check_serve_dependencies, pip_fix_command
 
 
 # ---------------------------------------------------------------------------
@@ -82,21 +90,63 @@ def serve_log_path(monkeypatch, tmp_path):
     root_logger.setLevel(original_level)
 
 
+@pytest.fixture(autouse=True)
+def healthy_serve_dependencies(monkeypatch):
+    """Report fastmcp and mcp as usable, whatever this test environment holds (the self-check has its own tests)."""
+    monkeypatch.setattr("src.cli.check_serve_dependencies", lambda: None)
+
+
+@pytest.fixture
+def real_dependency_check(monkeypatch):
+    """Undo healthy_serve_dependencies: run the real src.serve_deps self-check."""
+    monkeypatch.setattr("src.cli.check_serve_dependencies", check_serve_dependencies)
+
+
+def _fake_namespace_fastmcp():
+    """A `fastmcp` left as an empty folder: importable, no __file__, no names (b.zhu)."""
+    module = types.ModuleType("fastmcp")
+    module.__file__ = None
+    module.__path__ = []
+    return module
+
+
+CLEAN_REINSTALL_PIPX = "pipx uninstall bees-md && pipx install 'bees-md[serve]'"
+
+
+@pytest.fixture
+def server_mocks(monkeypatch, tmp_path):
+    """Stub everything `handle_serve` starts, so a run that gets past a guard does nothing real.
+
+    Returns the mocks: mcp, http_app, start, uvicorn_run, load_global_config and repo_root.
+    """
+    monkeypatch.setattr("src.cli.get_repo_root_from_path", lambda p: tmp_path)
+    mocks = SimpleNamespace(
+        mcp=MagicMock(),
+        http_app=MagicMock(),
+        start=MagicMock(),
+        uvicorn_run=MagicMock(),
+        load_global_config=MagicMock(return_value={}),
+        repo_root=tmp_path,
+    )
+    mocks.mcp.http_app.return_value = mocks.http_app
+    with ExitStack() as stack:
+        stack.enter_context(patch("src.mcp_server.start_server", mocks.start))
+        stack.enter_context(patch("src.mcp_server.stop_server", MagicMock()))
+        stack.enter_context(patch("src.mcp_server.mcp", mocks.mcp))
+        stack.enter_context(patch("src.mcp_server._health_check", MagicMock()))
+        stack.enter_context(patch("src.config.load_bees_config", return_value=None))
+        stack.enter_context(patch("src.config.load_global_config", mocks.load_global_config))
+        stack.enter_context(patch("src.mcp_undertaker.UndertakerScheduler"))
+        stack.enter_context(patch("uvicorn.run", mocks.uvicorn_run))
+        yield mocks
+
+
 # ---------------------------------------------------------------------------
 # TestServeFlagValidation
 # ---------------------------------------------------------------------------
 
 
 class TestServeFlagValidation:
-    def test_serve_no_flags_exits_2(self, capsys):
-        """bees serve with no transport flag exits 2 after printing usage."""
-        args = _make_serve_args()
-
-        with pytest.raises(SystemExit) as exc_info:
-            handle_serve(args)
-
-        assert exc_info.value.code == 2
-
     def test_serve_stdio_alone_proceeds(self, monkeypatch, tmp_path):
         """--stdio with mocked internals proceeds without raising SystemExit."""
         monkeypatch.setattr("src.cli.get_repo_root_from_path", lambda p: tmp_path)
@@ -104,12 +154,11 @@ class TestServeFlagValidation:
         mock_mcp = MagicMock()
         mock_start = MagicMock()
 
-        with patch.dict("sys.modules", {"fastmcp": MagicMock()}):
-            with patch("src.mcp_server.start_server", mock_start):
-                with patch("src.mcp_server.mcp", mock_mcp):
-                    args = _make_serve_args(stdio=True)
-                    # Should not raise SystemExit
-                    handle_serve(args)
+        with patch("src.mcp_server.start_server", mock_start):
+            with patch("src.mcp_server.mcp", mock_mcp):
+                args = _make_serve_args(stdio=True)
+                # Should not raise SystemExit
+                handle_serve(args)
 
         mock_mcp.run.assert_called_once_with(transport="stdio")
 
@@ -120,15 +169,14 @@ class TestServeFlagValidation:
         mock_mcp = MagicMock()
         mock_mcp.http_app.return_value = MagicMock()
 
-        with patch.dict("sys.modules", {"fastmcp": MagicMock()}):
-            with patch("src.mcp_server.start_server"):
-                with patch("src.mcp_server.mcp", mock_mcp):
-                    with patch("src.config.load_bees_config", return_value=None):
-                        with patch("src.config.load_global_config", return_value={}):
-                            with patch("uvicorn.run"):
-                                args = _make_serve_args(http=True)
-                                # Should not raise SystemExit
-                                handle_serve(args)
+        with patch("src.mcp_server.start_server"):
+            with patch("src.mcp_server.mcp", mock_mcp):
+                with patch("src.config.load_bees_config", return_value=None):
+                    with patch("src.config.load_global_config", return_value={}):
+                        with patch("uvicorn.run"):
+                            args = _make_serve_args(http=True)
+                            # Should not raise SystemExit
+                            handle_serve(args)
 
     def test_serve_both_flags_exits_2(self):
         """--stdio --http together is rejected by argparse (mutually exclusive), exits 2."""
@@ -143,22 +191,93 @@ class TestServeFlagValidation:
 # ---------------------------------------------------------------------------
 
 
+TRANSPORTS = [pytest.param("stdio", id="stdio"), pytest.param("http", id="http")]
+
+
 class TestServeExtraGating:
-    def test_serve_missing_fastmcp_exits_1(self, capsys):
-        """When fastmcp is not importable, handle_serve exits 1 with an install hint naming the published package 'bees-md[serve]', not bees-cli."""
-        args = _make_serve_args(stdio=True)
+    """b.zhu / b.bop: an unusable fastmcp or mcp stops `bees serve` with a clean message on stderr only."""
 
-        with patch.dict("sys.modules", {"fastmcp": None}):
-            with pytest.raises(SystemExit) as exc_info:
-                handle_serve(args)
+    @pytest.fixture(autouse=True)
+    def _server(self, server_mocks):
+        self.server = server_mocks
 
-        assert exc_info.value.code == 1
+    def _serve_expecting_exit(self, transport, capsys, code=1):
+        """Run handle_serve for a transport, assert SystemExit(code), return (stdout, stderr)."""
+        args = _make_serve_args(stdio=transport == "stdio", http=transport == "http")
+        with pytest.raises(SystemExit) as exc_info:
+            handle_serve(args)
+        assert exc_info.value.code == code
         captured = capsys.readouterr()
-        result = json.loads(captured.out.strip())
-        assert result["status"] == "error"
-        assert "fastmcp" in result["message"]
-        assert "'bees-md[serve]'" in result["message"]
-        assert "bees-cli" not in result["message"]
+        return captured.out, captured.err
+
+    def _assert_server_not_started(self):
+        self.server.start.assert_not_called()
+        self.server.mcp.run.assert_not_called()
+        self.server.uvicorn_run.assert_not_called()
+
+    @pytest.mark.parametrize("transport", TRANSPORTS)
+    @pytest.mark.parametrize(
+        "broken_fastmcp,cause",
+        [
+            pytest.param(None, "fastmcp cannot be imported", id="missing"),
+            pytest.param(_fake_namespace_fastmcp(), "fastmcp is installed incompletely", id="namespace_package"),
+        ],
+    )
+    def test_broken_fastmcp_exits_1_with_clean_reinstall(
+        self, real_dependency_check, monkeypatch, capsys, serve_log_path, transport, broken_fastmcp, cause
+    ):
+        """A missing or half-installed (importable, no files) fastmcp fails both transports (b.zhu): exit 1, nothing on stdout, stderr names the cause, both clean-reinstall commands for the published 'bees-md[serve]' (not bees-cli) and the log, and mcp.log holds the cause."""
+        monkeypatch.setitem(sys.modules, "fastmcp", broken_fastmcp)  # None makes the import raise ImportError
+
+        out, err = self._serve_expecting_exit(transport, capsys)
+
+        assert out == ""
+        assert cause in err
+        assert CLEAN_REINSTALL_PIPX in err
+        assert pip_fix_command() in err
+        assert "bees-cli" not in err
+        assert str(serve_log_path) in err
+        assert cause in serve_log_path.read_text()
+        self._assert_server_not_started()
+
+    @pytest.mark.parametrize("transport", TRANSPORTS)
+    def test_unwritable_bees_dir_still_reports_on_stderr(self, real_dependency_check, monkeypatch, capsys, serve_log_path, transport):
+        """If ~/.bees cannot be created (a file is in the way), the dependency message still reaches stderr, exit 1, stdout empty."""
+        serve_log_path.parent.write_text("not a directory")
+        monkeypatch.setitem(sys.modules, "fastmcp", None)
+
+        out, err = self._serve_expecting_exit(transport, capsys)
+
+        assert out == ""
+        assert "fastmcp cannot be imported" in err
+        assert CLEAN_REINSTALL_PIPX in err
+        assert str(serve_log_path) in err
+        assert serve_log_path.parent.read_text() == "not a directory"
+        self._assert_server_not_started()
+
+    @pytest.mark.parametrize("transport", TRANSPORTS)
+    def test_incompatible_mcp_import_failure_exits_1_on_stderr(
+        self, monkeypatch, capsys, serve_log_path, transport
+    ):
+        """If the server module still fails to import after the self-check, both transports exit 1 with the reason and the clean-reinstall command on stderr (HTTP used to log it to mcp.log only) and nothing on stdout."""
+        monkeypatch.setitem(sys.modules, "src.mcp_server", None)  # `from .mcp_server import ...` raises ImportError
+
+        out, err = self._serve_expecting_exit(transport, capsys)
+
+        assert out == ""
+        assert "cannot be imported" in err
+        assert CLEAN_REINSTALL_PIPX in err
+        assert str(serve_log_path) in err
+        assert "cannot be imported" in serve_log_path.read_text()
+        self.server.uvicorn_run.assert_not_called()
+
+    def test_serve_no_flags_exits_2_even_when_dependencies_are_broken(self, real_dependency_check, monkeypatch, capsys):
+        """Usage errors are reported before the dependency check: no transport flag is still exit 2."""
+        monkeypatch.setitem(sys.modules, "fastmcp", _fake_namespace_fastmcp())
+
+        _, err = self._serve_expecting_exit("none", capsys, code=2)
+
+        assert CLEAN_REINSTALL_PIPX not in err
 
 
 # ---------------------------------------------------------------------------
@@ -180,10 +299,9 @@ class TestStdioTransport:
 
     def _run_stdio(self):
         args = _make_serve_args(stdio=True)
-        with patch.dict("sys.modules", {"fastmcp": MagicMock()}):
-            with patch("src.mcp_server.start_server", self.mock_start):
-                with patch("src.mcp_server.mcp", self.mock_mcp):
-                    handle_serve(args)
+        with patch("src.mcp_server.start_server", self.mock_start):
+            with patch("src.mcp_server.mcp", self.mock_mcp):
+                handle_serve(args)
 
     def test_stdio_calls_mcp_run(self):
         """mcp.run(transport='stdio') is called on the --stdio path."""
@@ -212,13 +330,12 @@ class TestStdioTransport:
 
     def test_stdio_no_undertaker(self):
         """handle_serve stdio path never instantiates UndertakerScheduler."""
-        with patch.dict("sys.modules", {"fastmcp": MagicMock()}):
-            with patch("src.mcp_server.start_server", self.mock_start):
-                with patch("src.mcp_server.mcp", self.mock_mcp):
-                    with patch("src.mcp_undertaker.UndertakerScheduler") as mock_sched:
-                        args = _make_serve_args(stdio=True)
-                        handle_serve(args)
-                        mock_sched.assert_not_called()
+        with patch("src.mcp_server.start_server", self.mock_start):
+            with patch("src.mcp_server.mcp", self.mock_mcp):
+                with patch("src.mcp_undertaker.UndertakerScheduler") as mock_sched:
+                    args = _make_serve_args(stdio=True)
+                    handle_serve(args)
+                    mock_sched.assert_not_called()
 
     def test_stdio_logging_to_file(self, serve_log_path):
         """Root logger handlers are replaced with a single FileHandler to ~/.bees/mcp.log after --stdio."""
@@ -233,6 +350,20 @@ class TestStdioTransport:
         )
         assert [h.baseFilename for h in handlers if isinstance(h, logging.FileHandler)] == [str(serve_log_path)]
         assert serve_log_path.exists()
+
+    def test_stdio_transport_error_goes_to_stderr_and_log_not_stdout(self, capsys, serve_log_path):
+        """A transport error exits 1 with a one-line message and the log path on stderr; stdout (the MCP stream) stays empty (b.bop)."""
+        self.mock_mcp.run.side_effect = RuntimeError("pipe broke")
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_stdio()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "stdio transport error: pipe broke" in captured.err
+        assert str(serve_log_path) in captured.err
+        assert "pipe broke" in serve_log_path.read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -254,11 +385,10 @@ class TestConfigFlag:
         mock_start = MagicMock()
 
         with patch("src.cli.set_config_path", mock_set_config):
-            with patch.dict("sys.modules", {"fastmcp": MagicMock()}):
-                with patch("src.mcp_server.start_server", mock_start):
-                    with patch("src.mcp_server.mcp", mock_mcp):
-                        args = _make_serve_args(stdio=True, config="/some/path")
-                        handle_serve(args)
+            with patch("src.mcp_server.start_server", mock_start):
+                with patch("src.mcp_server.mcp", mock_mcp):
+                    args = _make_serve_args(stdio=True, config="/some/path")
+                    handle_serve(args)
 
         assert captured_paths == ["/some/path"]
 
@@ -272,31 +402,8 @@ class TestHttpTransport:
     """Tests for the --http execution path."""
 
     @pytest.fixture(autouse=True)
-    def _patch_http_deps(self, monkeypatch, tmp_path):
-        """Patch common dependencies for every HTTP transport test."""
-        monkeypatch.setattr("src.cli.get_repo_root_from_path", lambda p: tmp_path)
-        self.tmp_path = tmp_path
-
-        self.mock_mcp = MagicMock()
-        self.mock_http_app = MagicMock()
-        self.mock_mcp.http_app.return_value = self.mock_http_app
-
-        self.mock_start = MagicMock()
-        self.mock_uvicorn_run = MagicMock()
-
-        self.mock_load_global_config = MagicMock(return_value={})
-
-        with ExitStack() as stack:
-            stack.enter_context(patch.dict("sys.modules", {"fastmcp": MagicMock()}))
-            stack.enter_context(patch("src.mcp_server.start_server", self.mock_start))
-            stack.enter_context(patch("src.mcp_server.stop_server", MagicMock()))
-            stack.enter_context(patch("src.mcp_server.mcp", self.mock_mcp))
-            stack.enter_context(patch("src.mcp_server._health_check", MagicMock()))
-            stack.enter_context(patch("src.config.load_bees_config", return_value=None))
-            stack.enter_context(patch("src.config.load_global_config", self.mock_load_global_config))
-            stack.enter_context(patch("src.mcp_undertaker.UndertakerScheduler"))
-            stack.enter_context(patch("uvicorn.run", self.mock_uvicorn_run))
-            yield
+    def _server(self, server_mocks):
+        self.server = server_mocks
 
     def _run_http(self, **kwargs):
         """Invoke handle_serve with --http and optional overrides."""
@@ -311,8 +418,8 @@ class TestHttpTransport:
         """uvicorn.run() is called with default host=127.0.0.1 and port=8000."""
         self._run_http()
 
-        self.mock_uvicorn_run.assert_called_once()
-        _, kwargs = self.mock_uvicorn_run.call_args
+        self.server.uvicorn_run.assert_called_once()
+        _, kwargs = self.server.uvicorn_run.call_args
         assert kwargs.get("host") == "127.0.0.1"
         assert kwargs.get("port") == 8000
 
@@ -324,8 +431,8 @@ class TestHttpTransport:
         """--host 0.0.0.0 --port 9000 is forwarded verbatim to uvicorn.run()."""
         self._run_http(host="0.0.0.0", port=9000)
 
-        self.mock_uvicorn_run.assert_called_once()
-        _, kwargs = self.mock_uvicorn_run.call_args
+        self.server.uvicorn_run.assert_called_once()
+        _, kwargs = self.server.uvicorn_run.call_args
         assert kwargs.get("host") == "0.0.0.0"
         assert kwargs.get("port") == 9000
 
@@ -336,8 +443,8 @@ class TestHttpTransport:
     def test_http_calls_start_server(self):
         """start_server() is called before uvicorn.run() on the --http path."""
         call_order = []
-        self.mock_start.side_effect = lambda: call_order.append("start_server")
-        self.mock_uvicorn_run.side_effect = lambda *a, **kw: call_order.append("uvicorn.run")
+        self.server.start.side_effect = lambda: call_order.append("start_server")
+        self.server.uvicorn_run.side_effect = lambda *a, **kw: call_order.append("uvicorn.run")
 
         self._run_http()
 
@@ -353,8 +460,8 @@ class TestHttpTransport:
         """app.add_route('/health', ...) is called on the http_app object."""
         self._run_http()
 
-        self.mock_http_app.add_route.assert_called_once()
-        route_path = self.mock_http_app.add_route.call_args[0][0]
+        self.server.http_app.add_route.assert_called_once()
+        route_path = self.server.http_app.add_route.call_args[0][0]
         assert route_path == "/health"
 
     # ------------------------------------------------------------------
@@ -381,7 +488,7 @@ class TestHttpTransport:
 
                 self._run_http()
 
-                mock_scheduler_cls.assert_called_once_with(mock_config, self.tmp_path)
+                mock_scheduler_cls.assert_called_once_with(mock_config, self.server.repo_root)
 
     # ------------------------------------------------------------------
     # Test 6 — signal handlers registered for SIGINT and SIGTERM
@@ -417,22 +524,67 @@ class TestHttpTransport:
     # ------------------------------------------------------------------
 
     @pytest.mark.parametrize("port", [pytest.param(None, id="no_port"), pytest.param(9000, id="explicit_port")])
-    def test_http_refuses_to_start_on_unloadable_config(self, capsys, mock_global_bees_dir, port):
-        """A malformed global config fails startup with the error JSON on stdout and exit 1, with or without --port."""
+    def test_http_refuses_to_start_on_unloadable_config(self, capsys, mock_global_bees_dir, serve_log_path, port):
+        """A malformed global config fails startup with the error JSON on stdout, a short message with the log path on stderr, and exit 1, with or without --port."""
         config_path = mock_global_bees_dir / "config.json"
         config_path.write_text("{invalid json")
-        self.mock_load_global_config.side_effect = load_global_config  # the real loader, on the real file
+        self.server.load_global_config.side_effect = load_global_config  # the real loader, on the real file
 
         with pytest.raises(SystemExit) as exc_info:
             self._run_http(port=port)
 
         assert exc_info.value.code == 1
-        result = json.loads(capsys.readouterr().out)
+        captured = capsys.readouterr()
+        result = json.loads(captured.out)
         assert result["error_type"] == "config_load_error"
         assert result["path"] == str(config_path)
-        self.mock_uvicorn_run.assert_not_called()
-        self.mock_start.assert_not_called()
+        assert "Failed to start server" in captured.err
+        assert str(serve_log_path) in captured.err
+        self.server.uvicorn_run.assert_not_called()
+        self.server.start.assert_not_called()
         assert config_path.read_text() == "{invalid json"
+
+    # ------------------------------------------------------------------
+    # b.bop — every other fatal startup error reaches stderr, with the log path
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "error,fragment",
+        [
+            pytest.param(OSError(98, "Address already in use"), "Port 8000 is already in use", id="port_in_use"),
+            pytest.param(OSError(13, "Permission denied"), "Permission denied for 127.0.0.1:8000", id="permission_denied"),
+            pytest.param(OSError(99, "Cannot assign requested address"), "Network error", id="other_os_error"),
+            pytest.param(RuntimeError("loop closed"), "Failed to start server: loop closed", id="runtime_error"),
+            pytest.param(FileNotFoundError("no config here"), "Configuration error", id="file_not_found"),
+            pytest.param(KeyError("surprise"), "Unexpected error", id="unexpected_error"),
+        ],
+    )
+    def test_http_startup_failure_goes_to_stderr_and_log(self, capsys, serve_log_path, error, fragment):
+        """A failing HTTP start exits 1 with the reason and the log path on stderr, the reason in mcp.log, and nothing on stdout."""
+        self.server.uvicorn_run.side_effect = error
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_http()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert fragment in captured.err
+        assert str(serve_log_path) in captured.err
+        assert fragment in serve_log_path.read_text()
+
+    def test_http_invalid_bees_config_goes_to_stderr_with_exit_2(self, capsys, serve_log_path):
+        """An invalid bees config exits 2 with the reason and the log path on stderr and nothing on stdout."""
+        with patch("src.config.load_bees_config", side_effect=ValueError("tier names must be unique")):
+            with pytest.raises(SystemExit) as exc_info:
+                self._run_http()
+
+        assert exc_info.value.code == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "tier names must be unique" in captured.err
+        assert str(serve_log_path) in captured.err
+        self.server.start.assert_not_called()
 
     # ------------------------------------------------------------------
     # Test 8 — port resolution priority: CLI > config > default
@@ -448,10 +600,10 @@ class TestHttpTransport:
     )
     def test_http_port_resolution(self, args_port, global_config, expected_port):
         """effective_port respects priority: --port CLI flag > http.port config > 8000 default."""
-        self.mock_load_global_config.return_value = global_config
+        self.server.load_global_config.return_value = global_config
         self._run_http(port=args_port)
 
-        _, kwargs = self.mock_uvicorn_run.call_args
+        _, kwargs = self.server.uvicorn_run.call_args
         assert kwargs.get("port") == expected_port
 
 
@@ -464,26 +616,8 @@ class TestTestConfigFlag:
     """Tests for the --test-config flag in bees serve."""
 
     @pytest.fixture(autouse=True)
-    def _patch_http_deps(self, monkeypatch, tmp_path):
-        """Patch all server startup dependencies for every test in this class."""
-        monkeypatch.setattr("src.cli.get_repo_root_from_path", lambda p: tmp_path)
-        self.tmp_path = tmp_path
-
-        mock_mcp = MagicMock()
-        mock_mcp.http_app.return_value = MagicMock()
-        self.mock_uvicorn_run = MagicMock()
-
-        with ExitStack() as stack:
-            stack.enter_context(patch.dict("sys.modules", {"fastmcp": MagicMock()}))
-            stack.enter_context(patch("src.mcp_server.start_server"))
-            stack.enter_context(patch("src.mcp_server.stop_server", MagicMock()))
-            stack.enter_context(patch("src.mcp_server.mcp", mock_mcp))
-            stack.enter_context(patch("src.mcp_server._health_check", MagicMock()))
-            stack.enter_context(patch("src.config.load_bees_config", return_value=None))
-            stack.enter_context(patch("src.config.load_global_config", return_value={}))
-            stack.enter_context(patch("src.mcp_undertaker.UndertakerScheduler"))
-            stack.enter_context(patch("uvicorn.run", self.mock_uvicorn_run))
-            yield
+    def _server(self, server_mocks):
+        self.server = server_mocks
 
     # --- Happy path tests ---
 

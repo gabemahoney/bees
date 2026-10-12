@@ -14,6 +14,7 @@ import re
 import sys
 import textwrap
 from pathlib import Path
+from typing import NoReturn
 
 from .config import (
     GLOBAL_SCHEMA_VERSION,
@@ -59,6 +60,7 @@ from .query_parser import (
 )
 from .repo_context import repo_root_context
 from .repo_utils import get_repo_root_from_path
+from .serve_deps import check_serve_dependencies, format_serve_dependency_message
 from .setup_claude import handle_setup_claude_cli
 from .sting import handle_sting
 from .version import get_version
@@ -239,7 +241,7 @@ def _read_body_file_arg(arg_name: str, path: str) -> str:
 
 def _configure_file_logging() -> Path:
     """Redirect root logger to ~/.bees/mcp.log (file-only). Returns log path."""
-    log_path = Path.home() / ".bees" / "mcp.log"
+    log_path = _serve_log_path()
     log_path.parent.mkdir(exist_ok=True)
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
@@ -676,29 +678,53 @@ def _resolve_test_config(value: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def handle_serve(args):
-    # [serve] guard: fastmcp must be importable before we pull in mcp_server
-    try:
-        import fastmcp  # noqa: F401
-    except ImportError:
-        json.dump(
-            {
-                "status": "error",
-                "message": (
-                    "Missing required dependency: fastmcp. "
-                    "Install with: pip install 'bees-md[serve]'"
-                ),
-            },
-            sys.stdout,
-        )
-        print()
-        sys.exit(1)
+def _serve_log_path() -> Path:
+    return Path.home() / ".bees" / "mcp.log"
 
+
+def _serve_stderr_line(message: str, hint: str | None = None) -> str:
+    """One-line stderr text: 'bees serve: <message>. <hint>. Log: <path>'."""
+    text = f"bees serve: {message.rstrip('.')}."
+    if hint:
+        text += f" {hint.rstrip('.')}."
+    return f"{text} Log: {_serve_log_path()}"
+
+
+def _serve_fatal(message: str, hint: str | None = None, code: int = 1) -> NoReturn:
+    """Report a fatal `bees serve` startup error and exit.
+
+    Logs to ~/.bees/mcp.log (file logging must already be configured) and prints a short message
+    naming the log to STDERR.  Never writes to stdout: in --stdio mode that is the MCP stream.
+    """
+    logger.error(message)
+    if hint:
+        logger.error(hint)
+    print(_serve_stderr_line(message, hint), file=sys.stderr)
+    sys.exit(code)
+
+
+def _serve_dependencies_fatal(message: str) -> NoReturn:
+    """Report a broken fastmcp/mcp install (multi-line message) to mcp.log and stderr, then exit 1."""
+    try:
+        _configure_file_logging()
+        logger.error(message.replace("\n", " | "))
+    except OSError:
+        pass  # unwritable ~/.bees: stderr still gets the message
+    print(f"{message}\nLog: {_serve_log_path()}", file=sys.stderr)
+    sys.exit(1)
+
+
+def handle_serve(args):
     # Neither flag supplied → print usage and exit
     if not args.stdio and not args.http:
         # args lives on the serve subparser; re-parse to get usage from it
         args.serve_parser.print_usage()
         sys.exit(2)
+
+    # [serve] guard: fastmcp and mcp must be present, complete and in the supported range before
+    # we pull in mcp_server. Reports to stderr only (stdout is the MCP stream under --stdio).
+    if (dependency_problem := check_serve_dependencies()) is not None:
+        _serve_dependencies_fatal(dependency_problem)
 
     if args.config and args.test_config is not None:
         print("Error: --config and --test-config are mutually exclusive.", file=sys.stderr)
@@ -726,9 +752,9 @@ def handle_serve(args):
             from .mcp_server import _health_check, mcp, start_server, stop_server
             from .mcp_undertaker import UndertakerScheduler
         except ImportError as e:
-            logger.error(f"Failed to start server: Missing dependency - {e}")
-            logger.error("Please install required dependencies with: poetry install")
-            sys.exit(1)
+            _serve_dependencies_fatal(
+                format_serve_dependency_message(f"a required dependency cannot be imported ({e})")
+            )
 
         # Fail at startup, with a clear message, on a config file that cannot be loaded
         # (otherwise the first MCP call or undertaker run would find out)
@@ -736,6 +762,9 @@ def handle_serve(args):
             load_global_config()
         except ConfigLoadError as e:
             logger.error(f"Failed to start server: {e}")
+            # stderr gets a short line; stdout keeps the CLI's JSON error contract (exit 1).
+            # Safe for --http: stdout is not an MCP stream here.
+            print(_serve_stderr_line(f"Failed to start server: {e}"), file=sys.stderr)
             _output_result(config_load_error_result(e))
 
         # Nested helpers defined here to avoid top-level starlette/logging deps
@@ -831,6 +860,12 @@ def handle_serve(args):
                     logger.error("  - Values must be [] or [singular, plural]")
                     logger.error("  - Friendly names must be unique across tiers")
                     logger.error("=" * 60)
+                    print(
+                        _serve_stderr_line(
+                            f"Invalid bees configuration: {e}", "Fix ~/.bees/config.json"
+                        ),
+                        file=sys.stderr,
+                    )
                     sys.exit(2)
 
                 logger.info("=" * 60)
@@ -865,31 +900,27 @@ def handle_serve(args):
                 uvicorn.run(http_app, host=args.host, port=effective_port, log_level="info")
 
         except FileNotFoundError as e:
-            logger.error(f"Configuration error: {e}")
-            sys.exit(1)
+            _serve_fatal(f"Configuration error: {e}")
         except OSError as e:
             if "Address already in use" in str(e) or e.errno == 48:
-                logger.error(f"Failed to start server: Port {effective_port} is already in use")
-                logger.error(
-                    f"Please stop the other service using port {effective_port} or use a different port"
+                _serve_fatal(
+                    f"Failed to start server: Port {effective_port} is already in use",
+                    f"Please stop the other service using port {effective_port} or use a different port",
                 )
             elif "Permission denied" in str(e) or e.errno == 13:
-                logger.error(
-                    f"Failed to start server: Permission denied for {args.host}:{effective_port}"
-                )
-                logger.error(
-                    "Try using a port number above 1024 or run with appropriate permissions"
+                _serve_fatal(
+                    f"Failed to start server: Permission denied for {args.host}:{effective_port}",
+                    "Try using a port number above 1024 or run with appropriate permissions",
                 )
             else:
-                logger.error(f"Failed to start server: Network error - {e}")
-                logger.error(f"Check that {args.host}:{effective_port} is a valid address")
-            sys.exit(1)
+                _serve_fatal(
+                    f"Failed to start server: Network error - {e}",
+                    f"Check that {args.host}:{effective_port} is a valid address",
+                )
         except RuntimeError as e:
-            logger.error(f"Failed to start server: {e}")
-            sys.exit(1)
+            _serve_fatal(f"Failed to start server: {e}")
         except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            sys.exit(1)
+            _serve_fatal(f"Unexpected error: {e}")
         return
 
     # --stdio path
@@ -897,9 +928,14 @@ def handle_serve(args):
     _configure_file_logging()
 
     # Deferred import — must not happen at module level to avoid pulling fastmcp
-    # at CLI load time.  The [serve] guard above ensures fastmcp is present before
+    # at CLI load time.  The [serve] guard above ensures fastmcp and mcp are usable before
     # this import executes (mcp_server imports fastmcp at its module level).
-    from .mcp_server import mcp, start_server  # noqa: PLC0415
+    try:
+        from .mcp_server import mcp, start_server  # noqa: PLC0415
+    except ImportError as e:
+        _serve_dependencies_fatal(
+            format_serve_dependency_message(f"a required dependency cannot be imported ({e})")
+        )
 
     try:
         repo_root = get_repo_root_from_path(Path.cwd())
@@ -907,8 +943,7 @@ def handle_serve(args):
             start_server()
             mcp.run(transport="stdio")
     except Exception as exc:
-        logger.error(f"stdio transport error: {exc}")
-        sys.exit(1)
+        _serve_fatal(f"stdio transport error: {exc}")
 
 
 # ---------------------------------------------------------------------------

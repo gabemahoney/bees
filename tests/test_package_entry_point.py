@@ -133,3 +133,18 @@ def test_serve_extra_excludes_next_major(package, next_major):
     lower = Version(poetry_pin[1:])
     assert serve[package] == SpecifierSet(f">={lower},<{lower.major + 1}")
     assert package in pyproject["tool"]["poetry"]["extras"]["serve"]
+
+
+@pytest.mark.parametrize("package", [pytest.param("fastmcp", id="fastmcp"), pytest.param("mcp", id="mcp")])
+def test_serve_deps_supported_range_matches_serve_extra(package):
+    """The range the startup self-check enforces (src/serve_deps.py, b.zhu) equals the `serve` extra's specifier."""
+    from src.serve_deps import SUPPORTED_RANGES
+
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    serve = {
+        req.name: req.specifier for req in map(Requirement, pyproject["project"]["optional-dependencies"]["serve"])
+    }
+    low, high = SUPPORTED_RANGES[package]
+    as_text = lambda parts: ".".join(map(str, parts))  # noqa: E731
+
+    assert SpecifierSet(f">={as_text(low)},<{as_text(high)}") == serve[package]
