@@ -10,6 +10,7 @@ Usage:
 """
 
 import asyncio
+import errno
 import importlib.util
 import json
 import os
@@ -50,6 +51,20 @@ def snapshot_diff(before: dict, after: dict) -> tuple[set[str], set[str], set[st
     removed = before.keys() - after.keys()
     changed = {p for p in before.keys() & after.keys() if before[p] != after[p]}
     return set(added), set(removed), changed
+
+
+def fail_nth_move(monkeypatch, call: int) -> None:
+    """Make shutil.move, as src.linter uses it, raise OSError on its call-th call only."""
+    real_move = shutil.move
+    calls = []
+
+    def move(src, dst, *args, **kwargs):
+        calls.append(src)
+        if len(calls) == call:
+            raise OSError(errno.EIO, "injected move failure", src)
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr("src.linter.shutil.move", move)
 
 
 def break_config_with_trailing_comma(config_path: Path) -> bytes:

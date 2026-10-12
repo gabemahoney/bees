@@ -178,6 +178,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Scans hive directories recursively (hierarchical storage: `{hive_name}/**/*.md`)
 - Validates hierarchical pattern: directory name must match file stem (`{ticket_id}/{ticket_id}.md`)
 - Skips hidden directories (`.hive/`), `evicted/`, `cemetery/`, `index.md` files, and any hive nested inside the hive (see [Nested Hives](#nested-hives))
+- Leaves out tickets in a foreign subtree (see [Foreign Ticket Subtrees](#foreign-ticket-subtrees)): it reads every ticket file first, since whether a subtree is foreign depends on the tickets found in it and above it, and records the subtrees in `foreign_subtrees`
 - Returns generator of `Ticket` objects with types validated against `~/.bees/config.json`
 - Handles filesystem errors gracefully, logging and skipping invalid files
 - `Linter` class orchestrates validation through `run()` method:
@@ -186,6 +187,7 @@ The linter validates ticket structure and relationships through a two-phase scan
   - Runs cross-ticket validations (uniqueness, relationships)
   - Enforces directory structure (auto-moves misplaced tickets)
   - Detects empty ticket directories (removes them in auto-fix mode)
+  - Warns once per foreign subtree the scan left out (`foreign_ticket_subtree`), last, so the warning names the subtree where it is after any move
   - Returns `LinterReport` with collected errors and fixes
 
 ### Validation Rules
@@ -261,7 +263,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 *Parent Field Validators*:
 - ID format validation: Checks parent field matches ticket ID format (error: `invalid_parent_id`)
 - Existence validation: Verifies parent ticket exists in database (error: `orphaned_ticket`)
-- Dangling reference detection: Checks parent ID exists across all in-scope hives via `all_scope_ticket_map`. If the ID is absent from every hive, reports `dangling_parent` rather than `orphaned_ticket`. Skipped if any hive fails to load during map construction (see `hive_load_failure` below).
+- Dangling reference detection: Checks parent ID exists across all in-scope hives via `all_scope_ticket_map`. If the ID is absent from every hive, reports `dangling_parent` rather than `orphaned_ticket`. Skipped if any hive fails to load during map construction (see `hive_load_failure` below). An ID found only in a foreign subtree of any in-scope hive is reported the same way, with the subtree named in the message, and is never auto-cleared (see [Foreign Ticket Subtrees](#foreign-ticket-subtrees)).
 
 *Children Field Validators*:
 - ID format validation: Checks child IDs match ticket ID format (error: `invalid_child_id`)
@@ -274,7 +276,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 *Dependency Field Validators*:
 - ID format validation: Checks dependency IDs match ticket ID format (error: `invalid_dependency_id`)
 - Same-type restriction: Dependencies must be between tickets of the same type — bees depend on bees, t1 on t1, etc. (error: `cross_type_dependency`)
-- Dangling reference detection: Checks each dependency ID exists in any in-scope hive via `all_scope_ticket_map` cross-scope lookup (error: `dangling_dependency`). Only runs when the map builds successfully; skipped entirely if any hive fails to load (see `hive_load_failure` below).
+- Dangling reference detection: Checks each dependency ID exists in any in-scope hive via `all_scope_ticket_map` cross-scope lookup (error: `dangling_dependency`). Only runs when the map builds successfully; skipped entirely if any hive fails to load (see `hive_load_failure` below). An ID found only in a foreign subtree of any in-scope hive is reported the same way, naming the subtree, and is never auto-cleared.
 
 *Dependency Bidirectional Consistency*:
 - up_dependencies ↔ down_dependencies bidirectional consistency (existing check)
@@ -317,6 +319,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - **Rationale for never deleting**: an existing target can hold the ticket itself (misplaced inside its own expected directory), other children, or unrelated files; deleting it before the move would lose them
 - **Failed moves**: a move that fails partway (e.g. a name taken during the merge, or an `OSError` from the filesystem) is reported as error `directory_enforcement_failed` for that ticket, with no `move_directory` fix; nothing is lost, every file is in the target, the old directory or the temporary directory. The temporary directory is not hidden, so a ticket stranded there is found as misplaced: a stranded child ticket is usually moved later in the same run (it is checked after its parent), otherwise on the next run. A non-ticket file stranded in the old directory or in `<ticket_id>.moving-XXXX/` is not moved by any later run and stays until moved by hand; the error names the entry that failed to move. An empty `<ticket_id>.moving-XXXX/` can remain after a later run recovers the ticket from it
 - Reports fixes via `LinterReport.add_fix()` with type `"move_directory"`
+- Looks up each ticket's file, and its parent's, with `find_ticket_file()` without entering a foreign subtree, so a copy of the ticket inside one is never taken for it. A foreign subtree inside a moved ticket directory moves along with it, untouched (see [Foreign Ticket Subtrees](#foreign-ticket-subtrees))
 - Never makes a move that crosses the boundary of a hive nested inside this one. Before each move, `_move_crosses_hive()` blocks it, through the shared `hive_crossing_reason()` (`src/paths.py`), when any of these holds (see [Nested Hives](#nested-hives)):
   - The ticket's current directory is inside another hive (`find_enclosing_hive_root()`)
   - The target directory itself is another hive's root or inside another hive (`find_enclosing_hive_root()`)
@@ -362,7 +365,7 @@ The linter validates ticket structure and relationships through a two-phase scan
 - Skips directories modified in the last 10 minutes, to avoid racing in-flight ticket creation
 - In auto-fix mode removes each one (fix type `"remove_empty_dir"`); otherwise reports error `empty_ticket_dir`
 - Runs on every linter run, including detect-only runs
-- Walks the hive with `walk_hive()`, so directories of a nested hive are never checked or removed
+- Walks the hive with `walk_hive()`, so directories of a nested hive are never checked or removed, and skips foreign subtrees through its `skip_dirs`, so their directories are neither reported nor removed
 
 ### Nested Hives
 
@@ -373,6 +376,25 @@ A hive may sit inside another hive's directory, e.g. hive `plans` at `Ideas/Plan
 - **Move guard**: if a planned directory move would cross the boundary, carry a nested hive along with the ticket's directory, or go into an existing target directory that holds one, directory enforcement skips it and reports `cross_hive_move_blocked` (see Directory Structure Enforcement)
 - **Cross-hive references**: `sanitize_hive` builds `all_scope_ticket_map` by scanning each in-scope hive on its own, so the tickets of a nested hive registered in scope resolve like any other hive's. The tickets of a nested hive that is not registered in scope (e.g. one marked only by `.hive/`) are not in the map: a reference to one of them from the enclosing hive is reported as dangling, and is removed when `auto_fix_dangling_refs: true`
 - **Rationale**: the nested hive has its own tiers, status values and layout. Linting its tickets against the enclosing hive's config would flag tiers the enclosing hive does not define as `unknown_tier`, and directory enforcement would move the nested hive's bees to the enclosing hive's root, out of their own hive
+
+### Foreign Ticket Subtrees
+
+A ticket's folder can hold arbitrary content, e.g. a test fixture with a copy of another hive's tickets, at `b.abc/fixtures/tickets/` inside bug `b.abc`. Unlike a nested hive it need not have a `.hive/` marker. The linter treats such a tree as foreign: it never scans, fixes, moves or removes anything in it.
+
+- **Rule** (`find_foreign_subtrees()` in `src/paths.py`): the decision is made per directory, outermost first, from the ticket files below the hive root. Only `{dir}/{dir}.md` files whose stem is a ticket ID count; any other such file (e.g. `b.abc/design/design.md`) never makes a foreign subtree
+  - A *candidate* X is a directory that is not a ticket ID and has a ticket-ID directory among its ancestors below the hive root
+  - The *top tickets* of X are the ticket files under X with no other ticket file's directory between X and them
+  - A top ticket is *vouched for* when (a) it is the same ticket as, an ancestor of, or a descendant of a ticket-ID directory above X, or its own frontmatter `parent` has a settled file whose `children` lists it, and (b) no copy of its ID sits at a settled location outside X. The relation in (a) is found through the ticket's own frontmatter `parent`, then the frontmatter chain above it (a parent missing from the hive ends the chain), plus the lineage the ID itself spells (`t2.abc.de.fg` is a child of `t1.abc.de`, whose parent is `b.abc`). The parent that lists it need not be above X. A settled location is a path with no candidate directory in it, so copies inside other fixtures or other misplacements do not count and the verdict does not depend on the order candidates are examined in
+  - X is foreign when it has at least one top ticket and either none is vouched for, or any top ticket has a copy of its ID at a settled location outside X (a real misplaced ticket never has a settled duplicate, so the copy marks X as a fixture even when its other tickets look related). It is then the subtree's root, and nothing under it is examined further. Otherwise the candidates below X are examined; a directory mixing vouched and unvouched tickets, none with a settled duplicate, is not foreign
+- **Root and owner**: the subtree's root is the directory X; its owner is the nearest ticket-ID directory above X. The subtree's ticket IDs are the stems of every ticket file under the root
+- **Not foreign**: a ticket misplaced in a way the linter fixes is still moved: a bee at `<hive>/wrong/b.abc/` (no ticket-ID directory above), a child under the wrong parent, a ticket in a child's directory (`t1.abc.de/misc/b.abc/`), or in a directory under its own ID's (`b.abc/misc/b.abc/`), including the `<id>.moving-XXXX` directory a failed move leaves. A mixed directory is not foreign either: its vouched tickets and its unvouched ones are the linter's to move
+- **Limit**: a hive ticket misplaced under a plain folder of an unrelated ticket (e.g. `t1.par.aa` at `b.other/misc/t1.par.aa/`) is indistinguishable from a fixture unless its parent lists it as a child. If it does, it is vouched for and moved home; if nobody claims it, it counts as foreign: it is skipped, not moved, and references to it are reported as dangling and not cleared
+- **Skipped**: the scan leaves out the subtree's tickets: they are not validated, rewritten or moved, their load failures are not logged, and they are not in `sanitize_hive`'s cross-hive ticket map. Empty-directory cleanup and the linter's file lookups never enter the subtree, so a copy of a hive ticket's ID inside it is never mistaken for the ticket
+- **References**: a parent, up or down dependency reference to an ID found only in a foreign subtree is reported as `dangling_parent` or `dangling_dependency`, with the message "found only in foreign subtree '<root>'". The foreign subtrees of every hive in scope count, not just this hive's: `sanitize_hive` collects them while building the cross-hive map and passes them to the `Linter` as `foreign_ticket_roots`. It is never auto-cleared, even with `auto_fix_dangling_refs: true`, since the ticket may be one the hive lost track of. A reference to an ID found nowhere is cleared as usual
+- **Warning**: one `foreign_ticket_subtree` warning per subtree root, in detect-only, auto-fix and report-only runs alike, with the owner's ID as `ticket_id`. The message names the directory and its owner, the number of ticket files the linter treats as foreign to this hive (not claimed by the owner or its lineage), and up to five of their IDs, then how many more, and says they are skipped and left untouched. Warnings do not mark the report corrupt. They are emitted at the end of `Linter.run()`, after directory enforcement, so they name the root where it is now
+- **Moves with its owner**: when a directory holding a subtree is moved, the subtree goes along untouched. The linter follows each root through the move, also when the move fails partway, keeping the old, `<id>.moving-XXXX` and new spellings of its path out of every search and cleanup
+- **Nested hives**: a fixture with its own `.hive/` is pruned earlier, as a nested hive, and gets no `foreign_ticket_subtree` warning; this rule covers the ones without a marker
+- **Not covered**: the undertaker's archive rename pass (phase 2) walks an archived bee's folder without knowing foreign subtrees, so it renames fixture tickets inside it
 
 ### Algorithm Choices
 
@@ -513,6 +535,7 @@ The linter implements three categories of auto-fix rules that automatically repa
 - Requires a successfully built `all_scope_ticket_map` (skipped if `hive_load_failure` occurs)
 - Removes dangling dependency IDs: deletes the offending ID from `up_dependencies` or `down_dependencies` and writes the ticket to disk (fix type: `"remove_dangling_dependency"`)
 - Clears dangling parent refs: sets the `parent` field to `null` and writes the ticket to disk (fix type: `"clear_dangling_parent"`)
+- Leaves a reference to an ID found only in a foreign subtree alone: it is reported, not cleared (see [Foreign Ticket Subtrees](#foreign-ticket-subtrees))
 - Reported as fixes in `LinterReport` with the respective fix types above
 
 **Fixes Are Listed Only Once Written**:
@@ -681,6 +704,7 @@ Corruption detection identifies database integrity issues through linter validat
 - Missing optional fields
 - Style guideline violations
 - Deprecated field usage
+- Ticket trees in a ticket's folder skipped as foreign (`foreign_ticket_subtree`)
 
 ### Corruption Report Structure
 

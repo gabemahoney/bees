@@ -306,6 +306,7 @@ frontend/b.r8p/b.r8p.md
 **`walk_hive()`** (`src/paths.py`):
 - The one directory walker for hives: walks top-down like `os.walk`, yielding sorted subdirectory lists
 - Takes an optional `enter` predicate on subdirectory names; only accepted subdirectories are entered
+- Takes optional `skip_dirs`, directories below the walk root pruned like another hive's root (the linter passes its foreign subtrees); paths not inside the walk root are ignored
 - Never enters another hive nested below the walk root (see [Nested Hives](#nested-hives)); the walk root itself is always walked, so it may be a hive root or a ticket directory
 - Used by the ticket walkers below and directly by empty-directory cleanup, delete's subtree collection, and the undertaker's archive renames
 
@@ -325,6 +326,11 @@ frontend/b.r8p/b.r8p.md
 - The target is optional: without one (a delete, or a move into another hive) only the source is checked
 - Used by the linter's directory enforcement (`_move_crosses_hive()`), move-bee, the undertaker's phase 1 and delete
 
+**`find_foreign_subtrees()`** (`src/paths.py`):
+- Returns the foreign subtrees (`ForeignSubtree`: root, owner ticket ID, ticket IDs, ticket files) among the ticket files found below a hive root (see [Foreign Ticket Subtrees](#foreign-ticket-subtrees))
+- Takes the hive root, the ticket files, and two functions giving a ticket's parent from its file and from its ID, to know the ancestors, and an optional `children_of_file` giving a file's `children`, so a ticket its parent lists is vouched for (without it, lineage only)
+- Used by the linter's `TicketScanner` to leave such tickets out of its scan
+
 **`iter_ticket_files()`** (`src/paths.py`):
 - Primary traversal function for well-structured hives
 - Uses positive-match traversal: only enters directories whose names match the ticket ID pattern
@@ -336,13 +342,14 @@ frontend/b.r8p/b.r8p.md
 - Broader traversal for the linter
 - Enters all directories except hidden ones, `evicted/` and `cemetery/`, and never enters a nested hive
 - Finds tickets even in wrong locations or with non-standard directory names
+- Yields tickets in foreign subtrees too; the linter's `TicketScanner` filters those out
 - Used when scanning for misplaced or invalid tickets that need correction
 
 **`find_ticket_file()`** (`src/paths.py`):
 - Locates a specific ticket's file by ID using selective traversal
 - Supports both strict mode (default, ticket-ID directories only) and deep mode (for finding misplaced tickets)
-- Never enters a nested hive, in either mode
-- Used by the linter's directory enforcement (deep mode, to find a misplaced ticket and its parent), and by move-bee, clone-bee and the undertaker to locate a ticket (strict mode)
+- Never enters a nested hive, in either mode, nor any directory in the optional `skip_dirs`
+- Used by the linter's directory enforcement (deep mode, to find a misplaced ticket and its parent, skipping foreign subtrees), and by move-bee, clone-bee and the undertaker to locate a ticket (strict mode)
 
 **`get_ticket_path()`** (`src/paths.py`):
 - Builds the path with `compute_ticket_path()`, with no directory walk
@@ -403,6 +410,10 @@ Both modes run on `walk_hive()`, so neither enters a nested hive.
 
 **Limits**:
 - An unregistered nested hive (one marked only by `.hive/`) is walked by no registered hive, so its tickets are not in `sanitize_hive`'s cross-hive ticket map (see [validation.md](validation.md#nested-hives)).
+
+### Foreign Ticket Subtrees
+
+A ticket's folder can hold arbitrary content, e.g. a test fixture with its own `tickets/` tree and no `.hive/` marker, at `b.abc/fixtures/tickets/`. It follows the `{ticket_id}/{ticket_id}.md` convention, so it looks like the hive's own tickets once something walks into it. A foreign subtree is such a tree under a non-ticket directory inside an unrelated ticket's folder; the linter leaves it alone and warns about it. The rule, the limits and the enforcement are in [validation.md](validation.md#foreign-ticket-subtrees).
 
 ### Integration with Schema Versioning
 

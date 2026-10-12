@@ -2,11 +2,12 @@
 
 import logging
 import os
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from .id_utils import is_ticket_id, normalize_hive_name
+from .id_utils import is_ticket_id, normalize_hive_name, parent_id_from_ticket_id
 from .reader import get_ticket_type, read_ticket
 from .types import TicketType
 
@@ -78,7 +79,9 @@ def _is_other_hive_root(top: str, dirpath: str, dirnames: list[str], other_hive_
 
 
 def walk_hive(
-    hive_root: str | os.PathLike, enter: Callable[[str], bool] | None = None
+    hive_root: str | os.PathLike,
+    enter: Callable[[str], bool] | None = None,
+    skip_dirs: Iterable[str | os.PathLike] = (),
 ) -> Iterator[tuple[str, list[str], list[str]]]:
     """Walk a hive's directory tree top-down like os.walk, never entering another hive.
 
@@ -95,6 +98,9 @@ def walk_hive(
         hive_root: Directory to walk.
         enter: Predicate on a subdirectory name; only subdirectories it accepts
             are entered. None enters every subdirectory.
+        skip_dirs: Directories below hive_root to prune like another hive's
+            root, e.g. the foreign subtrees of find_foreign_subtrees(). Paths
+            not inside hive_root are ignored.
 
     Yields:
         (dirpath, dirnames, filenames) as os.walk yields them, with dirnames
@@ -103,8 +109,13 @@ def walk_hive(
     """
     top = os.fspath(hive_root)
     other_hive_roots = _registered_hive_roots_inside(top)
+    skipped: set[str] = set()
+    for skip_dir in skip_dirs:
+        rel = _relpath_inside(os.path.abspath(skip_dir), os.path.abspath(top))
+        if rel is not None:
+            skipped.add(os.path.join(top, rel))
     for dirpath, dirs, files in os.walk(top):
-        if _is_other_hive_root(top, dirpath, dirs, other_hive_roots):
+        if dirpath in skipped or _is_other_hive_root(top, dirpath, dirs, other_hive_roots):
             dirs[:] = []
             continue
         dirs[:] = sorted(d for d in dirs if enter is None or enter(d))
@@ -223,6 +234,11 @@ def iter_ticket_files_deep(hive_root: Path) -> Generator[Path, None, None]:
     or a registered hive root; see walk_hive()). Only yields files matching
     the {dirname}/{dirname}.md naming convention.
 
+    Yields every match, including tickets inside a foreign subtree (a tree that
+    another ticket's folder holds under a non-ticket directory; see
+    find_foreign_subtrees()). Callers that take the yielded files for the hive's
+    own tickets, like the linter's TicketScanner, filter those out.
+
     Use iter_ticket_files() for normal operations on well-structured hives.
     Use this function when scanning for misplaced or invalid tickets.
     """
@@ -231,6 +247,192 @@ def iter_ticket_files_deep(hive_root: Path) -> Generator[Path, None, None]:
         md_name = f"{dir_name}.md"
         if md_name in files:
             yield Path(dirpath) / md_name
+
+
+@dataclass
+class ForeignSubtree:
+    """A directory tree inside a ticket's folder that holds tickets foreign to the hive.
+
+    Attributes:
+        root: The subtree's root directory (a non-ticket directory below the owner)
+        owner_id: ID of the ticket whose folder holds the subtree (the nearest
+            ticket-ID directory above root)
+        ticket_ids: Names of the {dirname}/{dirname}.md files found in the
+            subtree and left out of the scan
+        files: The same files, as paths, in the order of ticket_ids
+    """
+
+    root: Path
+    owner_id: str
+    ticket_ids: list[str]
+    files: list[Path] = field(default_factory=list)
+
+
+def _id_lineage(start_id: str, first_parent: str | None, parent_of_id: Callable[[str], str | None]) -> set[str]:
+    """Return the IDs start_id descends from, by its frontmatter and by its own spelling.
+
+    The union of two chains: first_parent followed through parent_of_id (the
+    frontmatter chain; a cycle stops at the first ID seen twice), and the
+    parents encoded in the ID itself (t2.abc.de.fg -> t1.abc.de -> b.abc, see
+    parent_id_from_ticket_id()). start_id itself is not included.
+    """
+    lineage: set[str] = set()
+    parent_id = first_parent
+    while parent_id and parent_id not in lineage:
+        lineage.add(parent_id)
+        parent_id = parent_of_id(parent_id)
+    encoded = parent_id_from_ticket_id(start_id)
+    # An ID that is no ticket ID (a malformed tier, e.g. t0.abc.de) ends the chain
+    while encoded and is_ticket_id(encoded) and encoded not in lineage:
+        lineage.add(encoded)
+        encoded = parent_id_from_ticket_id(encoded)
+    return lineage
+
+
+def find_foreign_subtrees(
+    hive_root: Path,
+    ticket_files: Iterable[Path],
+    parent_of_file: Callable[[Path], str | None],
+    parent_of_id: Callable[[str], str | None],
+    children_of_file: Callable[[Path], Iterable[str] | None] | None = None,
+) -> list[ForeignSubtree]:
+    """Return the foreign subtrees among the ticket files found below hive_root.
+
+    A ticket folder can hold arbitrary content, e.g. a test fixture with a copy
+    of another hive's tickets, which is no part of the hive. The rule decides
+    per directory, outermost first, using only the ticket files whose stem is a
+    ticket ID (other {dirname}/{dirname}.md files, like design/design.md, are
+    never tickets for this rule):
+
+    - A candidate is a directory X below hive_root whose name is not a ticket
+      ID and that has a ticket-ID directory among its ancestors below hive_root.
+    - The top tickets of X are the ticket files under X with no other ticket
+      file's directory between X and them.
+    - A top ticket T is vouched for when (a) T's ID is related to one of the
+      ticket-ID directory names above X (equal to it, its ancestor, or its
+      descendant, by frontmatter or by the ID's own spelling), or T's own
+      frontmatter parent P has a settled ticket file whose ``children`` list
+      contains T (a real ticket hand-moved under an unrelated ticket's plain
+      folder; the parent need not be above X), and (b) no ticket file with T's
+      ID exists at a settled location outside X. A settled ticket file is one
+      whose path below hive_root passes through no candidate directory (no
+      non-ticket-ID directory with a ticket-ID directory above it). Copies
+      inside other candidate directories, like fixtures or other misplacements,
+      do not count, so the verdict does not depend on the order the candidates
+      are examined in.
+    - X is foreign when it has at least one top ticket and either none is
+      vouched for, or any top ticket has a copy of its ID at a settled location
+      outside X. A real misplaced ticket never has a settled duplicate, so such
+      a copy marks X as a fixture or copy even when other top tickets in it
+      (e.g. one that exists only there) look related to the directories above.
+      A foreign X is the foreign root: nothing under it is examined further, and
+      its owner is the nearest ticket-ID directory above it.
+    - Otherwise the walk goes on below X. A mixed X (some top tickets vouched
+      for, some not, none with a settled duplicate) is not foreign; its
+      unvouched tickets are the linter's to move.
+
+    So tickets misplaced under a plain directory (``wrong/b.abc``), under the
+    wrong parent, in a child's directory (``t1.abc.de/misc/b.abc``) or in a
+    directory under their own ID's (``b.abc/misc/b.abc``), including a
+    ``<id>.moving-XXXX`` directory left by a failed move, are not foreign.
+
+    Args:
+        hive_root: Root of the hive the files were found in
+        ticket_files: {dirname}/{dirname}.md files found below hive_root
+        parent_of_file: Maps a ticket file to the parent in its own frontmatter,
+            or None for a bee, a file that failed to load or a parent that is
+            not a string
+        parent_of_id: Maps a ticket ID to the parent in the frontmatter of the
+            scanned ticket with that ID, or None. Continues the chain above.
+        children_of_file: Maps a ticket file to the ``children`` in its own
+            frontmatter, or None for a file that failed to load or children that
+            are not a list. None (the default) vouches by lineage only.
+
+    Returns:
+        The foreign subtrees, outermost and in path order. Each one's
+        ticket_ids and files hold the stems and paths of every file in
+        ticket_files under its root.
+    """
+    all_files: list[tuple[tuple[str, ...], Path]] = [
+        (ticket_file.parent.relative_to(hive_root).parts, ticket_file) for ticket_file in ticket_files
+    ]
+    # Directory (as parts below hive_root) -> its ticket file, for stems that are ticket IDs
+    ticket_dirs = {parts: ticket_file for parts, ticket_file in all_files if is_ticket_id(ticket_file.stem)}
+    dirs_by_id: dict[str, list[tuple[str, ...]]] = {}
+    for parts, ticket_file in ticket_dirs.items():
+        dirs_by_id.setdefault(ticket_file.stem, []).append(parts)
+
+    # Candidate directory -> directories of its top tickets
+    candidates: dict[tuple[str, ...], list[tuple[str, ...]]] = {}
+    for parts in ticket_dirs:
+        for i in range(len(parts) - 1):
+            if is_ticket_id(parts[i]) or not any(is_ticket_id(part) for part in parts[:i]):
+                continue
+            if any(parts[:k] in ticket_dirs for k in range(i + 2, len(parts))):
+                continue
+            candidates.setdefault(parts[: i + 1], []).append(parts)
+
+    lineage_of_dir: dict[tuple[str, ...], set[str]] = {}
+
+    def dir_lineage(parts: tuple[str, ...]) -> set[str]:
+        if parts not in lineage_of_dir:
+            ticket_file = ticket_dirs.get(parts)
+            first_parent = parent_of_file(ticket_file) if ticket_file else parent_of_id(parts[-1])
+            lineage_of_dir[parts] = _id_lineage(parts[-1], first_parent, parent_of_id)
+        return lineage_of_dir[parts]
+
+    def settled(parts: tuple[str, ...]) -> bool:
+        """Return True if no directory in parts is a candidate (a non-ticket-ID directory below a ticket-ID one)."""
+        return not any(
+            not is_ticket_id(part) and any(is_ticket_id(above) for above in parts[:i]) for i, part in enumerate(parts)
+        )
+
+    def has_settled_copy(x: tuple[str, ...], top: tuple[str, ...]) -> bool:
+        """Return True if a file with the ID of the top ticket in directory top lies at a settled place outside x."""
+        return any(other[: len(x)] != x and settled(other) for other in dirs_by_id[top[-1]])
+
+    def listed_by_parent(top: tuple[str, ...]) -> bool:
+        """Return True if the parent in the frontmatter of the top ticket in top is settled and lists it as a child."""
+        if children_of_file is None:
+            return False
+        ticket_id = top[-1]
+        parent_id = parent_of_file(ticket_dirs[top])
+        if not parent_id:
+            return False
+        for parent_dir in dirs_by_id.get(parent_id, []):
+            if settled(parent_dir) and ticket_id in (children_of_file(ticket_dirs[parent_dir]) or ()):
+                return True
+        return False
+
+    def vouched(top: tuple[str, ...], above: list[tuple[str, ...]]) -> bool:
+        """Return True if the top ticket in directory top is claimed by a directory above it or listed by its parent."""
+        ticket_id = top[-1]
+        lineage = _id_lineage(ticket_id, parent_of_file(ticket_dirs[top]), parent_of_id)
+        return listed_by_parent(top) or any(
+            voucher[-1] == ticket_id or voucher[-1] in lineage or ticket_id in dir_lineage(voucher) for voucher in above
+        )
+
+    roots: list[tuple[str, ...]] = []
+    owners: dict[tuple[str, ...], str] = {}
+    for x in sorted(candidates, key=lambda parts: (len(parts), parts)):
+        if any(x[: len(root)] == root for root in roots):
+            continue
+        above = [x[: j + 1] for j, part in enumerate(x) if is_ticket_id(part)]
+
+        tops = candidates[x]
+        if any(has_settled_copy(x, top) for top in tops) or not any(vouched(top, above) for top in tops):
+            roots.append(x)
+            owners[x] = above[-1][-1]
+
+    return [
+        ForeignSubtree(
+            root=hive_root.joinpath(*root),
+            owner_id=owners[root],
+            ticket_ids=[ticket_file.stem for parts, ticket_file in all_files if parts[: len(root)] == root],
+            files=[ticket_file for parts, ticket_file in all_files if parts[: len(root)] == root],
+        )
+        for root in sorted(roots)
+    ]
 
 
 def build_ticket_path_map(
@@ -355,7 +557,9 @@ def compute_ticket_path(ticket_id: str, hive_root: Path) -> Path:
     return path / f"{ticket_id}.md"
 
 
-def find_ticket_file(hive_root: Path, ticket_id: str, deep: bool = False) -> Path | None:
+def find_ticket_file(
+    hive_root: Path, ticket_id: str, deep: bool = False, skip_dirs: Iterable[str | os.PathLike] = ()
+) -> Path | None:
     """Find a specific ticket's .md file using selective directory traversal.
 
     Returns the first matching {ticket_id}/{ticket_id}.md file found. Never
@@ -367,12 +571,16 @@ def find_ticket_file(hive_root: Path, ticket_id: str, deep: bool = False) -> Pat
         deep: If False (default), only enters ticket-ID directories.
               If True, enters all non-hidden directories except evicted/ and
               cemetery/ (for finding misplaced tickets).
+        skip_dirs: Directories never entered, e.g. the foreign subtrees of
+              find_foreign_subtrees(), so a copy of the ticket inside one is
+              never found in place of the hive's own
 
     Returns:
         Path to the ticket's .md file, or None if not found
     """
     md_name = f"{ticket_id}.md"
-    for dirpath, _dirs, files in walk_hive(hive_root, enter=_is_deep_walk_dir if deep else is_ticket_id):
+    enter = _is_deep_walk_dir if deep else is_ticket_id
+    for dirpath, _dirs, files in walk_hive(hive_root, enter=enter, skip_dirs=skip_dirs):
         if Path(dirpath).name == ticket_id and md_name in files:
             return Path(dirpath) / md_name
 

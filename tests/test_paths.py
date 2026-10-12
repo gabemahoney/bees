@@ -2,6 +2,7 @@
 
 import os
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ from src.paths import (
     compute_ticket_directory,
     ensure_ticket_directory_exists,
     find_enclosing_hive_root,
+    find_foreign_subtrees,
     find_nested_hive_root,
     find_ticket_file,
     get_ticket_path,
@@ -1065,3 +1067,240 @@ class TestNestedHivePruning:
         link = tmp_path / "link"
         link.symlink_to(outer)
         assert {p.parent.name for p in iter_ticket_files_deep(link)} == {"b.aaa", "b.mmm"}
+
+
+REAL_CASE = {
+    "b.ai5": None,
+    "b.ai5/prefix-tree/tickets/testplans/b.75s": None,
+    "b.ai5/prefix-tree/tickets/testplans/b.75s/t1.75s.65": "b.75s",
+    "b.ai5/prefix-tree/tickets/testplans/b.eiv": None,
+    "b.ai5/prefix-tree/tickets/testplans/b.eiv/t1.19d.6c": "b.eiv",
+}
+
+# (ticket directories below the hive -> parent in the ticket's frontmatter (None: a bee or an unreadable file),
+# expected [(subtree root, owner)])
+FOREIGN_CASES = [
+    pytest.param(REAL_CASE, [("b.ai5/prefix-tree", "b.ai5")], id="real_case_one_root_for_the_whole_fixture"),
+    pytest.param(
+        {"b.aaa": None, "b.aaa/t1.aaa.bc": "b.aaa", "b.aaa/t1.aaa.bc/fixtures/b.zzz": None},
+        [("b.aaa/t1.aaa.bc/fixtures", "t1.aaa.bc")],
+        id="owner_is_nearest_id_dir_above",
+    ),
+    pytest.param(
+        {"b.abc": None, "b.abc/fixture/b.abc": None},
+        [("b.abc/fixture", "b.abc")],
+        id="copy_of_owners_own_id_while_the_real_file_is_outside",
+    ),
+    pytest.param(
+        {
+            "b.abc": None,
+            "b.abc/t1.abc.aa": "b.abc",
+            "b.abc/fixture/tickets/b.abc": None,
+            "b.abc/fixture/tickets/b.abc/t1.abc.aa": "b.abc",
+        },
+        [("b.abc/fixture", "b.abc")],
+        id="copy_of_owners_own_tree",
+    ),
+    pytest.param(
+        {"b.abc/misc/b.abc": None, "b.abc/misc/b.abc/fixture/b.zzz": None},
+        [("b.abc/misc/b.abc/fixture", "b.abc")],
+        id="nested_candidates_root_is_the_inner_one",
+    ),
+    pytest.param(
+        {
+            "b.par": None,
+            "b.par/misc/t1.par.aa": "b.par",
+            "b.zzz": None,
+            "b.zzz/fixture/b.qqq": None,
+            "b.zzz/fixture/b.qqq/t1.par.aa": "b.qqq",
+        },
+        [("b.zzz/fixture", "b.zzz")],
+        id="same_id_in_another_foreign_subtree_does_not_make_the_real_dir_foreign",
+    ),
+    pytest.param(
+        {"b.abc": None, "b.abc/fixture/b.zzz": None, "b.abc/fixture/b.zzz/t1.abc.aa": "b.zzz"},
+        [("b.abc/fixture", "b.abc")],
+        id="ticket_below_an_unrelated_top_does_not_vouch",
+    ),
+    pytest.param(
+        {"b.par": None, "b.par/t1.par.aa": "b.par", "b.par/misc/t1.par.aa": "b.par"},
+        [("b.par/misc", "b.par")],
+        id="copy_of_a_child_of_the_owner",
+    ),
+    pytest.param(
+        {
+            "b.abc": None,
+            "b.abc/t1.abc.de": "b.abc",
+            "b.abc/fixture/t1.abc.de": "b.abc",
+            "b.abc/fixture/t1.abc.zz": "b.abc",
+        },
+        [("b.abc/fixture", "b.abc")],
+        id="settled_duplicate_makes_a_mixed_directory_foreign",
+    ),
+    pytest.param(
+        {"b.xxx/misc/b.yyy": "b.zzz", "b.xxx/misc/b.zzz": "b.yyy"},
+        [("b.xxx/misc", "b.xxx")],
+        id="unrelated_parent_cycle_terminates",
+    ),
+    pytest.param(
+        {
+            "b.xxx": None,
+            "b.xxx/t1.xxx.aa": "t1.xxx.bb",
+            "b.xxx/t1.xxx.bb": "t1.xxx.aa",
+            "b.xxx/t1.xxx.aa/misc/b.yyy": None,
+        },
+        [("b.xxx/t1.xxx.aa/misc", "t1.xxx.aa")],
+        id="cycle_in_the_ancestors_frontmatter_terminates",
+    ),
+    pytest.param({"b.xxx/misc/t0.abc.de": None}, [("b.xxx/misc", "b.xxx")], id="malformed_tier_id_ends_lineage"),
+    pytest.param({"b.xxx/misc/t1.abc": None}, [("b.xxx/misc", "b.xxx")], id="short_child_id_ends_lineage"),
+    pytest.param(
+        {"b.xxx/misc/t1.abc.de.fg": None}, [("b.xxx/misc", "b.xxx")], id="malformed_child_id_ends_lineage"
+    ),
+    pytest.param({"t0.abc.de/misc/b.zzz": None}, [("t0.abc.de/misc", "t0.abc.de")], id="malformed_owner_id"),
+    pytest.param(
+        {"b.aaa/fx/b.fff": None, "b.bbb/fx/b.ggg": None},
+        [("b.aaa/fx", "b.aaa"), ("b.bbb/fx", "b.bbb")],
+        id="two_roots_in_path_order",
+    ),
+]
+
+# As FOREIGN_CASES, but no foreign subtree
+NOT_FOREIGN_CASES = [
+    pytest.param({"b.aaa/misc/b.aaa": None}, id="own_id_above"),
+    pytest.param({"b.par/misc/t1.par.aa": "b.par"}, id="parent_above_though_not_in_the_layout"),
+    pytest.param({"b.par/misc/t1.zzz.aa": "b.par"}, id="parent_above_by_frontmatter_though_the_id_says_otherwise"),
+    pytest.param({"b.par/misc/t1.par.aa": None}, id="parent_missing_or_corrupt_id_lineage_still_vouches"),
+    pytest.param({"b.par/misc/t2.par.aa.bb": None}, id="grandparent_above_by_id_lineage"),
+    pytest.param(
+        {"b.par": None, "b.par/misc/b.yyy": "b.zzz", "b.zzz": "b.par"}, id="grandparent_above_by_frontmatter_chain"
+    ),
+    pytest.param({"t1.abc.de/misc/b.abc": None}, id="descendant_above"),
+    pytest.param({"b.aaa/t1.aaa.bc/misc/b.zzz": "b.aaa"}, id="ancestor_above_but_not_nearest"),
+    pytest.param(
+        {"b.abc": None, "b.abc/misc/t1.abc.aa": "b.abc", "b.abc/misc/b.zzz": None}, id="mixed_dir_with_a_vouched_ticket"
+    ),
+    pytest.param({"b.abc/misc/b.abc": None, "b.abc/misc/b.abc/t1.abc.aa": "b.abc"}, id="misplaced_bee_with_child"),
+    pytest.param({"b.abc/design/design": None}, id="non_ticket_stem_file"),
+    pytest.param({"b.abc/misc/design/notes": None}, id="non_ticket_stem_file_deeper"),
+    pytest.param({"wrong/b.xyz": None}, id="plain_dir_with_no_ticket_dir_above"),
+    pytest.param({"wrong/b.aaa/b.bbb": None}, id="plain_dir_above_ticket_dirs_only"),
+    pytest.param({"b.aaa/t1.aaa.bc": "b.zzz"}, id="only_ticket_dirs_above"),
+    pytest.param(
+        {"b.abc": None, "b.abc/fixture/t1.abc.de": "b.abc", "b.abc/fixture/t1.abc.zz": "b.abc"},
+        id="mixed_directory_without_the_settled_duplicate",
+    ),
+    pytest.param({"b.xyz": None}, id="hive_root_ticket"),
+    pytest.param({}, id="no_files"),
+]
+
+
+def _find_foreign_subtrees(layout: dict[str, str | None], children: dict[str, list[str]] | None = None):
+    """Run find_foreign_subtrees() on tickets in the directories of layout below /hive; shallowest file wins an ID.
+
+    children maps a directory of layout to the children in that ticket's frontmatter; given, it is the
+    children_of_file lookup (a directory not in it has no children list), else none is passed.
+    """
+    hive = Path("/hive")
+    files = {hive / directory / f"{Path(directory).name}.md": parent for directory, parent in layout.items()}
+    parent_of_id: dict[str, str] = {}
+    for file in sorted(files, key=lambda f: len(f.parts)):
+        if files[file] is not None:
+            parent_of_id.setdefault(file.stem, files[file])
+    children_of_file = None
+    if children is not None:
+        by_file = {hive / directory / f"{Path(directory).name}.md": listed for directory, listed in children.items()}
+        children_of_file = lambda file: by_file.get(file)  # noqa: E731
+    return find_foreign_subtrees(hive, list(files), files.get, parent_of_id.get, children_of_file)
+
+
+class TestFindForeignSubtrees:
+    """find_foreign_subtrees: ticket trees under a non-ticket dir inside an unrelated ticket's folder (b.94t)."""
+
+    @pytest.mark.parametrize("layout,expected", FOREIGN_CASES)
+    def test_roots_and_owners(self, layout, expected):
+        """A candidate dir none of whose top tickets is vouched for by the ticket dirs above it is a foreign root."""
+        found = _find_foreign_subtrees(layout)
+
+        assert [(subtree.root.relative_to("/hive").as_posix(), subtree.owner_id) for subtree in found] == expected
+
+    @pytest.mark.parametrize("layout", NOT_FOREIGN_CASES)
+    def test_no_foreign_subtree(self, layout):
+        """Tickets related to a ticket dir above, in no candidate dir, or without a ticket-ID stem make no root."""
+        assert _find_foreign_subtrees(layout) == []
+
+    def test_children_of_file_vouches_for_a_ticket_its_parent_lists(self):
+        """b.abc/notes/t1.xyz.aa is claimed by b.xyz listing it; foreign without the lookup or without the listing."""
+        layout = {"b.abc": None, "b.xyz": None, "b.abc/notes/t1.xyz.aa": "b.xyz"}
+
+        assert _find_foreign_subtrees(layout, children={"b.xyz": ["t1.xyz.aa"]}) == []
+        assert [s.root for s in _find_foreign_subtrees(layout)] == [Path("/hive/b.abc/notes")]
+        assert [s.root for s in _find_foreign_subtrees(layout, children={"b.xyz": []})] == [Path("/hive/b.abc/notes")]
+        assert [s.root for s in _find_foreign_subtrees(layout, children={})] == [Path("/hive/b.abc/notes")]
+
+    def test_children_of_file_ignores_a_parent_that_is_itself_unsettled(self):
+        """A parent inside a candidate dir (e.g. a fixture) does not vouch for the ticket."""
+        layout = {"b.abc": None, "b.abc/notes/t1.xyz.aa": "b.xyz", "b.abc/fixture/b.xyz": None}
+
+        found = _find_foreign_subtrees(layout, children={"b.abc/fixture/b.xyz": ["t1.xyz.aa"]})
+
+        assert sorted(s.root.name for s in found) == ["fixture", "notes"]
+
+    def test_subtree_members_are_named_by_ticket_ids_and_files(self):
+        """A root's ticket_ids and files hold every file under it, those in ticket dirs inside it included, in step."""
+        (subtree,) = _find_foreign_subtrees(REAL_CASE)
+
+        assert subtree.root == Path("/hive/b.ai5/prefix-tree")
+        assert sorted(subtree.ticket_ids) == ["b.75s", "b.eiv", "t1.19d.6c", "t1.75s.65"]
+        assert len(subtree.files) == len(subtree.ticket_ids)
+        assert [f.stem for f in subtree.files] == subtree.ticket_ids
+        assert Path("/hive/b.ai5/prefix-tree/tickets/testplans/b.75s/t1.75s.65/t1.75s.65.md") in subtree.files
+        assert all(f.is_relative_to(subtree.root) for f in subtree.files)
+
+
+class TestWalkSkipDirs:
+    """walk_hive and find_ticket_file never enter the skip_dirs (b.94t).
+
+    Layout: hive holds b.aaa with t1.aaa.bc and a folder fixture/ (b.fff inside), and a misplaced misc/b.fff.
+    """
+
+    @pytest.fixture
+    def hive(self, tmp_path, mock_global_bees_dir):
+        hive = tmp_path / "hive"
+        write_ticket_file(hive, "b.aaa", children=["t1.aaa.bc"])
+        write_ticket_file(hive / "b.aaa", "t1.aaa.bc", type="t1", parent="b.aaa")
+        write_ticket_file(hive / "b.aaa" / "fixture", "b.fff", title="Fixture copy")
+        write_ticket_file(hive / "misc", "b.fff", title="Hive copy")
+        return hive
+
+    @pytest.mark.parametrize("as_type", [Path, str])
+    def test_walk_hive_prunes_skip_dirs_with_their_subtree(self, hive, as_type):
+        """A skipped directory and everything below it is not yielded; the rest of the walk is unchanged."""
+        skip = as_type(hive / "b.aaa" / "fixture")
+
+        walked = [os.path.relpath(d, hive) for d, _, _ in walk_hive(hive, skip_dirs=[skip])]
+
+        assert walked == [".", "b.aaa", os.path.join("b.aaa", "t1.aaa.bc"), "misc", os.path.join("misc", "b.fff")]
+        assert os.path.join("b.aaa", "fixture", "b.fff") in [os.path.relpath(d, hive) for d, _, _ in walk_hive(hive)]
+
+    def test_walk_hive_ignores_skip_dirs_outside_the_hive(self, hive, tmp_path):
+        """A path that is not inside the hive prunes nothing."""
+        everything = list(walk_hive(hive))
+
+        assert list(walk_hive(hive, skip_dirs=[tmp_path / "elsewhere", tmp_path / "hive-sibling"])) == everything
+
+    @pytest.mark.parametrize("deep", [False, True])
+    def test_find_ticket_file_never_enters_a_skipped_ticket_dir(self, hive, deep):
+        """A ticket inside a skipped directory is not found, though it is without skip_dirs."""
+        skip = [hive / "b.aaa" / "t1.aaa.bc"]
+
+        assert find_ticket_file(hive, "t1.aaa.bc", deep=deep) == hive / "b.aaa" / "t1.aaa.bc" / "t1.aaa.bc.md"
+        assert find_ticket_file(hive, "t1.aaa.bc", deep=deep, skip_dirs=skip) is None
+
+    def test_find_ticket_file_deep_finds_the_hive_copy_not_one_in_a_skipped_dir(self, hive):
+        """Of two files for one ID, deep search finds the one outside skip_dirs (the other sorts first)."""
+        fixture_copy = hive / "b.aaa" / "fixture" / "b.fff" / "b.fff.md"
+
+        assert find_ticket_file(hive, "b.fff", deep=True) == fixture_copy
+        found = find_ticket_file(hive, "b.fff", deep=True, skip_dirs=[hive / "b.aaa" / "fixture"])
+        assert found == hive / "misc" / "b.fff" / "b.fff.md"

@@ -103,6 +103,13 @@ For tests of the `docker/` CI scripts that talk HTTP, without a real server or n
 - Yields the root; ticket files are at the paths `compat_084_rels()` gives, relative to it
 - Used by `test_upgrade_compat.py` and `test_upgrade_compat_ops.py`; see "Upgrade Compatibility Tests" in `docs/architecture/testing.md`
 
+### Plain Hive Fixture
+
+#### 15. make_hive
+- Factory: `make_hive(dirname="hive")` creates `tmp_path/dirname`, registers it as hive `test_hive` (tiers `t1`, `t2`) in the test's global config, and returns its path
+- No `.git` and no `.hive/` marker; the hive sits directly in `tmp_path`, which is cwd and the repo context
+- Used by `test_linter_directory_enforcement.py` and `test_foreign_subtree.py`; write tickets into it with `write_ticket_file()`
+
 ### Removed Deprecated Fixtures
 The following fixtures were removed from conftest.py and migrated to parameterized alternatives:
 - `single_hive` -> `hive_tier_config`

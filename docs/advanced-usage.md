@@ -13,6 +13,8 @@ Modifying or deleting tickets does not require you to specify the Hive.
 
 A hive can live inside another hive's folder, for example a Plans hive at `Ideas/Plans` inside an Ideas hive. Bees treats the inner folder as a separate hive: listing, querying and sanitizing the outer hive never read or change the inner hive's tickets. Keep the inner hive outside any ticket folder: bees will not delete, move or archive a ticket whose folder holds a hive, and reports an error naming that hive instead (an undertaker run then archives nothing). Sanitize never moves a misplaced ticket whose folder holds a hive, or onto a folder that holds one, and reports `cross_hive_move_blocked` instead. Renaming the outer hive also fails, with `nested_hive`, when that would move its folder; rename it with `--no-rename-folder` to keep the folder where it is.
 
+A ticket's folder can also hold tickets that are not part of the hive, such as a test fixture with its own `tickets/` folder. Sanitize leaves those alone and reports one `foreign_ticket_subtree` warning for each folder it skipped. (A fixture with its own `.hive/` folder is a separate hive, as above, and gets no warning.) A ticket of your hive misplaced under a plain subfolder of an unrelated ticket is moved home if its parent lists it as a child; otherwise it is skipped like a fixture and not moved, so move it by hand. A reference to a ticket found only in such a folder is reported as dangling, never cleared.
+
 > [!TIP]
 > Its a good idea to disallow your LLM agents from reading or writing to your hive directories. Otherwise, LLMs may route around bees and potentially write malformed tickets.
 
