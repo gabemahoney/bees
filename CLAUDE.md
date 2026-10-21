@@ -11,15 +11,6 @@ The globally installed `bees` binary (via pipx) is used: `bees serve --stdio`.
 
 For CI/Docker testing, `/ci` checks for the host bees HTTP server on `BEES_CI_PORT` (default 8473) and starts it itself if nothing is listening there.
 
-## Documentation Locations
-
-- **Engineering best practices**: docs/guides/engineering-best-practices.md
-- **Internal architecture docs**: docs/architecture/ (start with docs/architecture/design_principles.md)
-- **Customer-facing docs**: README.md (PyPI copy: docs/PYPI_README.md)
-- **Test writing guide**: docs/architecture/testing.md (pytest fixture reference: tests/TESTING.md)
-- **Test review guide**: docs/guides/test_review_guide.md
-- **Doc writing guide**: docs/guides/docs_guide.md
-
 ## Test Commands
 
 - **Unit test command**: `poetry run pytest tests/`
