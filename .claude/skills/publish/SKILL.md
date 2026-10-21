@@ -6,17 +6,8 @@ description: Publish bees-md to PyPI. Bumps version, builds, checks, uploads, co
 # One-Time Setup
 
 1. **Install publish deps**: `pipx install twine` (poetry is already available)
-2. **Configure PyPI credentials** — either:
-   - **~/.pypirc** (works everywhere):
-     ```ini
-     [pypi]
-     username = __token__
-     password = pypi-<your-pypi-token>
-     ```
-   - **macOS Keychain**:
-     ```bash
-     security add-generic-password -s "PyPI Token" -a pypi -w "<your-pypi-token>"
-     ```
+2. **PyPI token**: set `PYPI_TOKEN_BEES`, or put the token alone in a private file
+   (`chmod 600`) and set `PYPI_TOKEN_FILE` to its path. Never print or copy it.
    Get a token at: pypi.org → Account Settings → API tokens
 
 # Overview
@@ -86,14 +77,11 @@ Stop after reporting. Do not proceed to preflight.
    ```
    If not: "twine not found. Run: `pipx install twine`"
 
-5. **PyPI credentials available?**
+5. **PyPI token available?**
    ```bash
-   # macOS Keychain
-   security find-generic-password -s "PyPI Token" -w 2>/dev/null
-   # or ~/.pypirc
-   grep -q '\[pypi\]' ~/.pypirc 2>/dev/null
+   [ -n "$PYPI_TOKEN_BEES" ] || [ -s "$PYPI_TOKEN_FILE" ]
    ```
-   If neither found, stop: "No PyPI credentials found. See One-Time Setup above."
+   If not, stop: "No PyPI token found. See One-Time Setup above."
 
 Read the current version from pyproject.toml:
 ```bash
@@ -155,11 +143,6 @@ grep '^version = ' pyproject.toml
 
 Both lines must show the new version. If not, stop and report the mismatch.
 
-Update the lock file to match:
-```bash
-poetry lock --no-update
-```
-
 ## Step 3 — Build
 
 ```bash
@@ -198,21 +181,9 @@ Wait for the user to confirm. If they say anything other than yes/y, stop: "Publ
 
 ## Step 6 — Upload to PyPI
 
-If using macOS Keychain:
 ```bash
-twine upload \
-  --username __token__ \
-  --password "${PYPI_TOKEN}" \
-  --non-interactive \
-  dist/bees_md-<version>*
-```
-
-If using ~/.pypirc:
-```bash
-twine upload \
-  --repository pypi \
-  --non-interactive \
-  dist/bees_md-<version>*
+TWINE_USERNAME=__token__ TWINE_PASSWORD="${PYPI_TOKEN_BEES:-$(cat "$PYPI_TOKEN_FILE")}" \
+  twine upload --non-interactive dist/bees_md-<version>*
 ```
 
 On failure, stop: "Upload failed. Output above."
@@ -221,7 +192,7 @@ On failure, stop: "Upload failed. Output above."
 
 Stage and commit the version bump:
 ```bash
-git add pyproject.toml poetry.lock
+git add pyproject.toml
 git commit -m "chore: bump version to <version>
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
@@ -235,7 +206,7 @@ git tag -a "v<version>" -m "Release v<version>"
 ## Step 8 — Push to GitHub
 
 ```bash
-git push && git push --tags
+git push origin main "v<version>"
 ```
 
 On failure, stop: "Push failed. Output above."
