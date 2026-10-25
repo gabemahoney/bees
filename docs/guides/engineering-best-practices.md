@@ -111,6 +111,7 @@ Always use the canonical write utility. Never write ticket files directly.
 
 - **Always use `write_ticket_file()` from `src/writer.py`.** It performs atomic writes (temp file + rename) and automatically evicts the written ticket from the cache. Direct file writes skip the atomic rename (leaving partially-written files on disk if interrupted) and miss cache eviction (leaving stale data for the rest of the server process).
 - **Never use `Path.write_text()` or `open().write()` on ticket markdown files.** These bypass both atomicity and cache eviction.
+- **Never use file-system locks** (`fcntl.flock`, `lockf`, lock files). A lock can fail to unlock, and other writes must pause until it does, which creates backups.
 
 ## 11. Configuration Loading
 
