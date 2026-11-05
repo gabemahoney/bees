@@ -66,7 +66,13 @@ from typing import Any
 
 import yaml
 
-from .config import BeesConfig, load_bees_config, load_global_config, resolve_named_query
+from .config import (
+    BeesConfig,
+    load_bees_config,
+    load_global_config,
+    no_hives_visible_message,
+    resolve_named_query,
+)
 from .id_utils import is_ticket_id
 from .index_generator import generate_index
 from .paths import find_ticket_file, hive_crossing_reason, walk_hive
@@ -108,7 +114,7 @@ def _undertaker_core(
     # ── Validate hive ────────────────────────────────────────────────────
     config = load_bees_config()
     if not config or not config.hives:
-        return {"status": "error", "message": "No hives configured."}
+        return {"status": "error", "message": no_hives_visible_message(get_repo_root(), load_global_config())}
 
     if hive_name not in config.hives:
         available = sorted(config.hives.keys())

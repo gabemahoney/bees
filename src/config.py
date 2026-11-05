@@ -421,6 +421,44 @@ def find_all_matching_scopes(
     return [(pattern, config) for pattern, config, _key in matches]
 
 
+def no_matching_scope_message(repo_root: Path, global_config: dict | None = None) -> str | None:
+    """Explain that no scope matches repo_root, or return None when one does.
+
+    Names the directory matched against the scopes and gives the general fix,
+    so a command run from an unregistered directory says why it sees no hives.
+    """
+    if global_config is None:
+        global_config = load_global_config()
+    if find_matching_scope(repo_root, global_config) is not None:
+        return None
+    return (
+        f"No scope in ~/.bees/config.json matches '{repo_root}', so no hives are visible from it. "
+        "Register a scope for that directory, or use a wildcard scope over its parent "
+        f"(e.g. '{repo_root.parent}/**')."
+    )
+
+
+def hive_not_found_error(message: str, repo_root: Path | None = None) -> dict:
+    """Build a hive_not_found error dict, adding the unmatched-scope explanation when it applies."""
+    if repo_root is None:
+        repo_root = get_repo_root()
+    scope_message = no_matching_scope_message(repo_root)
+    if scope_message is not None:
+        message = f"{message}\n{scope_message}"
+    return {"status": "error", "error_type": "hive_not_found", "message": message}
+
+
+def no_hives_visible_message(repo_root: Path, global_config: dict) -> str:
+    """Say why repo_root sees no hives: no matching scope, or none configured at all."""
+    has_hives = any(scope.get("hives") for scope in global_config.get("scopes", {}).values())
+    if has_hives:
+        scope_message = no_matching_scope_message(repo_root, global_config)
+        if scope_message is not None:
+            return scope_message
+        return f"No hives in the scopes matching '{repo_root}'"
+    return "No hives configured"
+
+
 def resolve_owning_scope(
     normalized_hive_name: str, global_config: dict, repo_root: Path
 ) -> tuple[str, None] | tuple[None, dict]:
@@ -437,11 +475,9 @@ def resolve_owning_scope(
     try:
         scopes = get_scope_key_for_hive(normalized_hive_name, global_config, repo_root)
     except ValueError:
-        return (None, {
-            "status": "error",
-            "error_type": "hive_not_found",
-            "message": f"Hive '{normalized_hive_name}' does not exist in any scope visible to this repo.",
-        })
+        return (None, hive_not_found_error(
+            f"Hive '{normalized_hive_name}' does not exist in any scope visible to this repo.", repo_root
+        ))
     if len(scopes) > 1:
         return (None, {
             "status": "error",

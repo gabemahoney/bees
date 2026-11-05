@@ -30,6 +30,7 @@ from .config import (
     check_schema_version,
     find_all_matching_scopes,
     find_matching_scope,
+    hive_not_found_error,
     load_bees_config,
     load_global_config,
     resolve_child_tiers_for_hive,
@@ -385,6 +386,17 @@ async def _create_ticket(
     normalized_hive = normalize_hive_name(hive_name)
     logger.info(f"create_ticket: Using repo root: {resolved_root}")
 
+    # Check the hive before the ticket type: type validation needs the hive's tiers
+    config = load_bees_config()
+    logger.info(f"create_ticket: Config hives: {list(config.hives.keys()) if config else 'None'}")
+    logger.info(f"create_ticket: Looking for hive: '{normalized_hive}'")
+    if not config or normalized_hive not in config.hives:
+        error = hive_not_found_error(
+            f"Hive '{hive_name}' (normalized: '{normalized_hive}') not found in config.", resolved_root
+        )
+        logger.error(error["message"])
+        return error
+
     # Validate ticket_type against config (supports tier IDs and friendly names)
     try:
         validate_ticket_type(ticket_type, normalized_hive)
@@ -398,8 +410,6 @@ async def _create_ticket(
     else:
         ticket_type = type_prefix
 
-    config = load_bees_config()
-
     # Enforce bees-only hive restriction
     try:
         child_tiers = resolve_child_tiers_for_hive(normalized_hive, config)
@@ -411,23 +421,6 @@ async def _create_ticket(
             "error_type": "invalid_ticket_type",
             "message": f"Hive '{hive_name}' is configured as bees-only. Only bee (t0) tickets can be created.",
         }
-    logger.info(f"create_ticket: Config hives: {list(config.hives.keys()) if config else 'None'}")
-    logger.info(f"create_ticket: Looking for hive: '{normalized_hive}'")
-
-    if not config or normalized_hive not in config.hives:
-        available_hives = list(config.hives.keys()) if config else []
-
-        error_msg = (
-            f"Hive '{hive_name}' (normalized: '{normalized_hive}') not found in config.\n"
-            f"  Repo root (from MCP context): {resolved_root}\n"
-            f"  Available hives: {available_hives}\n"
-            "\n"
-            "Please create the hive first using colonize_hive in the correct repository.\n"
-            "If the hive directory exists but isn't registered, run colonize_hive to register it."
-        )
-
-        logger.error(error_msg)
-        return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
 
     # Validate hive path exists and is writable
     hive_path = Path(config.hives[normalized_hive].path)
@@ -696,11 +689,7 @@ async def _update_ticket_batch(
     if hive_name:
         config = load_bees_config()
         if not config or hive_name not in config.hives:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Hive '{hive_name}' not found in configuration",
-            }
+            return hive_not_found_error(f"Hive '{hive_name}' not found in configuration")
 
     updated: list[str] = []
     not_found: list[str] = []
@@ -802,11 +791,7 @@ async def _update_ticket_single(
     if hive_name:
         _upd_config = load_bees_config()
         if not _upd_config or hive_name not in _upd_config.hives:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Hive '{hive_name}' not found in configuration",
-            }
+            return hive_not_found_error(f"Hive '{hive_name}' not found in configuration")
         resolved_hive = hive_name
         _upd_hp = Path(_upd_config.hives[resolved_hive].path)
         if not compute_ticket_path(ticket_id, _upd_hp).exists():
@@ -1035,11 +1020,7 @@ async def _append_ticket_body(
     if hive_name:
         _app_config = load_bees_config()
         if not _app_config or hive_name not in _app_config.hives:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Hive '{hive_name}' not found in configuration",
-            }
+            return hive_not_found_error(f"Hive '{hive_name}' not found in configuration")
         resolved_hive = hive_name
         _app_hp = Path(_app_config.hives[resolved_hive].path)
         if not compute_ticket_path(ticket_id, _app_hp).exists():
@@ -1500,9 +1481,9 @@ async def _delete_ticket(
             resolved_hive = hive_name
             config = load_bees_config()
             if not config or resolved_hive not in config.hives:
-                error_msg = f"Hive '{resolved_hive}' not found in configuration"
-                logger.error(error_msg)
-                return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
+                error = hive_not_found_error(f"Hive '{resolved_hive}' not found in configuration")
+                logger.error(error["message"])
+                return error
         else:
             resolved_hive = find_hive_for_ticket(ticket_id)
             if not resolved_hive:
@@ -1535,11 +1516,7 @@ async def _delete_ticket(
     config = load_bees_config()
     if hive_name:
         if not config or hive_name not in config.hives:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Hive '{hive_name}' not found in configuration",
-            }
+            return hive_not_found_error(f"Hive '{hive_name}' not found in configuration")
 
     # Sort by tier so ancestors are processed before descendants.
     # This ensures a parent's rmtree removes child directories first;

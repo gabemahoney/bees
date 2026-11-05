@@ -15,6 +15,7 @@ from .config import (
     check_for_config_conflicts,
     check_schema_version,
     get_scope_key_for_hive,
+    hive_not_found_error,
     load_bees_config,
     load_global_config,
     resolve_owning_scope,
@@ -103,11 +104,7 @@ def _move_bee_core(
     config = load_bees_config()
 
     if not config or destination_hive not in config.hives:
-        return {
-            "status": "error",
-            "message": f"Destination hive '{destination_hive}' not found.",
-            "error_type": "hive_not_found",
-        }
+        return hive_not_found_error(f"Destination hive '{destination_hive}' not found.", repo_root)
 
     dest_path = Path(config.hives[destination_hive].path)
 

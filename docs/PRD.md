@@ -453,7 +453,7 @@ Response:
 }
 ```
 
-Empty list when no config or no hives.
+Empty list when no config or no hives. With an empty list, `message` is `"No hives configured"` only when the config has no hives at all. When hives exist in other scopes, it explains instead: no scope matches the caller's directory (naming it, with the hint to register a scope for it or use a wildcard scope over its parent), or the matching scopes hold no hives.
 
 ### 7.6 abandon_hive
 
@@ -1473,7 +1473,7 @@ Installs hook entries:
 
 | Error Type | When |
 |------------|------|
-| `hive_not_found` | Hive name not registered |
+| `hive_not_found` | Hive name not registered. When no scope matches the caller's directory, the message names that directory, says no scope matches it, and hints to register a scope for it or use a wildcard scope over its parent |
 | `duplicate_name_error` | Colonize duplicate name |
 | `name_conflict` | Rename to existing name |
 | `validation_error` | Name normalizes to empty |

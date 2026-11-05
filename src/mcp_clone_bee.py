@@ -12,8 +12,10 @@ from typing import Any
 
 from .config import (
     check_schema_version,
+    hive_not_found_error,
     load_bees_config,
     load_global_config,
+    no_hives_visible_message,
     resolve_owning_scope,
 )
 from .constants import SCHEMA_VERSION
@@ -81,7 +83,7 @@ def _clone_bee_core(
         return {
             "status": "error",
             "error_type": "bee_not_found",
-            "message": f"Bee '{bee_id}' not found: no hives configured.",
+            "message": f"Bee '{bee_id}' not found. {no_hives_visible_message(get_repo_root(), load_global_config())}",
         }
 
     source_file: Path | None = None
@@ -107,11 +109,9 @@ def _clone_bee_core(
     else:
         dest_hive = normalize_hive_name(destination_hive)
         if dest_hive not in config.hives:
-            return {
-                "status": "error",
-                "error_type": "hive_not_found",
-                "message": f"Destination hive '{destination_hive}' (normalized: '{dest_hive}') not found in config.",
-            }
+            return hive_not_found_error(
+                f"Destination hive '{destination_hive}' (normalized: '{dest_hive}') not found in config."
+            )
 
         # Scope check — must run before any write attempt
         global_config = load_global_config()

@@ -296,6 +296,7 @@ def handle_create_ticket(args):
             tags=parse_json_arg(args.tags, "--tags") if args.tags is not None else None,
             status=args.status,
             reference_materials=parsed_reference_materials,
+            resolved_root=root,
             unescape_body=args.body_file is None,
             priority=priority,
         ),

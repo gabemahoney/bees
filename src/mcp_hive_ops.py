@@ -37,10 +37,12 @@ from .config import (
     find_matching_scope,
     get_all_scopes_config,
     get_scope_key_for_hive,
+    hive_not_found_error,
     invalidate_identity_cache,
     load_global_config,
     load_resolver_registry,
     match_scope_pattern,
+    no_hives_visible_message,
     parse_scope_to_bees_config,
     resolve_owning_scope,
     save_bees_config,
@@ -677,7 +679,8 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
             On success with no hives: {
                 'status': 'success',
                 'hives': [],
-                'message': 'No hives configured'
+                'message': str  # 'No hives configured' when the config has none;
+                                # otherwise why none are visible here (e.g. no scope matches)
             }
 
     Example:
@@ -743,10 +746,6 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         scope_configs = find_all_matching_scopes(resolved_root, global_cfg)
         logger.info(f"_list_hives: {len(scope_configs)} matching scope(s): {[p for p, _ in scope_configs]}")
 
-        if not scope_configs:
-            logger.info("No hives configured")
-            return {"status": "success", "hives": [], "message": "No hives configured"}
-
         # Build dict keyed by normalized_name; more-specific scopes override
         hives_by_name: dict[str, dict[str, str]] = {}
         for pattern, config in scope_configs:
@@ -762,8 +761,9 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
                 hives_by_name[normalized_name] = entry
 
         if not hives_by_name:
-            logger.info("No hives configured")
-            return {"status": "success", "hives": [], "message": "No hives configured"}
+            message = no_hives_visible_message(resolved_root, global_cfg)
+            logger.info(message)
+            return {"status": "success", "hives": [], "message": message}
 
         # Sort alphabetically by normalized_name
         hives_list = sorted(hives_by_name.values(), key=lambda h: h["normalized_name"])
@@ -822,9 +822,11 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
     try:
         scope_keys = get_scope_key_for_hive(normalized_name, global_config, resolved_root)
     except ValueError:
-        error_msg = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config"
-        logger.error(error_msg)
-        return {"status": "error", "error_type": "hive_not_found", "message": error_msg}
+        error = hive_not_found_error(
+            f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config", resolved_root
+        )
+        logger.error(error["message"])
+        return error
 
     # Capture display_name and path from first scope for response
     first_scope_data = global_config["scopes"][scope_keys[0]]
