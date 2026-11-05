@@ -262,7 +262,15 @@ def _help() -> dict[str, Any]:
         {
             "name": "abandon_hive",
             "description": "Unregister a hive (files unchanged)",
-            "parameters": [{"name": "hive_name", "type": "str", "required": True, "description": "Hive to abandon"}],
+            "parameters": [
+                {"name": "hive", "type": "str", "required": True, "description": "Hive to abandon"},
+                {
+                    "name": "scope", "type": "str", "required": False,
+                    "description": "Exact scope key to abandon from, instead of the scopes matching"
+                    " the caller's root; works when its folder is gone. The caller's root (Roots,"
+                    " else repo_root) still applies to the queen write check",
+                },
+            ],
         },
         {
             "name": "rename_hive",

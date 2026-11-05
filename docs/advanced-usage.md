@@ -99,7 +99,7 @@ Queries can be saved by name and reused across sessions. Tell your LLM to create
 
 ## Configuration
 
-All configuration can be done by the LLM through bees commands. The following is for reference if you want to inspect it yourself.
+Bees commands manage much of the configuration, such as registering, renaming and abandoning hives, tiers, status values, resolvers and named queries. Some settings are set only by editing the config file, such as a scope's pattern, queen repos, `undertaker_schedule`, `delete_with_dependencies`, `auto_fix_dangling_refs` and `mermaid_charts`. The following is for reference if you want to inspect or edit it yourself.
 
 Bees uses a single global config file at `~/.bees/config.json`, auto-created when you create your first hive.
 
@@ -128,13 +128,13 @@ To share config _across_ worktrees or related repos, ask your LLM to update the 
 
 A directory that no scope matches sees no hives. From there `list_hives` returns an empty list whose message names the directory and says no scope matches it, and commands that look up a hive by name (such as create, update, delete, move, abandon or rename) fail with an error that says the same (`hive_not_found` for most). Run bees from a matched directory, or add a scope for that one.
 
-Hive paths in the config are absolute. A wildcard scope shared by several worktrees of one repo therefore points every worktree at the same hive directory, usually the main checkout's: tickets created or changed from any worktree are written to the main checkout's files, not to the worktree's own copy of the hive on its branch. To keep each worktree's tickets on its own branch instead, give each worktree its own hive: run `colonize_hive` from the worktree on the hive directory inside it (e.g. `<worktree>/.bees/bugs`) with `--scope "<worktree>/**"`, so the worktree's subdirectories match too (the default exact-path scope matches only the worktree root). Then run `abandon_hive` from the worktree before removing it, so the config keeps no entry for a deleted directory. This works only when no scope that already holds that hive name matches the worktree: a worktree under the main checkout's `<repo>/**` scope (e.g. in `<repo>/.worktrees/`) gets `duplicate_hive_name`, so keep worktrees outside it or give the main checkout an exact-path scope.
+Hive paths in the config are absolute. A wildcard scope shared by several worktrees of one repo therefore points every worktree at the same hive directory, usually the main checkout's: tickets created or changed from any worktree are written to the main checkout's files, not to the worktree's own copy of the hive on its branch. To keep each worktree's tickets on its own branch instead, give each worktree its own hive: run `colonize_hive` from the worktree on the hive directory inside it (e.g. `<worktree>/.bees/bugs`) with `--scope "<worktree>/**"`, so the worktree's subdirectories match too (the default exact-path scope matches only the worktree root). Then run `abandon_hive` from the worktree before removing it: abandoning a scope's last hive also deletes the scope once nothing else is set on it, so the config keeps no entry for a deleted directory. If the worktree is already gone, name its scope instead, from any directory: `bees abandon-hive --hive bugs --scope "<worktree>/**"` (MCP: `abandon_hive` with `scope`). `--scope` takes the scope's exact key in `~/.bees/config.json`. `list_hives` shows only scopes that match the directory it runs from, so read the key of a deleted directory's scope from the config file. If that scope also holds other keys, such as a named query saved with `scope=repo` or tiers or status values set at `repo_scope` from the worktree, `abandon-hive --scope` removes the hive but the scope stays, and only editing `~/.bees/config.json` removes it. The per-worktree setup works only when no scope that already holds that hive name matches the worktree: a worktree under the main checkout's `<repo>/**` scope (e.g. in `<repo>/.worktrees/`) gets `duplicate_hive_name`, so keep worktrees outside it or give the main checkout an exact-path scope.
 
 ### Scope Specificity
 
 Scope patterns have three canonical forms:
 
-- **Exact path** (e.g. `/projects/myrepo/`): matches only that one directory. This is the default form created by `colonize_hive` when no `--scope` is provided.
+- **Exact path** (e.g. `/projects/myrepo`): matches only that one directory. This is the default form created by `colonize_hive` when no `--scope` is provided: the repo path with no trailing slash.
 - **`/*`** (e.g. `/projects/*`): matches any immediate child directory of the prefix — exactly one level deeper.
 - **`/**`** (e.g. `/projects/**`): matches the prefix directory itself and any descendant directory at any depth.
 
@@ -445,7 +445,7 @@ Pass `--query-yaml` as one single-quoted argument written in YAML flow style, as
 ```bash
 bees colonize-hive --name Backend --path /abs/path [--scope <pattern>] [--child-tiers '{"t1":["Task","Tasks"]}'] [--allowed-resolvers '["guid_resolver","default"]']
 bees list-hives
-bees abandon-hive --hive backend
+bees abandon-hive --hive backend [--scope <pattern>]
 bees rename-hive --old-name old_name --new-name new_name
 bees sanitize-hive --hive backend
 ```

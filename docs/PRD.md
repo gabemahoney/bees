@@ -459,7 +459,14 @@ Empty list when no config or no hives. With an empty list, `message` is `"No hiv
 
 Removes hive from config registry. Leaves all files on disk intact. Can be re-registered later with `colonize_hive`.
 
-Error: `hive_not_found`
+Parameters: `hive`, optional `scope`
+
+Behavior:
+- Without `scope`: removes the hive from every scope matching the caller's repo root
+- With `scope`: removes it only from the scope whose config key is exactly `scope` (plain string match: no normalization, glob matching or repo root resolution), so it works when that scope's folder no longer exists. `scope` picks only the target scope: the caller's root is still resolved (Roots, else `repo_root`) for the queen write check, so a client without Roots still passes `repo_root`
+- A scope left with no hives and no other keys (`child_tiers`, `status_values`, `queries`, ...) is deleted from the config; a scope that still holds anything stays
+
+Errors: `hive_not_found` (hive not in a matching scope, or not in the named `scope`), `scope_not_found` (`scope` is not a key in the config; the message says it must equal a key under `"scopes"` exactly and gives the key forms)
 
 ### 7.7 rename_hive
 
@@ -1326,7 +1333,7 @@ The system maintains an in-memory cache of parsed tickets, keyed by ticket ID. E
 | `delete-named-query` | `--query-name` |
 | `colonize-hive` | `[--name] --path [--child-tiers JSON] [--scope PATTERN] [--description TEXT] [--status-values JSON] [--allowed-resolvers JSON]` |
 | `list-hives` | (none) |
-| `abandon-hive` | `--hive` |
+| `abandon-hive` | `--hive [--scope PATTERN]` |
 | `rename-hive` | `--old-name --new-name [--no-rename-folder] [--description TEXT]` |
 | `sanitize-hive` | `--hive` |
 | `generate-index` | `[--hive]` |
@@ -1380,7 +1387,7 @@ The MCP server needs to know which repository the caller is working in, so it ca
 | `set_status_values` | `set-status-values` | |
 | `colonize_hive` | `colonize-hive` | |
 | `list_hives` | `list-hives` | |
-| `abandon_hive` | `abandon-hive` | |
+| `abandon_hive` | `abandon-hive` | Optional `scope` (exact scope key) picks the scope to abandon from; the caller's root still applies to the queen write check |
 | `rename_hive` | `rename-hive` | |
 | `sanitize_hive` | `sanitize-hive` | |
 | `add_named_query` | `add-named-query` | |
@@ -1474,6 +1481,7 @@ Installs hook entries:
 | Error Type | When |
 |------------|------|
 | `hive_not_found` | Hive name not registered. When no scope matches the caller's directory, the message names that directory, says no scope matches it, and hints to register a scope for it or use a wildcard scope over its parent |
+| `scope_not_found` | `abandon_hive` `scope` is not a key in the config |
 | `duplicate_name_error` | Colonize duplicate name |
 | `name_conflict` | Rename to existing name |
 | `validation_error` | Name normalizes to empty |
@@ -1730,10 +1738,11 @@ List all available hives.
 ### `abandon_hive`
 Stop tracking a hive without deleting its ticket files.
 
-Removes the hive from the registry but leaves all files intact on disk. The hive can be re-registered later with colonize_hive.
+Removes the hive from the registry but leaves all files intact on disk. A scope left with no hives and no other settings is removed from the config. The hive can be re-registered later with colonize_hive.
 
 Args:
 - `hive`: Display name or normalized name of the hive to abandon.
+- `scope`: Exact scope pattern (config key) to abandon the hive from, instead of every scope matching the repo root. Works when the scope's folder is gone. The caller's root is still resolved (Roots, else repo_root) for the queen write check, so a client without Roots still passes repo_root.
 
 ### `rename_hive`
 Rename a hive and optionally its folder on disk. Ticket IDs are not affected.
@@ -2211,9 +2220,14 @@ List all registered hives. No arguments required.
 ### `bees abandon-hive`
 
 ```
-usage: bees abandon-hive --hive NAME
+usage: bees abandon-hive --hive NAME [--scope PATTERN]
 
   --hive NAME           Display name or normalized name of the hive to abandon
+  --scope PATTERN       Abandon the hive only from this exact scope pattern
+                        (config key, e.g. /projects/wt/**), instead of every
+                        scope matching the current directory. Works when the
+                        scope's folder no longer exists. The current directory
+                        still applies to the queen write check.
 ```
 
 ### `bees rename-hive`

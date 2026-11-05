@@ -781,18 +781,25 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         return {"status": "error", "error_type": "list_hives_error", "message": error_msg}
 
 
-async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> dict[str, Any]:
+async def _abandon_hive(
+    hive_name: str, resolved_root: Path | None = None, scope: str | None = None
+) -> dict[str, Any]:
     """
     Stop tracking a hive without deleting ticket files.
 
     Removes the hive entry from ~/.bees/config.json (across ALL matching
-    scopes) while leaving all ticket files and the .hive marker intact on
-    the filesystem.  This must work in degraded state (config conflicts),
-    so no conflict guard is applied.
+    scopes, or only the scope named by ``scope``) while leaving all ticket
+    files and the .hive marker intact on the filesystem.  A modified scope
+    left with no hives and no other keys is deleted from the config.  This
+    must work in degraded state (config conflicts), so no conflict guard is
+    applied.
 
     Args:
         hive_name: Display name or normalized name of the hive to abandon
         resolved_root: Pre-resolved repo root path (injected by adapter)
+        scope: Exact scope pattern (config key) to abandon the hive from.
+            Matched as a plain string, without normalization, glob matching
+            or root resolution, so it works when the scope's folder is gone.
 
     Returns:
         dict: Operation result with status and details
@@ -807,26 +814,44 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
             }
 
     Error Conditions:
-        - Hive not found: Normalized name doesn't exist in any matching scope
+        - Scope not found: ``scope`` is not a key in the config's scopes
+        - Hive not found: Normalized name doesn't exist in any matching scope,
+          or in the scope named by ``scope``
         - Config read/write errors
     """
     normalized_name = normalize_hive_name(hive_name)
     logger.info(f"Attempting to abandon hive '{hive_name}' (normalized: '{normalized_name}')")
 
-    if resolved_root is None:
-        resolved_root = get_repo_root()
-
     global_config = load_global_config()
 
-    # Find all scopes that define this hive
-    try:
-        scope_keys = get_scope_key_for_hive(normalized_name, global_config, resolved_root)
-    except ValueError:
-        error = hive_not_found_error(
-            f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config", resolved_root
-        )
-        logger.error(error["message"])
-        return error
+    if scope is not None:
+        scope_data = global_config.get("scopes", {}).get(scope)
+        if scope_data is None:
+            message = (
+                f"No scope '{scope}' in ~/.bees/config.json. The scope must equal a key under \"scopes\""
+                " exactly: colonize_hive's default key is the exact repo path with no trailing slash,"
+                " and keys registered with a scope pattern end in /, /* or /**."
+            )
+            logger.error(message)
+            return {"status": "error", "error_type": "scope_not_found", "message": message}
+        if normalized_name not in scope_data.get("hives", {}):
+            message = f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in scope '{scope}'"
+            logger.error(message)
+            return {"status": "error", "error_type": "hive_not_found", "message": message}
+        scope_keys = [scope]
+    else:
+        if resolved_root is None:
+            resolved_root = get_repo_root()
+
+        # Find all scopes that define this hive
+        try:
+            scope_keys = get_scope_key_for_hive(normalized_name, global_config, resolved_root)
+        except ValueError:
+            error = hive_not_found_error(
+                f"Hive '{hive_name}' (normalized: '{normalized_name}') does not exist in config", resolved_root
+            )
+            logger.error(error["message"])
+            return error
 
     # Capture display_name and path from first scope for response
     first_scope_data = global_config["scopes"][scope_keys[0]]
@@ -840,6 +865,9 @@ async def _abandon_hive(hive_name: str, resolved_root: Path | None = None) -> di
         hives = scope_data.get("hives", {})
         hives.pop(normalized_name, None)
         logger.info(f"Removed hive '{normalized_name}' from scope '{scope_key}'")
+        if not hives and set(scope_data) <= {"hives"}:
+            del global_config["scopes"][scope_key]
+            logger.info(f"Removed empty scope '{scope_key}'")
 
     save_global_config(global_config)
     logger.info(f"Removed hive '{normalized_name}' from {len(scope_keys)} scope(s)")

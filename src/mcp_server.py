@@ -818,16 +818,23 @@ async def list_hives(
 @_config_errors_as_result
 async def abandon_hive(
     hive: str,
+    scope: str | None = None,
     ctx: Context | None = None,
     repo_root: str | None = None,
 ) -> dict[str, Any]:
     """Stop tracking a hive without deleting its ticket files.
 
     Removes the hive from the registry but leaves all files intact on disk.
-    The hive can be re-registered later with colonize_hive.
+    A scope left with no hives and no other settings is removed from the
+    config. The hive can be re-registered later with colonize_hive.
 
     Args:
         hive: Display name or normalized name of the hive to abandon.
+        scope: Exact scope pattern (config key) to abandon the hive from,
+            instead of every scope matching the repo root. Works when the
+            scope's folder is gone. The caller's root is still resolved
+            (Roots, else repo_root) for the queen write check, so a client
+            without Roots still passes repo_root.
     """
     if ctx:
         resolved_root = await resolve_repo_root(ctx, repo_root)
@@ -836,7 +843,7 @@ async def abandon_hive(
     if err := _guard_queen_write(resolved_root):
         return err
     with repo_root_context(resolved_root):
-        return await _abandon_hive(hive_name=hive, resolved_root=resolved_root)
+        return await _abandon_hive(hive_name=hive, resolved_root=resolved_root, scope=scope)
 
 
 @mcp.tool()

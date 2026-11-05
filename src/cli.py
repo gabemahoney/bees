@@ -549,7 +549,7 @@ def handle_abandon_hive(args):
     root = get_repo_root_from_path(Path.cwd())
     if _guard_queen_write_cli(root):
         return
-    result = _run_in_repo(_abandon_hive(hive_name=args.hive), root=root)
+    result = _run_in_repo(_abandon_hive(hive_name=args.hive, scope=args.scope), root=root)
     _output_result(result)
 
 
@@ -1294,6 +1294,7 @@ def build_parser():
         ),
     )
     p_abandon.add_argument("--hive", required=True, metavar="NAME", help="Display name or normalized name of the hive to abandon")  # noqa: E501
+    p_abandon.add_argument("--scope", default=None, metavar="PATTERN", help="Abandon the hive only from this exact scope pattern (config key, e.g. /projects/wt/**), instead of every scope matching the current directory. Works when the scope's folder no longer exists. The current directory still applies to the queen write check.")  # noqa: E501
     p_abandon.set_defaults(func=handle_abandon_hive)
 
     # --- rename-hive ---
