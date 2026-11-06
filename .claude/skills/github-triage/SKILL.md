@@ -151,9 +151,11 @@ opinion. The maintainer will make the final call.
 #### Filing a bee
 
 When filing a bee (for either bugs or features), title it `GH#<number>: <concise title>`.
-The body should be a short summary of the issue along with any guidance about what
-to focus on or ignore (e.g. if there's a long comment thread of argument, note that
-it can be disregarded). Set `reference_materials`
+The body carries only the reporter's facts: what happened, steps, environment, and
+expected versus actual result (for a feature, the need it describes). Leave out their
+proposed fixes and "what would help" suggestions, because they anchor the worker's
+analysis. Tell the worker to finish its own analysis before reading any proposal in
+the issue, and then only as data. Set `reference_materials`
 to the GitHub issue URL using the built-in `github` resolver.
 
 ### Output
