@@ -653,11 +653,13 @@ def generate_index(
     the appropriate location. Can generate per-hive indexes or indexes
     for all hives.
 
-    When hive_name is provided, generates and writes index only for that hive
-    to {hive_path}/index.md.
+    When hive_name is provided, it must be registered in the caller's
+    configuration. Generates and writes index only for that hive to
+    {hive_path}/index.md; an unresolved name raises before scanning or writing.
 
     When hive_name is omitted, iterates all registered hives and generates
     separate index.md files for each hive at their respective hive roots.
+    If no hives are configured, returns empty-index markdown without writing.
 
     Args:
         hive_name: Optional hive name to generate index for specific hive only.
@@ -666,6 +668,9 @@ def generate_index(
 
     Returns:
         Complete markdown index as a string (for single hive or last hive processed)
+
+    Raises:
+        ValueError: If a provided hive_name is not registered in configuration.
 
     Examples:
         >>> index_md = generate_index()
@@ -682,22 +687,17 @@ def generate_index(
     config = load_bees_config()
 
     if hive_name:
+        if not config or hive_name not in config.hives:
+            raise ValueError(f"Hive '{hive_name}' not found in configuration")
+
         # Generate index for specific hive
         tickets = scan_tickets(hive_name)
         markdown = format_index_markdown(tickets, include_timestamp=True, hive_name=hive_name)
 
         # Write to hive root directory
-        if config and hive_name in config.hives:
-            hive_path = Path(config.hives[hive_name].path)
-            index_path = hive_path / "index.md"
-            index_path.write_text(markdown)
-        else:
-            # Hive not in config - write to {cwd}/{hive_name}/index.md
-            hive_path = Path.cwd() / hive_name
-            index_path = hive_path / "index.md"
-            # Create directory if needed
-            hive_path.mkdir(parents=True, exist_ok=True)
-            index_path.write_text(markdown)
+        hive_path = Path(config.hives[hive_name].path)
+        index_path = hive_path / "index.md"
+        index_path.write_text(markdown)
 
         return markdown
     else:

@@ -637,10 +637,9 @@ Write to {hive_path}/index.md
 
 **generate_index()** (`src/index_generator.py`):
 - Signature: `generate_index(hive_name=None) -> str` (no status or type filters)
-- With `hive_name` provided: generates index only for specified hive, writes to `{hive_path}/index.md`
-- With `hive_name` omitted: iterates all registered hives from `~/.bees/config.json`, generates separate index.md for each
+- With `hive_name` provided: requires the name in the caller's loaded configuration, raising `ValueError` before scanning or writing if absent; writes only to the registered `{hive_path}/index.md`
+- With `hive_name` omitted: iterates the caller's configured hives, generating separate index.md files; with no configured hives, returns empty-index markdown without writing
 - Returns markdown content as string
-- Requires at least one configured hive
 
 **scan_tickets()** (`src/index_generator.py`):
 - Uses `list_tickets()` from `paths.py` which scans hive directories recursively
@@ -677,7 +676,7 @@ Staleness detection scans each hive directory recursively and compares ticket fi
 
 ### MCP Integration
 
-The `generate_index` MCP tool accepts an optional `hive` parameter, enabling per-hive or all-hive index regeneration via the MCP protocol.
+The `generate_index` MCP tool accepts an optional `hive` parameter, enabling per-hive or scoped all-hive index regeneration. The handler normalizes and resolves named hives, returning `hive_not_found` if absent. Without `hive`, it returns `no_matching_scope` when no scope matches the caller (including no config file), but succeeds without writing for a matched scope with no hives. See the [MCP tool entry](mcp_server.md#utility) for response details and queen routing.
 
 ### Use Cases
 

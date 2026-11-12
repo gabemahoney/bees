@@ -286,9 +286,16 @@ def _help() -> dict[str, Any]:
         },
         {
             "name": "generate_index",
-            "description": "Generate markdown index of tickets",
+            "description": "Write index.md only at registered hive roots. An unresolved hive returns"
+            " hive_not_found. Without hive, index the caller's matching scopes; no matching scope"
+            " (including no config) returns no_matching_scope naming the caller's directory."
+            " A matched scope with no hives succeeds without writing.",
             "parameters": [
-                {"name": "hive", "type": "str", "required": False, "description": "Hive to index"},
+                {
+                    "name": "hive", "type": "str", "required": False,
+                    "description": "Registered hive name to index (normalized); a write queen can target"
+                    " a foreign hive. Omit for all hives in the caller's matching scopes.",
+                },
                 {
                     "name": "repo_root", "type": "str", "required": False,
                     "description": "Explicit repo root path (fallback for non-Roots clients)",

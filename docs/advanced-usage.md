@@ -126,7 +126,7 @@ To share config _across_ worktrees or related repos, ask your LLM to update the 
 }
 ```
 
-A non-queen directory that no scope matches sees no hives. From there `list_hives` returns an empty list whose message names the directory and says no scope matches it, and commands that look up a hive by name (such as create, update, delete, move, abandon or rename) fail with an error that says the same (`hive_not_found` for most). Run bees from a matched directory, or add a scope for that one.
+A non-queen directory that no scope matches sees no hives. From there `list_hives` returns an empty list whose message names the directory and says no scope matches it, and commands that look up a hive by name (such as create, update, delete, move, abandon, rename or generate-index with `--hive`) fail with an error that says the same (`hive_not_found` for most). Run bees from a matched directory, or add a scope for that one.
 
 Hive paths in the config are absolute. A wildcard scope shared by several worktrees of one repo therefore points every worktree at the same hive directory, usually the main checkout's: tickets created or changed from any worktree are written to the main checkout's files, not to the worktree's own copy of the hive on its branch. To keep each worktree's tickets on its own branch instead, give each worktree its own hive: run `colonize_hive` from the worktree on the hive directory inside it (e.g. `<worktree>/.bees/bugs`) with `--scope "<worktree>/**"`, so the worktree's subdirectories match too (the default exact-path scope matches only the worktree root). Then run `abandon_hive` from the worktree before removing it: abandoning a scope's last hive also deletes the scope once nothing else is set on it, so the config keeps no entry for a deleted directory. If the worktree is already gone, name its scope instead, from any directory: `bees abandon-hive --hive bugs --scope "<worktree>/**"` (MCP: `abandon_hive` with `scope`). `--scope` takes the scope's exact key in `~/.bees/config.json`. For non-queen callers, `list_hives` shows only scopes matching the current directory, so read the key of a deleted directory's scope from the config file. [Queen repos](#queen-repos) list hives across all scopes. If that scope also holds other keys, such as a named query saved with `scope=repo` or tiers or status values set at `repo_scope` from the worktree, `abandon-hive --scope` removes the hive but the scope stays, and only editing `~/.bees/config.json` removes it. The per-worktree setup works only when no scope that already holds that hive name matches the worktree: a worktree under the main checkout's `<repo>/**` scope (e.g. in `<repo>/.worktrees/`) gets `duplicate_hive_name`, so keep worktrees outside it or give the main checkout an exact-path scope.
 
@@ -491,6 +491,8 @@ bees move-bee --ids b.amx b.x4f --hive backlog
 bees move-bee --ids b.amx b.x4f --hive backlog --force
 bees undertaker --hive backend --query-yaml '{stages: [[status=finished]]}'
 ```
+
+`bees generate-index` writes `index.md` only at registered hive roots. With `--hive`, an unresolved name returns `hive_not_found`; without it, the command indexes the caller's matching scopes, returning `no_matching_scope` if none match (including no config file). These unmatched-scope errors name the caller's directory and exit 1; a matched scope with no hives succeeds without writing.
 
 ### Move Bee
 

@@ -1026,10 +1026,13 @@ An index is stale when any ticket file's modification time is newer than the `in
 
 Parameters: optional `hive`
 
-- With `hive`: generates for that hive only
-- Without: generates for ALL hives
+- With `hive`: normalizes the name and generates for that registered hive only, including a foreign scope's hive for a write queen. An unresolved name returns `hive_not_found` without writing an index.
+- Without: generates for all hives in the caller's matching scopes; queen elevation does not broaden this collection. If no scope matches the caller (including no config file), returns `no_matching_scope`. A matched scope with no hives succeeds without writing.
+- Writes only to registered hive roots. Unmatched-scope errors name the caller's directory (the resolved MCP root, not the server's working directory).
 
-Returns: `{status: "success", skipped_hives}` (the markdown is written to each hive's `index.md`, not returned)
+Returns: `{status: "success", skipped_hives: []}` (the markdown is written to each hive's `index.md`, not returned)
+
+Errors: `hive_not_found`, `no_matching_scope`, `index_error` (generation failure). The CLI `generate-index` uses the same results and exits 1 on error.
 
 ---
 
@@ -1395,7 +1398,7 @@ The MCP server needs to know which repository the caller is working in, so it ca
 | `execute_freeform_query` | `execute-freeform-query` | |
 | `delete_named_query` | `delete-named-query` | |
 | `list_named_queries` | `list-named-queries` | |
-| `generate_index` | `generate-index` | Returns `{status, skipped_hives}` |
+| `generate_index` | `generate-index` | On success returns `{status, skipped_hives: []}`; errors in §15.7 |
 | `undertaker` | `undertaker` | |
 | `move_bee` | `move-bee` | `force: bool = False` |
 | `clone_bee` | `clone` | `hive: str|None`, `force: bool = False` |
@@ -1515,7 +1518,7 @@ Installs hook entries:
 | `conflicting_params` | Both value and unset=true |
 | `invalid_status_values` | Empty string in values list |
 | `invalid_child_tiers` | Invalid format |
-| `no_matching_scope` | No scope matches repo |
+| `no_matching_scope` | No scope matches repo; includes `generate_index` without a named hive (also when no config file exists), with a message naming the caller's directory |
 
 ### 25.5 Reference Materials Operations
 
@@ -1846,7 +1849,7 @@ List named queries accessible from the current repo scope and global.
 Generate index.md pages for hives.
 
 Args:
-- `hive`: Optional hive name. If omitted, generates for all hives.
+- `hive`: Optional registered hive name. If omitted, generates for all hives in the caller's matching scopes. See §15.7 for resolution errors and empty scopes.
 
 ### `undertaker`
 Archive bee tickets matching a query into the hive's /cemetery directory.

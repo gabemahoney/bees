@@ -425,16 +425,21 @@ class TestPerHiveIndexGeneration:
         result = scan_tickets()
         assert len(result["bee"]) == 3
 
-    def test_generate_index_with_hive_writes_to_hive_root(self, index_env):
+    def test_generate_index_with_hive_writes_to_hive_root(self, index_env, monkeypatch):
         """Should write index to hive root directory when hive_name provided."""
         be = index_env.add_hive("backend", "Backend")
         index_env.write_config()
         index_env.create_ticket(be, TICKET_ID_INDEX_BEE_BACKEND1, "bee", "Backend Epic")
 
-        generate_index(hive_name="backend")
+        server_cwd = index_env.root / "server"
+        server_cwd.mkdir()
+        monkeypatch.chdir(server_cwd)
+        with repo_root_context(index_env.root):
+            generate_index(hive_name="backend")
 
         index_path = be / "index.md"
         assert index_path.exists()
+        assert not (server_cwd / "backend" / "index.md").exists()
         index_content = index_path.read_text()
         assert "# Ticket Index" in index_content
         assert TICKET_ID_INDEX_BEE_BACKEND1 in index_content
@@ -465,8 +470,8 @@ class TestPerHiveIndexGeneration:
         assert "Frontend Epic" in frontend_content
         assert TICKET_ID_INDEX_BEE_BACKEND1 not in frontend_content
 
-    def test_generate_index_hive_not_in_config(self, index_env):
-        """Should create hive directory and write index when hive not in config."""
+    def test_generate_index_registered_hive_includes_ticket(self, index_env):
+        """Should include the registered hive's ticket in its root index."""
         hive = index_env.add_hive("newback", "New Backend")
         index_env.write_config()
         index_env.create_ticket(hive, "b.nep1", "bee", "New Backend Epic")
@@ -477,6 +482,25 @@ class TestPerHiveIndexGeneration:
         assert index_path.exists()
         index_content = index_path.read_text()
         assert "b.nep1" in index_content
+
+    @pytest.mark.parametrize("has_config", [True, False], ids=["unmatched_scope", "no_config_file"])
+    @pytest.mark.parametrize("absolute_name", [False, True], ids=["relative_name", "absolute_name"])
+    def test_generate_index_unregistered_hive_writes_nothing(
+        self, index_env, monkeypatch, has_config, absolute_name
+    ):
+        """Regression b.5nf: reject unresolved names without a cwd or absolute-path fallback."""
+        if has_config:
+            index_env.setup_default_hive()
+        caller = index_env.root / "caller"
+        caller.mkdir()
+        monkeypatch.chdir(caller)
+        hive_name = str(index_env.root / "absolute_hive") if absolute_name else "ghost"
+
+        with repo_root_context(caller):
+            with pytest.raises(ValueError):
+                generate_index(hive_name=hive_name)
+
+        assert list(index_env.root.rglob("index.md")) == []
 
     def test_generate_index_no_config_returns_markdown(self, index_env):
         """Should return markdown without writing when no config exists."""

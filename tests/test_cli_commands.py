@@ -740,6 +740,27 @@ class TestUtilityCommands:
         result = json.loads(stdout)
         assert result["status"] == "success"
 
+    def test_generate_index_unknown_hive_from_unmatched_directory(
+        self, cli_runner, isolated_bees_env, tmp_path, monkeypatch
+    ):
+        """Regression b.5nf: an unresolved hive is a CLI error, never a cwd index."""
+        isolated_bees_env.create_hive("ideas")
+        isolated_bees_env.write_config()
+        caller = tmp_path / "caller"
+        caller.mkdir()
+        monkeypatch.chdir(caller)
+
+        hive_name = "Ghost Hive"
+        stdout, exit_code = cli_runner(["generate-index", "--hive", hive_name])
+
+        assert exit_code == 1, stdout
+        result = json.loads(stdout)
+        assert result["status"] == "error"
+        assert result["error_type"] == "hive_not_found"
+        assert f"Hive '{hive_name}'" in result["message"]
+        assert f"matches '{caller}'" in result["message"]
+        assert list(tmp_path.rglob("index.md")) == []
+
     def test_move_bee_single_id(self, cli_runner, isolated_bees_env, tmp_path):
         src_path = tmp_path / "srchive"
         src_path.mkdir()
