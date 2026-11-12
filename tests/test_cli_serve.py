@@ -160,7 +160,7 @@ class TestServeFlagValidation:
                 # Should not raise SystemExit
                 handle_serve(args)
 
-        mock_mcp.run.assert_called_once_with(transport="stdio")
+        mock_mcp.run.assert_called_once_with(transport="stdio", show_banner=False)
 
     def test_serve_http_proceeds(self, monkeypatch, tmp_path):
         """--http with mocked internals proceeds without raising SystemExit."""
@@ -303,10 +303,11 @@ class TestStdioTransport:
             with patch("src.mcp_server.mcp", self.mock_mcp):
                 handle_serve(args)
 
-    def test_stdio_calls_mcp_run(self):
-        """mcp.run(transport='stdio') is called on the --stdio path."""
+    def test_stdio_calls_mcp_run_without_banner(self, capsys):
+        """Disable FastMCP's banner and its update check; stdout stays reserved for JSON-RPC (b.x5q)."""
         self._run_stdio()
-        self.mock_mcp.run.assert_called_once_with(transport="stdio")
+        self.mock_mcp.run.assert_called_once_with(transport="stdio", show_banner=False)
+        assert capsys.readouterr().out == ""
 
     def test_stdio_starts_with_malformed_global_config(self, mock_global_bees_dir):
         """--stdio loads the global config lazily (b.cyd): a malformed file does not stop the server from starting."""
@@ -315,7 +316,7 @@ class TestStdioTransport:
 
         self._run_stdio()
 
-        self.mock_mcp.run.assert_called_once_with(transport="stdio")
+        self.mock_mcp.run.assert_called_once_with(transport="stdio", show_banner=False)
         assert config_path.read_text() == "{invalid json"
 
     def test_stdio_calls_start_server(self):

@@ -2,11 +2,12 @@
 Tests for MCP server lifecycle reporting (src/mcp_server.py).
 
 PURPOSE:
-Tests the version that start_server() and _health_check() report: it comes from
+Tests the version that MCP initialize, start_server() and _health_check() report: it comes from
 the installed bees-md package metadata, with "unknown" as the fallback.
 
 SCOPE - Tests that belong here:
 - start_server() and _health_check() report the bees-md package metadata version
+- MCP initialize reports that same version on the shared stdio/HTTP server
 - The reported version falls back to "unknown" when bees-md metadata is missing
 
 SCOPE - Tests that DON'T belong here:
@@ -18,8 +19,10 @@ from importlib.metadata import PackageNotFoundError
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastmcp import Client
 
 from src import mcp_server
+from src.version import get_version
 
 FAKE_VERSION = "9.8.7"
 
@@ -31,6 +34,14 @@ def restore_server_running(monkeypatch):
 
 
 class TestReportedVersion:
+    async def test_initialize_reports_bees_md_version(self):
+        """A real initialize uses bees-md's version on the server shared by both transports (b.x5q)."""
+        async with Client(mcp_server.mcp) as client:
+            result = client.initialize_result
+
+        assert result.serverInfo.name == "bees"
+        assert result.serverInfo.version == get_version()
+
     @pytest.mark.parametrize(
         "report",
         [mcp_server.start_server, mcp_server._health_check],

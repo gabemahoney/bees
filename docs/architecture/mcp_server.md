@@ -4,6 +4,8 @@
 
 The Bees MCP (Model Context Protocol) server provides a standardized interface for ticket operations while maintaining relationship consistency. Built with FastMCP 3.x on the MCP Python SDK 1.x, the server exposes tools that AI agents and clients can use to manipulate tickets and hives safely.
 
+The shared FastMCP server is initialized with `version=get_version()` from `src/version.py`. The MCP `initialize` reply reports `serverInfo.name` as `bees` and `serverInfo.version` as the installed `bees-md` version (`unknown` when package metadata is unavailable) on both stdio and HTTP, matching `bees --version`, `start_server` and `health_check`.
+
 ## Design Goals
 
 1. **Relationship Consistency**: Automatically maintain reciprocal relationships (see `relationships.md`)
@@ -31,7 +33,7 @@ HTTP transport uses uvicorn ASGI server for MCP communication.
 
 Stdio transport runs the MCP server as a subprocess communicating over stdin/stdout, the standard model for local MCP clients (Claude Code, OpenCode, etc.).
 
-**How it works**: `bees serve --stdio` calls `mcp.run(transport="stdio")`, which hands control to FastMCP's stdio loop. The process blocks until the client terminates it.
+**How it works**: `bees serve --stdio` calls `mcp.run(transport="stdio", show_banner=False)`, which hands control to FastMCP's stdio loop. The process blocks until the client terminates it. Disabling the banner also skips FastMCP's PyPI update check and upgrade prompt. The module entry point in `src/mcp_server.py` also disables the banner. HTTP serves the shared app through uvicorn directly, without FastMCP's banner or update check.
 
 **File-only logging**: All log output is redirected to `~/.bees/mcp.log` before the stdio loop starts. This is required because MCP JSON-RPC uses stdout for protocol messages — any log line written to stdout would corrupt the wire format.
 
@@ -304,7 +306,7 @@ Whitespace is never trimmed, for inline and file-sourced bodies alike. `write_ti
 
 The `bees` command is registered as a Poetry script pointing to `src/cli.py`. This file is the sole entry point for all CLI operations and has no MCP dependencies.
 
-argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `update-config`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — it blocks on `mcp.run(transport="stdio")` until the client process exits.
+argparse dispatches each subcommand (`create-ticket`, `show-ticket`, `update-ticket`, `append-ticket-body`, `delete-ticket`, `get-types`, `set-types`, `update-config`, `serve`) to a dedicated handler function. The ticket subcommands use `asyncio.run()` to bridge into the async execution model. The `serve` subcommand is synchronous — in stdio mode it blocks on `mcp.run(transport="stdio", show_banner=False)` until the client process exits.
 
 `create-ticket --body`, `update-ticket --body`, and `append-ticket-body --chunk` enforce the same 10000-character cap as their MCP counterparts; oversized values are rejected at the handler entry with a non-zero exit and a message on stderr pointing the caller at `bees append-ticket-body` for chunked writes. See "Chunked body workflow" above.
 

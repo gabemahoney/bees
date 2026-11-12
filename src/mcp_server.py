@@ -83,6 +83,7 @@ logger = logging.getLogger(__name__)
 # Initialize FastMCP server
 mcp = FastMCP(
     "bees",
+    version=get_version(),
     instructions=(
         "IMPORTANT: When this MCP server is available, ALWAYS use these MCP tools "
         "instead of running `bees` CLI commands via Bash. MCP tools return structured "
@@ -1326,4 +1327,4 @@ def update_config(details_only: bool = False) -> dict[str, Any]:
 if __name__ == "__main__":
     logger.info("Running Bees MCP Server directly")
     start_server()
-    mcp.run()
+    mcp.run(show_banner=False)

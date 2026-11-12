@@ -942,7 +942,7 @@ def handle_serve(args):
         repo_root = get_repo_root_from_path(Path.cwd())
         with repo_root_context(repo_root):
             start_server()
-            mcp.run(transport="stdio")
+            mcp.run(transport="stdio", show_banner=False)
     except Exception as exc:
         _serve_fatal(f"stdio transport error: {exc}")
 
