@@ -59,8 +59,12 @@ class TicketChangeHandler(FileSystemEventHandler):
 
         return True
 
-    def _do_regeneration(self):
+    def _do_regeneration(self, timer: threading.Timer | None = None):
         """Perform the actual index regeneration for all hives."""
+        if timer is None:
+            # Direct calls own the timer that was current when they started.
+            with self._timer_lock:
+                timer = self._timer
         try:
             # Import at function level to match existing pattern in start_watcher()
             from .config import load_bees_config
@@ -111,8 +115,9 @@ class TicketChangeHandler(FileSystemEventHandler):
             logger.error(f"Failed to regenerate indexes: {e}", exc_info=True)
         finally:
             with self._timer_lock:
-                self.pending_regeneration = False
-                self._timer = None
+                if self._timer is timer:
+                    self.pending_regeneration = False
+                    self._timer = None
 
     def _trigger_regeneration(self):
         """Trigger index regeneration with debouncing using threading.Timer."""
@@ -125,7 +130,8 @@ class TicketChangeHandler(FileSystemEventHandler):
             self.pending_regeneration = True
 
             # Schedule regeneration after debounce period
-            self._timer = threading.Timer(self.debounce_seconds, self._do_regeneration)
+            timer = threading.Timer(self.debounce_seconds, lambda: self._do_regeneration(timer))
+            self._timer = timer
             self._timer.start()
 
     def on_created(self, event: FileSystemEvent):

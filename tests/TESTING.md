@@ -110,6 +110,14 @@ For tests of the `docker/` CI scripts that talk HTTP, without a real server or n
 - No `.git` and no `.hive/` marker; the hive sits directly in `tmp_path`, which is cwd and the repo context
 - Used by `test_linter_directory_enforcement.py` and `test_foreign_subtree.py`; write tickets into it with `write_ticket_file()`
 
+### Watcher Debounce Fixture
+
+#### 16. fake_timers (local to test_watcher.py)
+- Patches `src.watcher.threading.Timer` and yields the timers in creation order; `start()` records readiness without starting a thread
+- Call `fire()` to run a started timer's callback synchronously; cancelled or already-fired timers do nothing
+- Records each timer's interval and cancellation state, so debounce tests can check rescheduling without real-time sleeps
+- Cancels every recorded timer at teardown
+
 ### Removed Deprecated Fixtures
 The following fixtures were removed from conftest.py and migrated to parameterized alternatives:
 - `single_hive` -> `hive_tier_config`

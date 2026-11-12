@@ -25,7 +25,6 @@ RELATED FILES:
 """
 
 import threading
-import time
 from unittest.mock import Mock, patch
 
 import pytest
@@ -34,6 +33,40 @@ from watchdog.events import FileCreatedEvent, FileDeletedEvent, FileModifiedEven
 from src.repo_context import repo_root_context
 from src.watcher import TicketChangeHandler, start_watcher
 from tests.conftest import write_scoped_config
+
+
+@pytest.fixture
+def fake_timers(monkeypatch):
+    """Record debounce timers and fire their callbacks synchronously on demand."""
+    timers = []
+
+    class FakeTimer:
+        def __init__(self, interval, function, args=None, kwargs=None):
+            self.interval = interval
+            self.function = function
+            self.args = args or ()
+            self.kwargs = kwargs or {}
+            self.started = False
+            self.cancelled = False
+            self.fired = False
+            timers.append(self)
+
+        def start(self):
+            self.started = True
+
+        def cancel(self):
+            self.cancelled = True
+
+        def fire(self):
+            assert self.started
+            if not self.cancelled and not self.fired:
+                self.fired = True
+                self.function(*self.args, **self.kwargs)
+
+    monkeypatch.setattr("src.watcher.threading.Timer", FakeTimer)
+    yield timers
+    for timer in timers:
+        timer.cancel()
 
 
 class TestTicketChangeHandler:
@@ -182,7 +215,7 @@ class TestTicketChangeHandler:
 
     @patch("src.watcher.generate_index")
     @patch("src.config.load_bees_config")
-    def test_debounce_only_regenerates_after_quiet_period(self, mock_load_config, mock_generate):
+    def test_debounce_only_regenerates_after_quiet_period(self, mock_load_config, mock_generate, fake_timers):
         """Should only regenerate once after debounce period with no new changes."""
         handler = TicketChangeHandler(debounce_seconds=0.1)
 
@@ -194,14 +227,57 @@ class TestTicketChangeHandler:
         mock_generate.return_value = None
 
         handler._trigger_regeneration()
-        time.sleep(0.05)
         handler._trigger_regeneration()
-        time.sleep(0.05)
         handler._trigger_regeneration()
 
-        time.sleep(0.15)
+        assert len(fake_timers) == 3
+        assert all(timer.interval == 0.1 for timer in fake_timers)
+        assert all(timer.cancelled for timer in fake_timers[:-1])
+        assert not fake_timers[-1].cancelled
+        mock_generate.assert_not_called()
 
-        assert mock_generate.call_count == 1
+        # Expired, cancelled timers do nothing; only the final quiet period runs.
+        for timer in fake_timers:
+            timer.fire()
+
+        mock_generate.assert_called_once()
+        assert handler._timer is None
+        assert handler.pending_regeneration is False
+
+    @patch("src.watcher.generate_index")
+    @patch("src.config.load_bees_config")
+    def test_finishing_regeneration_preserves_timer_scheduled_during_run(
+        self, mock_load_config, mock_generate, fake_timers
+    ):
+        """A finishing run must preserve a newer timer so the next event can cancel it."""
+        handler = TicketChangeHandler(debounce_seconds=0.1)
+        mock_load_config.return_value = Mock(hives={})
+
+        def trigger_during_first_run():
+            if mock_generate.call_count == 1:
+                handler._trigger_regeneration()
+
+        mock_generate.side_effect = trigger_during_first_run
+        handler._trigger_regeneration()
+        fake_timers[0].fire()
+
+        mock_generate.assert_called_once()
+        assert len(fake_timers) == 2
+        pending_timer = fake_timers[1]
+        assert handler._timer is pending_timer, "Finishing run discarded the newer pending timer"
+        assert handler.pending_regeneration is True
+
+        handler._trigger_regeneration()
+        assert pending_timer.cancelled
+        assert len(fake_timers) == 3
+        assert handler._timer is fake_timers[2]
+        pending_timer.fire()
+        mock_generate.assert_called_once()
+        fake_timers[2].fire()
+
+        assert mock_generate.call_count == 2  # Initial run plus one run for the burst.
+        assert handler._timer is None
+        assert handler.pending_regeneration is False
 
     @patch("src.watcher.threading.Timer")
     def test_cleanup_cancels_pending_timer(self, mock_timer_class):
@@ -429,7 +505,7 @@ class TestWatcherHierarchicalStorage:
 
     @patch("src.watcher.generate_index")
     @patch("src.config.load_bees_config")
-    def test_debouncing_with_nested_file_moves(self, mock_load_config, mock_generate):
+    def test_debouncing_with_nested_file_moves(self, mock_load_config, mock_generate, fake_timers):
         """Should debounce when files are moved between nested directories."""
         handler = TicketChangeHandler(debounce_seconds=0.1)
 
@@ -445,17 +521,22 @@ class TestWatcherHierarchicalStorage:
         event_delete = FileDeletedEvent("/path/to/backend/t1.X4F.md")
         handler.on_deleted(event_delete)
 
-        time.sleep(0.05)
-
         # Create event: backend/b.Amx/t1.X4F/t1.X4F.md
         event_create = FileCreatedEvent("/path/to/backend/b.Amx/t1.X4F/t1.X4F.md")
         handler.on_created(event_create)
 
-        # Wait for debounce period
-        time.sleep(0.15)
+        assert len(fake_timers) == 2
+        assert fake_timers[0].cancelled
+        assert not fake_timers[1].cancelled
+        mock_generate.assert_not_called()
+        fake_timers[0].fire()
+        mock_generate.assert_not_called()
+        fake_timers[1].fire()
 
         # Should only regenerate once after both events
-        assert mock_generate.call_count == 1
+        mock_generate.assert_called_once()
+        assert handler._timer is None
+        assert handler.pending_regeneration is False
 
     @patch("src.watcher.threading.Timer")
     def test_watcher_ignores_non_hierarchical_md_files(self, mock_timer_class):
@@ -548,7 +629,9 @@ class TestWatcherLinterIntegration:
     @patch("src.watcher.generate_index")
     @patch("src.linter.Linter")
     @patch("src.config.load_bees_config")
-    def test_linter_moves_trigger_debounce_and_settle(self, mock_load_config, mock_linter_class, mock_generate):
+    def test_linter_moves_trigger_debounce_and_settle(
+        self, mock_load_config, mock_linter_class, mock_generate, fake_timers
+    ):
         """Should handle linter-triggered file moves with debounce, eventually settling without infinite loop."""
         handler = TicketChangeHandler(debounce_seconds=0.1)
 
@@ -559,28 +642,20 @@ class TestWatcherLinterIntegration:
         mock_config.hives = {"test": mock_hive}
         mock_load_config.return_value = mock_config
 
-        # Mock linter - first run triggers file move, second run is stable
+        # File move events are delivered after the first run; the second is stable.
         mock_linter = Mock()
-        mock_report = Mock()
-        mock_report.errors = []
-
-        # Track number of linter runs
-        linter_run_count = [0]
-
-        def linter_run_side_effect():
-            linter_run_count[0] += 1
-            return mock_report
-
-        mock_linter.run.side_effect = linter_run_side_effect
+        mock_linter.run.return_value = Mock(errors=[], fixes=[])
         mock_linter_class.return_value = mock_linter
 
         # First trigger: simulates file change
         handler._trigger_regeneration()
-        time.sleep(0.15)  # Wait for debounce + execution
+        mock_linter.run.assert_not_called()
+        mock_generate.assert_not_called()
+        fake_timers[0].fire()
 
         # Verify first run completed
-        assert linter_run_count[0] == 1
-        assert mock_generate.call_count == 1
+        mock_linter.run.assert_called_once()
+        mock_generate.assert_called_once()
 
         # Simulate linter-triggered file move (delete + create)
         event_delete = FileDeletedEvent("/fake/hive/t1.X4F.md")
@@ -588,15 +663,25 @@ class TestWatcherLinterIntegration:
         event_create = FileCreatedEvent("/fake/hive/b.Amx/t1.X4F/t1.X4F.md")
         handler.on_created(event_create)
 
-        time.sleep(0.15)  # Wait for second debounce
+        assert len(fake_timers) == 3
+        assert fake_timers[1].cancelled
+        assert not fake_timers[2].cancelled
+        fake_timers[1].fire()
+        mock_linter.run.assert_called_once()
+        mock_generate.assert_called_once()
+        fake_timers[2].fire()
 
         # Verify second run completed
-        assert linter_run_count[0] == 2
+        assert mock_linter.run.call_count == 2
         assert mock_generate.call_count == 2
 
-        # No more events should occur (settled)
-        time.sleep(0.15)
-        assert linter_run_count[0] == 2  # No additional runs
+        # No pending callback remains, including cancelled timers from the move.
+        assert handler._timer is None
+        assert handler.pending_regeneration is False
+        for timer in fake_timers:
+            timer.fire()
+        assert len(fake_timers) == 3
+        assert mock_linter.run.call_count == 2
         assert mock_generate.call_count == 2
 
     @patch("src.watcher.generate_index")

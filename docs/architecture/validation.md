@@ -440,12 +440,13 @@ Debounced normally → cycle repeats until stable
 - Triggers `_do_regeneration()` callback after debounce quiet period
 - Filters events: only processes `.md` files, ignores `index.md` to prevent loops
 
-**_do_regeneration() Callback** (`src/watcher.py:62-116`):
+**_do_regeneration() Callback** (`src/watcher.py`):
 - Loads config to enumerate all registered hives
 - For each hive: instantiates Linter with `auto_fix=True` and runs validation
 - Error isolation: linter failure on one hive logs error but continues to next hive
 - After all hives linted: calls `generate_index()` to regenerate all hive indexes
 - Linter never blocks index generation - errors are logged and processing continues
+- Each timer passes its identity to the callback. In `finally`, the callback clears `_timer` and `pending_regeneration` only if that timer is still current. A newer timer scheduled during the run stays pending and can be cancelled by the next event.
 
 ### Linter Auto-Fix Triggers File Moves
 
@@ -499,7 +500,7 @@ Debounced normally → cycle repeats until stable
 **Default settings**:
 - Debounce period: 2 seconds (configurable via `debounce_seconds` parameter)
 - Timer implementation: `threading.Timer` for thread-safe debouncing
-- Lock mechanism: `_timer_lock` prevents race conditions on timer cancellation
+- Lock mechanism: `_timer_lock` protects timer cancellation, replacement and conditional clearing when a run finishes
 
 **Rationale for 2 second default**:
 - Long enough to consolidate rapid file changes (e.g., linter moving multiple tickets)

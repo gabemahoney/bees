@@ -1255,7 +1255,7 @@ Frontmatter (`parent`, `children`) is authoritative; filesystem structure is der
 - Triggers on `.md` file changes (not `index.md`, not directories)
 - 2-second debounce (configurable)
 - On trigger: runs linter with `auto_fix=True` on all hives → regenerates all indexes
-- Rapid changes cancel and reschedule (only one active timer at a time)
+- Rapid changes cancel and reschedule the pending timer. Events arriving during a regeneration keep their pending timer when that run finishes, so later events can still reset the quiet period.
 - Thread-safe
 
 ### 20.2 Activation
