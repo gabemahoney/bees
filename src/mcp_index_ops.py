@@ -11,11 +11,13 @@ from typing import Any
 
 from .config import check_for_config_conflicts, check_schema_version, load_bees_config
 from .index_generator import generate_index
+from .queen_write import queen_write_scope
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 
 logger = logging.getLogger(__name__)
 
 
+@queen_write_scope(hive_param="hive_name")
 async def _generate_index(
     hive_name: str | None = None,
     resolved_root: Path | None = None,

@@ -68,6 +68,12 @@ Repository root resolution follows an adapter pattern. `mcp_server.py` owns this
 - MCP adapter functions in `mcp_server.py` accept `ctx: Context | None` and optional `repo_root: str | None`; they handle resolution and inject it via `repo_root_context`
 - Core functions do not accept `ctx` or `repo_root`; they read the repo root from the `repo_root_context` contextvar set by the adapter
 
+## Queen Write Routing
+
+After the adapter resolves the caller's root and passes the queen write guard, `queen_write_scope` in `src/queen_write.py` routes the shared async entry points used by CLI and MCP. It sets a request-local owning-scope context in `repo_context.py` for each call or batch group, then resets it. Configuration loading and validation use the owner's settings and inherited hives without changing the caller's root. Read-only queens and non-queen callers keep their existing paths.
+
+See [Write Target Resolution](configuration.md#write-target-resolution) for the operation targets, local-first lookup, conflict handling, disambiguation, settings storage, and partial batch results.
+
 ## Module Architecture
 
 ### mcp_id_utils Module
@@ -169,7 +175,8 @@ The `mcp_ticket_ops` module contains the core ticket CRUD (Create, Read, Update,
 - `_UNSET` sentinel in `_update_ticket()` distinguishes "not provided" from "explicitly None"; for `priority` this is the difference between leaving it unchanged and clearing it
 - `priority` is checked at the core-op entry point and a bad value returns `invalid_priority` before any write or relationship sync (see [Priority Field Validation](validation.md#priority-field-validation))
 - Inline body/chunk text has literal `\n` / `\t` expanded; callers pass `unescape_body=False` / `unescape_chunk=False` for file-sourced content, which is stored as written (see "Escape handling in body content")
-- Write operations (`_create_ticket`, `_update_ticket`) are strict and fail-fast; `_delete_ticket` in bulk mode is resilient — IDs that cannot be found are collected in `not_found` and IDs that error during deletion are collected in `failed`, while remaining IDs continue to be processed. Cascade deletion is always enabled to prevent orphaned tickets.
+- `_create_ticket` and single-ticket `_update_ticket` fail fast. Batch update and delete continue per ticket, collecting per-ticket validation or runtime failures in `failed`. Missing IDs in batch update go to `not_found` without `hive`, or `failed` with an explicit `hive` (reason: `Ticket does not exist: <id>`). Batch delete puts missing IDs in `not_found` with or without `hive`. Cascade deletion is always enabled to prevent orphaned tickets.
+- Request-wide validation (such as schema, priority, unsupported batch fields, and queen routing ambiguity) runs before writes; runtime failures can leave earlier tickets or scope groups completed. Queen multi-scope batches retain completed groups and report a failing group's IDs under `failed` (see [Write Target Resolution](configuration.md#write-target-resolution)).
 
 **File Location**: `src/mcp_ticket_ops.py` (~820 lines)
 
@@ -226,7 +233,7 @@ The `mcp_clone_bee` module implements deep cloning of a bee and its full ticket 
 
 **Integration Points**:
 - Only bee tickets (`b.` prefix) can be cloned; non-bee IDs return `invalid_source_type` error
-- Six error types: `invalid_source_type`, `bee_not_found`, `clone_write_error`, `hive_not_found`, `cross_scope_error`, `compatibility_error`
+- Core error types: `invalid_source_type`, `bee_not_found`, `clone_write_error`, `hive_not_found`, `cross_scope_error`, `compatibility_error`; queen routing can also return `config_conflict`
 - Root write failure aborts the entire clone; child write failures are collected in `failed` list while remaining children continue
 - Internal cross-references (parent, children, dependencies) are remapped to new IDs; external references are preserved
 - Cross-hive clones are rejected with `cross_scope_error` when source and destination hives belong to different scopes
@@ -246,7 +253,7 @@ Every tool except `health_check` is wrapped by `_config_errors_as_result` (`src/
 - **delete_ticket**: Delete one or more tickets with cascade deletion of all children and automatic relationship cleanup. Accepts a single ID string or a list of IDs. A ticket whose directory holds another hive, or lies inside one, is not deleted and nothing is changed (`delete_failed`; listed in `failed` for a list of IDs). See [Nested Hives](storage.md#nested-hives).
 - **show_ticket**: Retrieve complete ticket data for a list of ticket IDs. Returns `{"status": "success", "tickets": [...], "not_found": [...], "errors": [...]}` — `tickets` contains full ticket data for each resolved ID (including resolved `reference_materials` entries for bee tickets), `not_found` lists IDs that could not be located, `errors` lists IDs that exist but whose file could not be read or parsed (left out of `tickets`, reason `Failed to read ticket <id>: ...`) or that failed during reference_materials resolution (with reason).
 - **get_types**: Read raw child_tiers from global, scope, and hive configuration levels without inheritance resolution
-- **set_types**: Set or unset child_tiers configuration at the global, repo_scope, or hive level in ~/.bees/config.json. Config-only operation; no tickets are read or modified.
+- **set_types**: Set or unset `child_tiers` in `~/.bees/config.json` at the global or repo_scope level, or in the hive's `.hive/identity.json` at the hive level. Config-only operation; no tickets are read or modified. Hive-level `set_status_values` uses the same identity file; registry changes such as rename and abandon edit the owning scope's config entry.
 - **clone_bee**: Deep-clone a bee and its full ticket subtree. Takes `bee_id` (required), `hive` (optional string — destination hive name; defaults to source hive when omitted), and `force` (optional bool — when true, bypasses cross-hive status-value and tier-type compatibility checks). Returns `{"status": "success", "ticket_id": "<new-root-id>", "written": N, "failed": [...]}` on success, with `failed` listing any child tickets that could not be written. Source and destination hives must be in the same scope.
 
 ### Query Operations
@@ -269,7 +276,7 @@ Every tool except `health_check` is wrapped by `_config_errors_as_result` (`src/
 - **get_resolvers**: List all registered resolvers plus the built-in `default` entry. Each entry includes `name`, `path`, `timeout`, `convention`, and `built_in`.
 
 ### Utility
-- **generate_index**: Generate the markdown `index.md` for hives. Besides `repo_root`, its only parameter is the optional `hive` (there are no status or type filters). When `hive` is provided, generates index for that hive only. When `hive` is omitted (global mode), iterates all registered hives and generates index for each. The success response is `{"status": "success", "skipped_hives": []}` (`skipped_hives` is always an empty list); the markdown is written to each hive's `index.md`, not returned.
+- **generate_index**: Generate the markdown `index.md` for hives. Besides `repo_root`, its only parameter is the optional `hive` (there are no status or type filters). When `hive` is provided, generates index for that hive only, including a foreign scope's hive for a write queen. When `hive` is omitted, uses the caller's normal scoped hive collection; queen elevation does not broaden this mode. The success response is `{"status": "success", "skipped_hives": []}` (`skipped_hives` is always an empty list); the markdown is written to each hive's `index.md`, not returned.
 - **health_check**: Check server health status and readiness. Reports the installed `bees-md` package version (`unknown` when package metadata is unavailable), the same value `start_server` and `bees --version` return (`get_version()` in `src/version.py`)
 - **update_config**: Apply pending schema migrations to `~/.bees/config.json`. When `details_only=True`, returns a preview of pending migrations without applying them (no confirmation required). When `details_only=False` (default), applies all pending migration hops — callers MUST obtain explicit user confirmation before invoking. Returns `current_version` and `pending_hops` in preview mode; returns `applied_hops` and `final_version` after applying.
 

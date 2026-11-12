@@ -23,6 +23,7 @@ from .config import (
 from .hive_compat import check_cross_hive_compatibility
 from .id_utils import is_valid_ticket_id, normalize_hive_name
 from .paths import find_ticket_file, hive_crossing_reason, iter_ticket_files
+from .queen_write import queen_write_scope
 from .reader import read_ticket
 from .repo_context import get_repo_root
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
@@ -255,6 +256,7 @@ def _move_bee_core(
     }
 
 
+@queen_write_scope(ticket_param="bee_ids", destination_param="destination_hive")
 async def _move_bee(
     bee_ids: list[str],
     destination_hive: str,

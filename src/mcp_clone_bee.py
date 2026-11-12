@@ -28,6 +28,7 @@ from .id_utils import (
     normalize_hive_name,
 )
 from .paths import find_ticket_file, iter_ticket_files
+from .queen_write import queen_write_scope
 from .reader import read_ticket
 from .repo_context import get_repo_root
 from .writer import write_ticket_file
@@ -287,6 +288,7 @@ def _clone_bee_core(
     }
 
 
+@queen_write_scope(ticket_param="bee_id", destination_param="destination_hive")
 async def _clone_bee(
     bee_id: str,
     destination_hive: str | None = None,

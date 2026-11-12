@@ -115,16 +115,18 @@ def test_create_ticket_has_expected_params():
     expected_params = {
         "ticket_type",
         "title",
-        "hive_name",
-        "description",
+        "hive",
+        "body",
+        "body_file",
         "parent",
         "children",
-        "up_dependencies",
-        "down_dependencies",
+        "up_deps",
+        "down_deps",
         "tags",
         "status",
         "reference_materials",
         "priority",
+        "repo_root",
     }
 
     result = _help()
@@ -141,16 +143,20 @@ def test_create_ticket_has_expected_params():
 def test_update_ticket_has_expected_params():
     """Verify update_ticket has all expected parameters."""
     expected_params = {
-        "ticket_id",
+        "ticket_ids",
         "title",
-        "description",
-        "parent",
-        "children",
-        "up_dependencies",
-        "down_dependencies",
+        "body",
+        "body_file",
+        "up_deps",
+        "down_deps",
         "tags",
+        "add_tags",
+        "remove_tags",
         "status",
+        "reference_materials",
         "priority",
+        "hive",
+        "repo_root",
     }
 
     result = _help()

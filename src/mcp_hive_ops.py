@@ -55,6 +55,7 @@ from .constants import SCHEMA_VERSION
 from .id_utils import normalize_hive_name
 from .mcp_hive_utils import validate_hive_path
 from .paths import find_nested_hive_root
+from .queen_write import queen_write_scope
 from .repo_context import get_repo_root, repo_root_context
 from .repo_utils import get_repo_root_from_path
 
@@ -781,6 +782,7 @@ async def _list_hives(resolved_root: Path | None = None) -> dict[str, Any]:
         return {"status": "error", "error_type": "list_hives_error", "message": error_msg}
 
 
+@queen_write_scope(hive_param="hive_name", explicit_scope_param="scope")
 async def _abandon_hive(
     hive_name: str, resolved_root: Path | None = None, scope: str | None = None
 ) -> dict[str, Any]:
@@ -883,6 +885,7 @@ async def _abandon_hive(
     }
 
 
+@queen_write_scope(hive_param="old_name")
 async def _rename_hive(
     old_name: str, new_name: str, resolved_root: Path | None = None, rename_folder: bool = True,
     description: str | None = None,
@@ -1107,6 +1110,7 @@ async def _rename_hive(
     return result
 
 
+@queen_write_scope(hive_param="hive_name")
 async def _sanitize_hive(hive_name: str, resolved_root: Path | None = None) -> dict[str, Any]:
     """
     Validate and auto-fix malformed tickets in a hive.

@@ -24,6 +24,33 @@ from pathlib import Path
 # Async-safe, request-scoped storage for repo_root
 _repo_root: ContextVar[Path | None] = ContextVar("repo_root", default=None)
 
+# A write queen executes with an owning scope's merged view. The owner stays
+# separate from visible scopes so inherited hives never redirect config saves.
+_owning_scope: ContextVar[str | None] = ContextVar("owning_scope", default=None)
+_owning_scope_view: ContextVar[frozenset[str] | None] = ContextVar("owning_scope_view", default=None)
+
+
+def get_owning_scope() -> str | None:
+    """Return the exact scope selected for the current queen write, if any."""
+    return _owning_scope.get()
+
+
+def get_owning_scope_view() -> frozenset[str] | None:
+    """Return the scopes visible to the selected owner, including inherited hives."""
+    return _owning_scope_view.get()
+
+
+@contextmanager
+def owning_scope_context(scope: str, visible_scopes: frozenset[str]) -> Generator[None, None, None]:
+    """Select the owner's merged configuration view for one write call."""
+    token = _owning_scope.set(scope)
+    view_token = _owning_scope_view.set(visible_scopes)
+    try:
+        yield
+    finally:
+        _owning_scope_view.reset(view_token)
+        _owning_scope.reset(token)
+
 
 def get_repo_root() -> Path:
     """Get the current repo_root from context.

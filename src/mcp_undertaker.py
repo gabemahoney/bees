@@ -77,6 +77,7 @@ from .id_utils import is_ticket_id
 from .index_generator import generate_index
 from .paths import find_ticket_file, hive_crossing_reason, walk_hive
 from .pipeline import PipelineEvaluator
+from .queen_write import queen_write_scope
 from .query_parser import QueryParser, QueryValidationError
 from .reader import read_ticket
 from .repo_context import get_repo_root, repo_root_context
@@ -313,6 +314,7 @@ def _undertaker_core(
     }
 
 
+@queen_write_scope(hive_param="hive_name")
 async def _undertaker(
     hive_name: str,
     query_yaml: str | None = None,

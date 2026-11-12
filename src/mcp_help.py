@@ -27,6 +27,9 @@ def _help() -> dict[str, Any]:
     - Config keys and ticket ID prefixes use normalized names
     - Discovery: Primary lookup in config.json, fallback scan_for_hive() for .hive markers
 
+    QUEEN REPOS
+    - See the QUEEN REPOS section in the returned concepts for cross-scope access and write targeting.
+
     TICKET TYPES
     - Dynamic tier system: Ticket types are configured in ~/.bees/config.json under child_tiers
     - t0 (Bee): Top-level tier, always present, optional children array, no parent field allowed
@@ -112,18 +115,22 @@ def _help() -> dict[str, Any]:
                     ),
                 },
                 {"name": "title", "type": "str", "required": True, "description": "Ticket title"},
-                {"name": "hive_name", "type": "str", "required": True, "description": "Hive name for ticket"},
-                {"name": "description", "type": "str", "required": False, "description": "Detailed description"},
+                {"name": "hive", "type": "str", "required": True, "description": "Hive name for ticket"},
+                {"name": "body", "type": "str", "required": False, "description": "Ticket body"},
+                {
+                    "name": "body_file", "type": "str", "required": False,
+                    "description": "UTF-8 body file; mutually exclusive with body",
+                },
                 {"name": "parent", "type": "str", "required": False, "description": "Parent ticket ID"},
                 {"name": "children", "type": "list[str]", "required": False, "description": "Child ticket IDs"},
                 {
-                    "name": "up_dependencies",
+                    "name": "up_deps",
                     "type": "list[str]",
                     "required": False,
                     "description": "Blocking ticket IDs",
                 },
                 {
-                    "name": "down_dependencies",
+                    "name": "down_deps",
                     "type": "list[str]",
                     "required": False,
                     "description": "Blocked ticket IDs",
@@ -142,21 +149,44 @@ def _help() -> dict[str, Any]:
                     "required": False,
                     "description": "Reference materials for the bee; null or list of dicts with required 'value' key and optional 'resolver' string key",
                 },
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
             ],
         },
         {
             "name": "update_ticket",
-            "description": "Update an existing ticket",
+            "description": "Update one ticket, or batch-update status, priority, add_tags and remove_tags",
             "parameters": [
-                {"name": "ticket_id", "type": "str", "required": True, "description": "Ticket ID to update"},
+                {
+                    "name": "ticket_ids", "type": "str | list[str]", "required": True,
+                    "description": "Ticket ID or list of IDs to update",
+                },
+                {
+                    "name": "hive", "type": "str", "required": False,
+                    "description": "Hive to search; omit for by-ID scope lookup",
+                },
                 {"name": "title", "type": "str", "required": False, "description": "New title"},
-                {"name": "description", "type": "str", "required": False, "description": "New description"},
-                {"name": "parent", "type": "str", "required": False, "description": "New parent ID"},
-                {"name": "children", "type": "list[str]", "required": False, "description": "New children IDs"},
-                {"name": "up_dependencies", "type": "list[str]", "required": False, "description": "New blocking IDs"},
-                {"name": "down_dependencies", "type": "list[str]", "required": False, "description": "New blocked IDs"},
+                {"name": "body", "type": "str", "required": False, "description": "New body"},
+                {
+                    "name": "body_file", "type": "str", "required": False,
+                    "description": "UTF-8 body file; mutually exclusive with body",
+                },
+                {"name": "up_deps", "type": "list[str]", "required": False, "description": "New blocking IDs"},
+                {"name": "down_deps", "type": "list[str]", "required": False, "description": "New blocked IDs"},
                 {"name": "tags", "type": "list[str]", "required": False, "description": "New tags"},
+                {"name": "add_tags", "type": "list[str]", "required": False, "description": "Tags to add"},
+                {"name": "remove_tags", "type": "list[str]", "required": False, "description": "Tags to remove"},
                 {"name": "status", "type": "str", "required": False, "description": "New status"},
+                {
+                    "name": "reference_materials", "type": "list[dict] | null", "required": False,
+                    "description": "New reference materials; null clears them",
+                },
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
                 {
                     "name": "priority",
                     "type": "int | null",
@@ -170,9 +200,20 @@ def _help() -> dict[str, Any]:
         },
         {
             "name": "delete_ticket",
-            "description": "Delete a ticket and cascade to children",
+            "description": "Delete one or more tickets and cascade to children",
             "parameters": [
-                {"name": "ticket_id", "type": "str", "required": True, "description": "Ticket ID to delete"},
+                {
+                    "name": "ticket_ids", "type": "str | list[str]", "required": True,
+                    "description": "Ticket ID or list of IDs to delete",
+                },
+                {
+                    "name": "hive", "type": "str", "required": False,
+                    "description": "Hive to search; omit for by-ID scope lookup",
+                },
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
             ],
         },
         {
@@ -201,7 +242,7 @@ def _help() -> dict[str, Any]:
                     "description": "Target scope: 'global', 'repo_scope', or 'hive'",
                 },
                 {
-                    "name": "hive_name", "type": "str", "required": False,
+                    "name": "hive", "type": "str", "required": False,
                     "description": "Hive name (required when scope='hive')",
                 },
                 {
@@ -247,7 +288,11 @@ def _help() -> dict[str, Any]:
             "name": "generate_index",
             "description": "Generate markdown index of tickets",
             "parameters": [
-                {"name": "hive_name", "type": "str", "required": False, "description": "Hive to index"},
+                {"name": "hive", "type": "str", "required": False, "description": "Hive to index"},
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
             ],
         },
         {
@@ -270,20 +315,39 @@ def _help() -> dict[str, Any]:
                     " the caller's root; works when its folder is gone. The caller's root (Roots,"
                     " else repo_root) still applies to the queen write check",
                 },
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
             ],
         },
         {
             "name": "rename_hive",
-            "description": "Rename hive and update all ticket IDs",
+            "description": "Rename hive and its registry entry; ticket IDs remain unchanged",
             "parameters": [
                 {"name": "old_name", "type": "str", "required": True, "description": "Current hive name"},
                 {"name": "new_name", "type": "str", "required": True, "description": "New hive name"},
+                {
+                    "name": "rename_folder", "type": "bool", "required": False,
+                    "description": "Rename the hive folder too (default true)",
+                },
+                {"name": "description", "type": "str", "required": False, "description": "New hive description"},
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
             ],
         },
         {
             "name": "sanitize_hive",
             "description": "Validate and auto-fix malformed tickets in hive",
-            "parameters": [{"name": "hive_name", "type": "str", "required": True, "description": "Hive to sanitize"}],
+            "parameters": [
+                {"name": "hive", "type": "str", "required": True, "description": "Hive to sanitize"},
+                {
+                    "name": "repo_root", "type": "str", "required": False,
+                    "description": "Explicit repo root path (fallback for non-Roots clients)",
+                },
+            ],
         },
         {
             "name": "move_bee",
@@ -296,10 +360,14 @@ def _help() -> dict[str, Any]:
                     "description": "Bee ticket IDs to move (e.g., ['b.Amx', 'b.X4F'])",
                 },
                 {
-                    "name": "destination_hive",
+                    "name": "hive",
                     "type": "str",
                     "required": True,
                     "description": "Normalized name of the destination hive",
+                },
+                {
+                    "name": "force", "type": "bool", "required": False,
+                    "description": "Bypass status/tier compatibility checks (default false)",
                 },
                 {
                     "name": "repo_root",
@@ -327,6 +395,29 @@ HIVES
 - Naming: Display name normalized (lowercase, spaces→underscores, special chars removed)
 - Config keys and ticket ID prefixes use normalized names
 - Discovery: Primary lookup in config.json, fallback scan_for_hive() for .hive markers
+
+QUEEN REPOS
+- Registered manually in ~/.bees/config.json under queen_repos; list_hives, show_ticket and queries read all scopes.
+- write: true also permits cross-scope writes through CLI and MCP; read-only queens get permission_denied.
+- By ticket ID: update_ticket, append_ticket_body, delete_ticket, clone_bee without a destination.
+- By-ID lookup checks own hives first, searching foreign scopes only for locally missing IDs. Missing/unreadable
+  foreign hives are skipped with a warning; tickets only there count as not found (not_found in batch results).
+- By named hive: create_ticket and ticket writes with hive; move_bee/clone_bee use the destination hive's view.
+- Hive writes: rename_hive, abandon_hive, sanitize_hive, undertaker, named-hive generate_index,
+  and set_types/set_status_values with scope=hive.
+- The owner's tiers, status values and inherited hives apply; parent/dependency links resolve in that view.
+  Move/clone retain source visibility, same-scope and compatibility checks.
+- A hive name visible in the queen's own matching scopes always means its own hive, with no foreign fallback.
+- Outside that local view, a name registered in several scopes or an ID found in several returns config_conflict
+  naming the scopes. Run the CLI from the owning project or select its MCP root (repo_root without Roots).
+  For ticket operations, omit hive and use a unique ticket ID; required hive names need the owning root.
+- A wildcard owner's root-dependent inherited view returns config_conflict; select a concrete owning root.
+- Batch update/delete without hive group IDs per scope. In multi-scope batches, completed groups stand;
+  failing groups' IDs and reasons appear in failed. Missing IDs go to not_found in these by-ID batches.
+  With explicit hive, batch update puts missing IDs in failed (Ticket does not exist: <id>);
+  batch delete uses not_found with or without hive. Inspect both lists even on success.
+- colonize_hive, repo/scope-level settings and named-query writes retain their existing targeting rules.
+  Non-queen callers keep their normal scoped access.
 
 TICKET TYPES
 - Dynamic tier system: Ticket types are configured in ~/.bees/config.json under child_tiers

@@ -66,6 +66,7 @@ from .paths import (
     iter_ticket_files,
     walk_hive,
 )
+from .queen_write import queen_write_scope
 from .reader import read_ticket
 from .repo_utils import get_repo_root_from_path  # noqa: F401 - kept for monkeypatching in tests
 from .ticket_factory import create_bee, create_child_tier
@@ -296,6 +297,7 @@ def _validate_status_value(status: str, normalized_hive: str, config=None) -> No
         raise ValueError(f"Invalid status '{status}'. Must be one of: {', '.join(status_values)}")
 
 
+@queen_write_scope(hive_param="hive_name")
 async def _create_ticket(
     ticket_type: str,
     title: str,
@@ -648,6 +650,29 @@ def _resolve_hive(ticket_id: str, hive_name: str | None) -> str:
     return resolved  # type: ignore[return-value]
 
 
+def _batch_update_field_error(**updates) -> dict[str, Any] | None:
+    """Reject non-batchable fields without reading or writing any tickets."""
+    for field_name in ("title", "body", "reference_materials", "tags", "up_dependencies", "down_dependencies"):
+        if updates.get(field_name, _UNSET) is not _UNSET:
+            return {
+                "status": "error",
+                "error_type": "invalid_field",
+                "message": f"Field '{field_name}' is not supported for batch updates (list ticket_id)",
+            }
+    return None
+
+
+def _update_ticket_preflight(ticket_ids, priority=_UNSET, **updates) -> dict[str, Any] | None:
+    """Share request-wide validation between the core and queen batch routing."""
+    if schema_error := check_schema_version():
+        return schema_error
+    if priority_error := _priority_error(priority, allow_unset=True):
+        return priority_error
+    if isinstance(ticket_ids, list) and ticket_ids:
+        return _batch_update_field_error(**updates)
+    return None
+
+
 async def _update_ticket_batch(
     ticket_ids_raw: list[str],
     status: str | None | Literal["__UNSET__"],
@@ -668,22 +693,11 @@ async def _update_ticket_batch(
 
     ticket_ids = list(dict.fromkeys(ticket_ids_raw))
 
-    # Fail-fast: non-batchable fields must not be set
-    NON_BATCHABLE = {
-        "title": title,
-        "body": body,
-        "reference_materials": reference_materials,
-        "tags": tags,
-        "up_dependencies": up_dependencies,
-        "down_dependencies": down_dependencies,
-    }
-    for field_name, value in NON_BATCHABLE.items():
-        if value is not _UNSET:
-            return {
-                "status": "error",
-                "error_type": "invalid_field",
-                "message": f"Field '{field_name}' is not supported for batch updates (list ticket_id)",
-            }
+    if field_error := _batch_update_field_error(
+        title=title, body=body, reference_materials=reference_materials,
+        tags=tags, up_dependencies=up_dependencies, down_dependencies=down_dependencies,
+    ):
+        return field_error
 
     # If hive_name provided, validate config once before the loop
     if hive_name:
@@ -976,6 +990,7 @@ async def _update_ticket_single(
     return {"status": "success", "updated": [ticket_id], "not_found": [], "failed": []}
 
 
+@queen_write_scope(hive_param="hive_name", ticket_param="ticket_id")
 async def _append_ticket_body(
     ticket_id: str,
     chunk: str,
@@ -1110,6 +1125,9 @@ async def _append_ticket_body(
     }
 
 
+@queen_write_scope(
+    hive_param="hive_name", ticket_param="ticket_ids", batch_result_key="updated", preflight=_update_ticket_preflight,
+)
 async def _update_ticket(
     ticket_ids: str | list[str],
     title: str | None | Literal["__UNSET__"] = _UNSET,
@@ -1176,12 +1194,11 @@ async def _update_ticket(
         then ``remove_tags``. If a tag appears in both ``add_tags`` and
         ``remove_tags``, it ends up removed.
     """
-    schema_error = check_schema_version()
-    if schema_error is not None:
-        return schema_error
-    # Validate priority up front so an invalid value writes nothing (single or batch)
-    if (priority_err := _priority_error(priority, allow_unset=True)) is not None:
-        return priority_err
+    if error := _update_ticket_preflight(
+        ticket_ids, priority=priority, title=title, body=body, reference_materials=reference_materials,
+        tags=tags, up_dependencies=up_dependencies, down_dependencies=down_dependencies,
+    ):
+        return error
     if isinstance(ticket_ids, list):
         return await _update_ticket_batch(
             ticket_ids_raw=ticket_ids,
@@ -1421,6 +1438,7 @@ def _delete_one_core(
     return root_ticket_type
 
 
+@queen_write_scope(hive_param="hive_name", ticket_param="ticket_ids", batch_result_key="deleted")
 async def _delete_ticket(
     ticket_ids: str | list[str],
     hive_name: str | None = None,
@@ -1807,6 +1825,7 @@ async def _get_types(
     }
 
 
+@queen_write_scope(hive_param="hive_name", hive_scope_only=True)
 async def _set_types(
     scope: str,
     hive_name: str | None = None,
@@ -2018,6 +2037,7 @@ async def _get_status_values(
     }
 
 
+@queen_write_scope(hive_param="hive_name", hive_scope_only=True)
 async def _set_status_values(
     scope: str,
     hive_name: str | None = None,

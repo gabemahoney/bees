@@ -126,9 +126,9 @@ To share config _across_ worktrees or related repos, ask your LLM to update the 
 }
 ```
 
-A directory that no scope matches sees no hives. From there `list_hives` returns an empty list whose message names the directory and says no scope matches it, and commands that look up a hive by name (such as create, update, delete, move, abandon or rename) fail with an error that says the same (`hive_not_found` for most). Run bees from a matched directory, or add a scope for that one.
+A non-queen directory that no scope matches sees no hives. From there `list_hives` returns an empty list whose message names the directory and says no scope matches it, and commands that look up a hive by name (such as create, update, delete, move, abandon or rename) fail with an error that says the same (`hive_not_found` for most). Run bees from a matched directory, or add a scope for that one.
 
-Hive paths in the config are absolute. A wildcard scope shared by several worktrees of one repo therefore points every worktree at the same hive directory, usually the main checkout's: tickets created or changed from any worktree are written to the main checkout's files, not to the worktree's own copy of the hive on its branch. To keep each worktree's tickets on its own branch instead, give each worktree its own hive: run `colonize_hive` from the worktree on the hive directory inside it (e.g. `<worktree>/.bees/bugs`) with `--scope "<worktree>/**"`, so the worktree's subdirectories match too (the default exact-path scope matches only the worktree root). Then run `abandon_hive` from the worktree before removing it: abandoning a scope's last hive also deletes the scope once nothing else is set on it, so the config keeps no entry for a deleted directory. If the worktree is already gone, name its scope instead, from any directory: `bees abandon-hive --hive bugs --scope "<worktree>/**"` (MCP: `abandon_hive` with `scope`). `--scope` takes the scope's exact key in `~/.bees/config.json`. `list_hives` shows only scopes that match the directory it runs from, so read the key of a deleted directory's scope from the config file. If that scope also holds other keys, such as a named query saved with `scope=repo` or tiers or status values set at `repo_scope` from the worktree, `abandon-hive --scope` removes the hive but the scope stays, and only editing `~/.bees/config.json` removes it. The per-worktree setup works only when no scope that already holds that hive name matches the worktree: a worktree under the main checkout's `<repo>/**` scope (e.g. in `<repo>/.worktrees/`) gets `duplicate_hive_name`, so keep worktrees outside it or give the main checkout an exact-path scope.
+Hive paths in the config are absolute. A wildcard scope shared by several worktrees of one repo therefore points every worktree at the same hive directory, usually the main checkout's: tickets created or changed from any worktree are written to the main checkout's files, not to the worktree's own copy of the hive on its branch. To keep each worktree's tickets on its own branch instead, give each worktree its own hive: run `colonize_hive` from the worktree on the hive directory inside it (e.g. `<worktree>/.bees/bugs`) with `--scope "<worktree>/**"`, so the worktree's subdirectories match too (the default exact-path scope matches only the worktree root). Then run `abandon_hive` from the worktree before removing it: abandoning a scope's last hive also deletes the scope once nothing else is set on it, so the config keeps no entry for a deleted directory. If the worktree is already gone, name its scope instead, from any directory: `bees abandon-hive --hive bugs --scope "<worktree>/**"` (MCP: `abandon_hive` with `scope`). `--scope` takes the scope's exact key in `~/.bees/config.json`. For non-queen callers, `list_hives` shows only scopes matching the current directory, so read the key of a deleted directory's scope from the config file. [Queen repos](#queen-repos) list hives across all scopes. If that scope also holds other keys, such as a named query saved with `scope=repo` or tiers or status values set at `repo_scope` from the worktree, `abandon-hive --scope` removes the hive but the scope stays, and only editing `~/.bees/config.json` removes it. The per-worktree setup works only when no scope that already holds that hive name matches the worktree: a worktree under the main checkout's `<repo>/**` scope (e.g. in `<repo>/.worktrees/`) gets `duplicate_hive_name`, so keep worktrees outside it or give the main checkout an exact-path scope.
 
 ### Scope Specificity
 
@@ -174,7 +174,7 @@ shared  /projects/shared/tickets
 
 ### Queen Repos
 
-A **queen repo** is a repository granted elevated cross-scope access — it can list and read tickets from every hive in `~/.bees/config.json`, regardless of which scope normally owns those hives. 
+A **queen repo** can list and read tickets from every hive in `~/.bees/config.json`, and, with `write: true`, write to those hives across scopes.
 This is useful for dashboard, reporting, or orchestration repos that need a global view across all projects.
 
 Queen repos are registered manually in `~/.bees/config.json` via the `queen_repos` key. **LLMs cannot register a queen repo through bees tools** — you must edit the config file yourself.
@@ -193,7 +193,29 @@ Add an entry under `queen_repos` at the top level:
 - **`path`** (required): Absolute path to the repo root that receives elevated access.
 - **`write`** (optional, default `false`): When `false`, the queen repo has read-only access across all hives. Write operations (`create_ticket`, `update_ticket`, `delete_ticket`, hive management, etc.) return a `permission_denied` error. Set to `true` to grant full write access.
 
-Once configured, a queen repo calling `list_hives` receives hives from all scopes (each entry includes a `scope` field). `show_ticket` and query tools search across all hives. Non-queen repos are unaffected — they continue to see only their own scoped hives.
+Once configured, a queen repo calling `list_hives` receives hives from all scopes (each entry includes a `scope` field). `show_ticket` and query tools search across all hives. The queen needs no scope or hives of its own.
+
+With `write: true`, both CLI and MCP calls can target other scopes' hives:
+
+| Target | Write operations |
+|---|---|
+| Ticket ID | `update_ticket`, `append_ticket_body`, `delete_ticket`, and `clone_bee` without a destination |
+| Named hive | `create_ticket`; `update_ticket`, `append_ticket_body`, and `delete_ticket` with `hive` |
+| Destination hive | `move_bee` and `clone_bee` with `hive` |
+| Hive-level settings | `set_types` and `set_status_values` with `scope="hive"` |
+| Hive management | `rename_hive`, `abandon_hive`, `sanitize_hive`, `undertaker`, and `generate_index` for a named hive |
+
+By-ID writes check the queen's own hives first and search other scopes only for IDs not found locally. Missing or unreadable foreign hives are skipped with a warning; tickets available only there count as not found (`not_found` in batch results).
+
+Writes use the owning scope's settings, including tiers and allowed status values, and the hives it inherits from less-specific scopes. Parent and dependency links resolve within that view. Move and clone use the destination hive's view for the whole operation; sources must be visible there, and the existing same-scope and compatibility checks still apply.
+
+A hive name visible in the queen's own matching scopes always means its own hive, even when other scopes register that name. An explicit local hive never falls back to a foreign hive to find a ticket. For a target outside that local view, a hive name registered in several scopes, or a ticket ID found in several scopes, returns `config_conflict` naming the scopes. Run the CLI from the owning project, or select that project as the MCP root (`repo_root` for clients without Roots). For ticket operations, you can instead omit `hive` and use a unique ticket ID. Operations that require a hive name need the owning project's root to disambiguate.
+
+If a wildcard owning scope would inherit different hives depending on the concrete project root, bees returns `config_conflict` describing the root-dependent view. Run from, or supply the root of, the concrete owning project.
+
+Batch update and delete calls without `hive` group IDs by owning scope. Routing ambiguity is checked before any writes. In a multi-scope batch, completed groups stand if another group fails; that group's IDs and error reasons appear under `failed`. Missing IDs go to `not_found` in these by-ID batches. With an explicit `hive`, batch update puts missing IDs in `failed` with reason `Ticket does not exist: <id>`; batch delete uses `not_found` with or without `hive`. Inspect both lists even when `status` is `success`.
+
+`colonize_hive`, repo/scope-level settings, and named-query writes keep their existing targeting rules. Read-only queens still receive `permission_denied` for writes; non-queen callers keep their normal scoped access.
 
 Paths that don't exist on disk are silently ignored. Entries with invalid structure produce an `invalid_config` error at tool-call time.
 

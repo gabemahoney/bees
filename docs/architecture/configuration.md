@@ -78,7 +78,7 @@ Bees uses a single global config file at `~/.bees/config.json` with scoped direc
 
 ## Queen Repos Configuration
 
-The `queen_repos` field grants one or more "queen repos" elevated cross-scope access to all hive operations regardless of normal scope filtering. A queen repo can operate on every hive registered in the global config, not just the hives that would ordinarily match its own scope.
+The `queen_repos` field grants cross-scope reads and, with `write: true`, writes to hives registered anywhere in the global config. The queen does not need a matching scope of its own. See [Queen Repos](../advanced-usage.md#queen-repos) for the write-operation and target mapping.
 
 ### Schema
 
@@ -102,6 +102,24 @@ The `queen_repos` field grants one or more "queen repos" elevated cross-scope ac
 
 - **Non-existent paths**: If a `path` entry does not exist on disk, it is silently ignored. No error is raised and other entries continue to be evaluated normally.
 - **Invalid entries**: Entries with the wrong type for any field, or entries missing the required `path` key, produce an `invalid_config` error at tool call time.
+
+### Write Target Resolution
+
+CLI and MCP share the write routing in `queen_write.py`. Only a queen with `write: true` uses it; read-only queens retain the `permission_denied` write guard, and non-queen callers retain normal scope filtering.
+
+An explicit hive name takes precedence over ticket lookup. If the hive is visible in the queen's own matching scopes, the call keeps the queen's existing merged view, including normal specificity and conflict handling. That name always means the local hive; a missing ticket there does not redirect the call to a foreign hive of the same name. Otherwise, the name selects its foreign owning scope. Without a hive name, ticket writes select the owner by ticket ID. Move and clone with a destination select the destination hive's view for the whole operation.
+
+By-ID lookup checks the queen's own hives first, searching foreign scopes only for locally missing IDs. Missing or unreadable foreign hives are skipped with a warning; IDs available only there count as not found (`not_found` in batch results).
+
+For foreign targets, a name registered in multiple scopes or an ID found in multiple scopes returns `config_conflict` naming the candidate scopes. Disambiguate with CLI cwd in the owning project or its MCP root (`repo_root` when Roots are unavailable). Ticket operations can also omit the hive name and use a unique ticket ID. A required hive name needs the owning root; it cannot be replaced by an ID.
+
+The request-local owning-scope context supplies the owner's non-hive settings and inherited hives. Tier and status validation still follows hive → owning scope → global → default resolution. Parent and dependency links must be visible in that owner view; move and clone keep their existing same-scope restrictions. Hive-level `set_types` / `set_status_values` write the hive's `.hive/identity.json`; registry changes such as rename and abandon edit the owning scope's entry in `~/.bees/config.json`. The context is reset after each call or batch group.
+
+For a wildcard owner, routing must establish the inherited view without guessing a concrete root. If that view depends on the root (for example, `/projects/app/**` inheriting `/projects/*` only at some depths), return `config_conflict` describing the root-dependent scopes. The caller must run from or select a concrete owning project root.
+
+Batch update and delete without a named hive resolve IDs and validate routing before writing, then execute groups per scope. A runtime group failure preserves completed groups and reports each failing group's ID and reason under `failed`. Missing IDs go to `not_found` in these by-ID batches. With an explicit `hive`, batch update puts missing IDs in `failed` with reason `Ticket does not exist: <id>`; batch delete uses `not_found` with or without `hive`. Single-group calls retain their ordinary result shape.
+
+`colonize_hive`, repo/scope-level settings, and named-query writes retain their existing targeting rules. Named-hive routing also covers sanitize, undertaker, and index generation; index generation without a hive keeps its existing scope view. An explicit `abandon_hive(scope=...)` retains its exact-key selection.
 
 ## Scope Pattern Matching
 
@@ -308,9 +326,9 @@ The `set_types` MCP tool (and `bees set-types` CLI command) writes or removes th
 **Scope targets**:
 - `global`: Reads/writes the top-level `child_tiers` key in `~/.bees/config.json`
 - `repo_scope`: Uses `find_matching_scope()` to locate the matching scope block; returns `no_matching_scope` if none matches
-- `hive`: Normalizes the `hive` parameter, searches all scope blocks for the hive entry; returns `hive_not_found` if absent
+- `hive`: Normalizes the `hive` parameter and looks up the hive in the selected scope (the owning scope for a routed queen write); returns `hive_not_found` if absent
 
-**Write path**: All writes go through `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation.
+**Write path**: Global and repo-scope writes use `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation. Hive-level writes use `write_identity()` to update the hive's `.hive/identity.json` and invalidate its identity cache.
 
 **Validation ordering** (per SR-2.3):
 1. Parameter checks (`invalid_scope`, `conflicting_params`, `missing_child_tiers`, `missing_hive_name`) — before any config load
@@ -575,9 +593,9 @@ The `set_status_values` MCP tool (and `bees set-status-values` CLI command) writ
 **Scope targets**:
 - `global`: Reads/writes the top-level `status_values` key in `~/.bees/config.json`
 - `repo_scope`: Uses `find_matching_scope()` to locate the matching scope block; returns `no_matching_scope` if none matches
-- `hive`: Normalizes the `hive` parameter, searches the matched scope's hive entries; returns `hive_not_found` if absent
+- `hive`: Normalizes the `hive` parameter and searches matching scopes' hive entries, using the most-specific definition (the owning scope for a routed queen write); returns `hive_not_found` if absent
 
-**Write path**: All writes go through `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation.
+**Write path**: Global and repo-scope writes use `save_global_config()`, which provides atomic write (tempfile + `os.replace`) and cache invalidation. Hive-level writes use `write_identity()` to update the hive's `.hive/identity.json` and invalidate its identity cache.
 
 **Input normalization**:
 - **Empty list equals unset**: Passing `status_values=[]` is treated identically to `unset=True` — the `status_values` key is removed from the target level rather than written as an empty list
@@ -1070,4 +1088,4 @@ The config is not changed on either error.
 
 ### Directories No Scope Matches
 
-A repo root that no scope matches sees no hives. `hive_not_found_error()` in `src/config.py` builds the `hive_not_found` results a command returns when the hive it names is missing from the config it can see (create, update, append, delete, move, clone's destination hive, abandon without `scope`, and rename or sanitize through `resolve_owning_scope()`). `create_ticket` checks the hive before validating the ticket type, so an unknown hive is reported as `hive_not_found` for any type. When `no_matching_scope_message()` finds no scope matching the repo root, it appends a line that names that directory, says no scope in `~/.bees/config.json` matches it, and suggests registering a scope for it or a wildcard scope over its parent. Callers pass the resolved repo root (the CLI's current repo root, the MCP adapter's resolved root), so the directory is always named. `list_hives`, the undertaker and clone's source lookup (`bee_not_found`) use `no_hives_visible_message()` when no hives are visible: `"No hives configured"` only when the config holds no hives at all, else the unmatched-scope text, or a note that the matching scopes hold no hives. Bees never inspects the directory itself (no git or worktree detection); the message depends only on scope matching.
+A non-queen repo root that no scope matches sees no hives. [Queen repos](#queen-repos-configuration) can list and read across scopes without a local match; write queens route writes as described in [Write Target Resolution](#write-target-resolution). `hive_not_found_error()` in `src/config.py` builds the `hive_not_found` results a command returns when the hive it names is missing from the config it can see (create, update, append, delete, move, clone's destination hive, abandon without `scope`, and rename or sanitize through `resolve_owning_scope()`). `create_ticket` checks the hive before validating the ticket type, so an unknown hive is reported as `hive_not_found` for any type. When `no_matching_scope_message()` finds no scope matching the repo root, it appends a line that names that directory, says no scope in `~/.bees/config.json` matches it, and suggests registering a scope for it or a wildcard scope over its parent. Callers pass the resolved repo root (the CLI's current repo root, the MCP adapter's resolved root), so the directory is always named. `list_hives`, the undertaker and clone's source lookup (`bee_not_found`) use `no_hives_visible_message()` when no hives are visible: `"No hives configured"` only when the config holds no hives at all, else the unmatched-scope text, or a note that the matching scopes hold no hives. Bees never inspects the directory itself (no git or worktree detection); the message depends only on scope matching.

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from src.cache import FileSignature, file_signature, trusted_signature
-from src.repo_context import get_repo_root
+from src.repo_context import get_owning_scope, get_owning_scope_view, get_repo_root
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +318,12 @@ def match_scope_pattern(repo_root: Path, pattern: str) -> bool:
     Returns:
         True if repo_root matches the pattern
     """
+    # Queen writes use the owner's preflighted merged view. This includes
+    # inherited scopes and is request-local, so never put it in the regex cache.
+    owning_view = get_owning_scope_view()
+    if owning_view is not None:
+        return pattern in owning_view
+
     with _CACHE_LOCK:
         if pattern in _SCOPE_PATTERN_CACHE:
             compiled = _SCOPE_PATTERN_CACHE[pattern]
@@ -381,6 +387,9 @@ def find_matching_scope(repo_root: Path, global_config: dict) -> str | None:
         The matching scope pattern string, or None if no match
     """
     scopes = global_config.get("scopes", {})
+    owning_scope = get_owning_scope()
+    if owning_scope is not None:
+        return owning_scope if owning_scope in scopes else None
     best_pattern: str | None = None
     best_key: tuple[int, int] = (-1, -1)
     for pattern in scopes:
@@ -417,7 +426,10 @@ def find_all_matching_scopes(
             seg, tier = compute_scope_specificity(pattern)
             parsed = parse_scope_to_bees_config(scope_data)
             matches.append((pattern, parsed, (seg, -tier)))
-    matches.sort(key=lambda m: m[2])
+    # The target's owner supplies non-hive settings even when inherited scopes
+    # also match. Configuration writes use find_matching_scope's same owner.
+    owning_scope = get_owning_scope()
+    matches.sort(key=lambda m: (m[0] == owning_scope, m[2]))
     return [(pattern, config) for pattern, config, _key in matches]
 
 
