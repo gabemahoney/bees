@@ -2767,14 +2767,14 @@ test_error_setup() {
 
 test_error_invalid_id() {
     capture_cmd bees show-ticket --ids "invalid!!!"
-    if [ "$CMD_EXIT" -eq 0 ]; then
-        fail_test "Invalid ID format" "Expected failure but got success"
+    if [ "$CMD_EXIT" -ne 0 ]; then
+        fail_test "Invalid ID format" "Expected exit 0, got $CMD_EXIT: $CMD_OUT"
     fi
     assert_no_traceback "$CMD_OUT" "Invalid ID format"
-    local error_type
-    error_type=$(check_json "$CMD_OUT" "d.get('error_type','')")
-    if [ "$error_type" != "invalid_ticket_id" ]; then
-        fail_test "Invalid ID format" "Expected error_type=invalid_ticket_id, got $error_type"
+    local valid_response
+    valid_response=$(check_json "$CMD_OUT" "d == {'status': 'success', 'tickets': [], 'not_found': [], 'errors': [{'id': 'invalid!!!', 'reason': 'Invalid ticket ID format', 'error_type': 'invalid_ticket_id'}]}")
+    if [ "$valid_response" != "True" ]; then
+        fail_test "Invalid ID format" "Expected successful per-ID error, got $CMD_OUT"
     fi
     pass_test "Invalid ID format"
 }

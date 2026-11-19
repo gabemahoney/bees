@@ -1017,7 +1017,15 @@ def build_parser():
     p_create.set_defaults(func=handle_create_ticket)
 
     # --- show-ticket ---
-    p_show = subparsers.add_parser("show-ticket", help="Retrieve one or more tickets")
+    p_show = subparsers.add_parser(
+        "show-ticket",
+        help="Retrieve one or more tickets",
+        description=(
+            "Retrieve one or more tickets. Invalid-format IDs go to errors with id, reason and "
+            "error_type: invalid_ticket_id; other IDs are still reported. Even an all-invalid "
+            "call returns status: success and exits 0."
+        ),
+    )
     p_show.add_argument("--ids", required=True, nargs="+", metavar="ID", help="One or more ticket IDs (e.g. b.amx t1.nha)")  # noqa: E501
     p_show.set_defaults(func=handle_show_ticket)
 

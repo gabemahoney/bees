@@ -550,7 +550,8 @@ Returns:
 }
 ```
 
-- Invalid ID format → goes to `errors` with `error_type: invalid_ticket_id`
+- Invalid ID format → goes to `errors` as `{"id": "<ID as given>", "reason": "Invalid ticket ID format", "error_type": "invalid_ticket_id"}`; never passed to ticket path lookup
+- Per-ID errors do not fail the call or prevent other IDs from being reported. Even when every ID is invalid, return `status: success` with empty `tickets` and `not_found` arrays and one `errors` entry per invalid ID (CLI exit 0)
 - Valid ID but no ticket → goes to `not_found`
 - Found ticket → fully populated in `tickets` array
 - Found ticket whose file cannot be read or parsed (bad YAML, no `schema_version`, no closing `---`) → goes to `errors` as `{"id", "reason": "Failed to read ticket <id>: ..."}` and is left out of `tickets`; the call still succeeds and the other IDs are reported as usual

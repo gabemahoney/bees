@@ -574,6 +574,9 @@ async def show_ticket(
     """Retrieve one or more tickets by ID.
 
     Every ticket entry includes `priority`: the integer, or null when unset.
+    Invalid-format IDs go to `errors` with `id`, `reason` and
+    `error_type: invalid_ticket_id`; other IDs are still reported. Even an
+    all-invalid call returns `status: success`.
 
     Args:
         ticket_ids: List of ticket IDs to retrieve (e.g., ["b.amx", "b.xyz"]).

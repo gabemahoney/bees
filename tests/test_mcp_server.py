@@ -23,7 +23,14 @@ from src.mcp_server import _create_ticket, _show_ticket, _update_ticket
 from src.repo_context import repo_root_context
 from src.ticket_factory import create_bee, create_child_tier
 from tests.conftest import write_multi_scope_config, write_scoped_config
-from tests.helpers import break_config_with_trailing_comma, snapshot_diff, tree_snapshot, write_ticket_file
+from tests.helpers import (
+    break_config_with_trailing_comma,
+    cli_success,
+    mcp_success,
+    snapshot_diff,
+    tree_snapshot,
+    write_ticket_file,
+)
 from tests.test_constants import (
     HIVE_BACKEND,
     INVALID_PRIORITY_INPUTS,
@@ -1185,11 +1192,41 @@ class TestShowTicket:
             pytest.param("invalid!!!", id="malformed_special_chars"),
         ],
     )
-    async def test_show_ticket_invalid_format_returns_error(self, hive_env, ticket_id):
-        """IDs that don't match the ticket ID format return an error response."""
-        result = await _show_ticket(ticket_ids=[ticket_id])
-        assert result["status"] == "error"
-        assert result["error_type"] == "invalid_ticket_id"
+    @pytest.mark.parametrize("interface", ["cli", "mcp"])
+    def test_show_ticket_invalid_format_goes_to_errors(self, hive_env, ticket_id, interface, cli_runner):
+        """A single invalid ID succeeds through both interfaces (CLI exit 0)."""
+        if interface == "cli":
+            result = cli_success(cli_runner, "show-ticket", "--ids", ticket_id)
+        else:
+            result = mcp_success(server.show_ticket(ticket_ids=[ticket_id]))
+        assert result == {
+            "status": "success",
+            "tickets": [],
+            "not_found": [],
+            "errors": [{
+                "id": ticket_id,
+                "reason": "Invalid ticket ID format",
+                "error_type": "invalid_ticket_id",
+            }],
+        }
+
+    @pytest.mark.parametrize("interface", ["cli", "mcp"])
+    def test_show_ticket_mixed_result_categories(self, hive_env, interface, cli_runner):
+        """Invalid IDs, blanks and missing tickets keep their own result categories."""
+        _, hive_path, _ = hive_env
+        write_ticket_file(hive_path, "b.vet", title="Valid Bee")
+        ids = ["b.zz!", "b.vet", "b.zzz", "", " \t", "b.../../etc"]
+        if interface == "cli":
+            result = cli_success(cli_runner, "show-ticket", "--ids", *ids)
+        else:
+            result = mcp_success(server.show_ticket(ticket_ids=ids))
+
+        assert [ticket["ticket_id"] for ticket in result["tickets"]] == ["b.vet"]
+        assert set(result["not_found"]) == {"", " \t", "b.zzz"}
+        assert result["errors"] == [
+            {"id": ticket_id, "reason": "Invalid ticket ID format", "error_type": "invalid_ticket_id"}
+            for ticket_id in ["b.zz!", "b.../../etc"]
+        ]
 
     async def test_show_ticket_empty_list(self, hive_env):
         """Empty ticket_ids list returns empty success response."""

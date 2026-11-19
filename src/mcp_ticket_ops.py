@@ -1650,8 +1650,12 @@ async def _show_ticket(
             }
 
         `not_found` contains IDs of tickets that could not be located.
-        `errors` contains tickets that were found but whose file could not be read or
-        parsed (left out of `tickets`), or that failed during reference resolution.
+        `errors` contains invalid-format IDs as {"id": <ID as given>,
+        "reason": "Invalid ticket ID format", "error_type": "invalid_ticket_id"}.
+        These IDs never enter ticket path lookup. Other entries contain only `id`
+        and `reason`: tickets whose file could not be read or parsed (left out of
+        `tickets`), or that failed during reference resolution. Per-ID errors do
+        not fail the call, even when every ID is invalid. Blank IDs go to `not_found`.
 
     Example:
         >>> _show_ticket(['b.Amx', 'b.Xyz'])
@@ -1682,11 +1686,12 @@ async def _show_ticket(
             not_found.append(ticket_id)
             continue
         if not is_valid_ticket_id(ticket_id):
-            return {
-                "status": "error",
+            errors.append({
+                "id": ticket_id,
+                "reason": "Invalid ticket ID format",
                 "error_type": "invalid_ticket_id",
-                "message": f"Invalid ticket ID format: {ticket_id!r}",
-            }
+            })
+            continue
         valid_ids.append(ticket_id)
 
     # Single walk across all hives to resolve paths for every ticket

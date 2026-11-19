@@ -1,5 +1,7 @@
 """Unit tests for mcp_ticket_ops per-hive validation support."""
 
+from unittest.mock import patch
+
 import pytest
 
 from src.mcp_ticket_ops import (
@@ -9,6 +11,7 @@ from src.mcp_ticket_ops import (
     _set_status_values,
     _show_ticket,
     _update_ticket,
+    build_ticket_path_map,
     find_hive_for_ticket,
     validate_parent_tier_relationship,
     validate_ticket_type,
@@ -18,7 +21,7 @@ from src.paths import get_ticket_path
 from src.reader import read_ticket
 from src.repo_context import repo_root_context
 from tests.conftest import write_multi_scope_config, write_scoped_config
-from tests.helpers import make_body_at_cap
+from tests.helpers import make_body_at_cap, write_ticket_file
 from tests.test_constants import (
     BODY_MAX_LENGTH,
     HIVE_BACKEND,
@@ -1161,25 +1164,43 @@ class TestTicketOpsWithCorruptSibling:
 
 
 class TestShowTicketInvalidIdValidation:
-    """Tests for _show_ticket rejecting ticket IDs containing path traversal characters."""
+    """Invalid IDs are per-ID errors and never enter ticket path lookup."""
 
-    async def test_show_ticket_rejects_path_traversal_id(self, isolated_bees_env):
-        isolated_bees_env.create_hive(HIVE_BACKEND)
+    @pytest.mark.parametrize(
+        "ticket_ids,invalid_id",
+        [
+            pytest.param(["b.vet", "b.zz!"], "b.zz!", id="mixed_malformed"),
+            pytest.param(
+                ["b.vet", "b.u4acrrgbmzfab6uisfnxvzhoenua83ob"],
+                "b.u4acrrgbmzfab6uisfnxvzhoenua83ob",
+                id="mixed_long_guid",
+            ),
+            pytest.param(["b.vet", "b.../../etc"], "b.../../etc", id="mixed_path_traversal"),
+            pytest.param(["b.zz!", "b.vet"], "b.zz!", id="invalid_first"),
+            pytest.param(["b.zz!"], "b.zz!", id="all_invalid"),
+            pytest.param(["b.../../etc"], "b.../../etc", id="only_path_traversal"),
+            pytest.param(["b./etc/passwd"], "b./etc/passwd", id="only_forward_slash"),
+        ],
+    )
+    async def test_show_ticket_invalid_ids_go_to_errors(self, isolated_bees_env, ticket_ids, invalid_id):
+        hive_dir = isolated_bees_env.create_hive(HIVE_BACKEND)
         isolated_bees_env.write_config(child_tiers={})
+        write_ticket_file(hive_dir, "b.vet", title="Valid Bee")
 
-        result = await _show_ticket(["b.../../etc"])
+        with patch("src.mcp_ticket_ops.build_ticket_path_map", wraps=build_ticket_path_map) as lookup:
+            result = await _show_ticket(ticket_ids)
 
-        assert result["status"] == "error"
-        assert result["error_type"] == "invalid_ticket_id"
-
-    async def test_show_ticket_rejects_id_with_forward_slash(self, isolated_bees_env):
-        isolated_bees_env.create_hive(HIVE_BACKEND)
-        isolated_bees_env.write_config(child_tiers={})
-
-        result = await _show_ticket(["b./etc/passwd"])
-
-        assert result["status"] == "error"
-        assert result["error_type"] == "invalid_ticket_id"
+        assert result["status"] == "success"
+        assert [ticket["ticket_id"] for ticket in result["tickets"]] == (
+            ["b.vet"] if "b.vet" in ticket_ids else []
+        )
+        assert result["not_found"] == []
+        assert result["errors"] == [{
+            "id": invalid_id,
+            "reason": "Invalid ticket ID format",
+            "error_type": "invalid_ticket_id",
+        }]
+        assert all(invalid_id not in call.args[0] for call in lookup.call_args_list)
 
 
 class TestUpdateTicketStatusValidation:
@@ -1344,16 +1365,23 @@ class TestMalformedIdGracefulErrors:
     raise a Python exception — callers should receive a well-formed error dict.
     """
 
-    async def test_show_malformed_id_returns_error_dict(self, isolated_bees_env):
-        """_show_ticket with malformed ID returns status=error, not an exception."""
+    async def test_show_malformed_id_goes_to_errors(self, isolated_bees_env):
+        """_show_ticket reports a no-dot ID per ID without raising."""
         isolated_bees_env.create_hive(HIVE_BACKEND)
         isolated_bees_env.write_config(child_tiers={})
 
         result = await _show_ticket([_MALFORMED_ID])
 
-        assert result["status"] == "error"
-        assert "error_type" in result
-        assert "message" in result
+        assert result == {
+            "status": "success",
+            "tickets": [],
+            "not_found": [],
+            "errors": [{
+                "id": _MALFORMED_ID,
+                "reason": "Invalid ticket ID format",
+                "error_type": "invalid_ticket_id",
+            }],
+        }
 
     async def test_update_malformed_id_returns_error_dict(self, isolated_bees_env):
         """_update_ticket with malformed ID returns status=error, not an exception."""
