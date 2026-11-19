@@ -1986,8 +1986,8 @@ usage: bees create-ticket --ticket-type TYPE --title TITLE --hive HIVE
   --body BODY           Ticket body (markdown). Capped at 10000 characters; for
                         larger bodies, create the ticket with the first
                         10000-character chunk and use 'bees append-ticket-body'
-                        to write the rest in chunks of up to 10000 characters
-                        each.
+                        with --ticket-id and --chunk or --chunk-file to write
+                        the rest in chunks of up to 10000 characters each.
   --body-file PATH      Read body from a UTF-8 file (use '-' for stdin); same
                         10000 character cap as --body, with oversized input
                         pointed at 'bees append-ticket-body'.
@@ -2029,8 +2029,9 @@ flags are left as-is. Pass null to JSON fields to clear them (e.g. --tags null).
   --title TITLE         New title
   --body BODY           New body (markdown). Capped at 10000 characters; for
                         larger bodies, set the body to the first 10000-character
-                        chunk and use 'bees append-ticket-body' to write the
-                        rest in chunks of up to 10000 characters each.
+                        chunk and use 'bees append-ticket-body' with --ticket-id
+                        and --chunk or --chunk-file to write the rest in chunks
+                        of up to 10000 characters each.
   --body-file PATH      Read new body from a UTF-8 file (use '-' for stdin);
                         same 10000 character cap as --body, with oversized input
                         pointed at 'bees append-ticket-body'.

@@ -8,8 +8,8 @@ Covers Epic 5 of the chunked-ticket-body-API plan (Bee b.87r):
 - At-cap (10000) and just-under-cap (9999) bodies still succeed on both surfaces.
 - The ``args.body is None`` (create) and ``args.body is _UNSET`` (update) sentinel
   paths do NOT fire the helper.
-- ``--body`` help text on both subcommands names ``append-ticket-body`` and
-  ``10000`` so Claude can pick the right tool from the help signal.
+- ``--body`` help text on both subcommands names ``append-ticket-body``, its
+  ``--ticket-id`` and ``--chunk``/``--chunk-file`` flags, and the ``10000`` cap.
 
 Also covers Epic 1 / Task 2 of the ``--body-file`` / ``--chunk-file`` feature
 (Bee ``b.jsz``, plan ``t1.jsz.de``):
@@ -215,21 +215,21 @@ def _normalize_help(text: str) -> str:
 
 
 def test_create_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
-    """`bees create-ticket --help` --body line names append-ticket-body and 10000."""
-    stdout, exit_code = cli_runner(["create-ticket", "--help"])
+    """The --body pointer names the append command, its flags, and the cap."""
+    stdout, exit_code = cli_runner(["create-ticket", "-h"])
     # argparse --help exits 0
     assert exit_code == 0
     flat = _normalize_help(stdout)
-    assert "append-ticket-body" in flat
+    assert "'bees append-ticket-body' with --ticket-id and --chunk or --chunk-file" in flat
     assert "10000" in flat
 
 
 def test_update_ticket_help_text_mentions_append_subcommand_and_cap(cli_runner):
-    """`bees update-ticket --help` --body line names append-ticket-body and 10000."""
-    stdout, exit_code = cli_runner(["update-ticket", "--help"])
+    """The --body pointer names the append command, its flags, and the cap."""
+    stdout, exit_code = cli_runner(["update-ticket", "-h"])
     assert exit_code == 0
     flat = _normalize_help(stdout)
-    assert "append-ticket-body" in flat
+    assert "'bees append-ticket-body' with --ticket-id and --chunk or --chunk-file" in flat
     assert "10000" in flat
 
 
